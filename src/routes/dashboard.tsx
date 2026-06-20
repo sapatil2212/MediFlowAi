@@ -920,6 +920,8 @@ function DashboardPage() {
   const [aptTypeOpen, setAptTypeOpen] = useState(false);
   const [aptCalendarOpen, setAptCalendarOpen] = useState(false);
   const [aptClockOpen, setAptClockOpen] = useState(false);
+  const [aptBloodGroupOpen, setAptBloodGroupOpen] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [dateError, setDateError] = useState<string | null>(null);
   const [timeError, setTimeError] = useState<string | null>(null);
   const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
@@ -970,14 +972,18 @@ function DashboardPage() {
 
   const handleStep2Next = async () => {
     setAptError("");
+    const newErrs: Record<string, string> = {};
     if (!aptEmail.trim() || !/\S+@\S+\.\S+/.test(aptEmail)) {
-      setAptError("Please enter a valid email address.");
-      return;
+      newErrs.email = "Please enter a valid email address.";
     }
     if (!aptPhone.trim() || !/^\+?[\d\s-]{10,15}$/.test(aptPhone)) {
-      setAptError("Please enter a valid phone number (10-15 digits).");
+      newErrs.phone = "Please enter a valid phone number (10-15 digits).";
+    }
+    if (Object.keys(newErrs).length > 0) {
+      setFieldErrors(newErrs);
       return;
     }
+    setFieldErrors({});
 
     setSavingApt(true);
     try {
@@ -1006,47 +1012,76 @@ function DashboardPage() {
     }
   };
 
+  const handleStep3Next = () => {
+    setAptError("");
+    const newErrs: Record<string, string> = {};
+    if (!aptDeptId) {
+      newErrs.dept = "Department is required.";
+    }
+    if (!aptDoctorId) {
+      newErrs.doctor = "Doctor is required.";
+    }
+    if (!aptDateTime) {
+      newErrs.date = "Appointment Date is required.";
+    }
+    if (!aptTimeSlot) {
+      newErrs.time = "Appointment Time slot is required.";
+    }
+    if (!aptReason.trim()) {
+      newErrs.reason = "Reason for visit is required.";
+    }
+
+    if (Object.keys(newErrs).length > 0) {
+      setFieldErrors(newErrs);
+      return;
+    }
+    setFieldErrors({});
+    setBookingStep(4);
+  };
+
   const handleCreateOrUpdateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
     setAptError("");
     setAptSuccess("");
 
+    const newErrs: Record<string, string> = {};
     if (!aptName.trim()) {
-      setAptError("Patient Name is required.");
-      return;
+      newErrs.name = "Patient Name is required.";
     }
     if (!aptEmail.trim() || !/\S+@\S+\.\S+/.test(aptEmail)) {
-      setAptError("Please enter a valid email address.");
-      return;
+      newErrs.email = "Please enter a valid email address.";
     }
     if (!aptPhone.trim() || !/^\+?[\d\s-]{10,15}$/.test(aptPhone)) {
-      setAptError("Please enter a valid phone number (10-15 digits).");
-      return;
+      newErrs.phone = "Please enter a valid phone number (10-15 digits).";
     }
     if (!aptDeptId) {
-      setAptError("Department is required.");
-      return;
+      newErrs.dept = "Department is required.";
     }
     if (!aptDoctorId) {
-      setAptError("Doctor is required.");
-      return;
+      newErrs.doctor = "Doctor is required.";
     }
     if (!aptDateTime) {
-      setAptError("Appointment Date is required.");
-      return;
+      newErrs.date = "Appointment Date is required.";
     }
     if (!aptTimeSlot) {
-      setAptError("Appointment Time is required.");
-      return;
-    }
-    if (!aptAppointmentType) {
-      setAptError("Appointment Type is required.");
-      return;
+      newErrs.time = "Appointment Time slot is required.";
     }
     if (!aptReason.trim()) {
-      setAptError("Reason for visit is required.");
+      newErrs.reason = "Reason for visit is required.";
+    }
+
+    if (Object.keys(newErrs).length > 0) {
+      setFieldErrors(newErrs);
+      if (newErrs.name) {
+        setBookingStep(1);
+      } else if (newErrs.email || newErrs.phone) {
+        setBookingStep(2);
+      } else {
+        setBookingStep(3);
+      }
       return;
     }
+    setFieldErrors({});
 
     setSavingApt(true);
     try {
@@ -1557,6 +1592,23 @@ function DashboardPage() {
       };
     }).sort((a: any, b: any) => a.sortTime.localeCompare(b.sortTime));
   };
+
+  useEffect(() => {
+    if (!isSchedulingApt) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest(".dropdown-container")) {
+        setAptDeptOpen(false);
+        setAptDocOpen(false);
+        setAptTypeOpen(false);
+        setAptCalendarOpen(false);
+        setAptClockOpen(false);
+        setAptBloodGroupOpen(false);
+      }
+    };
+    document.addEventListener("click", handleOutsideClick);
+    return () => document.removeEventListener("click", handleOutsideClick);
+  }, [isSchedulingApt]);
 
   // ──────────────────────────────────────────────
   // 1. Session Verification
@@ -8983,8 +9035,8 @@ function DashboardPage() {
                     <Calendar className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-zinc-805 leading-none">
-                      {editingApt ? "Edit Clinic Booking" : "Schedule New Booking"}
+                    <h3 className="text-sm font-bold text-zinc-850 leading-none">
+                      {editingApt ? "Edit Clinic Booking" : "Book Appointment"}
                     </h3>
                     <span className="text-[10px] text-zinc-400 mt-1 block">
                       {editingApt ? `Apt ID: ${editingApt.id.substring(0,8).toUpperCase()}` : "Manual scheduling form for EHR queue"}
@@ -9003,44 +9055,37 @@ function DashboardPage() {
               <div className="px-6 pt-5 pb-3 shrink-0 border-b border-zinc-100/60 bg-zinc-50/20">
                 <div className="relative flex justify-between max-w-sm mx-auto">
                   {/* Line between steps */}
-                  <div className="absolute top-[14px] left-[16.67%] right-[16.67%] h-0.5 bg-zinc-100 -translate-y-1/2 -z-10">
+                  <div className="absolute top-[14px] left-[12.5%] right-[12.5%] h-0.5 bg-zinc-100 -translate-y-1/2 -z-10">
                     <div 
                       className="h-full bg-brand transition-all duration-300" 
-                      style={{ width: `${((bookingStep - 1) / 2) * 100}%` }}
+                      style={{ width: `${((bookingStep - 1) / 3) * 100}%` }}
                     />
                   </div>
 
                   {[
                     { number: 1, label: "Personal Info" },
                     { number: 2, label: "Contact Info" },
-                    { number: 3, label: "Schedule & Book" }
+                    { number: 3, label: "Schedule" },
+                    { number: 4, label: "Review & Confirm" }
                   ].map((step) => {
                     const isActive = bookingStep === step.number;
                     const isCompleted = bookingStep > step.number;
                     return (
-                      <div key={step.number} className="flex flex-col items-center flex-1 z-10">
+                      <div key={step.number} className="relative flex flex-col items-center flex-1 z-10">
                         <button
                           type="button"
                           onClick={() => {
                             if (step.number < bookingStep) {
                               setBookingStep(step.number);
                               setAptError("");
-                            } else if (step.number === 2 && bookingStep === 1) {
-                              if (!aptName.trim()) {
-                                  setAptError("Patient Name is required.");
-                              } else {
-                                setAptError("");
-                                setBookingStep(2);
-                              }
-                            } else if (step.number === 3 && bookingStep === 2) {
-                              handleStep2Next();
+                              setFieldErrors({});
                             }
                           }}
                           className={`h-7 w-7 rounded-full flex items-center justify-center border font-bold text-xs transition-all cursor-pointer ${
                             isActive 
                               ? "bg-brand border-brand text-white shadow-md shadow-brand/20 scale-110" 
                               : isCompleted
-                              ? "bg-brand/10 border-brand/20 text-brand"
+                              ? "bg-white border-brand text-brand"
                               : "bg-white border-zinc-200 text-zinc-400"
                           }`}
                         >
@@ -9064,13 +9109,15 @@ function DashboardPage() {
                 e.preventDefault();
                 if (bookingStep === 1) {
                   if (!aptName.trim()) {
-                    setAptError("Patient Name is required.");
+                    setFieldErrors({ name: "Patient Full Name is required." });
                   } else {
-                    setAptError("");
+                    setFieldErrors({});
                     setBookingStep(2);
                   }
                 } else if (bookingStep === 2) {
                   handleStep2Next();
+                } else if (bookingStep === 3) {
+                  handleStep3Next();
                 } else {
                   handleCreateOrUpdateAppointment(e);
                 }
@@ -9089,11 +9136,17 @@ function DashboardPage() {
                             type="text"
                             placeholder="Enter Name"
                             value={aptName}
-                            onChange={(e) => setAptName(e.target.value)}
+                            onChange={(e) => {
+                              setAptName(e.target.value);
+                              if (fieldErrors.name) setFieldErrors(prev => ({ ...prev, name: "" }));
+                            }}
                             className="w-full rounded-full border border-zinc-200 bg-white pl-10 pr-4 py-2 text-xs text-zinc-805 focus:border-brand focus:outline-none transition-all placeholder:text-zinc-400 font-semibold"
                             disabled={savingApt}
                           />
                         </div>
+                        {fieldErrors.name && (
+                          <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{fieldErrors.name}</p>
+                        )}
                       </div>
 
                       {/* Gender Selector */}
@@ -9122,40 +9175,84 @@ function DashboardPage() {
                         {/* Date of Birth */}
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Date of Birth</label>
-                          <input
-                            type="date"
-                            value={aptDob}
-                            onChange={(e) => setAptDob(e.target.value)}
-                            className="w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-805 focus:border-brand focus:outline-none transition-all font-semibold"
-                            disabled={savingApt}
-                          />
+                          <div className="relative">
+                            <Calendar className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
+                            <input
+                              type="date"
+                              value={aptDob}
+                              onChange={(e) => {
+                                setAptDob(e.target.value);
+                                if (fieldErrors.dob) setFieldErrors(prev => ({ ...prev, dob: "" }));
+                              }}
+                              className="w-full rounded-full border border-zinc-200 bg-white pl-10 pr-4 py-2 text-xs text-zinc-805 focus:border-brand focus:outline-none transition-all font-semibold"
+                              disabled={savingApt}
+                            />
+                          </div>
+                          {fieldErrors.dob && (
+                            <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{fieldErrors.dob}</p>
+                          )}
                         </div>
 
                         {/* Blood Group */}
-                        <div className="space-y-1">
+                        <div className="space-y-1 relative dropdown-container">
                           <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Blood Group</label>
-                          <select
-                            value={aptBloodGroup}
-                            onChange={(e) => setAptBloodGroup(e.target.value)}
-                            className="w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none cursor-pointer"
-                            disabled={savingApt}
-                          >
-                            <option value="">Select Blood Group</option>
-                            <option value="A+">A+</option>
-                            <option value="A-">A-</option>
-                            <option value="B+">B+</option>
-                            <option value="B-">B-</option>
-                            <option value="AB+">AB+</option>
-                            <option value="AB-">AB-</option>
-                            <option value="O+">O+</option>
-                            <option value="O-">O-</option>
-                            <option value="Unknown">Unknown</option>
-                          </select>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAptBloodGroupOpen(!aptBloodGroupOpen);
+                                setAptDeptOpen(false);
+                                setAptDocOpen(false);
+                                setAptTypeOpen(false);
+                                setAptCalendarOpen(false);
+                                setAptClockOpen(false);
+                              }}
+                              className="w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center font-semibold"
+                              disabled={savingApt}
+                            >
+                              <span className={aptBloodGroup ? "font-semibold text-zinc-800" : "text-zinc-400"}>
+                                {aptBloodGroup ? aptBloodGroup : "Select Blood Group"}
+                              </span>
+                              <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${aptBloodGroupOpen ? "rotate-180" : ""}`} />
+                            </button>
+
+                            <AnimatePresence>
+                              {aptBloodGroupOpen && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, y: -10 }}
+                                  className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
+                                >
+                                  {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"].map((bg) => (
+                                    <button
+                                      key={bg}
+                                      type="button"
+                                      onClick={() => {
+                                        setAptBloodGroup(bg);
+                                        setAptBloodGroupOpen(false);
+                                        if (fieldErrors.bloodGroup) setFieldErrors(prev => ({ ...prev, bloodGroup: "" }));
+                                      }}
+                                      className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                        aptBloodGroup === bg ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
+                                      }`}
+                                    >
+                                      <span>{bg}</span>
+                                      {aptBloodGroup === bg && <Check className="h-3.5 w-3.5 text-brand" />}
+                                    </button>
+                                  ))}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                          {fieldErrors.bloodGroup && (
+                            <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{fieldErrors.bloodGroup}</p>
+                          )}
                         </div>
                       </div>
 
                       {/* Appointment Type Custom Dropdown */}
-                      <div className="space-y-1 relative">
+                      <div className="space-y-1 relative dropdown-container">
                         <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Appointment Type</label>
                         <div className="relative">
                           <button
@@ -9166,6 +9263,7 @@ function DashboardPage() {
                               setAptDocOpen(false);
                               setAptCalendarOpen(false);
                               setAptClockOpen(false);
+                              setAptBloodGroupOpen(false);
                             }}
                             className="w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center font-semibold"
                             disabled={savingApt}
@@ -9191,6 +9289,7 @@ function DashboardPage() {
                                     onClick={() => {
                                       setAptAppointmentType(type);
                                       setAptTypeOpen(false);
+                                      if (fieldErrors.type) setFieldErrors(prev => ({ ...prev, type: "" }));
                                     }}
                                     className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
                                       aptAppointmentType === type ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
@@ -9204,6 +9303,9 @@ function DashboardPage() {
                             )}
                           </AnimatePresence>
                         </div>
+                        {fieldErrors.type && (
+                          <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{fieldErrors.type}</p>
+                        )}
                       </div>
                     </div>
                   )}
@@ -9222,11 +9324,17 @@ function DashboardPage() {
                               type="email"
                               placeholder="jane@example.com"
                               value={aptEmail}
-                              onChange={(e) => setAptEmail(e.target.value)}
+                              onChange={(e) => {
+                                setAptEmail(e.target.value);
+                                if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: "" }));
+                              }}
                               className="w-full rounded-full border border-zinc-200 bg-white pl-10 pr-4 py-2 text-xs text-zinc-805 focus:border-brand focus:outline-none transition-all placeholder:text-zinc-400 font-semibold"
                               disabled={savingApt}
                             />
                           </div>
+                          {fieldErrors.email && (
+                            <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{fieldErrors.email}</p>
+                          )}
                         </div>
                         {/* Phone */}
                         <div className="space-y-1">
@@ -9237,11 +9345,17 @@ function DashboardPage() {
                               type="text"
                               placeholder="911234567890"
                               value={aptPhone}
-                              onChange={(e) => setAptPhone(e.target.value)}
+                              onChange={(e) => {
+                                setAptPhone(e.target.value);
+                                if (fieldErrors.phone) setFieldErrors(prev => ({ ...prev, phone: "" }));
+                              }}
                               className="w-full rounded-full border border-zinc-200 bg-white pl-10 pr-4 py-2 text-xs text-zinc-805 focus:border-brand focus:outline-none transition-all placeholder:text-zinc-400 font-semibold"
                               disabled={savingApt}
                             />
                           </div>
+                          {fieldErrors.phone && (
+                            <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{fieldErrors.phone}</p>
+                          )}
                         </div>
                       </div>
 
@@ -9335,13 +9449,13 @@ function DashboardPage() {
                     </div>
                   )}
 
-                  {/* Step 3: Schedule Options & Confirmation */}
+                  {/* Step 3: Schedule Options */}
                   {bookingStep === 3 && (
                     <div className="space-y-4 animate-fade-in">
                       {/* Department & Doctor Selection Grid */}
                       <div className="grid gap-4 sm:grid-cols-2">
                         {/* Select Department Custom Dropdown */}
-                        <div className="space-y-1 relative">
+                        <div className="space-y-1 relative dropdown-container">
                           <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Department</label>
                           <div className="relative">
                             <button
@@ -9382,6 +9496,7 @@ function DashboardPage() {
                                         setAptDeptOpen(false);
                                         setDateError(null);
                                         setTimeError(null);
+                                        if (fieldErrors.dept) setFieldErrors(prev => ({ ...prev, dept: "" }));
                                       }}
                                       className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
                                         aptDeptId === dept.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
@@ -9395,10 +9510,13 @@ function DashboardPage() {
                               )}
                             </AnimatePresence>
                           </div>
+                          {fieldErrors.dept && (
+                            <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{fieldErrors.dept}</p>
+                          )}
                         </div>
 
                         {/* Select Doctor Custom Dropdown */}
-                        <div className="space-y-1 relative">
+                        <div className="space-y-1 relative dropdown-container">
                           <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Doctor</label>
                           <div className="relative">
                             <button
@@ -9439,6 +9557,7 @@ function DashboardPage() {
                                           setAptDocOpen(false);
                                           setDateError(null);
                                           setTimeError(null);
+                                          if (fieldErrors.doctor) setFieldErrors(prev => ({ ...prev, doctor: "" }));
                                         }}
                                         className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
                                           aptDoctorId === doc.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
@@ -9460,13 +9579,16 @@ function DashboardPage() {
                               )}
                             </AnimatePresence>
                           </div>
+                          {fieldErrors.doctor && (
+                            <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{fieldErrors.doctor}</p>
+                          )}
                         </div>
                       </div>
 
                       {/* Preferred Date & Available Slots Picker Grid */}
                       <div className="grid gap-4 sm:grid-cols-2">
                         {/* Custom Popover Calendar Date Picker */}
-                        <div className="space-y-1 relative">
+                        <div className="space-y-1 relative dropdown-container">
                           <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Appointment Date</label>
                           <div className="relative">
                             <button
@@ -9532,7 +9654,7 @@ function DashboardPage() {
                                     >
                                       <ChevronLeft className="h-4 w-4" />
                                     </button>
-                                    <span className="text-xs font-bold text-zinc-805">
+                                    <span className="text-xs font-bold text-zinc-850">
                                       {new Date(calYear, calMonth).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
                                     </span>
                                     <button
@@ -9579,6 +9701,7 @@ function DashboardPage() {
                                             setAptTimeSlot(""); // Reset slot on date change
                                             setAptCalendarOpen(false);
                                             setTimeError(null);
+                                            if (fieldErrors.date) setFieldErrors(prev => ({ ...prev, date: "" }));
                                           }}
                                           disabled={past}
                                           className={`h-7 w-7 text-[10px] font-bold rounded-lg flex items-center justify-center transition-all ${
@@ -9598,13 +9721,13 @@ function DashboardPage() {
                               )}
                             </AnimatePresence>
                           </div>
-                          {dateError && (
-                            <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{dateError}</p>
+                          {(fieldErrors.date || dateError) && (
+                            <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{fieldErrors.date || dateError}</p>
                           )}
                         </div>
 
                         {/* Custom Popover Time Slot Picker */}
-                        <div className="space-y-1 relative">
+                        <div className="space-y-1 relative dropdown-container">
                           <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Available Time Slot</label>
                           <div className="relative">
                             <button
@@ -9677,6 +9800,7 @@ function DashboardPage() {
                                               const timePart = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
                                               setAptDateTime(`${datePart}T${timePart}`);
                                               setAptClockOpen(false);
+                                              if (fieldErrors.time) setFieldErrors(prev => ({ ...prev, time: "" }));
                                             }}
                                             className={`rounded-xl py-2 px-1 text-[10px] font-bold border transition-all cursor-pointer text-center ${
                                               isSelected
@@ -9698,8 +9822,8 @@ function DashboardPage() {
                               )}
                             </AnimatePresence>
                           </div>
-                          {timeError && (
-                            <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{timeError}</p>
+                          {(fieldErrors.time || timeError) && (
+                            <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{fieldErrors.time || timeError}</p>
                           )}
                         </div>
                       </div>
@@ -9713,12 +9837,17 @@ function DashboardPage() {
                             type="text"
                             placeholder="Brief details of symptoms"
                             value={aptReason}
-                            onChange={(e) => setAptReason(e.target.value)}
+                            onChange={(e) => {
+                              setAptReason(e.target.value);
+                              if (fieldErrors.reason) setFieldErrors(prev => ({ ...prev, reason: "" }));
+                            }}
                             className="w-full rounded-full border border-zinc-200 bg-white pl-10 pr-4 py-2 text-xs text-zinc-805 focus:border-brand focus:outline-none transition-all placeholder:text-zinc-400 font-semibold"
                             disabled={savingApt}
-                            required
                           />
                         </div>
+                        {fieldErrors.reason && (
+                          <p className="text-[10px] text-red-500 font-bold mt-1 pl-1">{fieldErrors.reason}</p>
+                        )}
                       </div>
 
                       {/* Status Selection (only visible when editing) */}
@@ -9737,7 +9866,12 @@ function DashboardPage() {
                           </select>
                         </div>
                       )}
+                    </div>
+                  )}
 
+                  {/* Step 4: Review & Confirm */}
+                  {bookingStep === 4 && (
+                    <div className="space-y-4 animate-fade-in">
                       {/* Summary Card */}
                       <div className="p-4 rounded-2xl border border-zinc-200/80 bg-zinc-50/50 space-y-3">
                         <h4 className="text-[10px] font-bold text-zinc-450 uppercase tracking-wider border-b border-zinc-200 pb-1 flex items-center gap-1.5">
@@ -9817,19 +9951,21 @@ function DashboardPage() {
                     </button>
                   )}
                   
-                  {bookingStep < 3 ? (
+                  {bookingStep < 4 ? (
                     <button
                       type="button"
                       onClick={() => {
                         if (bookingStep === 1) {
                           if (!aptName.trim()) {
-                            setAptError("Patient Name is required.");
+                            setFieldErrors({ name: "Patient Full Name is required." });
                           } else {
-                            setAptError("");
+                            setFieldErrors({});
                             setBookingStep(2);
                           }
                         } else if (bookingStep === 2) {
                           handleStep2Next();
+                        } else if (bookingStep === 3) {
+                          handleStep3Next();
                         }
                       }}
                       disabled={savingApt}
