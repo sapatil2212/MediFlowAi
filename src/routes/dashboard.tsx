@@ -65,8 +65,11 @@ import {
   Bell,
   Camera,
   Upload,
-  MessageCircle
+  MessageCircle,
+  FileSpreadsheet
 } from "lucide-react";
+import { jsPDF } from "jspdf";
+import "jspdf-autotable";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -765,6 +768,7 @@ function DashboardPage() {
 
   // Navigation and Detail Drawers
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
+  const [patientProfileTab, setPatientProfileTab] = useState<"consultations" | "prescriptions" | "billing">("consultations");
   const [patientChartData, setPatientChartData] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [patientsList, setPatientsList] = useState<any[]>([]);
@@ -1304,6 +1308,7 @@ function DashboardPage() {
     setAptAddress("");
     setDupWarning(null);
     setSelectedPatientId(null);
+    setEditingApt(null);
   };
 
 
@@ -2341,99 +2346,75 @@ function DashboardPage() {
         downloadAnchor.remove();
         showToast("success", `Exported ${listToExport.length} appointments to Word`);
       } else if (format === "pdf") {
-        const printWindow = window.open("", "_blank");
-        if (!printWindow) {
-          showToast("error", "Popup blocked. Please allow popups for PDF printing.");
-          return;
-        }
-
-        const htmlContent = `
-          <html>
-          <head>
-            <title>Clinic Appointments Export</title>
-            <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #2d3748; padding: 40px; }
-              .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; }
-              .title { font-size: 24px; font-weight: bold; color: #0284c7; }
-              .meta { text-align: right; font-size: 12px; color: #718096; }
-              table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-              th { background-color: #f7fafc; color: #4a5568; font-weight: bold; border-bottom: 2px solid #e2e8f0; padding: 12px 8px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
-              td { border-bottom: 1px solid #edf2f7; padding: 12px 8px; font-size: 13px; color: #2d3748; }
-              tr:nth-child(even) { background-color: #fcfcfc; }
-              .patient-name { font-weight: 700; color: #1a202c; }
-              .patient-sub { font-size: 11px; color: #718096; margin-top: 4px; }
-              .status-badge { display: inline-block; padding: 4px 8px; border-radius: 9999px; font-size: 10px; font-weight: 700; text-transform: uppercase; border: 1px solid; }
-              .status-Confirmed { background-color: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
-              .status-Completed { background-color: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
-              .status-Pending { background-color: #fffbeb; color: #b45309; border-color: #fde68a; }
-              .status-Cancelled { background-color: #fef2f2; color: #b91c1c; border-color: #fecaca; }
-              @media print {
-                body { padding: 0; }
-                button { display: none; }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="header">
-              <div>
-                <div class="title">MediFlow AI Clinic</div>
-                <div style="font-size: 14px; color: #4a5568; margin-top: 4px;">Appointment Consultations Summary</div>
-              </div>
-              <div class="meta">
-                <div>Exported: ${new Date().toLocaleString()}</div>
-                <div>Records: ${listToExport.length}</div>
-              </div>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Patient Info</th>
-                  <th>Date & Time</th>
-                  <th>Chief Complaint</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${listToExport.map(apt => {
-                  const aptDate = new Date(apt.dateTime);
-                  const formattedTime = aptDate.toLocaleString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit"
-                  });
-                  return `
-                    <tr>
-                      <td>
-                        <div class="patient-name">${apt.name || ""}</div>
-                        <div class="patient-sub">
-                          ${apt.age ? `${apt.age} Yrs` : ""} ${apt.gender ? `· ${apt.gender}` : ""} ${apt.phone ? `· ${apt.phone}` : ""}
-                        </div>
-                      </td>
-                      <td style="font-weight: 600;">${formattedTime}</td>
-                      <td style="color: #4a5568;">${apt.reason || "General consultation"}</td>
-                      <td>
-                        <span class="status-badge status-${apt.status || "Pending"}">
-                          ${apt.status || "Pending"}
-                        </span>
-                      </td>
-                    </tr>
-                  `;
-                }).join("")}
-              </tbody>
-            </table>
-            <script>
-              window.onload = function() {
-                window.print();
-              };
-            </script>
-          </body>
-          </html>
-        `;
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
-        showToast("success", `Generated print/PDF view for ${listToExport.length} appointments`);
+        const doc = new jsPDF();
+        
+        // Add header info
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(20);
+        doc.textColor = [12, 114, 114]; // Dark teal matching brand color
+        doc.text("MediFlow AI Clinic", 14, 20);
+        
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(11);
+        doc.textColor = [74, 85, 104];
+        doc.text("Appointment Consultations Summary", 14, 26);
+        
+        doc.setFontSize(9);
+        doc.textColor = [113, 128, 150];
+        doc.text(`Exported: ${new Date().toLocaleString()}`, 196, 20, { align: "right" });
+        doc.text(`Records: ${listToExport.length}`, 196, 26, { align: "right" });
+        
+        // Add divider line
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.5);
+        doc.line(14, 32, 196, 32);
+        
+        // Build table data
+        const tableHeaders = [["Patient Info", "Date & Time", "Chief Complaint", "Status"]];
+        const tableRows = listToExport.map(apt => {
+          const aptDate = new Date(apt.dateTime);
+          const formattedTime = aptDate.toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
+          });
+          const patientInfoStr = `${apt.name || ""}\n${apt.age ? `${apt.age} Yrs` : ""} ${apt.gender ? `· ${apt.gender}` : ""} ${apt.phone ? `· ${apt.phone}` : ""}`;
+          return [
+            patientInfoStr,
+            formattedTime,
+            apt.reason || "General consultation",
+            apt.status || "Pending"
+          ];
+        });
+        
+        (doc as any).autoTable({
+          startY: 38,
+          head: tableHeaders,
+          body: tableRows,
+          theme: "striped",
+          headStyles: {
+            fillColor: [12, 114, 114], // Brand color
+            textColor: [255, 255, 255],
+            fontSize: 10,
+            fontStyle: "bold"
+          },
+          bodyStyles: {
+            fontSize: 9,
+            textColor: [45, 55, 72]
+          },
+          columnStyles: {
+            0: { cellWidth: 60 },
+            1: { cellWidth: 45 },
+            2: { cellWidth: 50 },
+            3: { cellWidth: 27 }
+          },
+          margin: { top: 38, left: 14, right: 14 }
+        });
+        
+        doc.save(`consultations_export_${new Date().toISOString().split('T')[0]}.pdf`);
+        showToast("success", `Exported ${listToExport.length} appointments to PDF`);
       }
     } catch (e) {
       showToast("error", "Export failed");
@@ -3611,10 +3592,377 @@ function DashboardPage() {
         {/* Tab Content Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <AnimatePresence mode="wait">
-            {/* ──────────────────────────────────────────────
-                TAB: OVERVIEW
-                ────────────────────────────────────────────── */}
-            {activeTab === "overview" && (
+            {selectedPatient ? (
+              <motion.div
+                key="patient-profile-detail"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="space-y-6 animate-fade-in"
+              >
+                {/* Header Section */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPatient(null)}
+                      className="px-4 py-2 border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-bold rounded-full cursor-pointer flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                    >
+                      ← Back to List
+                    </button>
+                    <div>
+                      <h3 className="text-base font-bold text-zinc-900 flex items-center gap-2">
+                        {selectedPatient.name}
+                        <span className="text-[10px] bg-brand/10 border border-brand/20 text-brand px-2.5 py-0.5 rounded-full font-bold uppercase">
+                          EHR Profile
+                        </span>
+                      </h3>
+                      <p className="text-[10px] text-zinc-450 font-mono mt-0.5">Chart ID: {selectedPatient.id}</p>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const matchedPatient = patientsList.find(p => p.id === selectedPatient.id);
+                        if (matchedPatient) {
+                          setEditingPatient(matchedPatient);
+                          setNewPatientName(matchedPatient.name);
+                          setNewPatientAge(String(matchedPatient.age));
+                          setNewPatientGender(matchedPatient.gender);
+                          setNewPatientPhone(matchedPatient.phone || "");
+                          setNewPatientEmail(matchedPatient.email || "");
+                          setNewPatientAddress(matchedPatient.address || "");
+                          setNewPatientReason(matchedPatient.chiefComplaint || matchedPatient.reason || "");
+                          setNewPatientNotes(matchedPatient.notes || "");
+                          setIsAddingPatient(true);
+                          setActiveTab("patients");
+                          setSelectedPatient(null);
+                        } else {
+                          setEditingPatient(selectedPatient);
+                          setNewPatientName(selectedPatient.name);
+                          setNewPatientAge(String(selectedPatient.age || 35));
+                          setNewPatientGender(selectedPatient.gender || "Female");
+                          setNewPatientPhone(selectedPatient.phone || "");
+                          setNewPatientEmail(selectedPatient.email || "");
+                          setNewPatientAddress(selectedPatient.address || "");
+                          setNewPatientReason(selectedPatient.chiefComplaint || selectedPatient.reason || "");
+                          setNewPatientNotes(selectedPatient.notes || "");
+                          setIsAddingPatient(true);
+                          setActiveTab("patients");
+                          setSelectedPatient(null);
+                        }
+                      }}
+                      className="px-4 py-2 border border-zinc-200 hover:bg-zinc-50 bg-white text-zinc-700 text-xs font-bold rounded-full cursor-pointer transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                    >
+                      <Edit3 className="h-3.5 w-3.5 text-zinc-500" /> Edit Patient Registry File
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-6 lg:grid-cols-3">
+                  {/* Left Column: Demographics */}
+                  <div className="lg:col-span-1 space-y-4">
+                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-4 shadow-sm">
+                      <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide border-b border-zinc-100 pb-2">
+                        Patient Information
+                      </h4>
+                      
+                      <div className="space-y-3.5 text-xs text-left">
+                        <div>
+                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Full Name</span>
+                          <span className="font-bold text-zinc-800">{selectedPatient.name}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Age</span>
+                            <span className="font-bold text-zinc-800">{selectedPatient.age} Years</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Gender</span>
+                            <span className="font-bold text-zinc-800">{selectedPatient.gender}</span>
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Date of Birth</span>
+                          <span className="font-bold text-zinc-800">{selectedPatient.dob || "Not Provided"}</span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Phone Number</span>
+                          <span className="font-bold text-zinc-800">{selectedPatient.phone || "Not Provided"}</span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Email Address</span>
+                          <span className="font-bold text-zinc-800 truncate block">{selectedPatient.email || "Not Provided"}</span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">WhatsApp No</span>
+                          <span className="font-bold text-zinc-800">{selectedPatient.whatsapp || selectedPatient.phone || "Not Provided"}</span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Blood Group</span>
+                          <span className="font-bold text-zinc-800 uppercase">{selectedPatient.bloodGroup || "Unknown"}</span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Insurance Provider</span>
+                          <span className="font-bold text-zinc-800">{selectedPatient.insurance || "None (Self Pay)"}</span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Residential Address</span>
+                          <span className="font-semibold text-zinc-700 leading-normal block">{selectedPatient.address || "Not Provided"}</span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">EHR Enrolled Date</span>
+                          <span className="font-mono text-zinc-500 block">
+                            {selectedPatient.createdAt ? new Date(selectedPatient.createdAt).toLocaleDateString() : new Date().toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: History Tabs (Consultations, Prescriptions, Billing) */}
+                  <div className="lg:col-span-2 space-y-4">
+                    {/* Navigation Sub-Tabs */}
+                    <div className="flex items-center gap-2 bg-zinc-100 p-1 rounded-xl w-max">
+                      {[
+                        { id: "consultations", label: "Consultation History" },
+                        { id: "prescriptions", label: "Prescriptions" },
+                        { id: "billing", label: "Billing & Invoices" }
+                      ].map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setPatientProfileTab(t.id as any)}
+                          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                            patientProfileTab === t.id
+                              ? "bg-brand text-white shadow-sm"
+                              : "text-zinc-500 hover:text-zinc-900"
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Tab content view */}
+                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-4 shadow-sm min-h-[400px]">
+                      
+                      {/* CONSULTATION HISTORY */}
+                      {patientProfileTab === "consultations" && (
+                        <div className="space-y-4">
+                          <h4 className="text-xs font-bold text-zinc-800 uppercase tracking-tight border-b border-zinc-100 pb-2">
+                            Past SOAP Consultation Notes
+                          </h4>
+                          
+                          {patientChartData === null ? (
+                            <div className="flex items-center justify-center py-12">
+                              <Loader2 className="h-6 w-6 animate-spin text-brand" />
+                            </div>
+                          ) : !patientChartData.soapNotes || patientChartData.soapNotes.length === 0 ? (
+                            <div className="py-12 text-center text-zinc-400 italic text-xs">
+                              No clinical SOAP notes logged yet for this patient profile.
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {patientChartData.soapNotes.map((note: any, idx: number) => (
+                                <div key={note.id || idx} className="rounded-xl border border-zinc-150 bg-zinc-50/20 p-4 space-y-3 text-xs shadow-sm text-left">
+                                  <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+                                    <span className="font-extrabold text-zinc-700">
+                                      {new Date(note.createdAt).toLocaleDateString("en-US", {
+                                        year: "numeric",
+                                        month: "long",
+                                        day: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit"
+                                      })}
+                                    </span>
+                                    <span className="font-black text-brand uppercase tracking-wider text-[10px] px-2 py-0.5 bg-brand/5 border border-brand/10 rounded-full">
+                                      {note.specialty || "General Practice"}
+                                    </span>
+                                  </div>
+                                  <div className="grid gap-3 leading-relaxed">
+                                    {note.subjective && (
+                                      <div>
+                                        <strong className="text-[9px] font-black uppercase text-zinc-400 tracking-wider block mb-0.5">Subjective</strong>
+                                        <p className="text-zinc-700">{note.subjective}</p>
+                                      </div>
+                                    )}
+                                    {note.objective && (
+                                      <div>
+                                        <strong className="text-[9px] font-black uppercase text-zinc-400 tracking-wider block mb-0.5">Objective</strong>
+                                        <p className="text-zinc-700">{note.objective}</p>
+                                      </div>
+                                    )}
+                                    {note.assessment && (
+                                      <div>
+                                        <strong className="text-[9px] font-black uppercase text-zinc-400 tracking-wider block mb-0.5">Assessment</strong>
+                                        <p className="text-zinc-700">{note.assessment}</p>
+                                      </div>
+                                    )}
+                                    {note.plan && (
+                                      <div>
+                                        <strong className="text-[9px] font-black uppercase text-zinc-400 tracking-wider block mb-0.5">Plan</strong>
+                                        <p className="text-zinc-700">{note.plan}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* PRESCRIPTIONS */}
+                      {patientProfileTab === "prescriptions" && (
+                        <div className="space-y-4">
+                          <h4 className="text-xs font-bold text-zinc-800 uppercase tracking-tight border-b border-zinc-100 pb-2">
+                            Prescription Records
+                          </h4>
+                          
+                          {patientChartData === null ? (
+                            <div className="flex items-center justify-center py-12">
+                              <Loader2 className="h-6 w-6 animate-spin text-brand" />
+                            </div>
+                          ) : !patientChartData.prescriptions || patientChartData.prescriptions.length === 0 ? (
+                            <div className="py-12 text-center text-zinc-400 italic text-xs">
+                              No clinical prescriptions mapped to this patient profile.
+                            </div>
+                          ) : (
+                            <div className="space-y-6">
+                              {patientChartData.prescriptions.map((rx: any, idx: number) => (
+                                <div key={rx.id || idx} className="rounded-xl border border-zinc-150 bg-zinc-50/20 p-4 space-y-3 shadow-sm text-xs text-left">
+                                  <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+                                    <span className="font-extrabold text-zinc-700">
+                                      {new Date(rx.createdAt).toLocaleDateString("en-US", {
+                                        year: "numeric",
+                                        month: "long",
+                                        day: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit"
+                                      })}
+                                    </span>
+                                    <span className="font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-2.5 py-0.5 text-[9px] uppercase tracking-wide">
+                                      Signed Prescription
+                                    </span>
+                                  </div>
+                                  
+                                  <div className="space-y-3">
+                                    <div className="overflow-x-auto">
+                                      <table className="min-w-full text-left border-collapse text-[11px]">
+                                        <thead>
+                                          <tr className="border-b border-zinc-150 text-zinc-400 font-extrabold uppercase">
+                                            <th className="py-1.5">Drug Name</th>
+                                            <th className="py-1.5">Dosage</th>
+                                            <th className="py-1.5">Frequency</th>
+                                            <th className="py-1.5">Duration</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-100 text-zinc-700 font-medium">
+                                          {rx.medications.map((m: any, mIdx: number) => (
+                                            <tr key={mIdx}>
+                                              <td className="py-1.5 font-bold text-zinc-800">{m.name}</td>
+                                              <td className="py-1.5">{m.dosage}</td>
+                                              <td className="py-1.5">{m.frequency}</td>
+                                              <td className="py-1.5">{m.duration}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                    {rx.notes && (
+                                      <p className="text-[11px] text-zinc-650 border-t border-zinc-100 pt-2 leading-relaxed">
+                                        <strong className="text-[9px] font-bold uppercase text-zinc-400 block mb-0.5">Directions / Advice</strong>
+                                        {rx.notes}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* BILLING & INVOICES */}
+                      {patientProfileTab === "billing" && (() => {
+                        const patientAppointments = appointments.filter(a => a.patientId === selectedPatient.id);
+                        if (patientAppointments.length === 0) {
+                          return (
+                            <div className="py-12 text-center text-zinc-400 italic text-xs">
+                              No billing transactions mapped. Schedule consultation visits to auto-generate invoices.
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="space-y-4 text-left">
+                            <div className="overflow-x-auto rounded-xl border border-zinc-200/80 bg-white shadow-sm">
+                              <table className="min-w-full divide-y divide-zinc-200 text-left text-xs">
+                                <thead className="bg-zinc-50 font-bold text-zinc-450 text-[10px] uppercase tracking-wider">
+                                  <tr>
+                                    <th className="px-4 py-3">Invoice No</th>
+                                    <th className="px-4 py-3">Date</th>
+                                    <th className="px-4 py-3">Service Details</th>
+                                    <th className="px-4 py-3">Amount</th>
+                                    <th className="px-4 py-3">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-zinc-150 text-zinc-700 font-semibold">
+                                  {patientAppointments.map((apt, idx) => {
+                                    const fee = 500.00; // Mock Consultation fee
+                                    const isPaid = apt.status === "Completed" || apt.status === "Confirmed";
+                                    const docObj = doctors.find(d => d.id === apt.doctorId);
+                                    const docName = docObj ? docObj.name : "Clinician";
+                                    const deptObj = departments.find(d => d.id === apt.departmentId || (docObj && d.id === docObj.departmentId));
+                                    const deptName = deptObj ? deptObj.name : "General Practice";
+                                    
+                                    return (
+                                      <tr key={apt.id || idx} className="hover:bg-zinc-50/50">
+                                        <td className="px-4 py-3.5 font-mono text-[10px] text-zinc-400 font-bold">
+                                          INV-{apt.id.substring(0,8).toUpperCase()}
+                                        </td>
+                                        <td className="px-4 py-3.5 text-zinc-500 font-medium">
+                                          {new Date(apt.dateTime).toLocaleDateString("en-US", {
+                                            month: "short",
+                                            day: "numeric",
+                                            year: "numeric"
+                                          })}
+                                        </td>
+                                        <td className="px-4 py-3.5">
+                                          <div className="font-bold text-zinc-800">Clinic Consultation Fee</div>
+                                          <div className="text-[9px] text-zinc-400 font-normal">Dr. {docName} ({deptName})</div>
+                                        </td>
+                                        <td className="px-4 py-3.5 font-extrabold text-zinc-900">
+                                          ₹{fee.toFixed(2)}
+                                        </td>
+                                        <td className="px-4 py-3.5">
+                                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                            isPaid ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-amber-50 text-amber-700 border border-amber-100"
+                                          }`}>
+                                            {isPaid ? "Paid" : "Pending"}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              <>
+                {/* ──────────────────────────────────────────────
+                    TAB: OVERVIEW
+                    ────────────────────────────────────────────── */}
+                {activeTab === "overview" && (
               <motion.div
                 key="overview"
                 initial={{ opacity: 0, y: 8 }}
@@ -5181,10 +5529,10 @@ function DashboardPage() {
                                   handleExportConsultations("pdf");
                                   setShowExportDropdown(false);
                                 }}
-                                className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer transition-colors"
+                                className="w-full text-left px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2.5 cursor-pointer transition-colors"
                               >
-                                <span className="text-red-500 font-extrabold text-[10px] w-8">PDF</span>
-                                Export to PDF
+                                <FileText className="h-4 w-4 text-red-500 shrink-0" />
+                                <span>Export to PDF</span>
                               </button>
                               <button
                                 type="button"
@@ -5192,10 +5540,10 @@ function DashboardPage() {
                                   handleExportConsultations("word");
                                   setShowExportDropdown(false);
                                 }}
-                                className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer transition-colors"
+                                className="w-full text-left px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2.5 cursor-pointer transition-colors"
                               >
-                                <span className="text-blue-500 font-extrabold text-[10px] w-8">Word</span>
-                                Export to Word
+                                <FileText className="h-4 w-4 text-blue-500 shrink-0" />
+                                <span>Export to Word</span>
                               </button>
                               <button
                                 type="button"
@@ -5203,10 +5551,10 @@ function DashboardPage() {
                                   handleExportConsultations("excel");
                                   setShowExportDropdown(false);
                                 }}
-                                className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer transition-colors"
+                                className="w-full text-left px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2.5 cursor-pointer transition-colors"
                               >
-                                <span className="text-green-600 font-extrabold text-[10px] w-8">Excel</span>
-                                Export to Excel
+                                <FileSpreadsheet className="h-4 w-4 text-green-600 shrink-0" />
+                                <span>Export to Excel</span>
                               </button>
                             </div>
                           </>
@@ -5669,58 +6017,63 @@ function DashboardPage() {
                                 </td>
                                 <td className="px-6 py-4 text-zinc-500 max-w-[240px] truncate">{p.chiefComplaint || p.reason}</td>
                                 <td className="px-6 py-4 text-zinc-400">{new Date(p.createdAt).toLocaleDateString()}</td>
-                                <td className="px-6 py-4 text-right space-x-2.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelectedPatient(p)}
-                                    className="text-brand font-bold hover:underline cursor-pointer"
-                                  >
-                                    Open Chart
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEditingPatient(p);
-                                      setNewPatientName(p.name);
-                                      setNewPatientAge(String(p.age));
-                                      setNewPatientGender(p.gender);
-                                      setNewPatientPhone(p.phone || "");
-                                      setNewPatientEmail(p.email || "");
-                                      setNewPatientAddress(p.address || "");
-                                      setNewPatientReason(p.chiefComplaint || p.reason || "");
-                                      setNewPatientNotes(p.notes || "");
-                                      setIsAddingPatient(true);
-                                    }}
-                                    className="text-zinc-500 hover:text-zinc-800 font-bold cursor-pointer"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setConfirmDialog({
-                                        open: true,
-                                        title: "Delete Patient File?",
-                                        message: `Are you sure you want to delete ${p.name}'s medical record? This will also purge all linked SOAP notes.`,
-                                        onConfirm: async () => {
-                                          try {
-                                            const res = await deletePatientServerFn({ data: { id: p.id } });
-                                            if (res.success) {
-                                              showToast("success", "Patient registry file deleted successfully.");
-                                              fetchPatients();
+                                <td className="px-6 py-4 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      title="View Patient EHR Profile"
+                                      onClick={() => setSelectedPatient(p)}
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-brand hover:bg-brand/5 transition-colors cursor-pointer shrink-0"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Edit Patient File"
+                                      onClick={() => {
+                                        setEditingPatient(p);
+                                        setNewPatientName(p.name);
+                                        setNewPatientAge(String(p.age));
+                                        setNewPatientGender(p.gender);
+                                        setNewPatientPhone(p.phone || "");
+                                        setNewPatientEmail(p.email || "");
+                                        setNewPatientAddress(p.address || "");
+                                        setNewPatientReason(p.chiefComplaint || p.reason || "");
+                                        setNewPatientNotes(p.notes || "");
+                                        setIsAddingPatient(true);
+                                      }}
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-650 hover:bg-indigo-50 transition-colors cursor-pointer shrink-0"
+                                    >
+                                      <Edit3 className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Delete Patient File"
+                                      onClick={() => {
+                                        setConfirmDialog({
+                                          open: true,
+                                          title: "Delete Patient File?",
+                                          message: `Are you sure you want to delete ${p.name}'s medical record? This will also purge all linked SOAP notes.`,
+                                          onConfirm: async () => {
+                                            try {
+                                              const res = await deletePatientServerFn({ data: { id: p.id } });
+                                              if (res.success) {
+                                                showToast("success", "Patient registry file deleted successfully.");
+                                                fetchPatients();
+                                              }
+                                            } catch (err: any) {
+                                              showToast("error", err.message || "Failed to delete patient");
+                                            } finally {
+                                              setConfirmDialog(null);
                                             }
-                                          } catch (err: any) {
-                                            showToast("error", err.message || "Failed to delete patient");
-                                          } finally {
-                                            setConfirmDialog(null);
                                           }
-                                        }
-                                      });
-                                    }}
-                                    className="text-red-550 hover:text-red-700 font-bold cursor-pointer"
-                                  >
-                                    Delete
-                                  </button>
+                                        });
+                                      }}
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer shrink-0"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))}
@@ -6160,8 +6513,7 @@ function DashboardPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      clearAptForm();
-                      setIsSchedulingApt(true);
+                      openCreateApt();
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     className="inline-flex items-center justify-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-zinc-900 hover:bg-zinc-800 transition-all rounded-full shadow-sm cursor-pointer whitespace-nowrap"
@@ -8765,6 +9117,8 @@ function DashboardPage() {
                 />
               </motion.div>
             )}
+              </>
+            )}
           </AnimatePresence>
         </div>
 
@@ -8799,222 +9153,7 @@ function DashboardPage() {
       {/* ──────────────────────────────────────────────
           3. Slide-over Sheet Drawer: Patient EHR Chart Detail
           ────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {selectedPatient && (
-          <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-sm">
-            {/* Click outside to close */}
-            <div className="absolute inset-0" onClick={() => setSelectedPatient(null)} />
-            
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", damping: 20, stiffness: 150 }}
-              className="relative w-full max-w-lg bg-white h-full shadow-2xl flex flex-col justify-between overflow-hidden border-l border-zinc-200"
-            >
-              {/* Drawer Header */}
-              <div className="p-5 border-b border-zinc-200 bg-zinc-50 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-bold text-sm">
-                    {selectedPatient.name.split(" ").map((n: string) => n[0]).join("")}
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-zinc-800 leading-none">
-                      {selectedPatient.name}
-                    </h3>
-                    <span className="text-[10px] text-zinc-400 mt-1 block font-mono">
-                      Chart ID: {selectedPatient.id}
-                    </span>
-                  </div>
-                </div>
-                {/* Close */}
-                <button
-                  onClick={() => setSelectedPatient(null)}
-                  className="rounded-full p-1.5 hover:bg-zinc-150/60 text-zinc-400 hover:text-zinc-700 cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
 
-              {/* Drawer Body (Scrollable EHR Detail) */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                {/* 1. Demographics */}
-                <div className="space-y-2">
-                  <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide">
-                    Patient Demographics
-                  </h4>
-                  <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-150 p-3 bg-zinc-50/20 text-xs">
-                    <div>
-                      <span className="text-zinc-400 block text-[9px] font-bold uppercase">Age / Gender</span>
-                      <span className="font-semibold text-zinc-750">
-                        {selectedPatient.age} y/o {selectedPatient.gender}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-zinc-400 block text-[9px] font-bold uppercase">Date of Birth</span>
-                      <span className="font-semibold text-zinc-750">{selectedPatient.dob}</span>
-                    </div>
-                    <div>
-                      <span className="text-zinc-400 block text-[9px] font-bold uppercase">Phone</span>
-                      <span className="font-semibold text-zinc-750">{selectedPatient.phone}</span>
-                    </div>
-                    <div>
-                      <span className="text-zinc-400 block text-[9px] font-bold uppercase">Insurance</span>
-                      <span className="font-semibold text-zinc-750 truncate block">{selectedPatient.insurance}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. Active Scribing context */}
-                {selectedPatient.status !== "Completed" && (
-                  <div className="rounded-xl border border-amber-150 bg-amber-50/30 p-3.5 flex items-start gap-2.5">
-                    <Info className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                    <div className="space-y-1.5 text-xs text-amber-800">
-                      <p className="font-bold leading-tight">Patient visit is currently active.</p>
-                      <p className="text-[10px] leading-relaxed">
-                        Use the scribe station or quick dictation widget to record notes for this patient's chief complaint: <strong>"{selectedPatient.reason}"</strong>.
-                      </p>
-                      <button
-                        onClick={() => {
-                          setActiveTab("scribe");
-                          const activeApt = appointments.find(a => a.patientId === selectedPatient.id && a.status !== "Cancelled");
-                          if (activeApt) {
-                            setSelectedAptForConsultation(activeApt);
-                            setScribePatientId(selectedPatient.id);
-                            setLiveTranscript(activeApt.reason || "");
-                          } else {
-                            setSelectedAptForConsultation({
-                              id: "visit-consultation",
-                              name: selectedPatient.name,
-                              patientId: selectedPatient.id,
-                              dateTime: new Date().toISOString(),
-                              status: "Confirmed",
-                              reason: selectedPatient.reason || ""
-                            });
-                            setScribePatientId(selectedPatient.id);
-                            setLiveTranscript(selectedPatient.reason || "");
-                          }
-                          setScribeSubTab("scribe");
-                          setSelectedPatient(null);
-                        }}
-                        className="text-[10px] font-bold text-brand hover:underline block cursor-pointer"
-                      >
-                        Launch Consultation for this Visit →
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. SOAP Notes History */}
-                <div className="space-y-3">
-                  <h4 className="text-[10px] font-bold text-zinc-450 uppercase tracking-wide block border-b border-zinc-100 pb-1.5">
-                    SOAP Visit Notes History
-                  </h4>
-                  {patientChartData === null ? (
-                    <div className="flex items-center justify-center py-4">
-                      <Loader2 className="h-4 w-4 animate-spin text-brand" />
-                    </div>
-                  ) : !patientChartData.soapNotes || patientChartData.soapNotes.length === 0 ? (
-                    <p className="text-[10px] text-zinc-450 italic py-2 text-center">
-                      No clinical SOAP notes logged yet.
-                    </p>
-                  ) : (
-                    <div className="space-y-4">
-                      {patientChartData.soapNotes.map((note: any, idx: number) => (
-                        <div key={note.id || idx} className="rounded-xl border border-zinc-150 bg-white p-3 space-y-2 text-[11px] shadow-sm animate-fade-in">
-                          <div className="flex items-center justify-between border-b border-zinc-100 pb-1">
-                            <span className="font-bold text-zinc-700">
-                              {new Date(note.createdAt).toLocaleDateString("en-US", {
-                                year: "numeric",
-                                month: "short",
-                                day: "numeric"
-                              })}
-                            </span>
-                            <span className="font-bold text-brand">{note.specialty}</span>
-                          </div>
-                          <div className="space-y-1.5 text-xs text-zinc-750">
-                            {note.subjective && <p><strong className="text-[9px] font-bold uppercase text-zinc-400 block">Subjective</strong>{note.subjective}</p>}
-                            {note.objective && <p><strong className="text-[9px] font-bold uppercase text-zinc-400 block">Objective</strong>{note.objective}</p>}
-                            {note.assessment && <p><strong className="text-[9px] font-bold uppercase text-zinc-400 block">Assessment</strong>{note.assessment}</p>}
-                            {note.plan && <p><strong className="text-[9px] font-bold uppercase text-zinc-400 block">Plan</strong>{note.plan}</p>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* 4. Prescriptions History */}
-                <div className="space-y-3">
-                  <h4 className="text-[10px] font-bold text-zinc-450 uppercase tracking-wide block border-b border-zinc-100 pb-1.5">
-                    Prescriptions History
-                  </h4>
-                  {patientChartData === null ? (
-                    <div className="flex items-center justify-center py-4">
-                      <Loader2 className="h-4 w-4 animate-spin text-brand" />
-                    </div>
-                  ) : !patientChartData.prescriptions || patientChartData.prescriptions.length === 0 ? (
-                    <p className="text-[10px] text-zinc-450 italic py-2 text-center">
-                      No prescriptions logged yet.
-                    </p>
-                  ) : (
-                    <div className="space-y-4">
-                      {patientChartData.prescriptions.map((rx: any, idx: number) => (
-                        <div key={rx.id || idx} className="rounded-xl border border-zinc-150 bg-white p-3 space-y-2 text-[11px] shadow-sm animate-fade-in">
-                          <div className="flex items-center justify-between border-b border-zinc-100 pb-1">
-                            <span className="font-bold text-zinc-700">
-                              {new Date(rx.createdAt).toLocaleDateString("en-US", {
-                                year: "numeric",
-                                month: "short",
-                                day: "numeric"
-                              })}
-                            </span>
-                            <span className="font-bold text-emerald-650 inline-flex items-center gap-1">
-                              Rx Pad
-                            </span>
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left border-collapse text-[10px]">
-                                <thead>
-                                  <tr className="border-b border-zinc-100 text-zinc-400 font-bold">
-                                    <th className="py-1">Drug</th>
-                                    <th className="py-1">Dosage</th>
-                                    <th className="py-1">Freq</th>
-                                    <th className="py-1">Dur</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-zinc-50 text-zinc-700">
-                                  {rx.medications.map((m: any, mIdx: number) => (
-                                    <tr key={mIdx}>
-                                      <td className="py-1 font-bold">{m.name}</td>
-                                      <td className="py-1">{m.dosage}</td>
-                                      <td className="py-1">{m.frequency}</td>
-                                      <td className="py-1">{m.duration}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                            
-                            {rx.notes && (
-                              <p className="text-[10px] text-zinc-650 border-t border-zinc-50 pt-1">
-                                <strong className="text-[8px] font-bold uppercase text-zinc-400 block">Directions</strong>
-                                {rx.notes}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {isSchedulingApt && (
