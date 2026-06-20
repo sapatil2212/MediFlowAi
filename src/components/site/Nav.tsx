@@ -68,11 +68,11 @@ export function Nav() {
           </Link>
           <Link
             to="/signup"
-            className="group relative inline-flex items-center gap-1.5 overflow-hidden rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-50 ring-1 ring-zinc-950/10 transition-transform hover:scale-[1.03]"
+            className="group relative inline-flex items-center gap-1 overflow-hidden rounded-md bg-zinc-900 px-2.5 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm font-medium text-zinc-50 ring-1 ring-zinc-950/10 transition-transform hover:scale-[1.03] whitespace-nowrap"
           >
-            <span className="relative z-10 flex items-center gap-1.5">
+            <span className="relative z-10 flex items-center gap-1 sm:gap-1.5">
               14 Days Free Trial
-              <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+              <ArrowRight className="size-3 sm:size-3.5 transition-transform group-hover:translate-x-0.5" />
             </span>
             <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
           </Link>

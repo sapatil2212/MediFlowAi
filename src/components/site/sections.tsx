@@ -326,7 +326,7 @@ function DashboardPreview() {
       </motion.div>
 
       {/* Window Wrapper */}
-      <div className="rounded-3xl border border-white bg-white/80 p-2 shadow-[0_-4px_60px_rgba(15,118,110,0.12),0_24px_80px_rgba(0,0,0,0.07)] backdrop-blur-xl ring-1 ring-zinc-950/5 overflow-hidden">
+      <div className="pointer-events-none select-none rounded-3xl border border-white bg-white/80 p-2 shadow-[0_-4px_60px_rgba(15,118,110,0.12),0_24px_80px_rgba(0,0,0,0.07)] backdrop-blur-xl ring-1 ring-zinc-950/5 overflow-hidden">
         <div className="bg-white rounded-2xl overflow-hidden shadow-inner border border-zinc-100">
           
           {/* Main Layout Grid */}
@@ -433,7 +433,7 @@ function DashboardPreview() {
               </header>
 
               {/* Scrollable Content Workspace */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="flex-1 overflow-hidden p-4 space-y-4">
                 
                 {/* 1. Statistics Cards Grid */}
                 <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
