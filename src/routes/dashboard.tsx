@@ -777,6 +777,7 @@ function DashboardPage() {
   // Voice Rx popup modal states
   const [isVoiceRxModalOpen, setIsVoiceRxModalOpen] = useState(false);
   const [voiceRxTranscript, setVoiceRxTranscript] = useState("");
+  const [voiceRxInterim, setVoiceRxInterim] = useState("");
   const [isVoiceRxAnalyzing, setIsVoiceRxAnalyzing] = useState(false);
   const [voiceRxResult, setVoiceRxResult] = useState<{
     chiefComplaint?: string;
@@ -2201,7 +2202,7 @@ function DashboardPage() {
   }, [isRecording]);
 
   // Initialize speech recognition wrapper
-  const startSpeechRecognition = (targetSetter: (text: string) => void) => {
+  const startSpeechRecognition = (targetSetter: (text: string) => void, interimSetter?: (text: string) => void) => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       console.warn("Speech recognition is not supported in this browser.");
@@ -2222,13 +2223,19 @@ function DashboardPage() {
 
       rec.onresult = (event: any) => {
         let finalTrans = "";
+        let interimTrans = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
             finalTrans += event.results[i][0].transcript + " ";
+          } else {
+            interimTrans += event.results[i][0].transcript;
           }
         }
         if (finalTrans) {
           targetSetter(finalTrans);
+        }
+        if (interimSetter) {
+          interimSetter(interimTrans);
         }
       };
 
@@ -2667,31 +2674,47 @@ function DashboardPage() {
   const handleStartVoiceRx = () => {
     setIsVoiceRxModalOpen(true);
     setVoiceRxTranscript("");
+    setVoiceRxInterim("");
     setVoiceRxResult(null);
     setIsVoiceRxAnalyzing(false);
     
     setIsRecording(true);
     setRecordingField("voiceRx");
     setRecordingSeconds(0);
-    startSpeechRecognition((text) => setVoiceRxTranscript(prev => prev + text));
+    startSpeechRecognition(
+      (text) => {
+        setVoiceRxTranscript((prev) => prev + text);
+        setVoiceRxInterim("");
+      },
+      (text) => setVoiceRxInterim(text)
+    );
   };
 
   const handleStopVoiceRx = () => {
     setIsRecording(false);
     setRecordingField(null);
+    setVoiceRxInterim("");
     stopSpeechRecognition();
   };
 
   const handleResumeVoiceRx = () => {
     setIsRecording(true);
     setRecordingField("voiceRx");
-    startSpeechRecognition((text) => setVoiceRxTranscript(prev => prev + text));
+    setVoiceRxInterim("");
+    startSpeechRecognition(
+      (text) => {
+        setVoiceRxTranscript((prev) => prev + text);
+        setVoiceRxInterim("");
+      },
+      (text) => setVoiceRxInterim(text)
+    );
   };
 
   const handleAnalyzeVoiceRx = async () => {
     // Ensure recording is stopped first
     setIsRecording(false);
     setRecordingField(null);
+    setVoiceRxInterim("");
     stopSpeechRecognition();
 
     if (!voiceRxTranscript.trim()) {

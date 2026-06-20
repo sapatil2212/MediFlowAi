@@ -1710,9 +1710,9 @@ export const generatePrescriptionServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      throw new Error("Gemini API key is not configured in .env file.");
+      throw new Error("OpenRouter API key is not configured in .env file.");
     }
 
     const prompt = `You are a medical AI assistant. Extract and format a structured medical prescription from the following doctor's voice prescription instructions.
@@ -1738,33 +1738,35 @@ Voice Instructions:
 "${data.transcript}"`;
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "http://localhost:8080",
+          "X-Title": "HealthSync AI"
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          generationConfig: {
-            responseMimeType: "application/json"
-          }
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: "You output only clean JSON." },
+            { role: "user", content: prompt }
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 1500
         })
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("Gemini API error:", errorText);
-        throw new Error(`Gemini API error: ${response.statusText}`);
+        console.error("OpenRouter API error in Prescription Generation:", errorText);
+        throw new Error(`OpenRouter API error: ${response.statusText}`);
       }
 
       const resJson = await response.json();
-      const content = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+      const content = resJson.choices?.[0]?.message?.content;
       if (!content) {
-        throw new Error("Empty response from Gemini model.");
+        throw new Error("Empty response from prescription model.");
       }
 
       const prescription = JSON.parse(content.trim());
@@ -1774,7 +1776,7 @@ Voice Instructions:
         notes: prescription.notes || ""
       };
     } catch (e: any) {
-      console.error("Failed to generate prescription via Gemini:", e);
+      console.error("Failed to generate prescription via OpenRouter:", e);
       throw new Error(e.message || "Failed to generate prescription.");
     }
   });
@@ -1788,9 +1790,9 @@ export const aiAssistConsultationServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      throw new Error("Gemini API key is not configured in .env file.");
+      throw new Error("OpenRouter API key is not configured in .env file.");
     }
 
     const prompt = `You are a medical AI assistant helping a clinician write a consultation and prescription.
@@ -1819,33 +1821,35 @@ Format the output in raw JSON format with the exact structure below:
 Only return a valid JSON object matching this structure. Do not wrap the JSON in markdown code blocks or add any other text outside the JSON object.`;
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "http://localhost:8080",
+          "X-Title": "HealthSync AI"
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          generationConfig: {
-            responseMimeType: "application/json"
-          }
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: "You output only clean JSON." },
+            { role: "user", content: prompt }
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 1500
         })
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("Gemini API error in AI Assist:", errorText);
-        throw new Error(`Gemini API error: ${response.statusText}`);
+        console.error("OpenRouter API error in AI Assist:", errorText);
+        throw new Error(`OpenRouter API error: ${response.statusText}`);
       }
 
       const resJson = await response.json();
-      const content = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+      const content = resJson.choices?.[0]?.message?.content;
       if (!content) {
-        throw new Error("Empty response from Gemini model.");
+        throw new Error("Empty response from AI Assist model.");
       }
 
       const parsed = JSON.parse(content.trim());
@@ -1870,9 +1874,9 @@ export const voiceRxAnalyzeServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      throw new Error("Gemini API key is not configured in .env file.");
+      throw new Error("OpenRouter API key is not configured in .env file.");
     }
 
     const prompt = `You are a medical AI assistant helping a clinician parse an audio dictation or dialogue transcript into a structured prescription form.
@@ -1884,7 +1888,7 @@ Analyze this transcript and extract:
 2. "diagnosis": The primary diagnosis (including common ICD-10 codes if applicable, e.g. Dental caries (K02.9)).
 3. "medications": A list of prescribed medications. For each medication, extract:
    - "name" (e.g., Paracetamol)
-   - "dosage" (e.g., 650mg)
+   - "dosage" (e.g., 655mg)
    - "frequency" (e.g., TID / Three times daily)
    - "route" (e.g., Oral)
    - "duration" (e.g., 5 days)
@@ -1911,33 +1915,35 @@ Format the output in raw JSON format with the exact structure below:
 Only return a valid JSON object matching this structure. Do not wrap the JSON in markdown code blocks or add any other text outside the JSON object.`;
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "http://localhost:8080",
+          "X-Title": "HealthSync AI"
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          generationConfig: {
-            responseMimeType: "application/json"
-          }
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: "You output only clean JSON." },
+            { role: "user", content: prompt }
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 1500
         })
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("Gemini API error in Voice Rx analysis:", errorText);
-        throw new Error(`Gemini API error: ${response.statusText}`);
+        console.error("OpenRouter API error in Voice Rx analysis:", errorText);
+        throw new Error(`OpenRouter API error: ${response.statusText}`);
       }
 
       const resJson = await response.json();
-      const content = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+      const content = resJson.choices?.[0]?.message?.content;
       if (!content) {
-        throw new Error("Empty response from Gemini model.");
+        throw new Error("Empty response from Voice Rx model.");
       }
 
       const parsed = JSON.parse(content.trim());
