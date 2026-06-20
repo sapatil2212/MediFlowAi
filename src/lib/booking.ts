@@ -139,10 +139,17 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     const docId = data.doctorId || null;
     const tSlot = data.timeSlot || null;
 
+    // Auto-assign sequential token number per tenant + date
+    const tokenRow = await queryOne<any>(
+      "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?)",
+      [data.tenantId, dateVal]
+    );
+    const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
+
     await execute(
-      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, NOW())`,
-      [id, data.tenantId, data.name, data.email, data.phone, dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null]
+      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, NOW())`,
+      [id, data.tenantId, data.name, data.email, data.phone, dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, tokenNo]
     );
 
     // Queue WhatsApp notification if WA microservice is connected
@@ -165,7 +172,7 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
             const timeStr = tSlot || dateVal.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
             const docText = docName ? ` with *${docName}*` : "";
 
-            const waMessage = `Hello *${data.name}*,\n\nYour appointment at *${clinicName}*${docText} is confirmed for *${dateStr}* at *${timeStr}*.\n\nThank you for choosing HealthSync AI!\n\n_This is an automated notification message._`;
+            const waMessage = `Hello *${data.name}*,\n\nYour appointment at *${clinicName}*${docText} is confirmed for *${dateStr}* at *${timeStr}*.\n\n🎫 *Your Token No: #${tokenNo}*\n\nThank you for choosing HealthSync AI!\n\n_This is an automated notification message._`;
             await enqueueWA(data.tenantId, data.phone, waMessage);
           }
         }
@@ -174,5 +181,5 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
       }
     }
 
-    return { success: true, appointmentId: id };
+    return { success: true, appointmentId: id, tokenNo };
   });

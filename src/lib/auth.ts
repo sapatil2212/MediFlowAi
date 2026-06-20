@@ -578,10 +578,17 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
     const docId = data.doctorId || null;
     const tSlot = data.timeSlot || null;
 
+    // Auto-assign sequential token number per tenant + date
+    const tokenRow = await queryOne<any>(
+      "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?)",
+      [data.tenantId, dateVal]
+    );
+    const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
+
     await execute(
-      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, patientId, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, NOW())`,
-      [id, data.tenantId, data.name, data.email, data.phone, dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null]
+      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, patientId, tokenNo, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, NOW())`,
+      [id, data.tenantId, data.name, data.email, data.phone, dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo]
     );
 
     // Queue WhatsApp notification on backend
@@ -604,7 +611,7 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
             const timeStr = tSlot || dateVal.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
             const docText = docName ? ` with *${docName}*` : "";
 
-            const waMessage = `Hello *${data.name}*,\n\nYour appointment at *${clinicName}*${docText} is confirmed for *${dateStr}* at *${timeStr}*.\n\nThank you for choosing HealthSync AI!\n\n_This is an automated notification message._`;
+            const waMessage = `Hello *${data.name}*,\n\nYour appointment at *${clinicName}*${docText} is confirmed for *${dateStr}* at *${timeStr}*.\n\n🎫 *Your Token No: #${tokenNo}*\n\nThank you for choosing HealthSync AI!\n\n_This is an automated notification message._`;
             await enqueueWA(data.tenantId, data.phone, waMessage);
           }
         }
@@ -613,7 +620,7 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
       }
     }
 
-    return { success: true, appointmentId: id };
+    return { success: true, appointmentId: id, tokenNo };
   });
 
 export const getAppointmentsServerFn = createServerFn({ method: "GET" })
@@ -650,6 +657,7 @@ export const getAppointmentsServerFn = createServerFn({ method: "GET" })
       whatsapp: apt.whatsapp || "",
       appointmentType: apt.appointmentType || "",
       patientId: apt.patientId || "",
+      tokenNo: apt.tokenNo || null,
       createdAt: apt.createdAt instanceof Date ? apt.createdAt.toISOString() : new Date(apt.createdAt).toISOString()
     }));
   });
@@ -666,16 +674,30 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     // Verify appointment belongs to the same tenantId
-    const apt = await queryOne<any>("SELECT id FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1", [data.id, user.tenantId]);
-    if (!apt) throw new Error("Appointment not found or unauthorized");
+    const existingApt = await queryOne<any>("SELECT id, dateTime, tokenNo FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1", [data.id, user.tenantId]);
+    if (!existingApt) throw new Error("Appointment not found or unauthorized");
 
     const dateVal = new Date(data.dateTime);
     const docId = data.doctorId || null;
     const tSlot = data.timeSlot || null;
 
+    // Recalculate token number if the appointment date changed
+    const oldDate = existingApt.dateTime instanceof Date ? existingApt.dateTime : new Date(existingApt.dateTime);
+    const oldDateStr = oldDate.toISOString().slice(0, 10);
+    const newDateStr = dateVal.toISOString().slice(0, 10);
+    let tokenNo = existingApt.tokenNo;
+
+    if (oldDateStr !== newDateStr) {
+      const tokenRow = await queryOne<any>(
+        "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?) AND id != ?",
+        [user.tenantId, dateVal, data.id]
+      );
+      tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
+    }
+
     await execute(
-      `UPDATE Appointment SET name = ?, email = ?, phone = ?, dateTime = ?, reason = ?, status = ?, doctorId = ?, timeSlot = ?, whatsapp = ?, appointmentType = ?, patientId = ? WHERE id = ?`,
-      [data.name, data.email, data.phone, dateVal, data.reason, data.status, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, data.id]
+      `UPDATE Appointment SET name = ?, email = ?, phone = ?, dateTime = ?, reason = ?, status = ?, doctorId = ?, timeSlot = ?, whatsapp = ?, appointmentType = ?, patientId = ?, tokenNo = ? WHERE id = ?`,
+      [data.name, data.email, data.phone, dateVal, data.reason, data.status, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo, data.id]
     );
 
     // Queue WhatsApp notification for status change

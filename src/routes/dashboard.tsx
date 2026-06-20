@@ -3058,8 +3058,13 @@ function DashboardPage() {
                           >
                             <div className="flex items-center gap-1.5">
                               <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotClass}`} />
-                              <span className="text-[10px] font-bold truncate leading-none">
-                                {apt.name}
+                              <span className="text-[10px] font-bold truncate leading-none flex items-center gap-1">
+                                {apt.tokenNo && (
+                                  <span className="inline-flex items-center justify-center px-0.5 rounded bg-brand/10 border border-brand/20 text-brand text-[8px] font-black shrink-0">
+                                    #{apt.tokenNo}
+                                  </span>
+                                )}
+                                <span className="truncate">{apt.name}</span>
                               </span>
                             </div>
                             <span className="text-[8px] font-extrabold text-zinc-400 mt-1 uppercase block tracking-wider leading-none">
@@ -3155,7 +3160,14 @@ function DashboardPage() {
                           <div>
                             <div className="flex items-center gap-2">
                               <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotClass}`} />
-                              <span className="text-xs font-bold leading-none">{apt.name}</span>
+                              <span className="text-xs font-bold leading-none flex items-center gap-1">
+                                {apt.tokenNo && (
+                                  <span className="inline-flex items-center justify-center h-4.5 px-1 rounded bg-brand/10 border border-brand/20 text-brand text-[9px] font-black">
+                                    #{apt.tokenNo}
+                                  </span>
+                                )}
+                                <span>{apt.name}</span>
+                              </span>
                             </div>
                             <p className="text-[10px] text-zinc-500 mt-1 font-semibold truncate">
                               Reason: {apt.reason}
@@ -3257,6 +3269,11 @@ function DashboardPage() {
                         title={`${apt.name}: ${apt.reason}`}
                       >
                         <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotClass}`} />
+                        {apt.tokenNo && (
+                          <span className="text-zinc-450 font-black shrink-0">
+                            #{apt.tokenNo}
+                          </span>
+                        )}
                         <span className="text-zinc-400 font-semibold">{timeStr}</span>
                         <span className="truncate">{apt.name}</span>
                       </div>
@@ -4509,6 +4526,11 @@ function DashboardPage() {
                         </button>
                         <div>
                           <h2 className="text-lg font-bold text-zinc-900 flex items-center gap-2">
+                            {selectedAptForConsultation.tokenNo && (
+                              <span className="inline-flex items-center justify-center h-6 min-w-[24px] px-1.5 rounded-lg bg-brand/10 border border-brand/20 text-brand text-[11px] font-black">
+                                #{selectedAptForConsultation.tokenNo}
+                              </span>
+                            )}
                             Consultation Workspace: <span className="text-brand font-extrabold">{selectedAptForConsultation.name}</span>
                           </h2>
                           <p className="text-xs text-zinc-500 font-medium">
@@ -6498,6 +6520,7 @@ function DashboardPage() {
                             <table className="min-w-full divide-y divide-zinc-200 text-left">
                               <thead className="bg-zinc-50 text-[10px] font-bold text-zinc-400 uppercase">
                                 <tr>
+                                  <th className="px-4 h-10 text-center">Token</th>
                                   <th className="px-6 h-10">Patient</th>
                                   <th className="px-6 h-10">Contact Info</th>
                                   <th className="px-6 h-10">Date & Time</th>
@@ -6509,6 +6532,11 @@ function DashboardPage() {
                               <tbody className="divide-y divide-zinc-150 text-xs">
                                 {list.map((apt) => (
                                   <tr key={apt.id} className="hover:bg-zinc-50/50">
+                                    <td className="px-4 py-4 text-center">
+                                      <span className="inline-flex items-center justify-center h-7 min-w-[28px] px-1.5 rounded-lg bg-brand/10 border border-brand/20 text-brand text-[11px] font-black">
+                                        #{apt.tokenNo || '—'}
+                                      </span>
+                                    </td>
                                     <td className="px-6 py-4 font-bold text-zinc-800">
                                       <span>{apt.name}</span>
                                       {apt.appointmentType && (
@@ -6598,6 +6626,11 @@ function DashboardPage() {
                                 <div className="flex justify-between items-start">
                                   <div>
                                     <h4 className="text-sm font-bold text-zinc-800 flex items-center gap-1.5">
+                                      {apt.tokenNo && (
+                                        <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-md bg-brand/10 border border-brand/20 text-brand text-[9px] font-black">
+                                          #{apt.tokenNo}
+                                        </span>
+                                      )}
                                       <span>{apt.name}</span>
                                       {apt.appointmentType && (
                                         <span className="text-[8px] font-extrabold text-brand bg-brand/5 border border-brand/10 rounded px-1.5 py-0.5">
@@ -9116,7 +9149,7 @@ function DashboardPage() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-zinc-850 leading-none">
-                      {editingApt ? "Edit Clinic Booking" : "Book Appointment"}
+                      {editingApt ? `Edit Clinic Booking ${editingApt.tokenNo ? `(Token #${editingApt.tokenNo})` : ''}` : "Book Appointment"}
                     </h3>
                     <span className="text-[10px] text-zinc-400 mt-1 block">
                       {editingApt ? `Apt ID: ${editingApt.id.substring(0,8).toUpperCase()}` : "Manual scheduling form for EHR queue"}

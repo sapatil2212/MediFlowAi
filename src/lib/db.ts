@@ -303,6 +303,10 @@ if (typeof window === "undefined") {
             await conn.query("ALTER TABLE Appointment ADD COLUMN appointmentType VARCHAR(50) NULL");
             console.log("[DB] ✅ Added appointmentType column to Appointment table");
           }
+          if (!colNames.includes("tokenNo")) {
+            await conn.query("ALTER TABLE Appointment ADD COLUMN tokenNo INT NULL");
+            console.log("[DB] ✅ Added tokenNo column to Appointment table");
+          }
         } catch (err: any) {
           console.warn("[DB] ⚠️ Could not verify/alter Appointment columns:", err.message);
         }
