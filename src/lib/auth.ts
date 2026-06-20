@@ -218,7 +218,7 @@ export const loginServerFn = createServerFn({ method: "POST" })
 
     // ── 2. Try sub-user (SubUser table — reception / doctor) ──
     const subUser = await queryOne<any>(
-      "SELECT su.*, u.subscriptionStatus, u.subscriptionExpiresAt FROM SubUser su JOIN User u ON su.tenantId = u.tenantId WHERE su.email = ? OR su.phone = ? LIMIT 1",
+      "SELECT su.*, u.subscriptionStatus, u.subscriptionExpiresAt FROM SubUser su JOIN User u ON su.tenantId COLLATE utf8mb4_unicode_ci = u.tenantId COLLATE utf8mb4_unicode_ci WHERE su.email COLLATE utf8mb4_unicode_ci = ? OR su.phone COLLATE utf8mb4_unicode_ci = ? LIMIT 1",
       [data.username, data.username]
     );
 

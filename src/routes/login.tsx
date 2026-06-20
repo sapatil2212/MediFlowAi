@@ -100,7 +100,6 @@ function LoginPage() {
     } catch (err: any) {
       const msg = err.message || "Failed to sign in. Please verify your credentials.";
       setErrorMsg(msg);
-      toast.error(msg);
     } finally {
       setLoading(false);
     }

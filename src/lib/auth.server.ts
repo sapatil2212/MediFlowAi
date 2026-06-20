@@ -49,7 +49,7 @@ export async function verifySession() {
               u.paymentAmount, u.billingInterval, u.paymentMethod, u.createdAt as uCreatedAt
        FROM SubUserSession ss
        JOIN SubUser su ON ss.subUserId = su.id
-       JOIN User u ON su.tenantId = u.tenantId
+       JOIN User u ON su.tenantId COLLATE utf8mb4_unicode_ci = u.tenantId COLLATE utf8mb4_unicode_ci
        WHERE ss.token = ? AND ss.expiresAt > NOW()
        LIMIT 1`,
       [subToken]
