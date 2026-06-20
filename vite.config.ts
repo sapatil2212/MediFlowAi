@@ -12,6 +12,9 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  nitro: {
+    preset: "node-server",
+  },
   vite: {
     ssr: {
       // Externalize heavy CJS packages that use Node globals (module, require, __dirname)
