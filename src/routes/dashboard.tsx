@@ -768,7 +768,7 @@ function DashboardPage() {
 
   // Navigation and Detail Drawers
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
-  const [patientProfileTab, setPatientProfileTab] = useState<"consultations" | "prescriptions" | "billing">("consultations");
+  const [patientProfileTab, setPatientProfileTab] = useState<"consultations" | "prescriptions">("consultations");
   const [patientChartData, setPatientChartData] = useState<any | null>(null);
   const patientDetails = patientChartData?.patient || selectedPatient;
   const [searchQuery, setSearchQuery] = useState("");
@@ -3737,8 +3737,7 @@ function DashboardPage() {
                     <div className="flex items-center gap-2 bg-zinc-100 p-1 rounded-xl w-max">
                       {[
                         { id: "consultations", label: "Consultation History" },
-                        { id: "prescriptions", label: "Prescriptions" },
-                        { id: "billing", label: "Billing & Invoices" }
+                        { id: "prescriptions", label: "Prescriptions" }
                       ].map((t) => (
                         <button
                           key={t.id}
@@ -3895,73 +3894,6 @@ function DashboardPage() {
                         </div>
                       )}
 
-                      {/* BILLING & INVOICES */}
-                      {patientProfileTab === "billing" && (() => {
-                        const patientAppointments = patientChartData?.appointments || appointments.filter(a => a.patientId === patientDetails.id);
-                        if (patientAppointments.length === 0) {
-                          return (
-                            <div className="py-12 text-center text-zinc-400 italic text-xs">
-                              No billing transactions mapped. Schedule consultation visits to auto-generate invoices.
-                            </div>
-                          );
-                        }
-                        return (
-                          <div className="space-y-4 text-left">
-                            <div className="overflow-x-auto rounded-xl border border-zinc-200/80 bg-white shadow-sm">
-                              <table className="min-w-full divide-y divide-zinc-200 text-left text-xs">
-                                <thead className="bg-zinc-50 font-bold text-zinc-450 text-[10px] uppercase tracking-wider">
-                                  <tr>
-                                    <th className="px-4 py-3">Invoice No</th>
-                                    <th className="px-4 py-3">Date</th>
-                                    <th className="px-4 py-3">Service Details</th>
-                                    <th className="px-4 py-3">Amount</th>
-                                    <th className="px-4 py-3">Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-zinc-150 text-zinc-700 font-semibold">
-                                  {patientAppointments.map((apt, idx) => {
-                                    const fee = 500.00; // Mock Consultation fee
-                                    const isPaid = apt.status === "Completed" || apt.status === "Confirmed";
-                                    const docObj = doctors.find(d => d.id === apt.doctorId);
-                                    const docName = docObj ? docObj.name : "Clinician";
-                                    const deptObj = departments.find(d => d.id === apt.departmentId || (docObj && d.id === docObj.departmentId));
-                                    const deptName = deptObj ? deptObj.name : "General Practice";
-                                    
-                                    return (
-                                      <tr key={apt.id || idx} className="hover:bg-zinc-50/50">
-                                        <td className="px-4 py-3.5 font-mono text-[10px] text-zinc-400 font-bold">
-                                          INV-{apt.id.substring(0,8).toUpperCase()}
-                                        </td>
-                                        <td className="px-4 py-3.5 text-zinc-500 font-medium">
-                                          {new Date(apt.dateTime).toLocaleDateString("en-US", {
-                                            month: "short",
-                                            day: "numeric",
-                                            year: "numeric"
-                                          })}
-                                        </td>
-                                        <td className="px-4 py-3.5">
-                                          <div className="font-bold text-zinc-800">Clinic Consultation Fee</div>
-                                          <div className="text-[9px] text-zinc-400 font-normal">Dr. {docName} ({deptName})</div>
-                                        </td>
-                                        <td className="px-4 py-3.5 font-extrabold text-zinc-900">
-                                          ₹{fee.toFixed(2)}
-                                        </td>
-                                        <td className="px-4 py-3.5">
-                                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                                            isPaid ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-amber-50 text-amber-700 border border-amber-100"
-                                          }`}>
-                                            {isPaid ? "Paid" : "Pending"}
-                                          </span>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        );
-                      })()}
                     </div>
                   </div>
                 </div>
