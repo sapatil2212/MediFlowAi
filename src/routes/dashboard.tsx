@@ -3374,6 +3374,8 @@ function DashboardPage() {
                         key={tab.id}
                         onClick={() => {
                           setActiveTab(tab.id as any);
+                          setSelectedPatient(null);
+                          setPatientChartData(null);
                           setIsMobileMenuOpen(false);
                         }}
                         className={`flex w-full items-center gap-3 rounded-full px-4 py-2.5 text-xs font-semibold transition-all duration-250 cursor-pointer active:scale-[0.98] ${
@@ -3477,7 +3479,7 @@ function DashboardPage() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
+                  onClick={() => { setActiveTab(tab.id as any); setSelectedPatient(null); setPatientChartData(null); }}
                   className={`flex w-full items-center gap-3 rounded-full px-4 py-2.5 text-xs font-semibold transition-all cursor-pointer ${
                     active
                       ? "bg-zinc-950 text-white shadow-sm"
@@ -9144,7 +9146,7 @@ function DashboardPage() {
               <button
                 type="button"
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => { setActiveTab(tab.id as any); setSelectedPatient(null); setPatientChartData(null); }}
                 className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-[9px] font-bold transition-all cursor-pointer active:scale-95 ${
                   active ? "text-brand" : "text-zinc-400 hover:text-zinc-655"
                 }`}

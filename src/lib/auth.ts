@@ -1557,7 +1557,7 @@ export const getPatientChartServerFn = createServerFn({ method: "GET" })
       }
     }
 
-    const soapNotes = await query<any>("SELECT * FROM SoapNote WHERE patientId = ? ORDER BY createdAt DESC LIMIT 20", [data.patientId]);
+    const soapNotes = await query<any>("SELECT * FROM SoapNote WHERE patientId = ? AND tenantId = ? ORDER BY createdAt DESC LIMIT 20", [data.patientId, user.tenantId]);
 
     // Fetch prescriptions for this patient
     const prescriptionsRaw = await query<any>("SELECT * FROM Prescription WHERE patientId = ? ORDER BY createdAt DESC LIMIT 20", [data.patientId]);
