@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { HeartPulse, Home, ChevronDown, Check, X, Loader2 } from "lucide-react";
+import { HeartPulse, Home, ChevronDown, Check, X, Loader2, Eye, EyeOff } from "lucide-react";
 import { sendOtpServerFn, verifyOtpServerFn, signupServerFn, checkEmailServerFn } from "../lib/auth";
 
 export const Route = createFileRoute("/signup")({
@@ -64,6 +64,7 @@ function SignupPage() {
         : "Solo Practice (1 provider)"
   );
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -337,19 +338,30 @@ function SignupPage() {
 
               {/* 4. Password */}
               <div>
-                <input
-                  type="password"
-                  placeholder="Create Password"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (formError) setFormError("");
-                  }}
-                  className="w-full rounded-full border border-zinc-200/80 bg-white px-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
-                  required
-                  disabled={loading}
-                  minLength={6}
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Create Password"
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (formError) setFormError("");
+                    }}
+                    className="w-full rounded-full border border-zinc-200/80 bg-white px-4 py-2 pr-10 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
+                    required
+                    disabled={loading}
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 transition-colors"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
               </div>
 
               {/* 5. Clinic / Hospital Name */}
