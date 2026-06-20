@@ -1779,6 +1779,88 @@ Voice Instructions:
     }
   });
 
+export const aiAssistConsultationServerFn = createServerFn({ method: "POST" })
+  .validator((data: { chiefComplaint: string; vitals?: string }) => {
+    if (!data.chiefComplaint) throw new Error("Chief complaint is required for AI Assist.");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("Gemini API key is not configured in .env file.");
+    }
+
+    const prompt = `You are a medical AI assistant helping a clinician write a consultation and prescription.
+Given the patient's Chief Complaint:
+"${data.chiefComplaint}"
+And Vitals:
+"${data.vitals || "N/A"}"
+
+Generate a primary diagnosis (including common ICD-10 codes if applicable), a list of recommended medications, and clinical advice.
+Format the output in raw JSON format with the exact structure below:
+{
+  "diagnosis": "Primary diagnosis with ICD-10 codes (e.g., Acute pharyngitis (J02.9))",
+  "medications": [
+    {
+      "name": "Drug name (e.g., Paracetamol)",
+      "dosage": "Dosage (e.g., 650mg)",
+      "frequency": "Frequency (e.g., Three times daily / TID)",
+      "route": "Route (e.g., Oral)",
+      "duration": "Duration (e.g., 5 days)",
+      "instructions": "Specific instructions (e.g., Take after food as needed for pain)"
+    }
+  ],
+  "advice": "Diet, lifestyle, precautions, and instructions (e.g., Warm saline gargles, avoid cold items, rest)"
+}
+
+Only return a valid JSON object matching this structure. Do not wrap the JSON in markdown code blocks or add any other text outside the JSON object.`;
+
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }],
+          generationConfig: {
+            responseMimeType: "application/json"
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Gemini API error in AI Assist:", errorText);
+        throw new Error(`Gemini API error: ${response.statusText}`);
+      }
+
+      const resJson = await response.json();
+      const content = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!content) {
+        throw new Error("Empty response from Gemini model.");
+      }
+
+      const parsed = JSON.parse(content.trim());
+      return {
+        success: true,
+        diagnosis: parsed.diagnosis || "",
+        medications: parsed.medications || [],
+        advice: parsed.advice || ""
+      };
+    } catch (e: any) {
+      console.error("Failed to generate AI Assist suggestions:", e);
+      throw new Error(e.message || "Failed to generate suggestions.");
+    }
+  });
+
 export const savePrescriptionServerFn = createServerFn({ method: "POST" })
   .validator((data: { patientId: string; medications: any[]; notes?: string }) => {
     if (!data.patientId) throw new Error("Patient ID is required");

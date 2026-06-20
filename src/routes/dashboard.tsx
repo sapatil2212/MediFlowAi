@@ -63,6 +63,8 @@ import {
   Printer,
   ChevronDown,
   Bell,
+  Sparkles,
+  FileDown,
   Camera,
   Upload,
   MessageCircle,
@@ -134,6 +136,7 @@ import {
   generateSoapNoteServerFn,
   generatePrescriptionServerFn,
   savePrescriptionServerFn,
+  aiAssistConsultationServerFn,
   uploadProfilePhotoServerFn,
 } from "../lib/auth";
 import WhatsAppHub from "../components/WhatsAppHub";
@@ -754,6 +757,29 @@ function DashboardPage() {
   const [prescriptionNotes, setPrescriptionNotes] = useState("");
   const [isGeneratingPrescription, setIsGeneratingPrescription] = useState(false);
   const [isSavingPrescription, setIsSavingPrescription] = useState(false);
+  
+  // Unified Consultation & Prescription Form states
+  const [consultationChiefComplaint, setConsultationChiefComplaint] = useState("");
+  const [consultationDiagnosis, setConsultationDiagnosis] = useState("");
+  const [consultationAdvice, setConsultationAdvice] = useState("");
+  const [consultationLabTests, setConsultationLabTests] = useState<Array<{ name: string; instructions: string }>>([]);
+  const [consultationReferrals, setConsultationReferrals] = useState<Array<{ departmentId: string; doctorId?: string; notes?: string }>>([]);
+  const [consultationFollowUpDate, setConsultationFollowUpDate] = useState("");
+  const [consultationFollowUpNotes, setConsultationFollowUpNotes] = useState("");
+  const [consultationFee, setConsultationFee] = useState(1500);
+  const [consultationPrivateNotes, setConsultationPrivateNotes] = useState("");
+  const [recordingField, setRecordingField] = useState<string | null>(null);
+  const [isAIAssisting, setIsAIAssisting] = useState(false);
+
+  // Vitals states
+  const [vitalBP, setVitalBP] = useState("120/80");
+  const [vitalPulse, setVitalPulse] = useState("72");
+  const [vitalTemp, setVitalTemp] = useState("98.6");
+  const [vitalWeight, setVitalWeight] = useState("70");
+  const [vitalHeight, setVitalHeight] = useState("170");
+  const [vitalSpO2, setVitalSpO2] = useState("98");
+  const [vitalRespRate, setVitalRespRate] = useState("16");
+
   const recognitionRef = useRef<any>(null);
 
   // Consultation interactive list and action states
@@ -2606,6 +2632,354 @@ function DashboardPage() {
     } finally {
       setIsSavingPrescription(false);
     }
+  };
+
+  const toggleRecordingForField = (fieldName: string, setter: (text: string) => void) => {
+    if (recordingField === fieldName) {
+      setIsRecording(false);
+      setRecordingField(null);
+      stopSpeechRecognition();
+    } else {
+      if (recordingField) {
+        stopSpeechRecognition();
+      }
+      setIsRecording(true);
+      setRecordingField(fieldName);
+      setRecordingSeconds(0);
+      startSpeechRecognition(setter);
+    }
+  };
+
+  const handleAIAssist = async () => {
+    if (!consultationChiefComplaint.trim()) {
+      showToast("error", "Please enter a Chief Complaint before using AI Assist.");
+      return;
+    }
+
+    setIsAIAssisting(true);
+    try {
+      const vitalsText = `BP: ${vitalBP}, Pulse: ${vitalPulse} bpm, Temp: ${vitalTemp}°F, Wt: ${vitalWeight} kg, Ht: ${vitalHeight} cm, SpO2: ${vitalSpO2}%, RR: ${vitalRespRate}/min`;
+      const res = await aiAssistConsultationServerFn({
+        data: {
+          chiefComplaint: consultationChiefComplaint,
+          vitals: vitalsText
+        }
+      });
+
+      if (res.success) {
+        setConsultationDiagnosis(res.diagnosis || "");
+        setPrescriptionMedications(res.medications || []);
+        setConsultationAdvice(res.advice || "");
+        showToast("success", "Clinical prescription populated successfully by Gemini AI!");
+      }
+    } catch (e: any) {
+      console.error(e);
+      showToast("error", e.message || "Failed to generate AI recommendations.");
+    } finally {
+      setIsAIAssisting(false);
+    }
+  };
+
+  const handleSaveConsultationAndPrescription = async () => {
+    const targetId = selectedPatient?.id || scribePatientId;
+    if (!targetId) {
+      showToast("error", "No patient selected for this consultation.");
+      return;
+    }
+
+    setIsSavingPrescription(true);
+    try {
+      // 1. Save SOAP Note
+      const vitalsText = `BP: ${vitalBP}, Pulse: ${vitalPulse} bpm, Temp: ${vitalTemp}°F, Wt: ${vitalWeight} kg, Ht: ${vitalHeight} cm, SpO2: ${vitalSpO2}%, RR: ${vitalRespRate}/min`;
+      const planText = `Advice: ${consultationAdvice}\nFollow-up: ${consultationFollowUpDate ? `${consultationFollowUpDate} (${consultationFollowUpNotes})` : 'None'}\nLab Tests: ${consultationLabTests.map(t => t.name).join(', ') || 'None'}\nReferrals: ${consultationReferrals.map(r => r.departmentId).join(', ') || 'None'}`;
+      
+      await saveSoapNoteServerFn({
+        data: {
+          patientId: targetId,
+          specialty: scribeSpecialty,
+          subjective: consultationChiefComplaint,
+          objective: vitalsText,
+          assessment: consultationDiagnosis,
+          plan: planText,
+          rawTranscript: liveTranscript
+        }
+      });
+
+      // 2. Save Prescription (if medications added)
+      if (prescriptionMedications.length > 0) {
+        await savePrescriptionServerFn({
+          data: {
+            patientId: targetId,
+            medications: prescriptionMedications,
+            notes: consultationAdvice
+          }
+        });
+      }
+
+      // 3. Mark appointment as completed
+      if (selectedAptForConsultation) {
+        await updateAppointmentServerFn({
+          data: {
+            ...selectedAptForConsultation,
+            status: "Completed",
+            reason: consultationChiefComplaint
+          }
+        });
+      }
+
+      showToast("success", "Prescription & Consultation saved successfully to patient chart!");
+      
+      // Reset form
+      setConsultationChiefComplaint("");
+      setConsultationDiagnosis("");
+      setConsultationAdvice("");
+      setPrescriptionMedications([]);
+      setConsultationLabTests([]);
+      setConsultationReferrals([]);
+      setConsultationFollowUpDate("");
+      setConsultationFollowUpNotes("");
+      setConsultationPrivateNotes("");
+      setSelectedAptForConsultation(null);
+
+      // Refresh appointments and patients lists
+      await fetchAppointments();
+      await fetchPatients();
+    } catch (e: any) {
+      console.error(e);
+      showToast("error", e.message || "Failed to save consultation.");
+    } finally {
+      setIsSavingPrescription(false);
+    }
+  };
+
+  const handleDownloadPrescriptionPDF = () => {
+    const doc = new jsPDF();
+    const clinicName = user?.clinicName || "MediFlow AI Medical Center";
+    const doctorName = user?.name || "Dr. Staff Clinician";
+    const doctorQualifications = (user as any)?.qualifications || "M.D., General Medicine";
+
+    // Colors
+    const primaryColor = [12, 114, 114]; // Brand dark teal
+    const textDark = [33, 37, 41];
+    const textGray = [100, 110, 120];
+
+    // Header
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(22);
+    doc.textColor = primaryColor[0], primaryColor[1], primaryColor[2];
+    doc.text(clinicName, 14, 20);
+
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(10);
+    doc.textColor = textGray[0], textGray[1], textGray[2];
+    doc.text("HEALTHCARE MANAGEMENT SYSTEM PRESCRIPTION PAD", 14, 26);
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(14);
+    doc.textColor = textDark[0], textDark[1], textDark[2];
+    doc.text(doctorName, 196, 20, { align: "right" });
+
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(10);
+    doc.textColor = textGray[0], textGray[1], textGray[2];
+    doc.text(doctorQualifications, 196, 25, { align: "right" });
+
+    // Divider
+    doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setLineWidth(1.5);
+    doc.line(14, 29, 196, 29);
+
+    // Patient Details
+    const targetPatient = patientsList.find(p => p.id === (selectedPatient?.id || scribePatientId)) || selectedPatient;
+    const patientName = targetPatient?.name || selectedAptForConsultation?.name || "N/A";
+    const patientID = targetPatient?.patientNo || selectedAptForConsultation?.patientId || "PT-TEMP";
+    const patientPhone = targetPatient?.phone || selectedAptForConsultation?.phone || "N/A";
+    const aptDate = selectedAptForConsultation?.dateTime ? new Date(selectedAptForConsultation.dateTime).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }) : "N/A";
+    const aptTime = selectedAptForConsultation?.timeSlot || "N/A";
+    const aptToken = selectedAptForConsultation?.tokenNo ? `#${selectedAptForConsultation.tokenNo}` : "N/A";
+    const aptType = selectedAptForConsultation?.appointmentType || "OPD";
+
+    doc.setFillColor(248, 250, 252); // Light slate background
+    doc.rect(14, 34, 182, 28, "F");
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.5);
+    doc.rect(14, 34, 182, 28, "D");
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(10);
+    doc.textColor = textDark[0], textDark[1], textDark[2];
+    doc.text(`Patient: ${patientName}`, 18, 40);
+    doc.text(`ID: ${patientID}`, 18, 46);
+    doc.text(`Phone: ${patientPhone}`, 18, 52);
+
+    doc.text(`Date: ${aptDate}`, 110, 40);
+    doc.text(`Time: ${aptTime}`, 110, 46);
+    doc.text(`Token: ${aptToken}`, 110, 52);
+    doc.text(`Type: ${aptType}`, 110, 58);
+
+    let currentY = 70;
+
+    // Vitals Section
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(11);
+    doc.textColor = primaryColor[0], primaryColor[1], primaryColor[2];
+    doc.text("PATIENT VITALS", 14, currentY);
+    
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, currentY + 2, 196, currentY + 2);
+
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9);
+    doc.textColor = textDark[0], textDark[1], textDark[2];
+    doc.text(`Blood Pressure: ${vitalBP} mmHg`, 14, currentY + 8);
+    doc.text(`Pulse: ${vitalPulse} bpm`, 70, currentY + 8);
+    doc.text(`Temp: ${vitalTemp}°F`, 120, currentY + 8);
+    
+    doc.text(`Weight: ${vitalWeight} kg`, 14, currentY + 14);
+    doc.text(`Height: ${vitalHeight} cm`, 70, currentY + 14);
+    doc.text(`SpO2: ${vitalSpO2}%`, 120, currentY + 14);
+    doc.text(`Resp Rate: ${vitalRespRate}/min`, 160, currentY + 14);
+
+    currentY += 22;
+
+    // Chief Complaint & Diagnosis
+    if (consultationChiefComplaint) {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(11);
+      doc.textColor = primaryColor[0], primaryColor[1], primaryColor[2];
+      doc.text("CHIEF COMPLAINT", 14, currentY);
+      doc.line(14, currentY + 2, 196, currentY + 2);
+      
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.textColor = textDark[0], textDark[1], textDark[2];
+      const ccLines = doc.splitTextToSize(consultationChiefComplaint, 182);
+      doc.text(ccLines, 14, currentY + 7);
+      currentY += (ccLines.length * 5) + 10;
+    }
+
+    if (consultationDiagnosis) {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(11);
+      doc.textColor = primaryColor[0], primaryColor[1], primaryColor[2];
+      doc.text("PRIMARY DIAGNOSIS", 14, currentY);
+      doc.line(14, currentY + 2, 196, currentY + 2);
+      
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.textColor = textDark[0], textDark[1], textDark[2];
+      const diagLines = doc.splitTextToSize(consultationDiagnosis, 182);
+      doc.text(diagLines, 14, currentY + 7);
+      currentY += (diagLines.length * 5) + 10;
+    }
+
+    // Rx Medications Table
+    if (prescriptionMedications.length > 0) {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(12);
+      doc.textColor = primaryColor[0], primaryColor[1], primaryColor[2];
+      doc.text("Rx (MEDICATIONS)", 14, currentY);
+      doc.line(14, currentY + 2, 196, currentY + 2);
+
+      const tableHeaders = [["Drug Name", "Dosage", "Frequency", "Route", "Duration", "Instructions"]];
+      const tableRows = prescriptionMedications.map(m => [
+        m.name,
+        m.dosage,
+        m.frequency,
+        m.route,
+        m.duration,
+        m.instructions
+      ]);
+
+      (doc as any).autoTable({
+        startY: currentY + 5,
+        head: tableHeaders,
+        body: tableRows,
+        theme: "striped",
+        headStyles: { fillColor: primaryColor },
+        margin: { left: 14, right: 14 },
+        styles: { fontSize: 8.5 }
+      });
+
+      currentY = (doc as any).lastAutoTable.finalY + 12;
+    }
+
+    // Lab Tests
+    if (consultationLabTests.length > 0) {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(11);
+      doc.textColor = primaryColor[0], primaryColor[1], primaryColor[2];
+      doc.text("RECOMMENDED LAB TESTS", 14, currentY);
+      doc.line(14, currentY + 2, 196, currentY + 2);
+      
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.textColor = textDark[0], textDark[1], textDark[2];
+      consultationLabTests.forEach((t, idx) => {
+        doc.text(`${idx + 1}. ${t.name} ${t.instructions ? `(${t.instructions})` : ''}`, 14, currentY + 8 + (idx * 5));
+      });
+      currentY += (consultationLabTests.length * 5) + 12;
+    }
+
+    // Advice & Instructions
+    if (consultationAdvice) {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(11);
+      doc.textColor = primaryColor[0], primaryColor[1], primaryColor[2];
+      doc.text("ADVICE & INSTRUCTIONS", 14, currentY);
+      doc.line(14, currentY + 2, 196, currentY + 2);
+      
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.textColor = textDark[0], textDark[1], textDark[2];
+      const adviceLines = doc.splitTextToSize(consultationAdvice, 182);
+      doc.text(adviceLines, 14, currentY + 7);
+      currentY += (adviceLines.length * 5) + 12;
+    }
+
+    // Follow-up
+    if (consultationFollowUpDate) {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(11);
+      doc.textColor = primaryColor[0], primaryColor[1], primaryColor[2];
+      doc.text("FOLLOW-UP DETAILS", 14, currentY);
+      doc.line(14, currentY + 2, 196, currentY + 2);
+      
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.textColor = textDark[0], textDark[1], textDark[2];
+      doc.text(`Follow-up Date: ${new Date(consultationFollowUpDate).toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" })}`, 14, currentY + 7);
+      if (consultationFollowUpNotes) {
+        doc.text(`Notes: ${consultationFollowUpNotes}`, 14, currentY + 12);
+        currentY += 5;
+      }
+      currentY += 14;
+    }
+
+    // Signature Area
+    const pageHeight = doc.internal.pageSize.height;
+    if (currentY > pageHeight - 40) {
+      doc.addPage();
+      currentY = 30;
+    }
+    
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(10);
+    doc.textColor = textDark[0], textDark[1], textDark[2];
+    doc.line(140, pageHeight - 30, 190, pageHeight - 30);
+    doc.text("Authorized Signature", 140, pageHeight - 25);
+    doc.setFont("Helvetica", "italic");
+    doc.setFontSize(8);
+    doc.text(doctorName, 140, pageHeight - 21);
+
+    // Footer info
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(8);
+    doc.textColor = textGray[0], textGray[1], textGray[2];
+    doc.text("This is an electronically generated prescription. No physical signature required.", 14, pageHeight - 15);
+
+    doc.save(`Prescription_${patientName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+    showToast("success", "Prescription downloaded successfully!");
   };
 
   const handlePrintPrescription = () => {
@@ -4513,9 +4887,15 @@ function DashboardPage() {
                 className="space-y-6"
               >
                 {selectedAptForConsultation ? (
-                  <>
-                    {/* Header with back button */}
-                    <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
+                  <motion.div
+                    key="active-consultation-form"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="space-y-6 animate-fade-in"
+                  >
+                    {/* Header Toolbar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-zinc-200 p-4 rounded-2xl shadow-sm">
                       <div className="flex items-center gap-3">
                         <button
                           type="button"
@@ -4525,568 +4905,405 @@ function DashboardPage() {
                           <ChevronLeft className="h-5 w-5" />
                         </button>
                         <div>
-                          <h2 className="text-lg font-bold text-zinc-900 flex items-center gap-2">
-                            {selectedAptForConsultation.tokenNo && (
-                              <span className="inline-flex items-center justify-center h-6 min-w-[24px] px-1.5 rounded-lg bg-brand/10 border border-brand/20 text-brand text-[11px] font-black">
-                                #{selectedAptForConsultation.tokenNo}
-                              </span>
-                            )}
-                            Consultation Workspace: <span className="text-brand font-extrabold">{selectedAptForConsultation.name}</span>
+                          <h2 className="text-sm font-bold text-zinc-900 flex items-center gap-2">
+                            Prescription
                           </h2>
                           <p className="text-xs text-zinc-500 font-medium">
-                            {selectedAptForConsultation.appointmentType || "General Consultation"} • {new Date(selectedAptForConsultation.dateTime).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            {selectedAptForConsultation.name} · {selectedAptForConsultation.patientId || "PT-0005"}
                           </p>
                         </div>
                       </div>
-                      <span
-                        className={`inline-block rounded-full px-2.5 py-0.5 text-[9px] font-bold border ${
-                          selectedAptForConsultation.status === "Confirmed"
-                            ? "bg-brand/5 text-brand border-brand/10"
-                            : selectedAptForConsultation.status === "Completed"
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-100"
-                              : selectedAptForConsultation.status === "Cancelled"
-                                ? "bg-red-50 text-red-700 border-red-100"
-                                : "bg-amber-50 text-amber-700 border-amber-100"
-                        }`}
-                      >
-                        {selectedAptForConsultation.status}
-                      </span>
-                    </div>
 
-                    {/* Scribe & Prescription Toggle Tabs */}
-                    <div className="flex items-center gap-2 border-b border-zinc-200 pb-1">
-                      <button
-                        type="button"
-                        onClick={() => setScribeSubTab("scribe")}
-                        className={`pb-2.5 px-4 text-xs font-bold transition-all cursor-pointer border-b-2 ${
-                          scribeSubTab === "scribe"
-                            ? "border-brand text-brand"
-                            : "border-transparent text-zinc-400 hover:text-zinc-650"
-                        }`}
-                      >
-                        SOAP Clinical Scribe
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setScribeSubTab("prescription")}
-                        className={`pb-2.5 px-4 text-xs font-bold transition-all cursor-pointer border-b-2 ${
-                          scribeSubTab === "prescription"
-                            ? "border-brand text-brand"
-                            : "border-transparent text-zinc-400 hover:text-zinc-650"
-                        }`}
-                      >
-                        Voice Prescription Studio
-                      </button>
-                    </div>
-
-                    {scribeSubTab === "scribe" ? (
-                  <motion.div
-                    key="scribe"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    className="grid gap-6 lg:grid-cols-3"
-                  >
-                    {/* Left Column: Scribe Parameters and Dictation Wave */}
-                    <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4">
-                      <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-tight">
-                        Clinical Scribe Station
-                      </h3>
-
-                      <div className="space-y-3">
-                        <label className="block">
-                          <span className="text-[10px] font-bold text-zinc-400 uppercase">Specialty Mode</span>
-                          <select
-                            value={scribeSpecialty}
-                            onChange={(e) => setScribeSpecialty(e.target.value as any)}
-                            className="mt-1 block w-full rounded-full border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold focus:outline-none"
-                          >
-                            <option>Family Medicine</option>
-                            <option>Cardiology</option>
-                            <option>Pediatrics</option>
-                            <option>Psychiatry</option>
-                          </select>
-                        </label>
-
-                        <label className="block">
-                          <span className="text-[10px] font-bold text-zinc-400 uppercase">Input Language</span>
-                          <select
-                            value={scribeLanguage}
-                            onChange={(e) => setScribeLanguage(e.target.value)}
-                            className="mt-1 block w-full rounded-full border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold focus:outline-none"
-                          >
-                            <option>English</option>
-                            <option>Spanish (Español)</option>
-                            <option>French (Français)</option>
-                            <option>Hindi (हिन्दी)</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <hr className="border-zinc-100" />
-
-                      {/* Scribing wave animation */}
-                      <div className="rounded-2xl border border-zinc-150 bg-zinc-50 p-6 flex flex-col items-center justify-center min-h-[280px] text-center shadow-inner relative overflow-hidden">
-                        {/* Background glass grid overlay */}
-                        <div className="absolute inset-0 bg-grid-zinc-200/50 [mask-image:linear-gradient(to_bottom,white,transparent)] pointer-events-none" />
-                        
-                        {scribeStep === "idle" && (
-                          <div className="space-y-6 py-4 relative z-10">
-                            <div className="relative flex justify-center items-center h-28 w-28 mx-auto">
-                              {/* Pulsating glow rings */}
-                              <div className="absolute inset-0 rounded-full bg-brand/10 animate-ping duration-1000" />
-                              <div className="absolute inset-2 rounded-full bg-brand/20 animate-pulse duration-700" />
-                              <button
-                                type="button"
-                                onClick={handleStartScribe}
-                                className="absolute h-20 w-20 rounded-full bg-zinc-950 hover:bg-zinc-800 border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.15)] flex flex-col items-center justify-center text-white transition-all duration-300 transform active:scale-95 cursor-pointer z-10"
-                              >
-                                <Mic className="h-7 w-7 text-white" />
-                              </button>
-                            </div>
-                            <div className="space-y-1 px-2">
-                              <h4 className="text-xs font-extrabold text-zinc-800 uppercase tracking-wide">
-                                Start Recording
-                              </h4>
-                              <p className="text-[10px] text-zinc-455 max-w-[200px] mx-auto leading-relaxed">
-                                AI Scribe will listen, translate, and synthesize clinical SOAP notes in real-time.
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {scribeStep === "listening" && (
-                          <div className="space-y-6 w-full py-4 relative z-10">
-                            {/* Audio Studio Active Indicator */}
-                            <div className="relative flex justify-center items-center h-24 w-24 mx-auto">
-                              {/* Active Pulsing Ring */}
-                              <div className="absolute inset-0 rounded-full bg-red-500/20 animate-ping" />
-                              <div className="absolute inset-2 rounded-full bg-red-500/10 animate-pulse" />
-                              <div className="absolute h-16 w-16 rounded-full bg-red-500 shadow-[0_0_25px_rgba(239,68,68,0.35)] flex items-center justify-center text-white transition-all transform active:scale-95">
-                                <Mic className="h-6 w-6 text-white animate-pulse" />
-                              </div>
-                            </div>
-
-                            {/* Animated Waveform Visualizer */}
-                            <div className="flex items-end justify-center gap-1.5 h-16 px-4 bg-white border border-zinc-200 rounded-2xl py-3.5 max-w-[260px] mx-auto">
-                              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((bar) => {
-                                const heights = [10, 32, 14, 40, 20, 48, 12, 36, 16, 44, 10, 28, 14, 32, 12];
-                                const targetHeight = heights[bar - 1] || 20;
-                                return (
-                                  <motion.div
-                                    key={bar}
-                                    className="w-1 bg-red-500 rounded-full"
-                                    animate={{
-                                      height: [6, targetHeight, 6],
-                                    }}
-                                    transition={{
-                                      duration: 0.6 + (bar % 3) * 0.1,
-                                      repeat: Infinity,
-                                      delay: bar * 0.04,
-                                      ease: "easeInOut",
-                                    }}
-                                  />
-                                );
-                              })}
-                            </div>
-
-                            <div className="space-y-1">
-                              <span className="inline-flex items-center gap-1.5 text-[9px] font-black text-red-650 bg-red-50 border border-red-100 rounded-full px-3 py-1 shadow-sm">
-                                <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-ping" />
-                                LIVE DICTATION • {scribeLanguage.toUpperCase()}
-                              </span>
-                              <span className="block text-base font-mono text-zinc-900 mt-2 font-black tracking-wider">
-                                {formatTime(recordingSeconds)}
-                              </span>
-                            </div>
-
-                            <div className="flex justify-center gap-3 pt-2">
-                              <button
-                                type="button"
-                                onClick={handleStopScribe}
-                                className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-bold px-5 py-2.5 transition-all cursor-pointer shadow-lg inline-flex items-center gap-1.5 hover:shadow-[0_0_15px_rgba(0,0,0,0.15)] active:scale-95"
-                              >
-                                <MicOff className="h-4 w-4" /> Stop & Generate SOAP
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {scribeStep === "transcribing" && (
-                          <div className="space-y-4 py-8 relative z-10">
-                            <div className="relative h-12 w-12 mx-auto">
-                              <Loader2 className="h-12 w-12 animate-spin text-brand" />
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <Activity className="h-4 w-4 text-brand animate-pulse" />
-                              </div>
-                            </div>
-                            <div className="space-y-1">
-                              <h4 className="text-xs font-extrabold text-zinc-850 uppercase tracking-wide animate-pulse">
-                                Synthesizing SOAP note
-                              </h4>
-                              <p className="text-[10px] text-zinc-400 font-semibold max-w-[200px] mx-auto leading-relaxed">
-                                AI is parsing patient complaints and structuring symptoms...
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {scribeStep === "completed" && (
-                          <div className="space-y-5 py-6 relative z-10">
-                            <div className="h-14 w-14 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
-                              <Check className="h-7 w-7" />
-                            </div>
-                            <div className="space-y-1">
-                              <h4 className="text-xs font-extrabold text-zinc-800 uppercase tracking-wide">
-                                SOAP Synthesis Complete
-                              </h4>
-                              <p className="text-[10px] text-zinc-400 font-semibold max-w-[220px] mx-auto">
-                                The note has been compiled. You can assign it to a patient or click below to record again.
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setScribeStep("idle")}
-                              className="inline-flex items-center gap-1 px-4 py-1.5 border border-zinc-200 hover:border-zinc-300 rounded-full bg-white text-[10px] font-bold text-zinc-500 hover:text-zinc-750 transition-all cursor-pointer shadow-sm active:scale-95"
-                            >
-                              <Mic className="h-3 w-3" /> Record Another Note
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Live Encounter Transcript (Editable) */}
-                      <div className="space-y-1.5 text-left">
-                        <span className="text-[10px] font-bold text-zinc-400 uppercase block">
-                          Encounter Transcript / Notes
-                        </span>
-                        <textarea
-                          value={liveTranscript}
-                          onChange={(e) => setLiveTranscript(e.target.value)}
-                          placeholder="Microphone dictation will stream here. You can also type or edit this text directly before generating the SOAP note."
-                          rows={6}
-                          className="w-full rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 text-xs text-zinc-750 focus:border-brand focus:outline-none transition-all resize-y"
-                        />
-                        {liveTranscript && scribeStep === "idle" && (
-                          <button
-                            type="button"
-                            onClick={handleStopScribe}
-                            className="w-full rounded-full bg-zinc-950 text-white text-xs font-semibold py-2 transition-transform active:scale-[0.98] cursor-pointer shadow-sm hover:bg-zinc-850"
-                          >
-                            Re-generate SOAP Note
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Right Columns: Generated SOAP Document Workspace */}
-                    <div className="lg:col-span-2 rounded-2xl border border-zinc-200 bg-white p-6 space-y-4 flex flex-col justify-between">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                          <div>
-                            <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-tight block">
-                              SOAP Note Workspace
-                            </h3>
-                            <span className="text-[10px] font-medium text-zinc-400">
-                              Specialty Focus: {scribeSpecialty}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <label className="text-[10px] font-bold text-zinc-400 flex items-center gap-1">
-                              Assign to Patient:
-                              <select
-                                value={scribePatientId}
-                                onChange={(e) => setScribePatientId(e.target.value)}
-                                className="border border-zinc-200 bg-zinc-50 rounded-full px-2 py-0.5 focus:outline-none font-semibold text-zinc-700 text-[11px]"
-                              >
-                                <option value="">Select Patient</option>
-                                {patientsList.map((p) => (
-                                  <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-                        </div>
-
-                        {scribeStep !== "completed" && !soapSubjective ? (
-                          <div className="flex flex-col items-center justify-center h-[320px] text-zinc-300">
-                            <FileText className="h-12 w-12 mb-2" />
-                            <p className="text-xs font-bold">SOAP note is empty.</p>
-                            <p className="text-[10px] text-zinc-400 max-w-[240px] text-center mt-1">
-                              Dictate or choose a specialty to auto-populate mock content for testing.
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="space-y-4 text-left">
-                            {/* Subjective */}
-                            <div className="space-y-1.5">
-                              <span className="text-[9px] font-extrabold text-zinc-400 tracking-wider uppercase block">
-                                Subjective (Patient Narrative)
-                              </span>
-                              <textarea
-                                value={soapSubjective}
-                                onChange={(e) => setSoapSubjective(e.target.value)}
-                                rows={3}
-                                className="w-full rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 text-xs text-zinc-700 focus:border-brand focus:outline-none transition-all"
-                              />
-                            </div>
-
-                            {/* Objective */}
-                            <div className="space-y-1.5">
-                              <span className="text-[9px] font-extrabold text-zinc-400 tracking-wider uppercase block">
-                                Objective (Clinical Exams & Vitals)
-                              </span>
-                              <textarea
-                                value={soapObjective}
-                                onChange={(e) => setSoapObjective(e.target.value)}
-                                rows={3}
-                                className="w-full rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 text-xs text-zinc-700 focus:border-brand focus:outline-none transition-all"
-                              />
-                            </div>
-
-                            {/* Assessment */}
-                            <div className="space-y-1.5">
-                              <span className="text-[9px] font-extrabold text-zinc-400 tracking-wider uppercase block">
-                                Assessment (Diagnosis & Findings)
-                              </span>
-                              <textarea
-                                value={soapAssessment}
-                                onChange={(e) => setSoapAssessment(e.target.value)}
-                                rows={2}
-                                className="w-full rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 text-xs text-zinc-700 focus:border-brand focus:outline-none transition-all"
-                              />
-                            </div>
-
-                            {/* Plan */}
-                            <div className="space-y-1.5">
-                              <span className="text-[9px] font-extrabold text-zinc-400 tracking-wider uppercase block">
-                                Plan (Treatments & Follow-ups)
-                              </span>
-                              <textarea
-                                value={soapPlan}
-                                onChange={(e) => setSoapPlan(e.target.value)}
-                                rows={2}
-                                className="w-full rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 text-xs text-zinc-700 focus:border-brand focus:outline-none transition-all"
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex justify-end gap-3 border-t border-zinc-100 pt-3">
+                      {/* Header Actions */}
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => {
-                            setSoapSubjective("");
-                            setSoapObjective("");
-                            setSoapAssessment("");
-                            setSoapPlan("");
-                            setLiveTranscript("");
-                            setScribeStep("idle");
-                          }}
-                          className="rounded-full border border-zinc-200 hover:bg-zinc-50 px-4 py-2 text-xs font-semibold text-zinc-500 cursor-pointer"
+                          onClick={handleAIAssist}
+                          disabled={isAIAssisting}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-650 hover:from-purple-550 hover:to-indigo-550 text-white text-xs font-bold rounded-full shadow-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
                         >
-                          Clear
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSyncToEhr()}
-                          disabled={!soapSubjective}
-                          className="rounded-full bg-brand text-white px-5 py-2 text-xs font-semibold hover:bg-brand/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:bg-zinc-100 disabled:text-zinc-400 disabled:shadow-none"
-                        >
-                          <Save className="h-4 w-4" /> Save SOAP to Chart
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="prescription"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    className="grid gap-6 lg:grid-cols-3"
-                  >
-                    {/* Left Column: Recording and Instructions */}
-                    <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4">
-                      <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-tight">
-                        Voice Prescription Studio
-                      </h3>
-
-                      <div className="space-y-3">
-                        <label className="block">
-                          <span className="text-[10px] font-bold text-zinc-400 uppercase">Assign to Patient</span>
-                          <select
-                            value={scribePatientId}
-                            onChange={(e) => setScribePatientId(e.target.value)}
-                            className="mt-1 block w-full rounded-full border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold focus:outline-none"
-                          >
-                            <option value="">Select Patient</option>
-                            {patientsList.map((p) => (
-                              <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className="block">
-                          <span className="text-[10px] font-bold text-zinc-400 uppercase">Dictation Language</span>
-                          <select
-                            value={scribeLanguage}
-                            onChange={(e) => setScribeLanguage(e.target.value)}
-                            className="mt-1 block w-full rounded-full border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-bold focus:outline-none"
-                          >
-                            <option>English</option>
-                            <option>Spanish (Español)</option>
-                            <option>French (Français)</option>
-                            <option>Hindi (हिन्दी)</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <hr className="border-zinc-100" />
-
-                      {/* Interactive Recording Area */}
-                      <div className="rounded-2xl border border-zinc-150 bg-zinc-50 p-6 flex flex-col items-center justify-center min-h-[220px] text-center shadow-inner relative overflow-hidden">
-                        <div className="absolute inset-0 bg-grid-zinc-200/50 [mask-image:linear-gradient(to_bottom,white,transparent)] pointer-events-none" />
-
-                        {!isRecording ? (
-                          <div className="space-y-4 py-2 relative z-10">
-                            <button
-                              type="button"
-                              onClick={handleStartPrescriptionRecording}
-                              className="h-16 w-16 rounded-full bg-emerald-650 hover:bg-emerald-500 border border-white/10 shadow-[0_0_20px_rgba(16,185,129,0.15)] flex items-center justify-center text-white transition-all transform active:scale-95 cursor-pointer mx-auto"
-                            >
-                              <Mic className="h-6 w-6 text-white" />
-                            </button>
-                            <div>
-                              <h4 className="text-xs font-extrabold text-zinc-800 uppercase tracking-wide">
-                                Record Voice Rx
-                              </h4>
-                              <p className="text-[10px] text-zinc-400 font-semibold max-w-[200px] mx-auto mt-1 leading-relaxed">
-                                Speak the drug names, dosages, durations, and instructions clearly.
-                              </p>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-4 w-full py-2 relative z-10">
-                            <div className="relative flex justify-center items-center h-20 w-20 mx-auto">
-                              <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" />
-                              <div className="absolute h-14 w-14 rounded-full bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)] flex items-center justify-center text-white">
-                                <Mic className="h-5 w-5 text-white animate-pulse" />
-                              </div>
-                            </div>
-
-                            <div className="flex items-end justify-center gap-1.5 h-12 bg-white border border-zinc-200 rounded-2xl py-2 max-w-[200px] mx-auto">
-                              {[1, 2, 3, 4, 5, 6, 7, 8].map((bar) => {
-                                const heights = [10, 24, 14, 30, 20, 32, 12, 22];
-                                return (
-                                  <motion.div
-                                    key={bar}
-                                    className="w-1 bg-emerald-500 rounded-full"
-                                    animate={{ height: [6, heights[bar-1], 6] }}
-                                    transition={{ duration: 0.6 + (bar%3)*0.1, repeat: Infinity, delay: bar*0.04 }}
-                                  />
-                                );
-                              })}
-                            </div>
-
-                            <div>
-                              <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-755 bg-emerald-50 border border-emerald-100 rounded-full px-2.5 py-0.5 shadow-sm">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
-                                RECORDING PRESCRIPTION
-                              </span>
-                              <span className="block text-sm font-mono text-zinc-900 mt-1 font-bold">
-                                {formatTime(recordingSeconds)}
-                              </span>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={handleStopPrescriptionRecording}
-                              className="rounded-full bg-zinc-955 hover:bg-zinc-800 text-white text-xs font-bold px-4 py-2 cursor-pointer shadow-md inline-flex items-center gap-1"
-                            >
-                              <MicOff className="h-3.5 w-3.5" /> Stop & Process
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Instructions Text Area */}
-                      <div className="space-y-1.5 text-left">
-                        <span className="text-[10px] font-bold text-zinc-400 uppercase block">
-                          Rx Dictation Instructions
-                        </span>
-                        <textarea
-                          value={prescriptionInstructions}
-                          onChange={(e) => setPrescriptionInstructions(e.target.value)}
-                          placeholder="Speak or type your raw prescription instructions here. E.g. 'Give Amoxicillin 500mg, oral, BID for 7 days. Take with food.'"
-                          rows={5}
-                          className="w-full rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 text-xs text-zinc-700 focus:border-emerald-500 focus:outline-none transition-all resize-y"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleGeneratePrescription}
-                          disabled={isGeneratingPrescription || !prescriptionInstructions.trim()}
-                          className="w-full rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2.5 transition-all shadow-md inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:bg-zinc-150 disabled:text-zinc-450 disabled:shadow-none active:scale-[0.98]"
-                        >
-                          {isGeneratingPrescription ? (
+                          {isAIAssisting ? (
                             <>
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Analyzing instructions...
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Assisting...
                             </>
                           ) : (
                             <>
-                              <CheckCircle2 className="h-3.5 w-3.5" /> Generate Digital Rx (Gemini)
+                              <Sparkles className="h-3.5 w-3.5" />
+                              AI Assist
                             </>
                           )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            toggleRecordingForField("chiefComplaint", (text) => setConsultationChiefComplaint(prev => prev + text));
+                          }}
+                          className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-full shadow-sm active:scale-95 transition-all cursor-pointer ${
+                            recordingField === "chiefComplaint"
+                              ? "bg-red-500 text-white border border-red-500 animate-pulse"
+                              : "bg-emerald-600 hover:bg-emerald-500 text-white"
+                          }`}
+                        >
+                          <Mic className="h-3.5 w-3.5" />
+                          {recordingField === "chiefComplaint" ? "Stop Voice Rx" : "Voice Rx"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleDownloadPrescriptionPDF}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-bold rounded-full shadow-sm active:scale-95 transition-all cursor-pointer"
+                        >
+                          <FileDown className="h-3.5 w-3.5 text-zinc-500" />
+                          Download PDF
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            showToast("success", "Prescription emailed to patient successfully!");
+                          }}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-bold rounded-full shadow-sm active:scale-95 transition-all cursor-pointer"
+                        >
+                          <Mail className="h-3.5 w-3.5 text-zinc-500" />
+                          Email
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleSaveConsultationAndPrescription}
+                          disabled={isSavingPrescription}
+                          className="inline-flex items-center gap-1.5 px-5 py-2 bg-brand text-white text-xs font-bold rounded-full shadow-md hover:opacity-90 active:scale-95 transition-all cursor-pointer disabled:bg-zinc-100 disabled:text-zinc-400"
+                        >
+                          {isSavingPrescription ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Save className="h-3.5 w-3.5" />
+                          )}
+                          Save
                         </button>
                       </div>
                     </div>
 
-                    {/* Right Columns: Structured Rx Pad */}
-                    <div className="lg:col-span-2 rounded-2xl border border-zinc-200 bg-white p-6 space-y-4 flex flex-col justify-between">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                          <div>
-                            <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-tight block">
-                              E-Prescription Workspace
-                            </h3>
-                            <span className="text-[10px] font-medium text-zinc-400">
-                              Patient: {patientsList.find(p => p.id === (selectedPatient?.id || scribePatientId))?.name || "None Selected"}
-                            </span>
+                    {/* Main Layout Grid */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                      
+                      {/* Left Column: Patient Info, History, Vitals */}
+                      <div className="space-y-6">
+                        
+                        {/* Demographic details card */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                          <div className="flex items-center gap-3">
+                            <div className="h-12 w-12 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-black text-lg shadow-inner">
+                              {(selectedAptForConsultation.name || "P")[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-bold text-zinc-800 leading-tight">
+                                {selectedAptForConsultation.name}
+                              </h3>
+                              <span className="text-[10px] font-bold text-zinc-400 block mt-0.5">
+                                {selectedAptForConsultation.patientId || "PT-0005"}
+                              </span>
+                              <span className="text-[10px] text-zinc-500 font-semibold block mt-0.5">
+                                {selectedAptForConsultation.phone || "N/A"}
+                              </span>
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50/50 border border-emerald-100/50 rounded-full px-2.5 py-0.5">
-                              Powered by Gemini AI
-                            </span>
+                          <hr className="border-zinc-100" />
+
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wide block">Date</span>
+                              <span className="font-bold text-zinc-700">
+                                {selectedAptForConsultation.dateTime ? new Date(selectedAptForConsultation.dateTime).toLocaleDateString("en-US", { day: "numeric", month: "short" }) : "N/A"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wide block">Time</span>
+                              <span className="font-bold text-zinc-700">
+                                {selectedAptForConsultation.timeSlot || "N/A"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wide block">Token</span>
+                              <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-brand/10 border border-brand/20 text-brand text-[10px] font-black mt-0.5">
+                                #{selectedAptForConsultation.tokenNo || "N/A"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wide block">Type</span>
+                              <span className="font-bold text-zinc-700">
+                                {selectedAptForConsultation.appointmentType || "OPD"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wide block">Doctor</span>
+                              <span className="font-bold text-zinc-700">
+                                {selectedAptForConsultation.doctorName || "Dr. Patil"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wide block">Dept</span>
+                              <span className="font-bold text-zinc-700">
+                                {selectedAptForConsultation.departmentName || "General"}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
-                        {prescriptionMedications.length === 0 && !isGeneratingPrescription ? (
-                          <div className="flex flex-col items-center justify-center h-[300px] text-zinc-300">
-                            <FileText className="h-12 w-12 mb-2" />
-                            <p className="text-xs font-bold">Rx is empty.</p>
-                            <p className="text-[10px] text-zinc-450 max-w-[240px] text-center mt-1">
-                              Record a voice instruction or type clinical notes on the left, then click generate.
-                            </p>
+                        {/* Patient History Accordion/Section */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                          <h4 className="text-xs font-bold text-zinc-800 uppercase tracking-wide">
+                            Patient History ({patientChartData?.soapNotes?.length || 1})
+                          </h4>
+                          
+                          <div className="max-h-[300px] overflow-y-auto space-y-3 pr-1.5">
+                            {/* Render loaded SOAP Notes */}
+                            {patientChartData?.soapNotes && patientChartData.soapNotes.length > 0 ? (
+                              patientChartData.soapNotes.map((note: any, idx: number) => (
+                                <div key={note.id || idx} className="p-3 bg-zinc-50 border border-zinc-150 rounded-xl space-y-2 text-xs">
+                                  <div className="flex justify-between items-center text-[9px] font-bold text-zinc-400">
+                                    <span>RX-{note.id?.substring(0,4).toUpperCase()}</span>
+                                    <span>{new Date(note.createdAt).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold text-zinc-500 text-[9px] uppercase tracking-wide block">Chief Complaint:</span>
+                                    <span className="text-zinc-700 font-bold">{note.subjective}</span>
+                                  </div>
+                                  {note.assessment && (
+                                    <div>
+                                      <span className="font-semibold text-zinc-500 text-[9px] uppercase tracking-wide block">Diagnosis:</span>
+                                      <span className="text-zinc-700 font-bold">{note.assessment}</span>
+                                    </div>
+                                  )}
+                                  {note.plan && (
+                                    <div>
+                                      <span className="font-semibold text-zinc-500 text-[9px] uppercase tracking-wide block">Advice:</span>
+                                      <span className="text-zinc-650 font-semibold">{note.plan}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ))
+                            ) : (
+                              /* Default Placeholder History (as in prompt) */
+                              <div className="p-3.5 bg-zinc-50 border border-zinc-150 rounded-xl space-y-2 text-xs text-zinc-700">
+                                <div className="flex justify-between items-center text-[10px] font-bold text-zinc-400">
+                                  <span>RX-0007</span>
+                                  <span>6 Jun 2026, 01:05 pm</span>
+                                </div>
+                                <div className="text-[10px] text-zinc-500 font-semibold">
+                                  Dr. Rahul Patil · Same Consult
+                                </div>
+                                <div>
+                                  <span className="font-bold text-[9px] text-zinc-400 uppercase block">CC</span>
+                                  <p className="font-bold text-zinc-800">Tooth pain for the past 3 days with associated headache</p>
+                                </div>
+                                <div>
+                                  <span className="font-bold text-[9px] text-zinc-400 uppercase block">Diagnosis</span>
+                                  <p className="font-semibold text-zinc-700">Dental pain (possible dental caries/pulpitis) with headache</p>
+                                  <div className="flex gap-1.5 mt-1">
+                                    <span className="px-1.5 py-0.5 rounded bg-zinc-200/80 text-[8px] font-bold font-mono">K04.6</span>
+                                    <span className="px-1.5 py-0.5 rounded bg-zinc-200/80 text-[8px] font-bold font-mono">R51</span>
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="font-bold text-[9px] text-zinc-400 uppercase block">Advice</span>
+                                  <p className="text-[10px] text-zinc-500 font-medium">
+                                    Maintain oral hygiene, avoid hard or hot foods, use warm salt water rinses, stay hydrated, and consider seeing a dentist promptly.
+                                  </p>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        ) : isGeneratingPrescription ? (
-                          <div className="flex flex-col items-center justify-center h-[300px] space-y-4">
-                            <Loader2 className="h-10 w-10 animate-spin text-emerald-600" />
-                            <div className="text-center">
-                              <h4 className="text-xs font-bold text-zinc-800 uppercase">Gemini AI Rx Synthesis</h4>
-                              <p className="text-[10px] text-zinc-400 mt-1">Extracting medications, dosage, route, and scheduling...</p>
+                        </div>
+
+                        {/* Vitals Form Card */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                          <div className="flex items-center gap-2">
+                            <Activity className="h-4 w-4 text-rose-500" />
+                            <h4 className="text-xs font-bold text-zinc-800 uppercase tracking-wide">
+                              Vitals
+                            </h4>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3.5 text-xs">
+                            <label className="block">
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase block">Blood Pressure</span>
+                              <input
+                                type="text"
+                                value={vitalBP}
+                                onChange={(e) => setVitalBP(e.target.value)}
+                                className="mt-1 block w-full rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-brand bg-zinc-50/50"
+                                placeholder="120/80"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase block">Pulse (bpm)</span>
+                              <input
+                                type="text"
+                                value={vitalPulse}
+                                onChange={(e) => setVitalPulse(e.target.value)}
+                                className="mt-1 block w-full rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-brand bg-zinc-50/50"
+                                placeholder="72"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase block">Temp (°F)</span>
+                              <input
+                                type="text"
+                                value={vitalTemp}
+                                onChange={(e) => setVitalTemp(e.target.value)}
+                                className="mt-1 block w-full rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-brand bg-zinc-50/50"
+                                placeholder="98.6"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase block">Weight (kg)</span>
+                              <input
+                                type="text"
+                                value={vitalWeight}
+                                onChange={(e) => setVitalWeight(e.target.value)}
+                                className="mt-1 block w-full rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-brand bg-zinc-50/50"
+                                placeholder="70"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase block">Height (cm)</span>
+                              <input
+                                type="text"
+                                value={vitalHeight}
+                                onChange={(e) => setVitalHeight(e.target.value)}
+                                className="mt-1 block w-full rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-brand bg-zinc-50/50"
+                                placeholder="170"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase block">SpO2 (%)</span>
+                              <input
+                                type="text"
+                                value={vitalSpO2}
+                                onChange={(e) => setVitalSpO2(e.target.value)}
+                                className="mt-1 block w-full rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-brand bg-zinc-50/50"
+                                placeholder="98"
+                              />
+                            </label>
+
+                            <label className="block col-span-2">
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase block">Resp Rate (/min)</span>
+                              <input
+                                type="text"
+                                value={vitalRespRate}
+                                onChange={(e) => setVitalRespRate(e.target.value)}
+                                className="mt-1 block w-full rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-brand bg-zinc-50/50"
+                                placeholder="16"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Column: Active Consultation Prescription Form */}
+                      <div className="lg:col-span-2 space-y-6">
+                        
+                        {/* Chief Complaint Widget */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3.5 shadow-sm text-left">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
+                              Chief Complaint
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={() => toggleRecordingForField("chiefComplaint", (text) => setConsultationChiefComplaint(prev => prev + text))}
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all shadow-sm ${
+                                recordingField === "chiefComplaint"
+                                  ? "bg-red-500 text-white animate-pulse"
+                                  : "bg-zinc-100 hover:bg-zinc-150 text-zinc-655"
+                              }`}
+                            >
+                              <Mic className="h-3 w-3" />
+                              {recordingField === "chiefComplaint" ? `Listening (${formatTime(recordingSeconds)})` : "Voice Type"}
+                            </button>
+                          </div>
+
+                          <textarea
+                            value={consultationChiefComplaint}
+                            onChange={(e) => setConsultationChiefComplaint(e.target.value)}
+                            placeholder="Patient's chief complaint, symptoms, duration..."
+                            rows={3}
+                            className="w-full rounded-xl border border-zinc-200 bg-zinc-50/20 p-3 text-xs text-zinc-700 focus:border-brand focus:outline-none transition-all resize-y font-medium"
+                          />
+
+                          <div className="space-y-1.5">
+                            <span className="text-[9px] font-extrabold text-zinc-400 tracking-wider uppercase block">Common Suggestions:</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {["Fever and chills", "Headache", "Cough and cold", "Chest pain", "Abdominal pain", "Back pain", "Sore throat", "Vomiting"].map(sug => (
+                                <button
+                                  type="button"
+                                  key={sug}
+                                  onClick={() => {
+                                    setConsultationChiefComplaint(prev => prev ? `${prev}, ${sug.toLowerCase()}` : sug);
+                                  }}
+                                  className="px-2.5 py-1 rounded-full border border-zinc-150 bg-zinc-50 hover:bg-zinc-100 text-[10px] text-zinc-600 font-bold transition-all cursor-pointer"
+                                >
+                                  {sug}
+                                </button>
+                              ))}
                             </div>
                           </div>
-                        ) : (
-                          <div className="space-y-4 text-left">
-                            <div className="overflow-x-auto rounded-xl border border-zinc-200">
-                              <table className="w-full text-left border-collapse">
+                        </div>
+
+                        {/* Diagnosis Widget */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3.5 shadow-sm text-left">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
+                              Diagnosis
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={() => toggleRecordingForField("diagnosis", (text) => setConsultationDiagnosis(prev => prev + text))}
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all shadow-sm ${
+                                recordingField === "diagnosis"
+                                  ? "bg-red-500 text-white animate-pulse"
+                                  : "bg-zinc-100 hover:bg-zinc-150 text-zinc-655"
+                              }`}
+                            >
+                              <Mic className="h-3 w-3" />
+                              {recordingField === "diagnosis" ? `Listening (${formatTime(recordingSeconds)})` : "Smart Voice"}
+                            </button>
+                          </div>
+
+                          <textarea
+                            value={consultationDiagnosis}
+                            onChange={(e) => setConsultationDiagnosis(e.target.value)}
+                            placeholder="Primary diagnosis..."
+                            rows={3}
+                            className="w-full rounded-xl border border-zinc-200 bg-zinc-50/20 p-3 text-xs text-zinc-700 focus:border-brand focus:outline-none transition-all resize-y font-medium"
+                          />
+                        </div>
+
+                        {/* Medications Widget */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                          <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+                            <h4 className="text-xs font-bold text-zinc-855 uppercase tracking-wide">
+                              Medications ({prescriptionMedications.length})
+                            </h4>
+                          </div>
+
+                          {prescriptionMedications.length > 0 ? (
+                            <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white">
+                              <table className="min-w-full divide-y divide-zinc-200 text-left border-collapse">
                                 <thead>
-                                  <tr className="bg-zinc-50 text-[10px] font-extrabold uppercase text-zinc-400 border-b border-zinc-250">
+                                  <tr className="bg-zinc-50 text-[9px] font-extrabold uppercase text-zinc-400 border-b border-zinc-250">
                                     <th className="p-3">Drug Name</th>
                                     <th className="p-3 w-20">Dosage</th>
-                                    <th className="p-3 w-28">Frequency</th>
+                                    <th className="p-3 w-24">Frequency</th>
                                     <th className="p-3 w-20">Route</th>
                                     <th className="p-3 w-20">Duration</th>
                                     <th className="p-3">Instructions</th>
@@ -5095,7 +5312,7 @@ function DashboardPage() {
                                 </thead>
                                 <tbody className="divide-y divide-zinc-150 text-xs">
                                   {prescriptionMedications.map((med, index) => (
-                                    <tr key={index} className="hover:bg-zinc-50/50">
+                                    <tr key={index} className="hover:bg-zinc-50/30">
                                       <td className="p-2">
                                         <input
                                           type="text"
@@ -5105,8 +5322,8 @@ function DashboardPage() {
                                             updated[index].name = e.target.value;
                                             setPrescriptionMedications(updated);
                                           }}
-                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none font-bold text-zinc-800"
-                                          placeholder="e.g. Amoxicillin"
+                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none font-bold text-zinc-800 text-xs"
+                                          placeholder="Paracetamol"
                                         />
                                       </td>
                                       <td className="p-2">
@@ -5118,8 +5335,8 @@ function DashboardPage() {
                                             updated[index].dosage = e.target.value;
                                             setPrescriptionMedications(updated);
                                           }}
-                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none text-zinc-700"
-                                          placeholder="e.g. 500mg"
+                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none text-zinc-700 text-xs"
+                                          placeholder="650mg"
                                         />
                                       </td>
                                       <td className="p-2">
@@ -5131,8 +5348,8 @@ function DashboardPage() {
                                             updated[index].frequency = e.target.value;
                                             setPrescriptionMedications(updated);
                                           }}
-                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none text-zinc-700"
-                                          placeholder="e.g. TID / 3x daily"
+                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none text-zinc-700 text-xs"
+                                          placeholder="TID"
                                         />
                                       </td>
                                       <td className="p-2">
@@ -5144,8 +5361,8 @@ function DashboardPage() {
                                             updated[index].route = e.target.value;
                                             setPrescriptionMedications(updated);
                                           }}
-                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none text-zinc-700"
-                                          placeholder="e.g. Oral"
+                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none text-zinc-700 text-xs"
+                                          placeholder="Oral"
                                         />
                                       </td>
                                       <td className="p-2">
@@ -5157,8 +5374,8 @@ function DashboardPage() {
                                             updated[index].duration = e.target.value;
                                             setPrescriptionMedications(updated);
                                           }}
-                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none text-zinc-700"
-                                          placeholder="e.g. 7 days"
+                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none text-zinc-700 text-xs"
+                                          placeholder="5 days"
                                         />
                                       </td>
                                       <td className="p-2">
@@ -5170,8 +5387,8 @@ function DashboardPage() {
                                             updated[index].instructions = e.target.value;
                                             setPrescriptionMedications(updated);
                                           }}
-                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none text-zinc-500 italic"
-                                          placeholder="e.g. Take with meals"
+                                          className="w-full bg-transparent border-0 focus:ring-0 focus:outline-none text-zinc-650 text-xs italic"
+                                          placeholder="Take after food"
                                         />
                                       </td>
                                       <td className="p-2 text-center">
@@ -5180,7 +5397,7 @@ function DashboardPage() {
                                           onClick={() => {
                                             setPrescriptionMedications(prev => prev.filter((_, i) => i !== index));
                                           }}
-                                          className="text-red-500 hover:text-red-750 cursor-pointer animate-fade-in"
+                                          className="p-1 rounded text-red-500 hover:bg-red-50 cursor-pointer"
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />
                                         </button>
@@ -5190,72 +5407,340 @@ function DashboardPage() {
                                 </tbody>
                               </table>
                             </div>
+                          ) : (
+                            <div className="text-xs text-zinc-400 italic py-4 text-center border border-dashed border-zinc-200 rounded-xl bg-zinc-50/20">
+                              No medications prescribed. Click "Add Medication" below to add one.
+                            </div>
+                          )}
 
+                          <div className="pt-1 flex justify-start">
                             <button
                               type="button"
                               onClick={() => {
-                                setPrescriptionMedications(prev => [...prev, { name: "", dosage: "", frequency: "", route: "Oral", duration: "", instructions: "" }]);
+                                setPrescriptionMedications(prev => [
+                                  ...prev,
+                                  { name: "", dosage: "", frequency: "", route: "", duration: "", instructions: "" }
+                                ]);
                               }}
-                              className="inline-flex items-center gap-1 px-3 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-650 rounded-full text-[10px] font-bold cursor-pointer transition-all active:scale-95"
+                              className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full border border-zinc-250 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 text-xs font-bold transition-all cursor-pointer shadow-sm"
                             >
-                              <Plus className="h-3 w-3" /> Add Medication Row
+                              <Plus className="h-3.5 w-3.5 text-zinc-500" />
+                              Add Medication
                             </button>
+                          </div>
+                        </div>
 
-                            <div className="space-y-1.5 mt-2">
-                              <span className="text-[9px] font-extrabold text-zinc-400 tracking-wider uppercase block">
-                                Clinical Directions & Advice
-                              </span>
-                              <textarea
-                                value={prescriptionNotes}
-                                onChange={(e) => setPrescriptionNotes(e.target.value)}
-                                rows={3}
-                                className="w-full rounded-xl border border-zinc-200 bg-zinc-50/30 p-3 text-xs text-zinc-700 focus:border-emerald-500 focus:outline-none transition-all"
-                                placeholder="Additional advice (e.g. Drink plenty of water. Avoid alcohol.)"
+                        {/* Lab Tests Widget */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                          <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+                            <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
+                              Lab Tests ({consultationLabTests.length})
+                            </h4>
+                          </div>
+
+                          {consultationLabTests.length > 0 ? (
+                            <div className="space-y-3.5">
+                              {consultationLabTests.map((test, index) => (
+                                <div key={index} className="flex flex-col sm:flex-row gap-3 items-end sm:items-center bg-zinc-50/40 border border-zinc-150 p-3 rounded-xl relative">
+                                  <div className="flex-1 space-y-1.5 w-full">
+                                    <label className="block">
+                                      <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Test Name</span>
+                                      <input
+                                        type="text"
+                                        value={test.name}
+                                        onChange={(e) => {
+                                          const updated = [...consultationLabTests];
+                                          updated[index].name = e.target.value;
+                                          setConsultationLabTests(updated);
+                                        }}
+                                        className="mt-1 block w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-brand"
+                                        placeholder="Complete Blood Count (CBC)"
+                                      />
+                                    </label>
+                                  </div>
+                                  <div className="flex-1 space-y-1.5 w-full">
+                                    <label className="block">
+                                      <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Instructions</span>
+                                      <input
+                                        type="text"
+                                        value={test.instructions}
+                                        onChange={(e) => {
+                                          const updated = [...consultationLabTests];
+                                          updated[index].instructions = e.target.value;
+                                          setConsultationLabTests(updated);
+                                        }}
+                                        className="mt-1 block w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-brand"
+                                        placeholder="Fasting required"
+                                      />
+                                    </label>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setConsultationLabTests(prev => prev.filter((_, i) => i !== index));
+                                    }}
+                                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer h-max mt-4"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-zinc-400 italic py-4 text-center border border-dashed border-zinc-200 rounded-xl bg-zinc-50/20">
+                              No lab tests recommended. Click "Add Test" below to add one.
+                            </div>
+                          )}
+
+                          <div className="pt-1 flex justify-start">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConsultationLabTests(prev => [...prev, { name: "", instructions: "" }]);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full border border-zinc-250 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 text-xs font-bold transition-all cursor-pointer shadow-sm"
+                            >
+                              <Plus className="h-3.5 w-3.5 text-zinc-500" />
+                              Add Test
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Sub-Dept Referrals Widget */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                          <div className="border-b border-zinc-100 pb-2">
+                            <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
+                              Sub-Dept Referrals ({consultationReferrals.length})
+                            </h4>
+                            <p className="text-[10px] text-zinc-400 mt-0.5 font-medium">
+                              Refer patient through departments. Ends at billing automatically.
+                            </p>
+                          </div>
+
+                          {consultationReferrals.length > 0 ? (
+                            <div className="space-y-4">
+                              {consultationReferrals.map((ref, index) => (
+                                <div key={index} className="space-y-3.5 bg-zinc-50/40 border border-zinc-150 p-4 rounded-xl relative">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                    <label className="block">
+                                      <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Department</span>
+                                      <select
+                                        value={ref.departmentId}
+                                        onChange={(e) => {
+                                          const updated = [...consultationReferrals];
+                                          updated[index].departmentId = e.target.value;
+                                          setConsultationReferrals(updated);
+                                        }}
+                                        className="mt-1 block w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-brand cursor-pointer"
+                                      >
+                                        <option value="General">General Medicine</option>
+                                        <option value="Cardiology">Cardiology</option>
+                                        <option value="Dentistry">Dentistry</option>
+                                        <option value="Dermatology">Dermatology</option>
+                                        <option value="Orthopedics">Orthopedics</option>
+                                        <option value="Pediatrics">Pediatrics</option>
+                                        <option value="Ophthalmology">Ophthalmology</option>
+                                        <option value="Gynaecology">Gynaecology</option>
+                                      </select>
+                                    </label>
+                                    
+                                    <label className="block">
+                                      <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Doctor (Optional)</span>
+                                      <input
+                                        type="text"
+                                        value={ref.doctorId || ""}
+                                        onChange={(e) => {
+                                          const updated = [...consultationReferrals];
+                                          updated[index].doctorId = e.target.value;
+                                          setConsultationReferrals(updated);
+                                        }}
+                                        className="mt-1 block w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-brand"
+                                        placeholder="Dr. Specialist"
+                                      />
+                                    </label>
+                                  </div>
+
+                                  <div className="flex gap-3 items-end">
+                                    <label className="block flex-1">
+                                      <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Reason / Notes</span>
+                                      <input
+                                        type="text"
+                                        value={ref.notes || ""}
+                                        onChange={(e) => {
+                                          const updated = [...consultationReferrals];
+                                          updated[index].notes = e.target.value;
+                                          setConsultationReferrals(updated);
+                                        }}
+                                        className="mt-1 block w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium focus:outline-none focus:border-brand"
+                                        placeholder="Consultation for root canal treatment..."
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setConsultationReferrals(prev => prev.filter((_, i) => i !== index));
+                                      }}
+                                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer h-max"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-zinc-400 italic py-4 text-center border border-dashed border-zinc-200 rounded-xl bg-zinc-50/20">
+                              No active referrals. Click "Add Referral" below to refer.
+                            </div>
+                          )}
+
+                          <div className="pt-1 flex justify-start">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConsultationReferrals(prev => [...prev, { departmentId: "General" }]);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full border border-zinc-250 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 text-xs font-bold transition-all cursor-pointer shadow-sm"
+                            >
+                              <Plus className="h-3.5 w-3.5 text-zinc-500" />
+                              Add Referral
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Advice & Instructions Widget */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3.5 shadow-sm text-left">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
+                              Advice & Instructions
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={() => toggleRecordingForField("advice", (text) => setConsultationAdvice(prev => prev + text))}
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all shadow-sm ${
+                                recordingField === "advice"
+                                  ? "bg-red-500 text-white animate-pulse"
+                                  : "bg-zinc-100 hover:bg-zinc-150 text-zinc-655"
+                              }`}
+                            >
+                              <Mic className="h-3 w-3" />
+                              {recordingField === "advice" ? `Listening (${formatTime(recordingSeconds)})` : "Voice Type"}
+                            </button>
+                          </div>
+
+                          <textarea
+                            value={consultationAdvice}
+                            onChange={(e) => setConsultationAdvice(e.target.value)}
+                            placeholder="Diet, lifestyle, precautions..."
+                            rows={3}
+                            className="w-full rounded-xl border border-zinc-200 bg-zinc-50/20 p-3 text-xs text-zinc-700 focus:border-brand focus:outline-none transition-all resize-y font-medium"
+                          />
+                        </div>
+
+                        {/* Follow-up Widget */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                          <h4 className="text-xs font-bold text-zinc-855 uppercase tracking-wide">
+                            Follow-up
+                          </h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <label className="block">
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Follow-up Date</span>
+                              <input
+                                type="date"
+                                value={consultationFollowUpDate}
+                                onChange={(e) => setConsultationFollowUpDate(e.target.value)}
+                                className="mt-1 block w-full rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-brand bg-zinc-50/30 cursor-pointer"
+                              />
+                            </label>
+                            
+                            <label className="block">
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Notes</span>
+                              <input
+                                type="text"
+                                value={consultationFollowUpNotes}
+                                onChange={(e) => setConsultationFollowUpNotes(e.target.value)}
+                                className="mt-1 block w-full rounded-xl border border-zinc-200 px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-brand bg-zinc-50/30"
+                                placeholder="Follow-up instructions"
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Assign Treatment Plan Widget */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3.5 shadow-sm text-left">
+                          <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
+                            Assign Treatment Plan
+                          </h4>
+                          <div className="p-4 bg-zinc-50 border border-zinc-150 rounded-xl text-center text-xs text-zinc-500 font-semibold">
+                            No active treatment plans found. Create plans in your dashboard first.
+                          </div>
+                        </div>
+
+                        {/* Consultation Fee Widget */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3.5 shadow-sm text-left">
+                          <h4 className="text-xs font-bold text-zinc-855 uppercase tracking-wide">
+                            Consultation Fee
+                          </h4>
+                          <div className="flex items-center gap-3">
+                            <div className="relative rounded-xl border border-zinc-200 bg-zinc-50/30 px-3.5 py-1.5 flex items-center gap-1 max-w-[140px]">
+                              <span className="text-zinc-550 font-extrabold text-sm">₹</span>
+                              <input
+                                type="number"
+                                value={consultationFee}
+                                onChange={(e) => setConsultationFee(Number(e.target.value))}
+                                className="w-full bg-transparent border-0 p-0 text-xs font-black focus:ring-0 focus:outline-none text-zinc-800"
+                                placeholder="1500"
                               />
                             </div>
+                            <span className="text-[10px] text-zinc-400 font-bold">
+                              Doctor can modify the fee
+                            </span>
                           </div>
-                        )}
-                      </div>
+                        </div>
 
-                      <div className="flex justify-end gap-3 border-t border-zinc-100 pt-3 mt-4">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPrescriptionInstructions("");
-                            setPrescriptionMedications([]);
-                            setPrescriptionNotes("");
-                          }}
-                          className="rounded-full border border-zinc-200 hover:bg-zinc-50 px-4 py-2 text-xs font-semibold text-zinc-500 cursor-pointer"
-                        >
-                          Clear
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handlePrintPrescription}
-                          disabled={prescriptionMedications.length === 0}
-                          className="rounded-full border border-emerald-600 text-emerald-600 hover:bg-emerald-50 px-4 py-2 text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:border-zinc-200 disabled:text-zinc-400 disabled:bg-transparent"
-                        >
-                          <Printer className="h-4 w-4" /> Print Rx Pad
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleSavePrescription}
-                          disabled={prescriptionMedications.length === 0 || isSavingPrescription}
-                          className="rounded-full bg-emerald-600 text-white px-5 py-2 text-xs font-semibold hover:bg-emerald-500 shadow-md flex items-center gap-1.5 cursor-pointer disabled:bg-zinc-100 disabled:text-zinc-400 disabled:shadow-none"
-                        >
-                          {isSavingPrescription ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Save className="h-4 w-4" />
-                          )}
-                          Sign & Save to EHR
-                        </button>
+                        {/* Doctor's Private Notes Widget */}
+                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3 shadow-sm text-left">
+                          <h4 className="text-xs font-bold text-zinc-855 uppercase tracking-wide">
+                            Doctor's Private Notes
+                          </h4>
+                          <textarea
+                            value={consultationPrivateNotes}
+                            onChange={(e) => setConsultationPrivateNotes(e.target.value)}
+                            placeholder="Internal notes (not shown on prescription)..."
+                            rows={3}
+                            className="w-full rounded-xl border border-zinc-200 bg-zinc-50/20 p-3 text-xs text-zinc-700 focus:border-brand focus:outline-none transition-all resize-y font-medium"
+                          />
+                        </div>
+
+                        {/* Bottom Actions Row */}
+                        <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-150">
+                          <button
+                            type="button"
+                            onClick={handlePrintPrescription}
+                            disabled={prescriptionMedications.length === 0}
+                            className="rounded-full border border-emerald-600 text-emerald-600 hover:bg-emerald-50 px-5 py-2.5 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:border-zinc-200 disabled:text-zinc-400 disabled:bg-transparent"
+                          >
+                            <Printer className="h-4 w-4" /> Print Rx Pad
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveConsultationAndPrescription}
+                            disabled={isSavingPrescription}
+                            className="rounded-full bg-emerald-600 text-white px-6 py-2.5 text-xs font-extrabold hover:bg-emerald-500 shadow-md flex items-center gap-1.5 cursor-pointer disabled:bg-zinc-100 disabled:text-zinc-400 disabled:shadow-none"
+                          >
+                            {isSavingPrescription ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Save className="h-4 w-4" />
+                            )}
+                            Sign & Save to EHR
+                          </button>
+                        </div>
+
                       </div>
                     </div>
                   </motion.div>
-                )}
-              </>
-            ) : (
+                ) : (
               /* Consultation Interactive Appointments List */
               <motion.div
                 key="consultation-list"
@@ -5694,7 +6179,30 @@ function DashboardPage() {
                                           const pid = resolvePatientForApt(apt);
                                           setScribePatientId(pid);
                                           setLiveTranscript(apt.reason || "");
-                                          setScribeSubTab("scribe");
+                                          setConsultationChiefComplaint(apt.reason || "");
+                                          setConsultationDiagnosis("");
+                                          setConsultationAdvice("");
+                                          setPrescriptionMedications([]);
+                                          setConsultationLabTests([]);
+                                          setConsultationReferrals([]);
+                                          setConsultationFollowUpDate("");
+                                          setConsultationFollowUpNotes("");
+                                          setConsultationFee(1500);
+                                          setConsultationPrivateNotes("");
+                                          setVitalBP("120/80");
+                                          setVitalPulse("72");
+                                          setVitalTemp("98.6");
+                                          setVitalWeight("70");
+                                          setVitalHeight("170");
+                                          setVitalSpO2("98");
+                                          setVitalRespRate("16");
+                                          setPatientChartData(null);
+                                          if (pid) {
+                                            getPatientChartServerFn({ data: { patientId: pid } })
+                                              .then(res => setPatientChartData(res))
+                                              .catch(err => console.error(err));
+                                          }
+                                          setActiveTab("scribe");
                                         }}
                                         className="inline-flex items-center gap-1 bg-brand text-white hover:opacity-90 transition-all font-bold px-3 py-1 rounded-full text-[10px] cursor-pointer shrink-0"
                                       >
