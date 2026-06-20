@@ -1,10 +1,9 @@
+import "dotenv/config";
 import mariadb, { Pool, PoolConnection } from "mariadb";
 
 /**
  * Direct MariaDB pool for auth operations.
- * Bypasses the Prisma adapter layer which has internal pool timeout issues
- * with TiDB Cloud (the adapter bundles its own mariadb@3.4.5 with default
- * 10s timeouts that can't be overridden).
+ * Bypasses the Prisma adapter layer which has internal pool timeout issues.
  *
  * The raw pool has been confirmed to connect successfully on every test.
  */
@@ -14,11 +13,11 @@ const globalForPool = globalThis as unknown as {
 };
 
 function createDbPool(): Pool {
-  let dbHost = process.env.DB_HOST || "gateway01.ap-southeast-1.prod.aws.tidbcloud.com";
-  let dbPort = parseInt(process.env.DB_PORT || "4000");
-  let dbUser = process.env.DB_USER || "Q2KCvyDGKFFGWYC.root";
-  let dbPassword = process.env.DB_PASSWORD || "Vti3a3KAnPc9C4Cm";
-  let dbName = process.env.DB_NAME || "mediflowai";
+  let dbHost = process.env.DB_HOST || "localhost";
+  let dbPort = parseInt(process.env.DB_PORT || "3306");
+  let dbUser = process.env.DB_USER || "root";
+  let dbPassword = process.env.DB_PASSWORD || "";
+  let dbName = process.env.DB_NAME || "bookmytime";
 
   const dbUrl = process.env.DATABASE_URL;
   if (dbUrl && dbUrl.startsWith("mysql://")) {
@@ -34,13 +33,16 @@ function createDbPool(): Pool {
     }
   }
 
+  // Disable SSL for localhost/127.0.0.1 or when DB_SSL is explicitly set to false
+  const useSsl = dbHost !== "localhost" && dbHost !== "127.0.0.1" && process.env.DB_SSL !== "false";
+
   return mariadb.createPool({
     host: dbHost,
     port: dbPort,
     user: dbUser,
     password: dbPassword,
     database: dbName,
-    ssl: { rejectUnauthorized: false },
+    ssl: useSsl ? { rejectUnauthorized: false } : undefined,
     connectionLimit: 5,
     connectTimeout: 30000,
     acquireTimeout: 30000,
