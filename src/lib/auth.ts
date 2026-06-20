@@ -61,7 +61,7 @@ export const sendOtpServerFn = createServerFn({ method: "POST" })
     await execute("DELETE FROM OtpCode WHERE email = ?", [email]);
 
     // Globally clean up expired OTPs from the database
-    await execute("DELETE FROM OtpCode WHERE expiresAt < NOW()");
+    await execute("DELETE FROM OtpCode WHERE expiresAt < ?", [new Date()]);
 
     // Create new OTP
     await execute(
@@ -96,8 +96,8 @@ export const verifyOtpServerFn = createServerFn({ method: "POST" })
     }
 
     const validCode = await queryOne<any>(
-      "SELECT * FROM OtpCode WHERE email = ? AND code = ? AND expiresAt > NOW() ORDER BY createdAt DESC LIMIT 1",
-      [data.email, data.code]
+      "SELECT * FROM OtpCode WHERE email = ? AND code = ? AND expiresAt > ? ORDER BY createdAt DESC LIMIT 1",
+      [data.email, data.code, new Date()]
     );
 
     if (!validCode) {
@@ -513,8 +513,8 @@ export const updateEmailServerFn = createServerFn({ method: "POST" })
 
     // Verify OTP
     const valid = await queryOne<any>(
-      "SELECT id FROM OtpCode WHERE email = ? AND code = ? AND expiresAt > NOW() LIMIT 1",
-      [data.newEmail, data.code]
+      "SELECT id FROM OtpCode WHERE email = ? AND code = ? AND expiresAt > ? LIMIT 1",
+      [data.newEmail, data.code, new Date()]
     );
     if (!valid) throw new Error("Invalid or expired verification code");
 
@@ -1204,53 +1204,92 @@ export const getDashboardStatsServerFn = createServerFn({ method: "GET" })
     const todayStr = new Date().toISOString().split("T")[0];
     const isDoctor = user.role === "doctor" && user.doctorId;
 
-    let todayAppointmentsQuery = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ? AND DATE(a.dateTime) = ?`;
-    let todayAppointmentsParams = [user.tenantId, todayStr];
-    if (isDoctor) {
-      todayAppointmentsQuery += ` AND a.doctorId = ?`;
-      todayAppointmentsParams.push(user.doctorId);
+    let todayAppointments: any[] = [];
+    try {
+      let todayAppointmentsQuery = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ? AND DATE(a.dateTime) = ?`;
+      let todayAppointmentsParams = [user.tenantId, todayStr];
+      if (isDoctor) {
+        todayAppointmentsQuery += ` AND a.doctorId = ?`;
+        todayAppointmentsParams.push(user.doctorId);
+      }
+      todayAppointmentsQuery += ` ORDER BY a.dateTime ASC`;
+      todayAppointments = await query<any>(todayAppointmentsQuery, todayAppointmentsParams);
+    } catch (e: any) {
+      console.error("[DB] getDashboardStats - todayAppointmentsQuery failed:", e.message);
     }
-    todayAppointmentsQuery += ` ORDER BY a.dateTime ASC`;
-    const todayAppointments = await query<any>(todayAppointmentsQuery, todayAppointmentsParams);
 
-    let allCountsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Confirmed' THEN 1 ELSE 0 END) as confirmed, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) as cancelled FROM Appointment WHERE tenantId = ?`;
-    let allCountsParams = [user.tenantId];
-    if (isDoctor) {
-      allCountsQuery += ` AND doctorId = ?`;
-      allCountsParams.push(user.doctorId);
+    let allCounts: any = { total: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0 };
+    try {
+      let allCountsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Confirmed' THEN 1 ELSE 0 END) as confirmed, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) as cancelled FROM Appointment WHERE tenantId = ?`;
+      let allCountsParams = [user.tenantId];
+      if (isDoctor) {
+        allCountsQuery += ` AND doctorId = ?`;
+        allCountsParams.push(user.doctorId);
+      }
+      const [resAllCounts] = await query<any>(allCountsQuery, allCountsParams);
+      if (resAllCounts) allCounts = resAllCounts;
+    } catch (e: any) {
+      console.error("[DB] getDashboardStats - allCountsQuery failed:", e.message);
     }
-    const [allCounts] = await query<any>(allCountsQuery, allCountsParams);
 
-    let todayCountsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Confirmed' THEN 1 ELSE 0 END) as confirmed, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = ?`;
-    let todayCountsParams = [user.tenantId, todayStr];
-    if (isDoctor) {
-      todayCountsQuery += ` AND doctorId = ?`;
-      todayCountsParams.push(user.doctorId);
+    let todayCounts: any = { total: 0, pending: 0, confirmed: 0, completed: 0 };
+    try {
+      let todayCountsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Confirmed' THEN 1 ELSE 0 END) as confirmed, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = ?`;
+      let todayCountsParams = [user.tenantId, todayStr];
+      if (isDoctor) {
+        todayCountsQuery += ` AND doctorId = ?`;
+        todayCountsParams.push(user.doctorId);
+      }
+      const [resTodayCounts] = await query<any>(todayCountsQuery, todayCountsParams);
+      if (resTodayCounts) todayCounts = resTodayCounts;
+    } catch (e: any) {
+      console.error("[DB] getDashboardStats - todayCountsQuery failed:", e.message);
     }
-    const [todayCounts] = await query<any>(todayCountsQuery, todayCountsParams);
 
-    let patientCountQuery = "SELECT COUNT(*) as total FROM Patient WHERE tenantId = ?";
-    let patientCountParams = [user.tenantId];
-    if (isDoctor) {
-      patientCountQuery = "SELECT COUNT(DISTINCT patientId) as total FROM Appointment WHERE tenantId = ? AND doctorId = ?";
-      patientCountParams = [user.tenantId, user.doctorId];
+    let patientCount: any = { total: 0 };
+    try {
+      let patientCountQuery = "SELECT COUNT(*) as total FROM Patient WHERE tenantId = ?";
+      let patientCountParams = [user.tenantId];
+      if (isDoctor) {
+        patientCountQuery = "SELECT COUNT(DISTINCT patientId) as total FROM Appointment WHERE tenantId = ? AND doctorId = ?";
+        patientCountParams = [user.tenantId, user.doctorId];
+      }
+      const [resPatientCount] = await query<any>(patientCountQuery, patientCountParams);
+      if (resPatientCount) patientCount = resPatientCount;
+    } catch (e: any) {
+      console.error("[DB] getDashboardStats - patientCountQuery failed:", e.message);
     }
-    const [patientCount] = await query<any>(patientCountQuery, patientCountParams);
 
-    let recentAppointmentsQuery = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ?`;
-    let recentAppointmentsParams = [user.tenantId];
-    if (isDoctor) {
-      recentAppointmentsQuery += ` AND a.doctorId = ?`;
-      recentAppointmentsParams.push(user.doctorId);
+    let recentAppointments: any[] = [];
+    try {
+      let recentAppointmentsQuery = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ?`;
+      let recentAppointmentsParams = [user.tenantId];
+      if (isDoctor) {
+        recentAppointmentsQuery += ` AND a.doctorId = ?`;
+        recentAppointmentsParams.push(user.doctorId);
+      }
+      recentAppointmentsQuery += ` ORDER BY a.createdAt DESC LIMIT 5`;
+      recentAppointments = await query<any>(recentAppointmentsQuery, recentAppointmentsParams);
+    } catch (e: any) {
+      console.error("[DB] getDashboardStats - recentAppointmentsQuery failed:", e.message);
     }
-    recentAppointmentsQuery += ` ORDER BY a.createdAt DESC LIMIT 5`;
-    const recentAppointments = await query<any>(recentAppointmentsQuery, recentAppointmentsParams);
 
     return {
       todayAppointments,
-      allTimeCounts: { total: Number(allCounts?.total||0), pending: Number(allCounts?.pending||0), confirmed: Number(allCounts?.confirmed||0), completed: Number(allCounts?.completed||0), cancelled: Number(allCounts?.cancelled||0) },
-      todayCounts: { total: Number(todayCounts?.total||0), pending: Number(todayCounts?.pending||0), confirmed: Number(todayCounts?.confirmed||0), completed: Number(todayCounts?.completed||0) },
-      totalPatients: Number(patientCount?.total||0),
+      allTimeCounts: {
+        total: Number(allCounts?.total || 0),
+        pending: Number(allCounts?.pending || 0),
+        confirmed: Number(allCounts?.confirmed || 0),
+        completed: Number(allCounts?.completed || 0),
+        cancelled: Number(allCounts?.cancelled || 0)
+      },
+      todayCounts: {
+        total: Number(todayCounts?.total || 0),
+        pending: Number(todayCounts?.pending || 0),
+        confirmed: Number(todayCounts?.confirmed || 0),
+        completed: Number(todayCounts?.completed || 0)
+      },
+      totalPatients: Number(patientCount?.total || 0),
       recentAppointments,
     };
   });
@@ -1265,69 +1304,105 @@ export const getAnalyticsServerFn = createServerFn({ method: "GET" })
     if (!user) throw new Error("Unauthorized");
     const isDoctor = user.role === "doctor" && user.doctorId;
 
-    let byDayOfWeekQuery = `SELECT DAYOFWEEK(dateTime) as dow, COUNT(*) as count FROM Appointment WHERE tenantId = ? AND dateTime >= DATE_SUB(NOW(), INTERVAL 30 DAY)`;
-    let byDayOfWeekParams = [user.tenantId];
-    if (isDoctor) {
-      byDayOfWeekQuery += ` AND doctorId = ?`;
-      byDayOfWeekParams.push(user.doctorId);
+    let byDayOfWeek: any[] = [];
+    try {
+      let byDayOfWeekQuery = `SELECT DAYOFWEEK(dateTime) as dow, COUNT(*) as count FROM Appointment WHERE tenantId = ? AND dateTime >= DATE_SUB(NOW(), INTERVAL 30 DAY)`;
+      let byDayOfWeekParams = [user.tenantId];
+      if (isDoctor) {
+        byDayOfWeekQuery += ` AND doctorId = ?`;
+        byDayOfWeekParams.push(user.doctorId);
+      }
+      byDayOfWeekQuery += ` GROUP BY DAYOFWEEK(dateTime) ORDER BY dow`;
+      byDayOfWeek = await query<any>(byDayOfWeekQuery, byDayOfWeekParams);
+    } catch (e: any) {
+      console.error("[DB] getAnalytics - byDayOfWeekQuery failed:", e.message);
     }
-    byDayOfWeekQuery += ` GROUP BY DAYOFWEEK(dateTime) ORDER BY dow`;
-    const byDayOfWeek = await query<any>(byDayOfWeekQuery, byDayOfWeekParams);
 
-    let monthlyTrendQuery = `SELECT DATE_FORMAT(dateTime, '%Y-%m') as month, COUNT(*) as count FROM Appointment WHERE tenantId = ? AND dateTime >= DATE_SUB(NOW(), INTERVAL 6 MONTH)`;
-    let monthlyTrendParams = [user.tenantId];
-    if (isDoctor) {
-      monthlyTrendQuery += ` AND doctorId = ?`;
-      monthlyTrendParams.push(user.doctorId);
+    let monthlyTrend: any[] = [];
+    try {
+      let monthlyTrendQuery = `SELECT DATE_FORMAT(dateTime, '%Y-%m') as month, COUNT(*) as count FROM Appointment WHERE tenantId = ? AND dateTime >= DATE_SUB(NOW(), INTERVAL 6 MONTH)`;
+      let monthlyTrendParams = [user.tenantId];
+      if (isDoctor) {
+        monthlyTrendQuery += ` AND doctorId = ?`;
+        monthlyTrendParams.push(user.doctorId);
+      }
+      monthlyTrendQuery += ` GROUP BY DATE_FORMAT(dateTime, '%Y-%m') ORDER BY month`;
+      monthlyTrend = await query<any>(monthlyTrendQuery, monthlyTrendParams);
+    } catch (e: any) {
+      console.error("[DB] getAnalytics - monthlyTrendQuery failed:", e.message);
     }
-    monthlyTrendQuery += ` GROUP BY DATE_FORMAT(dateTime, '%Y-%m') ORDER BY month`;
-    const monthlyTrend = await query<any>(monthlyTrendQuery, monthlyTrendParams);
 
-    let statusBreakdownQuery = "SELECT status, COUNT(*) as count FROM Appointment WHERE tenantId = ?";
-    let statusBreakdownParams = [user.tenantId];
-    if (isDoctor) {
-      statusBreakdownQuery += ` AND doctorId = ?`;
-      statusBreakdownParams.push(user.doctorId);
+    let statusBreakdown: any[] = [];
+    try {
+      let statusBreakdownQuery = "SELECT status, COUNT(*) as count FROM Appointment WHERE tenantId = ?";
+      let statusBreakdownParams = [user.tenantId];
+      if (isDoctor) {
+        statusBreakdownQuery += ` AND doctorId = ?`;
+        statusBreakdownParams.push(user.doctorId);
+      }
+      statusBreakdownQuery += ` GROUP BY status`;
+      statusBreakdown = await query<any>(statusBreakdownQuery, statusBreakdownParams);
+    } catch (e: any) {
+      console.error("[DB] getAnalytics - statusBreakdownQuery failed:", e.message);
     }
-    statusBreakdownQuery += ` GROUP BY status`;
-    const statusBreakdown = await query<any>(statusBreakdownQuery, statusBreakdownParams);
 
-    let topDoctorsQuery = `SELECT d.name, COUNT(a.id) as count FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ? AND d.name IS NOT NULL`;
-    let topDoctorsParams = [user.tenantId];
-    if (isDoctor) {
-      topDoctorsQuery += ` AND a.doctorId = ?`;
-      topDoctorsParams.push(user.doctorId);
+    let topDoctors: any[] = [];
+    try {
+      let topDoctorsQuery = `SELECT d.name, COUNT(a.id) as count FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ? AND d.name IS NOT NULL`;
+      let topDoctorsParams = [user.tenantId];
+      if (isDoctor) {
+        topDoctorsQuery += ` AND a.doctorId = ?`;
+        topDoctorsParams.push(user.doctorId);
+      }
+      topDoctorsQuery += ` GROUP BY a.doctorId, d.name ORDER BY count DESC LIMIT 5`;
+      topDoctors = await query<any>(topDoctorsQuery, topDoctorsParams);
+    } catch (e: any) {
+      console.error("[DB] getAnalytics - topDoctorsQuery failed:", e.message);
     }
-    topDoctorsQuery += ` GROUP BY a.doctorId, d.name ORDER BY count DESC LIMIT 5`;
-    const topDoctors = await query<any>(topDoctorsQuery, topDoctorsParams);
 
-    let patientCountQuery = "SELECT COUNT(*) as total FROM Patient WHERE tenantId = ?";
-    let patientCountParams = [user.tenantId];
-    if (isDoctor) {
-      patientCountQuery = "SELECT COUNT(DISTINCT patientId) as total FROM Appointment WHERE tenantId = ? AND doctorId = ?";
-      patientCountParams = [user.tenantId, user.doctorId];
+    let patientCount: any = { total: 0 };
+    try {
+      let patientCountQuery = "SELECT COUNT(*) as total FROM Patient WHERE tenantId = ?";
+      let patientCountParams = [user.tenantId];
+      if (isDoctor) {
+        patientCountQuery = "SELECT COUNT(DISTINCT patientId) as total FROM Appointment WHERE tenantId = ? AND doctorId = ?";
+        patientCountParams = [user.tenantId, user.doctorId];
+      }
+      const [resPatientCount] = await query<any>(patientCountQuery, patientCountParams);
+      if (resPatientCount) patientCount = resPatientCount;
+    } catch (e: any) {
+      console.error("[DB] getAnalytics - patientCountQuery failed:", e.message);
     }
-    const [patientCount] = await query<any>(patientCountQuery, patientCountParams);
 
-    let totalsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) as cancelled FROM Appointment WHERE tenantId = ?`;
-    let totalsParams = [user.tenantId];
-    if (isDoctor) {
-      totalsQuery += ` AND doctorId = ?`;
-      totalsParams.push(user.doctorId);
+    let total = 0;
+    let completed = 0;
+    let cancelled = 0;
+    try {
+      let totalsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) as cancelled FROM Appointment WHERE tenantId = ?`;
+      let totalsParams = [user.tenantId];
+      if (isDoctor) {
+        totalsQuery += ` AND doctorId = ?`;
+        totalsParams.push(user.doctorId);
+      }
+      const [totals] = await query<any>(totalsQuery, totalsParams);
+      if (totals) {
+        total = Number(totals.total || 0);
+        completed = Number(totals.completed || 0);
+        cancelled = Number(totals.cancelled || 0);
+      }
+    } catch (e: any) {
+      console.error("[DB] getAnalytics - totalsQuery failed:", e.message);
     }
-    const [totals] = await query<any>(totalsQuery, totalsParams);
-    const total = Number(totals?.total||0);
-    const completed = Number(totals?.completed||0);
-    const cancelled = Number(totals?.cancelled||0);
-    const completionRate = total - cancelled > 0 ? Math.round((completed/(total-cancelled))*100) : 0;
-    const dowMap: Record<number,string> = {1:"Sun",2:"Mon",3:"Tue",4:"Wed",5:"Thu",6:"Fri",7:"Sat"};
+
+    const completionRate = total - cancelled > 0 ? Math.round((completed / (total - cancelled)) * 100) : 0;
+    const dowMap: Record<number, string> = { 1: "Sun", 2: "Mon", 3: "Tue", 4: "Wed", 5: "Thu", 6: "Fri", 7: "Sat" };
 
     return {
-      byDayOfWeek: byDayOfWeek.map((r: any) => ({ day: dowMap[Number(r.dow)]||String(r.dow), count: Number(r.count) })),
+      byDayOfWeek: byDayOfWeek.map((r: any) => ({ day: dowMap[Number(r.dow)] || String(r.dow), count: Number(r.count) })),
       monthlyTrend: monthlyTrend.map((r: any) => ({ month: r.month, count: Number(r.count) })),
       statusBreakdown: statusBreakdown.map((r: any) => ({ status: r.status, count: Number(r.count) })),
       topDoctors: topDoctors.map((r: any) => ({ name: r.name, count: Number(r.count) })),
-      scorecard: { totalPatients: Number(patientCount?.total||0), totalAppointments: total, completionRate },
+      scorecard: { totalPatients: Number(patientCount?.total || 0), totalAppointments: total, completionRate },
     };
   });
 

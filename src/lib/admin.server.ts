@@ -9,9 +9,9 @@ export async function verifyAdminSession() {
     `SELECT s.id as sessionId, s.token, s.expiresAt, a.id as adminId, a.name, a.email
      FROM SuperAdminSession s
      JOIN SuperAdmin a ON s.adminId = a.id
-     WHERE s.token = ? AND s.expiresAt > NOW()
+     WHERE s.token = ? AND s.expiresAt > ?
      LIMIT 1`,
-    [token]
+    [token, new Date()]
   );
 
   if (!session) return null;

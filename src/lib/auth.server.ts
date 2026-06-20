@@ -12,9 +12,9 @@ export async function verifySession() {
               u.subscriptionStatus, u.subscriptionPlan, u.subscriptionExpiresAt, u.paymentAmount, u.billingInterval, u.paymentMethod, u.createdAt as uCreatedAt, u.profilePhoto
        FROM Session s
        JOIN User u ON s.userId = u.id
-       WHERE s.token = ? AND s.expiresAt > NOW()
+       WHERE s.token = ? AND s.expiresAt > ?
        LIMIT 1`,
-      [token]
+      [token, new Date()]
     );
     if (session) {
       return {
@@ -50,9 +50,9 @@ export async function verifySession() {
        FROM SubUserSession ss
        JOIN SubUser su ON ss.subUserId = su.id
        JOIN User u ON su.tenantId COLLATE utf8mb4_unicode_ci = u.tenantId COLLATE utf8mb4_unicode_ci
-       WHERE ss.token = ? AND ss.expiresAt > NOW()
+       WHERE ss.token = ? AND ss.expiresAt > ?
        LIMIT 1`,
-      [subToken]
+      [subToken, new Date()]
     );
     if (subSession && subSession.isActive) {
       return {

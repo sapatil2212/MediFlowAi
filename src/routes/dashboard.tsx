@@ -8970,7 +8970,7 @@ function DashboardPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-lg bg-white rounded-[1.75rem] shadow-2xl flex flex-col border border-zinc-200/60 z-10 overflow-visible my-8"
+              className="relative w-full max-w-lg bg-white rounded-[1.75rem] shadow-2xl flex flex-col border border-zinc-200/60 z-10 overflow-hidden my-auto max-h-[90vh] sm:max-h-[85vh]"
             >
               {/* Modal Header */}
               <div className="p-5 border-b border-zinc-200 bg-zinc-50/50 flex items-center justify-between shrink-0 rounded-t-[1.75rem]">
@@ -8999,7 +8999,7 @@ function DashboardPage() {
               <div className="px-6 pt-5 pb-3 shrink-0 border-b border-zinc-100/60 bg-zinc-50/20">
                 <div className="relative flex justify-between max-w-sm mx-auto">
                   {/* Line between steps */}
-                  <div className="absolute top-[14px] left-[16.6%] right-[16.6%] h-0.5 bg-zinc-100 -translate-y-1/2 -z-10">
+                  <div className="absolute top-[14px] left-[16.67%] right-[16.67%] h-0.5 bg-zinc-100 -translate-y-1/2 -z-10">
                     <div 
                       className="h-full bg-brand transition-all duration-300" 
                       style={{ width: `${((bookingStep - 1) / 2) * 100}%` }}
@@ -9070,8 +9070,8 @@ function DashboardPage() {
                 } else {
                   handleCreateOrUpdateAppointment(e);
                 }
-              }} className="flex-1 flex flex-col overflow-visible">
-                <div className="flex-1 p-5 sm:p-6 space-y-4 text-left overflow-visible">
+              }} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                <div className="flex-1 p-5 sm:p-6 space-y-4 text-left overflow-y-auto min-h-0">
                   
                   {/* Step 1: Personal Information */}
                   {bookingStep === 1 && (
@@ -9559,7 +9559,8 @@ function DashboardPage() {
                                     {getDaysInMonth(calMonth, calYear).map((day, idx) => {
                                       if (!day) return <div key={`empty-${idx}`} />;
 
-                                      const isSelected = aptDateTime ? aptDateTime.split("T")[0] === day.toISOString().split("T")[0] : false;
+                                      const localDateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+                                      const isSelected = aptDateTime ? aptDateTime.split("T")[0] === localDateStr : false;
                                       const past = isPastDate(day);
 
                                       return (
@@ -9568,7 +9569,7 @@ function DashboardPage() {
                                           type="button"
                                           onClick={() => {
                                             if (past) return;
-                                            const datePart = day.toISOString().split("T")[0];
+                                            const datePart = localDateStr;
                                             const timePart = aptDateTime.includes("T") ? aptDateTime.split("T")[1] : "09:00";
                                             setAptDateTime(datePart + "T" + timePart);
                                             setAptTimeSlot(""); // Reset slot on date change

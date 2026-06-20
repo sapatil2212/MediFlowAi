@@ -736,7 +736,8 @@ export const Route = createFileRoute("/book/$tenantId")({
                             {getDaysInMonth(calMonth, calYear).map((day, idx) => {
                               if (!day) return <div key={`empty-${idx}`} />;
 
-                              const isSelected = selectedDate === day.toISOString().split("T")[0];
+                              const localDateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+                              const isSelected = selectedDate === localDateStr;
                               const past = isPastDate(day);
 
                               return (
@@ -745,7 +746,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                                   type="button"
                                   onClick={() => {
                                     if (past) return;
-                                    setSelectedDate(day.toISOString().split("T")[0]);
+                                    setSelectedDate(localDateStr);
                                     setCalendarOpen(false);
                                     if (errors.date) setErrors(prev => ({ ...prev, date: "" }));
                                   }}
