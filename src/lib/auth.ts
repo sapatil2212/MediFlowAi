@@ -1715,7 +1715,11 @@ export const generatePrescriptionServerFn = createServerFn({ method: "POST" })
       throw new Error("OpenRouter API key is not configured in .env file.");
     }
 
-    const prompt = `You are a medical AI assistant. Extract and format a structured medical prescription from the following doctor's voice prescription instructions.
+    const prompt = `You are a medical AI assistant. Your task is to extract and generate a structured medical prescription from the following doctor's voice prescription instructions.
+
+CRITICAL INSTRUCTION:
+If the voice instructions only specify a diagnosis, symptom, or general complaint (e.g., "patient has a cold", "kidney pain", or "cough and fever") without listing specific drug names, dosages, durations, or frequencies, you MUST recommend and generate a complete list of standard, clinically appropriate medications (with name, dosage, frequency, route, duration, and instructions) and clinical advice/notes based on your medical knowledge for the described clinical context. Do not leave the medications list empty if symptoms or a diagnosis are mentioned.
+
 Format the output in raw JSON format with the following structure:
 {
   "medications": [
@@ -1728,10 +1732,9 @@ Format the output in raw JSON format with the following structure:
       "instructions": "Specific instructions (e.g., Take with meals)"
     }
   ],
-  "notes": "Any clinical directions or additional notes (e.g., avoid alcohol, drink plenty of water)"
+  "notes": "Any clinical directions or additional notes (e.g., avoid alcohol, drink plenty of water, rest)"
 }
 
-If no medications are found, return an empty array for "medications".
 Only return a valid JSON object matching this structure. Do not wrap the JSON in markdown code blocks or add any other text outside the JSON object.
 
 Voice Instructions:
@@ -1883,21 +1886,23 @@ export const voiceRxAnalyzeServerFn = createServerFn({ method: "POST" })
 Here is the recorded transcript of patient-doctor interaction or doctor's prescription dictation:
 "${data.transcript}"
 
-Analyze this transcript and extract:
-1. "chiefComplaint": The patient's chief complaints and symptoms (e.g. Tooth pain for 3 days).
-2. "diagnosis": The primary diagnosis (including common ICD-10 codes if applicable, e.g. Dental caries (K02.9)).
-3. "medications": A list of prescribed medications. For each medication, extract:
-   - "name" (e.g., Paracetamol)
-   - "dosage" (e.g., 655mg)
-   - "frequency" (e.g., TID / Three times daily)
-   - "route" (e.g., Oral)
-   - "duration" (e.g., 5 days)
-   - "instructions" (e.g., Take after food)
-4. "advice": Advice, instructions, diet or lifestyle recommendations.
+Analyze this transcript and extract or generate:
+1. "chiefComplaint": The patient's chief complaints and symptoms (e.g. Tooth pain for 3 days). If not explicitly stated, infer them from the clinical context.
+2. "diagnosis": The primary diagnosis (including common ICD-10 codes if applicable, e.g. Dental caries (K02.9)). If not explicitly stated, infer the most likely diagnosis from the complaints/symptoms.
+3. "medications": A list of prescribed medications. 
+   - CRITICAL CLINICAL REQUIREMENT: If medications, dosages, frequencies, routes, durations, or instructions are not explicitly or fully dictated in the transcript, but a diagnosis, symptom, or chief complaint is present, you MUST use your medical knowledge to recommend and generate a complete list of standard, clinically appropriate medications (with name, dosage, frequency, route, duration, and instructions) suitable for the diagnosed condition. Do not leave this list empty or incomplete if a clinical condition or symptoms are described.
+   - For each medication, output:
+     - "name" (e.g., Paracetamol)
+     - "dosage" (e.g., 650mg)
+     - "frequency" (e.g., TID / Three times daily)
+     - "route" (e.g., Oral)
+     - "duration" (e.g., 5 days)
+     - "instructions" (e.g., Take after food)
+4. "advice": Advice, instructions, diet or lifestyle recommendations. If not explicitly dictated, generate standard advice/precautions/lifestyle recommendations appropriate for the diagnosed condition.
 
 Format the output in raw JSON format with the exact structure below:
 {
-  "chiefComplaint": "Extracted chief complaints",
+  "chiefComplaint": "Extracted or inferred chief complaints",
   "diagnosis": "Primary diagnosis with ICD-10 codes",
   "medications": [
     {
