@@ -1513,8 +1513,50 @@ export const getPatientChartServerFn = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
-    const patient = await queryOne<any>("SELECT * FROM Patient WHERE id = ? AND tenantId = ? LIMIT 1", [data.patientId, user.tenantId]);
-    if (!patient) throw new Error("Patient not found");
+    
+    let patient = await queryOne<any>("SELECT * FROM Patient WHERE id = ? AND tenantId = ? LIMIT 1", [data.patientId, user.tenantId]);
+    
+    if (!patient) {
+      // Try to resolve from Appointment table if it's an appointment ID or virtual
+      const apt = await queryOne<any>("SELECT * FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1", [data.patientId, user.tenantId]);
+      if (apt) {
+        patient = {
+          id: data.patientId,
+          tenantId: user.tenantId,
+          patientNo: "Walk-in",
+          name: apt.name,
+          email: apt.email,
+          phone: apt.phone,
+          dob: "",
+          bloodGroup: "",
+          age: 35,
+          gender: "Not specified",
+          address: "Walk-in / Online Booking",
+          chiefComplaint: apt.reason,
+          notes: "",
+          createdAt: apt.createdAt
+        };
+      } else {
+        // Ultimate fallback
+        patient = {
+          id: data.patientId,
+          tenantId: user.tenantId,
+          patientNo: "N/A",
+          name: "Unregistered Patient",
+          email: "",
+          phone: "",
+          dob: "",
+          bloodGroup: "",
+          age: 35,
+          gender: "Not specified",
+          address: "None Provided",
+          chiefComplaint: "",
+          notes: "",
+          createdAt: new Date().toISOString()
+        };
+      }
+    }
+
     const soapNotes = await query<any>("SELECT * FROM SoapNote WHERE patientId = ? ORDER BY createdAt DESC LIMIT 20", [data.patientId]);
 
     // Fetch prescriptions for this patient
@@ -1531,8 +1573,8 @@ export const getPatientChartServerFn = createServerFn({ method: "GET" })
     }));
 
     const isDoctor = user.role === "doctor" && user.doctorId;
-    let aptSql = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE (a.patientId = ? OR (a.name = ? AND a.tenantId = ?))`;
-    let aptParams = [data.patientId, patient.name, user.tenantId];
+    let aptSql = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE (a.patientId = ? OR a.id = ? OR (a.name = ? AND a.tenantId = ?))`;
+    let aptParams = [data.patientId, data.patientId, patient.name, user.tenantId];
     if (isDoctor) {
       aptSql += ` AND a.doctorId = ?`;
       aptParams.push(user.doctorId);

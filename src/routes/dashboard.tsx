@@ -770,6 +770,7 @@ function DashboardPage() {
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
   const [patientProfileTab, setPatientProfileTab] = useState<"consultations" | "prescriptions" | "billing">("consultations");
   const [patientChartData, setPatientChartData] = useState<any | null>(null);
+  const patientDetails = patientChartData?.patient || selectedPatient;
   const [searchQuery, setSearchQuery] = useState("");
   const [patientsList, setPatientsList] = useState<any[]>([]);
   const [patientsTotal, setPatientsTotal] = useState(0);
@@ -1666,6 +1667,12 @@ function DashboardPage() {
         })
         .catch((e) => {
           console.error("Failed to load patient chart:", e);
+          setPatientChartData({
+            patient: selectedPatient,
+            soapNotes: [],
+            prescriptions: [],
+            appointments: []
+          });
           showToast("error", "Failed to load patient chart history");
         });
     } else {
@@ -3600,127 +3607,127 @@ function DashboardPage() {
                 exit={{ opacity: 0, y: -8 }}
                 className="space-y-6 animate-fade-in"
               >
-                {/* Header Section */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPatient(null)}
-                      className="px-4 py-2 border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-bold rounded-full cursor-pointer flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
-                    >
-                      ← Back to List
-                    </button>
+                  {/* Header Section */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 pb-4">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPatient(null)}
+                        className="px-4 py-2 border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-bold rounded-full cursor-pointer flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                      >
+                        ← Back to List
+                      </button>
+                      <div>
+                        <h3 className="text-base font-bold text-zinc-900 flex items-center gap-2">
+                          {patientDetails.name}
+                          <span className="text-[10px] bg-brand/10 border border-brand/20 text-brand px-2.5 py-0.5 rounded-full font-bold uppercase">
+                            EHR Profile
+                          </span>
+                        </h3>
+                        <p className="text-[10px] text-zinc-450 font-mono mt-0.5">Chart ID: {patientDetails.id}</p>
+                      </div>
+                    </div>
+                    
                     <div>
-                      <h3 className="text-base font-bold text-zinc-900 flex items-center gap-2">
-                        {selectedPatient.name}
-                        <span className="text-[10px] bg-brand/10 border border-brand/20 text-brand px-2.5 py-0.5 rounded-full font-bold uppercase">
-                          EHR Profile
-                        </span>
-                      </h3>
-                      <p className="text-[10px] text-zinc-450 font-mono mt-0.5">Chart ID: {selectedPatient.id}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const matchedPatient = patientsList.find(p => p.id === patientDetails.id);
+                          if (matchedPatient) {
+                            setEditingPatient(matchedPatient);
+                            setNewPatientName(matchedPatient.name);
+                            setNewPatientAge(String(matchedPatient.age));
+                            setNewPatientGender(matchedPatient.gender);
+                            setNewPatientPhone(matchedPatient.phone || "");
+                            setNewPatientEmail(matchedPatient.email || "");
+                            setNewPatientAddress(matchedPatient.address || "");
+                            setNewPatientReason(matchedPatient.chiefComplaint || matchedPatient.reason || "");
+                            setNewPatientNotes(matchedPatient.notes || "");
+                            setIsAddingPatient(true);
+                            setActiveTab("patients");
+                            setSelectedPatient(null);
+                          } else {
+                            setEditingPatient(patientDetails);
+                            setNewPatientName(patientDetails.name);
+                            setNewPatientAge(String(patientDetails.age || 35));
+                            setNewPatientGender(patientDetails.gender || "Female");
+                            setNewPatientPhone(patientDetails.phone || "");
+                            setNewPatientEmail(patientDetails.email || "");
+                            setNewPatientAddress(patientDetails.address || "");
+                            setNewPatientReason(patientDetails.chiefComplaint || patientDetails.reason || "");
+                            setNewPatientNotes(patientDetails.notes || "");
+                            setIsAddingPatient(true);
+                            setActiveTab("patients");
+                            setSelectedPatient(null);
+                          }
+                        }}
+                        className="px-4 py-2 border border-zinc-200 hover:bg-zinc-50 bg-white text-zinc-700 text-xs font-bold rounded-full cursor-pointer transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                      >
+                        <Edit3 className="h-3.5 w-3.5 text-zinc-500" /> Edit Patient Registry File
+                      </button>
                     </div>
                   </div>
-                  
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const matchedPatient = patientsList.find(p => p.id === selectedPatient.id);
-                        if (matchedPatient) {
-                          setEditingPatient(matchedPatient);
-                          setNewPatientName(matchedPatient.name);
-                          setNewPatientAge(String(matchedPatient.age));
-                          setNewPatientGender(matchedPatient.gender);
-                          setNewPatientPhone(matchedPatient.phone || "");
-                          setNewPatientEmail(matchedPatient.email || "");
-                          setNewPatientAddress(matchedPatient.address || "");
-                          setNewPatientReason(matchedPatient.chiefComplaint || matchedPatient.reason || "");
-                          setNewPatientNotes(matchedPatient.notes || "");
-                          setIsAddingPatient(true);
-                          setActiveTab("patients");
-                          setSelectedPatient(null);
-                        } else {
-                          setEditingPatient(selectedPatient);
-                          setNewPatientName(selectedPatient.name);
-                          setNewPatientAge(String(selectedPatient.age || 35));
-                          setNewPatientGender(selectedPatient.gender || "Female");
-                          setNewPatientPhone(selectedPatient.phone || "");
-                          setNewPatientEmail(selectedPatient.email || "");
-                          setNewPatientAddress(selectedPatient.address || "");
-                          setNewPatientReason(selectedPatient.chiefComplaint || selectedPatient.reason || "");
-                          setNewPatientNotes(selectedPatient.notes || "");
-                          setIsAddingPatient(true);
-                          setActiveTab("patients");
-                          setSelectedPatient(null);
-                        }
-                      }}
-                      className="px-4 py-2 border border-zinc-200 hover:bg-zinc-50 bg-white text-zinc-700 text-xs font-bold rounded-full cursor-pointer transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
-                    >
-                      <Edit3 className="h-3.5 w-3.5 text-zinc-500" /> Edit Patient Registry File
-                    </button>
-                  </div>
-                </div>
 
-                <div className="grid gap-6 lg:grid-cols-3">
-                  {/* Left Column: Demographics */}
-                  <div className="lg:col-span-1 space-y-4">
-                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-4 shadow-sm">
-                      <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide border-b border-zinc-100 pb-2">
-                        Patient Information
-                      </h4>
-                      
-                      <div className="space-y-3.5 text-xs text-left">
-                        <div>
-                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Full Name</span>
-                          <span className="font-bold text-zinc-800">{selectedPatient.name}</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-6 lg:grid-cols-3">
+                    {/* Left Column: Demographics */}
+                    <div className="lg:col-span-1 space-y-4">
+                      <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-4 shadow-sm">
+                        <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wide border-b border-zinc-100 pb-2">
+                          Patient Information
+                        </h4>
+                        
+                        <div className="space-y-3.5 text-xs text-left">
                           <div>
-                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Age</span>
-                            <span className="font-bold text-zinc-800">{selectedPatient.age} Years</span>
+                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Full Name</span>
+                            <span className="font-bold text-zinc-800">{patientDetails.name}</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Age</span>
+                              <span className="font-bold text-zinc-800">{patientDetails.age} Years</span>
+                            </div>
+                            <div>
+                              <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Gender</span>
+                              <span className="font-bold text-zinc-800">{patientDetails.gender}</span>
+                            </div>
                           </div>
                           <div>
-                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Gender</span>
-                            <span className="font-bold text-zinc-800">{selectedPatient.gender}</span>
+                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Date of Birth</span>
+                            <span className="font-bold text-zinc-800">{patientDetails.dob || "Not Provided"}</span>
                           </div>
-                        </div>
-                        <div>
-                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Date of Birth</span>
-                          <span className="font-bold text-zinc-800">{selectedPatient.dob || "Not Provided"}</span>
-                        </div>
-                        <div>
-                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Phone Number</span>
-                          <span className="font-bold text-zinc-800">{selectedPatient.phone || "Not Provided"}</span>
-                        </div>
-                        <div>
-                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Email Address</span>
-                          <span className="font-bold text-zinc-800 truncate block">{selectedPatient.email || "Not Provided"}</span>
-                        </div>
-                        <div>
-                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">WhatsApp No</span>
-                          <span className="font-bold text-zinc-800">{selectedPatient.whatsapp || selectedPatient.phone || "Not Provided"}</span>
-                        </div>
-                        <div>
-                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Blood Group</span>
-                          <span className="font-bold text-zinc-800 uppercase">{selectedPatient.bloodGroup || "Unknown"}</span>
-                        </div>
-                        <div>
-                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Insurance Provider</span>
-                          <span className="font-bold text-zinc-800">{selectedPatient.insurance || "None (Self Pay)"}</span>
-                        </div>
-                        <div>
-                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Residential Address</span>
-                          <span className="font-semibold text-zinc-700 leading-normal block">{selectedPatient.address || "Not Provided"}</span>
-                        </div>
-                        <div>
-                          <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">EHR Enrolled Date</span>
-                          <span className="font-mono text-zinc-500 block">
-                            {selectedPatient.createdAt ? new Date(selectedPatient.createdAt).toLocaleDateString() : new Date().toLocaleDateString()}
-                          </span>
+                          <div>
+                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Phone Number</span>
+                            <span className="font-bold text-zinc-800">{patientDetails.phone || "Not Provided"}</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Email Address</span>
+                            <span className="font-bold text-zinc-800 truncate block">{patientDetails.email || "Not Provided"}</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">WhatsApp No</span>
+                            <span className="font-bold text-zinc-800">{patientDetails.whatsapp || patientDetails.phone || "Not Provided"}</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Blood Group</span>
+                            <span className="font-bold text-zinc-800 uppercase">{patientDetails.bloodGroup || "Unknown"}</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Insurance Provider</span>
+                            <span className="font-bold text-zinc-800">{patientDetails.insurance || "None (Self Pay)"}</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">Residential Address</span>
+                            <span className="font-semibold text-zinc-700 leading-normal block">{patientDetails.address || "Not Provided"}</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-400 block text-[9px] font-bold uppercase tracking-tight">EHR Enrolled Date</span>
+                            <span className="font-mono text-zinc-500 block">
+                              {patientDetails.createdAt ? new Date(patientDetails.createdAt).toLocaleDateString() : new Date().toLocaleDateString()}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
                   {/* Right Column: History Tabs (Consultations, Prescriptions, Billing) */}
                   <div className="lg:col-span-2 space-y-4">
@@ -3888,7 +3895,7 @@ function DashboardPage() {
 
                       {/* BILLING & INVOICES */}
                       {patientProfileTab === "billing" && (() => {
-                        const patientAppointments = appointments.filter(a => a.patientId === selectedPatient.id);
+                        const patientAppointments = patientChartData?.appointments || appointments.filter(a => a.patientId === patientDetails.id);
                         if (patientAppointments.length === 0) {
                           return (
                             <div className="py-12 text-center text-zinc-400 italic text-xs">
@@ -5750,7 +5757,7 @@ function DashboardPage() {
                                             setSelectedPatient(patientObj);
                                           } else {
                                             setSelectedPatient({
-                                              id: apt.patientId || "P-TEMP",
+                                              id: apt.patientId || apt.id,
                                               name: apt.name,
                                               email: apt.email || "",
                                               phone: apt.phone || "",
