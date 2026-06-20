@@ -136,7 +136,7 @@ function LoginPage() {
           setForgotStep(3);
         }, 1800);
       } catch (err: any) {
-        toast.error(err.message || "Invalid or expired verification code");
+        setErrorMsg(err.message || "Invalid or expired verification code");
         setForgotOtpValues(["", "", "", ""]);
         document.getElementById("forgot-otp-0")?.focus();
       } finally {
@@ -155,17 +155,19 @@ function LoginPage() {
   // Handle Send OTP for reset password
   const handleSendForgotOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg("");
     if (!forgotEmail || !forgotEmail.includes("@")) {
-      toast.error("Please enter a valid email address.");
+      setErrorMsg("Please enter a valid email address.");
       return;
     }
     setLoading(true);
     try {
       await sendOtpServerFn({ data: forgotEmail });
+      setErrorMsg("");
       setForgotStep(2);
       toast.info("Verification code sent to " + forgotEmail);
     } catch (err: any) {
-      toast.error(err.message || "Failed to generate verification code");
+      setErrorMsg(err.message || "Failed to generate verification code");
     } finally {
       setLoading(false);
     }
@@ -174,12 +176,11 @@ function LoginPage() {
   // Handle password reset submit
   const handlePasswordResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg("");
     if (newPassword !== confirmPassword) {
       setErrorMsg("Passwords do not match");
-      toast.error("Passwords do not match");
       return;
     }
-    setErrorMsg("");
     setLoading(true);
     try {
       await resetPasswordServerFn({
@@ -196,9 +197,10 @@ function LoginPage() {
         setForgotEmail("");
         setNewPassword("");
         setConfirmPassword("");
+        setErrorMsg("");
       }, 1800);
     } catch (err: any) {
-      toast.error(err.message || "Failed to reset password");
+      setErrorMsg(err.message || "Failed to reset password");
     } finally {
       setLoading(false);
     }
@@ -395,6 +397,13 @@ function LoginPage() {
                 <X className="h-4 w-4" />
               </button>
 
+              {/* Common inline error displaying inside the modal */}
+              {errorMsg && (
+                <div className="mb-4 rounded-2xl bg-red-50 border border-red-100 p-3.5 text-center">
+                  <p className="text-[10px] text-red-650 font-bold leading-normal text-red-700">{errorMsg}</p>
+                </div>
+              )}
+
               {/* Step 1: Email Input */}
               {forgotStep === 1 && (
                 <div className="space-y-4">
@@ -545,12 +554,6 @@ function LoginPage() {
                             </button>
                           </div>
                         </div>
-
-                        {errorMsg && (
-                          <p className="text-[10px] text-red-500 text-center font-medium mt-1">
-                            {errorMsg}
-                          </p>
-                        )}
 
                         <button
                           type="submit"

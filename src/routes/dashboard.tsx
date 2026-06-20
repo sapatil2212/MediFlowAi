@@ -64,7 +64,8 @@ import {
   ChevronDown,
   Bell,
   Camera,
-  Upload
+  Upload,
+  MessageCircle
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -132,6 +133,7 @@ import {
   savePrescriptionServerFn,
   uploadProfilePhotoServerFn,
 } from "../lib/auth";
+import WhatsAppHub from "../components/WhatsAppHub";
 
 
 export const Route = createFileRoute("/dashboard")({
@@ -697,7 +699,7 @@ function LeavesCalendarPanel({
 
 function DashboardPage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"overview" | "scribe" | "calendar" | "patients" | "analytics" | "settings" | "appointments" | "plans">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "scribe" | "calendar" | "patients" | "analytics" | "settings" | "appointments" | "plans" | "whatsapp">("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [calendarView, setCalendarView] = useState<"month" | "week" | "day">("week");
@@ -3311,11 +3313,13 @@ function DashboardPage() {
                     { id: "appointments", label: "Appointments List", icon: ClipboardList },
                     { id: "patients", label: "Patient Records", icon: Users },
                     { id: "analytics", label: "Practice Analytics", icon: TrendingUp },
+                    { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
                     { id: "settings", label: "Settings", icon: Settings },
                     { id: "plans", label: "Manage Plans", icon: CreditCard },
                   ].filter(tab => {
                     if (user?.role !== "admin" && tab.id === "plans") return false;
-                    if (user?.role === "reception" && (tab.id === "scribe" || tab.id === "analytics")) return false;
+                    if (user?.role === "reception" && (tab.id === "scribe" || tab.id === "analytics" || tab.id === "whatsapp")) return false;
+                    if (user?.subscriptionPlan === "Solo" && tab.id === "whatsapp") return false;
                     return true;
                   }).map((tab) => {
                     const Icon = tab.icon;
@@ -3415,11 +3419,13 @@ function DashboardPage() {
               { id: "appointments", label: "Appointments List", icon: ClipboardList },
               { id: "patients", label: "Patient Records", icon: Users },
               { id: "analytics", label: "Practice Analytics", icon: TrendingUp },
+              { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
               { id: "settings", label: "Settings", icon: Settings },
               { id: "plans", label: "Manage Plans", icon: CreditCard },
             ].filter(tab => {
               if (user?.role !== "admin" && tab.id === "plans") return false;
-              if (user?.role === "reception" && (tab.id === "scribe" || tab.id === "analytics")) return false;
+              if (user?.role === "reception" && (tab.id === "scribe" || tab.id === "analytics" || tab.id === "whatsapp")) return false;
+              if (user?.subscriptionPlan === "Solo" && tab.id === "whatsapp") return false;
               return true;
             }).map((tab) => {
               const Icon = tab.icon;
@@ -8688,6 +8694,21 @@ function DashboardPage() {
                 </div>
               </motion.div>
             )})()}
+
+            {activeTab === "whatsapp" && (
+              <motion.div
+                key="whatsapp"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+              >
+                <WhatsAppHub
+                  user={user}
+                  showToast={showToast}
+                  setConfirmDialog={setConfirmDialog}
+                />
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
 

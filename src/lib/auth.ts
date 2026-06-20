@@ -6,7 +6,7 @@ import { query, queryOne, execute } from "./db";
 import { sendOtpEmail } from "./email";
 
 // WhatsApp HTTP client — pure ESM, safe to import (no Puppeteer/CJS globals)
-import { enqueueWA, getWAStatus, disconnectWA, initializeWA } from "./whatsapp";
+import { enqueueWA, getWAStatus, disconnectWA, initializeWA, enqueueWABulk, sendWAMedia, pauseWACampaign } from "./whatsapp";
 
 
 // Helper to generate a 4-digit OTP
@@ -1820,7 +1820,6 @@ export const deleteSubUserServerFn = createServerFn({ method: "POST" })
     await execute("DELETE FROM SubUser WHERE id = ? AND tenantId = ?", [id, user.tenantId]);
     return { success: true };
   });
-
 export const subUserLoginServerFn = createServerFn({ method: "POST" })
   .validator((data: { email: string; password: string; tenantId: string }) => {
     if (!data.email || !data.password || !data.tenantId) throw new Error("Email, password, and clinic ID are required");
@@ -1857,4 +1856,332 @@ export const subUserLoginServerFn = createServerFn({ method: "POST" })
       success: true,
       user: { id: subUser.id, name: subUser.name, email: subUser.email, role: subUser.role, tenantId: subUser.tenantId },
     };
+  });
+
+// ──────────────────────────────────────────────
+// WhatsApp Hub Server Functions
+// ──────────────────────────────────────────────
+
+export const getWATemplatesServerFn = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+    return query("SELECT * FROM WATemplate WHERE tenantId = ? ORDER BY createdAt DESC", [user.id]);
+  });
+
+export const saveWATemplateServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    id?: string;
+    name: string;
+    category: string;
+    headerType: string;
+    headerText?: string | null;
+    headerImageUrl?: string | null;
+    bodyText: string;
+    footerText?: string | null;
+    ctaButtons?: any;
+    quickReplyButtons?: any;
+    variables?: any;
+  }) => data)
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+    
+    const id = data.id || crypto.randomUUID();
+    const ctaJson = data.ctaButtons ? JSON.stringify(data.ctaButtons) : null;
+    const qrJson = data.quickReplyButtons ? JSON.stringify(data.quickReplyButtons) : null;
+    const varsJson = data.variables ? JSON.stringify(data.variables) : null;
+
+    if (data.id) {
+      await execute(
+        `UPDATE WATemplate SET 
+          name = ?, category = ?, headerType = ?, headerText = ?, headerImageUrl = ?, 
+          bodyText = ?, footerText = ?, ctaButtons = ?, quickReplyButtons = ?, variables = ? 
+         WHERE id = ? AND tenantId = ?`,
+        [
+          data.name, data.category, data.headerType, data.headerText || null, data.headerImageUrl || null,
+          data.bodyText, data.footerText || null, ctaJson, qrJson, varsJson, id, user.id
+        ]
+      );
+    } else {
+      await execute(
+        `INSERT INTO WATemplate (
+          id, tenantId, name, category, headerType, headerText, headerImageUrl, 
+          bodyText, footerText, ctaButtons, quickReplyButtons, variables
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id, user.id, data.name, data.category, data.headerType, data.headerText || null, data.headerImageUrl || null,
+          data.bodyText, data.footerText || null, ctaJson, qrJson, varsJson
+        ]
+      );
+    }
+    return { success: true, id };
+  });
+
+export const deleteWATemplateServerFn = createServerFn({ method: "POST" })
+  .validator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+    await execute("DELETE FROM WATemplate WHERE id = ? AND tenantId = ?", [id, user.id]);
+    return { success: true };
+  });
+
+export const getWACampaignsServerFn = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+    return query(`
+      SELECT c.*, t.name as templateName 
+      FROM WACampaign c
+      LEFT JOIN WATemplate t ON c.templateId = t.id
+      WHERE c.tenantId = ? ORDER BY c.createdAt DESC
+    `, [user.id]);
+  });
+
+export const createWACampaignServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    name: string;
+    templateId: string | null;
+    minDelaySec: number;
+    maxDelaySec: number;
+    dailyLimit: number;
+    recipients: { phone: string; name?: string | null; variables?: any }[];
+  }) => data)
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const campaignId = crypto.randomUUID();
+    
+    await execute(
+      `INSERT INTO WACampaign (
+        id, tenantId, name, templateId, status, totalRecipients, sentCount, failedCount, minDelaySec, maxDelaySec, dailyLimit
+       ) VALUES (?, ?, ?, ?, 'draft', ?, 0, 0, ?, ?, ?)`,
+      [campaignId, user.id, data.name, data.templateId, data.recipients.length, data.minDelaySec, data.maxDelaySec, data.dailyLimit]
+    );
+
+    for (const r of data.recipients) {
+      const recipientId = crypto.randomUUID();
+      const varsJson = r.variables ? JSON.stringify(r.variables) : null;
+      await execute(
+        `INSERT INTO WACampaignRecipient (id, campaignId, phone, name, variables, status) VALUES (?, ?, ?, ?, ?, 'pending')`,
+        [recipientId, campaignId, r.phone, r.name || null, varsJson]
+      );
+    }
+
+    return { success: true, campaignId };
+  });
+
+export const startWACampaignServerFn = createServerFn({ method: "POST" })
+  .validator((campaignId: string) => campaignId)
+  .handler(async ({ data: campaignId }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const campaign = await queryOne<any>(
+      "SELECT * FROM WACampaign WHERE id = ? AND tenantId = ?",
+      [campaignId, user.id]
+    );
+    if (!campaign) throw new Error("Campaign not found");
+
+    let template: any = null;
+    if (campaign.templateId) {
+      template = await queryOne<any>(
+        "SELECT * FROM WATemplate WHERE id = ? AND tenantId = ?",
+        [campaign.templateId, user.id]
+      );
+    }
+
+    const recipients = await query<any>(
+      "SELECT * FROM WACampaignRecipient WHERE campaignId = ? AND status = 'pending'",
+      [campaignId]
+    );
+
+    if (recipients.length === 0) {
+      throw new Error("No pending recipients in this campaign");
+    }
+
+    const messages = [];
+    for (const r of recipients) {
+      let body = template ? template.bodyText : "Hello";
+      const headerUrl = template?.headerImageUrl || null;
+      
+      if (r.variables) {
+        const variablesObj = typeof r.variables === "string" ? JSON.parse(r.variables) : r.variables;
+        if (variablesObj && typeof variablesObj === "object") {
+          for (const key of Object.keys(variablesObj)) {
+            const replacement = String(variablesObj[key]);
+            body = body.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), replacement);
+          }
+        }
+      }
+
+      messages.push({
+        recipientId: r.id,
+        phone: r.phone,
+        body,
+        mediaUrl: headerUrl
+      });
+    }
+
+    await enqueueWABulk(
+      user.id,
+      campaignId,
+      messages,
+      campaign.minDelaySec,
+      campaign.maxDelaySec
+    );
+
+    return { success: true };
+  });
+
+export const pauseWACampaignServerFn = createServerFn({ method: "POST" })
+  .validator((campaignId: string) => campaignId)
+  .handler(async ({ data: campaignId }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    await pauseWACampaign(user.id, campaignId);
+    return { success: true };
+  });
+
+export const deleteWACampaignServerFn = createServerFn({ method: "POST" })
+  .validator((campaignId: string) => campaignId)
+  .handler(async ({ data: campaignId }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    try {
+      await pauseWACampaign(user.id, campaignId);
+    } catch (_) {}
+
+    await execute("DELETE FROM WACampaignRecipient WHERE campaignId = ?", [campaignId]);
+    await execute("DELETE FROM WACampaign WHERE id = ? AND tenantId = ?", [campaignId, user.id]);
+
+    return { success: true };
+  });
+
+export const getCampaignRecipientsServerFn = createServerFn({ method: "GET" })
+  .validator((campaignId: string) => campaignId)
+  .handler(async ({ data: campaignId }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+    
+    return query("SELECT * FROM WACampaignRecipient WHERE campaignId = ?", [campaignId]);
+  });
+
+export const getWAAutoRepliesServerFn = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+    return query("SELECT * FROM WAAutoReply WHERE tenantId = ? ORDER BY priority DESC, createdAt DESC", [user.id]);
+  });
+
+export const saveWAAutoReplyServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    id?: string;
+    triggerKeyword: string;
+    matchType: string;
+    replyMessage: string;
+    isActive: number;
+    priority: number;
+  }) => data)
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const id = data.id || crypto.randomUUID();
+    if (data.id) {
+      await execute(
+        `UPDATE WAAutoReply SET triggerKeyword = ?, matchType = ?, replyMessage = ?, isActive = ?, priority = ? 
+         WHERE id = ? AND tenantId = ?`,
+        [data.triggerKeyword, data.matchType, data.replyMessage, data.isActive, data.priority, id, user.id]
+      );
+    } else {
+      await execute(
+        `INSERT INTO WAAutoReply (id, tenantId, triggerKeyword, matchType, replyMessage, isActive, priority) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, user.id, data.triggerKeyword, data.matchType, data.replyMessage, data.isActive, data.priority]
+      );
+    }
+    return { success: true, id };
+  });
+
+export const deleteWAAutoReplyServerFn = createServerFn({ method: "POST" })
+  .validator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+    await execute("DELETE FROM WAAutoReply WHERE id = ? AND tenantId = ?", [id, user.id]);
+    return { success: true };
+  });
+
+export const sendBulkWAServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    numbers: string[];
+    message: string;
+    minDelay: number;
+    maxDelay: number;
+  }) => data)
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const formattedMessages = data.numbers.map((num) => ({
+      recipientId: crypto.randomUUID(),
+      phone: num,
+      body: data.message
+    }));
+
+    await enqueueWABulk(user.id, null, formattedMessages, data.minDelay, data.maxDelay);
+    return { success: true, count: formattedMessages.length };
+  });
+
+export const getWACampaignStatsServerFn = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const totalCampaignsResult = await queryOne<any>(
+      "SELECT COUNT(*) as count FROM WACampaign WHERE tenantId = ?", [user.id]
+    );
+    const totalSentResult = await queryOne<any>(
+      "SELECT SUM(sentCount) as sent, SUM(failedCount) as failed FROM WACampaign WHERE tenantId = ?", [user.id]
+    );
+    const activeRulesResult = await queryOne<any>(
+      "SELECT COUNT(*) as count FROM WAAutoReply WHERE tenantId = ? AND isActive = 1", [user.id]
+    );
+
+    return {
+      totalCampaigns: totalCampaignsResult?.count || totalCampaignsResult?.COUNT || 0,
+      totalSent: totalSentResult?.sent || totalSentResult?.SENT || 0,
+      totalFailed: totalSentResult?.failed || totalSentResult?.FAILED || 0,
+      activeAutoReplies: activeRulesResult?.count || activeRulesResult?.COUNT || 0,
+    };
+  });
+
+export const uploadWATemplateHeaderImageServerFn = createServerFn({ method: "POST" })
+  .validator((data: { base64: string }) => {
+    if (!data.base64) throw new Error("No image data provided");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const cloudinary = await import("cloudinary");
+    const cloud = cloudinary.v2;
+    cloud.config({
+      cloud_name: process.env["CLOUDINARY_CLOUD_NAME"],
+      api_key: process.env["CLOUDINARY_API_KEY"],
+      api_secret: process.env["CLOUDINARY_API_SECRET"],
+    });
+
+    const result = await cloud.uploader.upload(data.base64, {
+      folder: `mediflow/whatsapp_templates/${user.id}`,
+      overwrite: true,
+    });
+
+    return { success: true, url: result.secure_url };
   });

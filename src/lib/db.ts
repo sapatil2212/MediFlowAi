@@ -70,6 +70,15 @@ if (typeof window === "undefined") {
     .then(async (conn: PoolConnection) => {
       console.log("[DB] ✅ Database connection established successfully");
       try {
+        // Force character set and collation to match between User and SubUser tables to prevent collation mismatch errors on JOINs
+        try {
+          await conn.query("ALTER TABLE User CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+          await conn.query("ALTER TABLE SubUser CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+          console.log("[DB] ✅ Forced database character set and collation to utf8mb4_unicode_ci for User and SubUser");
+        } catch (colErr: any) {
+          console.warn("[DB] ⚠️ Could not normalize collation at startup:", colErr.message);
+        }
+
         const result = await conn.query(
           "UPDATE User SET tenantId = CONCAT('clinic-', SUBSTRING(MD5(id), 1, 6)) WHERE tenantId IS NULL"
         );
@@ -337,6 +346,80 @@ if (typeof window === "undefined") {
             token VARCHAR(255) UNIQUE NOT NULL,
             expiresAt TIMESTAMP NOT NULL,
             createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+
+        // Create WATemplate Table
+        await conn.query(`
+          CREATE TABLE IF NOT EXISTS WATemplate (
+            id VARCHAR(255) PRIMARY KEY,
+            tenantId VARCHAR(255) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            category VARCHAR(50) DEFAULT 'marketing',
+            headerType VARCHAR(50) DEFAULT 'none',
+            headerText VARCHAR(255) NULL,
+            headerImageUrl VARCHAR(500) NULL,
+            bodyText TEXT NOT NULL,
+            footerText VARCHAR(255) NULL,
+            ctaButtons JSON NULL,
+            quickReplyButtons JSON NULL,
+            variables JSON NULL,
+            isActive TINYINT(1) DEFAULT 1,
+            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_tenant (tenantId)
+          )
+        `);
+
+        // Create WACampaign Table
+        await conn.query(`
+          CREATE TABLE IF NOT EXISTS WACampaign (
+            id VARCHAR(255) PRIMARY KEY,
+            tenantId VARCHAR(255) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            templateId VARCHAR(255) NULL,
+            status VARCHAR(50) DEFAULT 'draft',
+            totalRecipients INT DEFAULT 0,
+            sentCount INT DEFAULT 0,
+            failedCount INT DEFAULT 0,
+            scheduledAt TIMESTAMP NULL,
+            startedAt TIMESTAMP NULL,
+            completedAt TIMESTAMP NULL,
+            minDelaySec INT DEFAULT 10,
+            maxDelaySec INT DEFAULT 25,
+            dailyLimit INT DEFAULT 200,
+            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_tenant (tenantId)
+          )
+        `);
+
+        // Create WACampaignRecipient Table
+        await conn.query(`
+          CREATE TABLE IF NOT EXISTS WACampaignRecipient (
+            id VARCHAR(255) PRIMARY KEY,
+            campaignId VARCHAR(255) NOT NULL,
+            phone VARCHAR(50) NOT NULL,
+            name VARCHAR(255) NULL,
+            variables JSON NULL,
+            status VARCHAR(50) DEFAULT 'pending',
+            sentAt TIMESTAMP NULL,
+            errorMsg VARCHAR(500) NULL,
+            INDEX idx_campaign (campaignId)
+          )
+        `);
+
+        // Create WAAutoReply Table
+        await conn.query(`
+          CREATE TABLE IF NOT EXISTS WAAutoReply (
+            id VARCHAR(255) PRIMARY KEY,
+            tenantId VARCHAR(255) NOT NULL,
+            triggerKeyword VARCHAR(255) NOT NULL,
+            matchType VARCHAR(50) DEFAULT 'contains',
+            replyMessage TEXT NOT NULL,
+            isActive TINYINT(1) DEFAULT 1,
+            priority INT DEFAULT 0,
+            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_tenant (tenantId)
           )
         `);
 

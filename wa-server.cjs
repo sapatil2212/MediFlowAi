@@ -6,11 +6,67 @@
  * Start: node wa-server.cjs
  */
 
+require("dotenv").config();
 const http = require("http");
 const qrcode = require("qrcode");
 const path = require("path");
 const fs = require("fs");
 const { Client, LocalAuth } = require("whatsapp-web.js");
+const mariadb = require("mariadb");
+
+// Direct MariaDB connection pool for the WhatsApp microservice
+let dbPoolInstance = null;
+function getDbPool() {
+  if (dbPoolInstance) return dbPoolInstance;
+  
+  let dbHost = process.env.DB_HOST || "localhost";
+  let dbPort = parseInt(process.env.DB_PORT || "3306");
+  let dbUser = process.env.DB_USER || "root";
+  let dbPassword = process.env.DB_PASSWORD || "";
+  let dbName = process.env.DB_NAME || "bookmytime";
+
+  const dbUrl = process.env.DATABASE_URL;
+  if (dbUrl && dbUrl.startsWith("mysql://")) {
+    try {
+      const parsedUrl = new URL(dbUrl);
+      dbHost = parsedUrl.hostname;
+      dbPort = parsedUrl.port ? parseInt(parsedUrl.port) : 3306;
+      dbUser = decodeURIComponent(parsedUrl.username);
+      dbPassword = decodeURIComponent(parsedUrl.password);
+      dbName = decodeURIComponent(parsedUrl.pathname.replace(/^\//, ""));
+    } catch (e) {
+      console.error("[WA DB] Failed to parse DATABASE_URL:", e.message);
+    }
+  }
+
+  const useSsl = dbHost !== "localhost" && dbHost !== "127.0.0.1" && process.env.DB_SSL !== "false";
+
+  dbPoolInstance = mariadb.createPool({
+    host: dbHost,
+    port: dbPort,
+    user: dbUser,
+    password: dbPassword,
+    database: dbName,
+    ssl: useSsl ? { rejectUnauthorized: false } : undefined,
+    connectionLimit: 5,
+    connectTimeout: 30000,
+  });
+  return dbPoolInstance;
+}
+
+async function dbQuery(sql, params) {
+  let conn;
+  try {
+    conn = await getDbPool().getConnection();
+    const rows = await conn.query(sql, params);
+    return rows;
+  } catch (err) {
+    console.error("[WA DB Query Error]", err.message);
+    return [];
+  } finally {
+    if (conn) conn.release();
+  }
+}
 
 // ──────────────────────────────────────────────
 // State (Multi-Tenant Sessions Map)
@@ -136,6 +192,63 @@ async function initClient(tenantId, force = false) {
       }, 5000);
     });
 
+    // Auto-Reply Listener
+    session.client.on("message", async (msg) => {
+      try {
+        if (msg.fromMe || msg.isGroup || !msg.body) return;
+        const sender = msg.from.replace("@c.us", "");
+        const incomingText = msg.body.trim();
+        
+        console.log(`[WA Incoming] [${tenantId}] Received from +${sender}: "${incomingText}"`);
+
+        // Query active auto-replies for this tenant
+        const rules = await dbQuery(
+          "SELECT * FROM WAAutoReply WHERE tenantId = ? AND isActive = 1 ORDER BY priority DESC, createdAt ASC",
+          [tenantId]
+        );
+
+        for (const rule of rules) {
+          let matched = false;
+          const kw = rule.triggerKeyword.toLowerCase().trim();
+          const bodyLower = incomingText.toLowerCase();
+
+          if (rule.matchType === "exact" && bodyLower === kw) {
+            matched = true;
+          } else if (rule.matchType === "contains" && bodyLower.includes(kw)) {
+            matched = true;
+          } else if (rule.matchType === "startsWith" && bodyLower.startsWith(kw)) {
+            matched = true;
+          } else if (rule.matchType === "regex") {
+            try {
+              const regex = new RegExp(rule.triggerKeyword, "i");
+              matched = regex.test(incomingText);
+            } catch (regErr) {
+              console.error(`Invalid regex rule: ${rule.triggerKeyword}`, regErr.message);
+            }
+          }
+
+          if (matched) {
+            console.log(`[WA AutoReply] [${tenantId}] Match found for rule "${rule.triggerKeyword}". Replying with: "${rule.replyMessage}"`);
+            
+            // Send auto-reply
+            await session.client.sendMessage(msg.from, rule.replyMessage);
+            
+            // Log in memory sentLog
+            session.sentLog.unshift({
+              timestamp: new Date().toISOString(),
+              recipient: sender,
+              message: `[Auto-Reply] ${rule.replyMessage}`,
+              status: "sent"
+            });
+            if (session.sentLog.length > 100) session.sentLog.pop();
+            break; // Stop after first match
+          }
+        }
+      } catch (err) {
+        console.error(`[WA AutoReply Error] [${tenantId}]:`, err.message);
+      }
+    });
+
     await session.client.initialize();
   } catch (err) {
     session.state = "ERROR";
@@ -177,7 +290,7 @@ async function disconnect(tenantId) {
 }
 
 // ──────────────────────────────────────────────
-// Queue Processor per Tenant (anti-ban: 8–15s between msgs)
+// Queue Processor per Tenant (anti-ban: configurable delay with jitter)
 // ──────────────────────────────────────────────
 async function processQueue(tenantId) {
   const session = clients.get(tenantId);
@@ -187,23 +300,69 @@ async function processQueue(tenantId) {
   while (session.queue.length > 0 && session.state === "CONNECTED") {
     const msg = session.queue[0];
     try {
-      await session.client.sendMessage(`${msg.phone}@c.us`, msg.body);
+      if (msg.mediaUrl) {
+        const { MessageMedia } = require("whatsapp-web.js");
+        const media = await MessageMedia.fromUrl(msg.mediaUrl);
+        await session.client.sendMessage(`${msg.phone}@c.us`, media, { caption: msg.body });
+      } else {
+        await session.client.sendMessage(`${msg.phone}@c.us`, msg.body);
+      }
+
       session.sentLog.unshift({ timestamp: new Date().toISOString(), recipient: msg.phone, message: msg.body, status: "sent" });
       if (session.sentLog.length > 100) session.sentLog.pop();
       session.queue.shift();
       console.log(`[WA] [${tenantId}] ✅ Sent to +` + msg.phone);
+
+      // Update Database for Campaign Recipient
+      if (msg.recipientId) {
+        await dbQuery("UPDATE WACampaignRecipient SET status = 'sent', sentAt = NOW() WHERE id = ?", [msg.recipientId]);
+      }
+      if (msg.campaignId) {
+        await dbQuery("UPDATE WACampaign SET sentCount = sentCount + 1 WHERE id = ?", [msg.campaignId]);
+        
+        // Auto-complete campaign status if queue is empty of this campaign
+        const remainingInQueue = session.queue.some(item => item.campaignId === msg.campaignId);
+        if (!remainingInQueue) {
+          const pending = await dbQuery("SELECT COUNT(*) as count FROM WACampaignRecipient WHERE campaignId = ? AND status = 'pending'", [msg.campaignId]);
+          const pendingCount = pending[0]?.count || pending[0]?.COUNT || 0;
+          if (parseInt(pendingCount) === 0) {
+            await dbQuery("UPDATE WACampaign SET status = 'completed', completedAt = NOW() WHERE id = ?", [msg.campaignId]);
+            console.log(`[WA] [${tenantId}] Campaign ${msg.campaignId} marked as COMPLETED.`);
+          }
+        }
+      }
     } catch (err) {
       console.error(`[WA] [${tenantId}] ❌ Send failed to +` + msg.phone + ":", err.message);
       msg.retries = (msg.retries || 0) + 1;
       if (msg.retries >= 3) {
         session.sentLog.unshift({ timestamp: new Date().toISOString(), recipient: msg.phone, message: msg.body, status: "failed" });
         session.queue.shift();
+
+        // Update DB as failed
+        if (msg.recipientId) {
+          await dbQuery("UPDATE WACampaignRecipient SET status = 'failed', errorMsg = ?, sentAt = NOW() WHERE id = ?", [err.message, msg.recipientId]);
+        }
+        if (msg.campaignId) {
+          await dbQuery("UPDATE WACampaign SET failedCount = failedCount + 1 WHERE id = ?", [msg.campaignId]);
+          
+          const remainingInQueue = session.queue.some(item => item.campaignId === msg.campaignId);
+          if (!remainingInQueue) {
+            const pending = await dbQuery("SELECT COUNT(*) as count FROM WACampaignRecipient WHERE campaignId = ? AND status = 'pending'", [msg.campaignId]);
+            const pendingCount = pending[0]?.count || pending[0]?.COUNT || 0;
+            if (parseInt(pendingCount) === 0) {
+              await dbQuery("UPDATE WACampaign SET status = 'completed', completedAt = NOW() WHERE id = ?", [msg.campaignId]);
+            }
+          }
+        }
       } else {
         session.queue.push(session.queue.shift());
       }
     }
-    // Anti-ban delay: 8–15 seconds
-    const delay = 8000 + Math.floor(Math.random() * 7000);
+    
+    // Anti-ban delay: randomized delay between minDelay and maxDelay (default 8–15s)
+    const minD = msg.minDelay || 8;
+    const maxD = msg.maxDelay || 15;
+    const delay = (minD * 1000) + Math.floor(Math.random() * ((maxD - minD) * 1000));
     await new Promise((r) => setTimeout(r, delay));
   }
   session.isProcessingQueue = false;
@@ -314,6 +473,115 @@ const server = http.createServer(async (req, res) => {
     session.lastActive = Date.now();
     session.queue.push({ phone, body: body.body, retries: 0 });
     console.log(`[WA] [${tenantId}] 📬 Enqueued for +${phone}. Queue size: ${session.queue.length}`);
+    if (session.state === "CONNECTED") processQueue(tenantId);
+    return json(res, { success: true, queued: true });
+  }
+
+  // POST /enqueue-bulk { tenantId, campaignId, messages: [{recipientId, phone, body, mediaUrl}], minDelay, maxDelay }
+  if (req.method === "POST" && pathname === "/enqueue-bulk") {
+    const body = await readBody(req);
+    const tenantId = body.tenantId || "global";
+    const campaignId = body.campaignId;
+    const messages = body.messages || [];
+    const minDelay = parseInt(body.minDelay) || 10;
+    const maxDelay = parseInt(body.maxDelay) || 25;
+
+    if (!Array.isArray(messages)) return json(res, { error: "messages array required" }, 400);
+
+    let session = clients.get(tenantId);
+    if (!session) {
+      const sessionDir = path.resolve(`./.wwebjs_auth/session-${tenantId}`);
+      if (fs.existsSync(sessionDir)) {
+        await initClient(tenantId);
+        session = clients.get(tenantId);
+      }
+    }
+
+    if (!session) {
+      return json(res, { error: `WhatsApp session not initialized for tenant: ${tenantId}` }, 400);
+    }
+
+    session.lastActive = Date.now();
+
+    for (const msg of messages) {
+      let phone = String(msg.phone).replace(/\D/g, "");
+      if (phone.length === 10) phone = "91" + phone;
+
+      session.queue.push({
+        recipientId: msg.recipientId,
+        campaignId,
+        phone,
+        body: msg.body,
+        mediaUrl: msg.mediaUrl,
+        minDelay,
+        maxDelay,
+        retries: 0
+      });
+    }
+
+    console.log(`[WA] [${tenantId}] 📬 Enqueued bulk of ${messages.length} messages. Queue size: ${session.queue.length}`);
+    
+    if (campaignId) {
+      await dbQuery("UPDATE WACampaign SET status = 'sending', startedAt = NOW() WHERE id = ?", [campaignId]);
+    }
+
+    if (session.state === "CONNECTED") processQueue(tenantId);
+    return json(res, { success: true, queued: true, count: messages.length });
+  }
+
+  // POST /pause-campaign { tenantId, campaignId }
+  if (req.method === "POST" && pathname === "/pause-campaign") {
+    const body = await readBody(req);
+    const tenantId = body.tenantId || "global";
+    const campaignId = body.campaignId;
+
+    if (!campaignId) return json(res, { error: "campaignId required" }, 400);
+
+    let session = clients.get(tenantId);
+    if (session) {
+      session.queue = session.queue.filter(item => item.campaignId !== campaignId);
+      console.log(`[WA] [${tenantId}] Paused campaign ${campaignId}. Cleared messages from memory queue.`);
+    }
+
+    await dbQuery("UPDATE WACampaign SET status = 'paused' WHERE id = ?", [campaignId]);
+    return json(res, { success: true });
+  }
+
+  // POST /send-media { tenantId, phone, mediaUrl, caption }
+  if (req.method === "POST" && pathname === "/send-media") {
+    const body = await readBody(req);
+    const tenantId = body.tenantId || "global";
+    const phone = body.phone;
+    const mediaUrl = body.mediaUrl;
+    const caption = body.caption || "";
+
+    if (!phone || !mediaUrl) return json(res, { error: "phone and mediaUrl required" }, 400);
+
+    let targetPhone = String(phone).replace(/\D/g, "");
+    if (targetPhone.length === 10) targetPhone = "91" + targetPhone;
+
+    let session = clients.get(tenantId);
+    if (!session) {
+      const sessionDir = path.resolve(`./.wwebjs_auth/session-${tenantId}`);
+      if (fs.existsSync(sessionDir)) {
+        await initClient(tenantId);
+        session = clients.get(tenantId);
+      }
+    }
+
+    if (!session) {
+      return json(res, { error: `WhatsApp session not initialized for tenant: ${tenantId}` }, 400);
+    }
+
+    session.lastActive = Date.now();
+
+    session.queue.push({
+      phone: targetPhone,
+      body: caption,
+      mediaUrl: mediaUrl,
+      retries: 0
+    });
+
     if (session.state === "CONNECTED") processQueue(tenantId);
     return json(res, { success: true, queued: true });
   }

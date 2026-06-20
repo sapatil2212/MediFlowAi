@@ -71,6 +71,32 @@ export async function initializeWA(tenantId = "global"): Promise<{ success: bool
   return waFetch("/initialize", "POST", { tenantId });
 }
 
+/** Enqueue bulk messages for a campaign */
+export async function enqueueWABulk(
+  tenantId: string,
+  campaignId: string | null,
+  messages: { recipientId: string; phone: string; body: string; mediaUrl?: string | null }[],
+  minDelay = 10,
+  maxDelay = 25
+): Promise<{ success: boolean; count: number }> {
+  return waFetch("/enqueue-bulk", "POST", { tenantId, campaignId, messages, minDelay, maxDelay });
+}
+
+/** Enqueue a single media message */
+export async function sendWAMedia(
+  tenantId: string,
+  phone: string,
+  mediaUrl: string,
+  caption = ""
+): Promise<{ success: boolean }> {
+  return waFetch("/send-media", "POST", { tenantId, phone, mediaUrl, caption });
+}
+
+/** Pause sending a campaign in the microservice queue */
+export async function pauseWACampaign(tenantId: string, campaignId: string): Promise<{ success: boolean }> {
+  return waFetch("/pause-campaign", "POST", { tenantId, campaignId });
+}
+
 // ── Legacy compat object (used by auth.ts imports) ───
 // Keeps backward compat with code that does whatsappService.enqueue(phone, body)
 export const whatsappService = {
