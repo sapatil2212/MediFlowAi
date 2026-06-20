@@ -5,8 +5,8 @@ import crypto from "crypto";
 import { query, queryOne, execute } from "./db";
 import { sendOtpEmail } from "./email";
 
-// WhatsApp HTTP client â€” pure ESM, safe to import (no Puppeteer/CJS globals)
-import { enqueueWA, getWAStatus, disconnectWA } from "./whatsapp";
+// WhatsApp HTTP client — pure ESM, safe to import (no Puppeteer/CJS globals)
+import { enqueueWA, getWAStatus, disconnectWA, initializeWA } from "./whatsapp";
 
 
 // Helper to generate a 4-digit OTP
@@ -589,7 +589,7 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
       try {
         const waConfig = await queryOne<any>("SELECT isEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1", [data.tenantId]);
         if (waConfig && waConfig.isEnabled) {
-          const waStatus = await getWAStatus();
+          const waStatus = await getWAStatus(data.tenantId);
           if (waStatus.state === "CONNECTED") {
             const clinic = await queryOne<any>("SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1", [data.tenantId]);
             const clinicName = clinic ? clinic.clinicName : "Clinic";
@@ -605,7 +605,7 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
             const docText = docName ? ` with *${docName}*` : "";
 
             const waMessage = `Hello *${data.name}*,\n\nYour appointment at *${clinicName}*${docText} is confirmed for *${dateStr}* at *${timeStr}*.\n\nThank you for choosing HealthSync AI!\n\n_This is an automated notification message._`;
-            await enqueueWA(data.phone, waMessage);
+            await enqueueWA(data.tenantId, data.phone, waMessage);
           }
         }
       } catch (waErr: any) {
@@ -683,7 +683,7 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
       try {
         const waConfig = await queryOne<any>("SELECT isEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1", [user.tenantId]);
         if (waConfig && waConfig.isEnabled) {
-          const status = await getWAStatus();
+          const status = await getWAStatus(user.tenantId);
           if (status.state === "CONNECTED") {
             const clinic = await queryOne<any>("SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1", [user.tenantId]);
             const clinicName = clinic ? clinic.clinicName : "Clinic";
@@ -699,7 +699,7 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
 
             if (statusMessage) {
               const waMessage = `Hello *${data.name}*,\n\n${statusMessage}\n\n_HealthSync AI Automated Update_`;
-              await enqueueWA(data.phone, waMessage);
+              await enqueueWA(user.tenantId, data.phone, waMessage);
             }
           }
         }
@@ -1001,15 +1001,24 @@ export const deleteDoctorLeaveServerFn = createServerFn({ method: "POST" })
 export const getWhatsAppStatusServerFn = createServerFn({ method: "GET" })
   .handler(async () => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
-    return getWAStatus();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    
+    let status = await getWAStatus(user.tenantId);
+    // If the session is fully disconnected (and not currently initializing or paired),
+    // trigger initialization automatically so the user is immediately presented with a QR code.
+    if (status.state === "DISCONNECTED") {
+      await initializeWA(user.tenantId);
+      status = await getWAStatus(user.tenantId);
+    }
+    
+    return status;
   });
 
 export const disconnectWhatsAppServerFn = createServerFn({ method: "POST" })
   .handler(async () => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
-    await disconnectWA();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    await disconnectWA(user.tenantId);
     return { success: true };
   });
 
@@ -1020,12 +1029,12 @@ export const sendTestWaServerFn = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
-    const status = await getWAStatus();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const status = await getWAStatus(user.tenantId);
     if (status.state !== "CONNECTED") {
       throw new Error("WhatsApp is not connected. Please scan the QR code first.");
     }
-    await enqueueWA(data.phone, data.message);
+    await enqueueWA(user.tenantId, data.phone, data.message);
     return { success: true, queued: true };
   });
 

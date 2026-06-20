@@ -94,9 +94,9 @@ export const controlWhatsAppServerFn = createServerFn({ method: "POST" })
 
     const { disconnectWA, initializeWA } = await import("./whatsapp");
     if (data.action === "disconnect") {
-      return await disconnectWA();
+      return await disconnectWA("global");
     } else {
-      return await initializeWA();
+      return await initializeWA("global");
     }
   });
 
@@ -142,7 +142,7 @@ export const getSuperAdminDashboardDataServerFn = createServerFn({ method: "GET"
 
     // Fetch WhatsApp status
     const { getWAStatus } = await import("./whatsapp");
-    const waStatus = await getWAStatus();
+    const waStatus = await getWAStatus("global");
 
     // Global platform activity counts
     const apptsCountResult = await queryOne<any>("SELECT COUNT(*) as count FROM Appointment");

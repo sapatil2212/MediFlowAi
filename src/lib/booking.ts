@@ -150,7 +150,7 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
       try {
         const waConfig = await queryOne<any>("SELECT isEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1", [data.tenantId]);
         if (waConfig && waConfig.isEnabled) {
-          const waStatus = await getWAStatus();
+          const waStatus = await getWAStatus(data.tenantId);
           if (waStatus.state === "CONNECTED") {
             const clinic = await queryOne<any>("SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1", [data.tenantId]);
             const clinicName = clinic ? clinic.clinicName : "Clinic";
@@ -166,7 +166,7 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
             const docText = docName ? ` with *${docName}*` : "";
 
             const waMessage = `Hello *${data.name}*,\n\nYour appointment at *${clinicName}*${docText} is confirmed for *${dateStr}* at *${timeStr}*.\n\nThank you for choosing HealthSync AI!\n\n_This is an automated notification message._`;
-            await enqueueWA(data.phone, waMessage);
+            await enqueueWA(data.tenantId, data.phone, waMessage);
           }
         }
       } catch (waErr: any) {

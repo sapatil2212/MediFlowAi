@@ -35,28 +35,40 @@ async function waFetch(path: string, method = "GET", body?: object): Promise<any
 
 // ── Public API ────────────────────────────────
 
-/** Get current connection status, QR code, and outbox log */
-export async function getWAStatus(): Promise<WAStatus> {
+/** Get current connection status, QR code, and outbox log for a tenant */
+export async function getWAStatus(tenantId = "global"): Promise<WAStatus> {
   try {
-    return await waFetch("/status");
+    return await waFetch(`/status?tenantId=${encodeURIComponent(tenantId)}`);
   } catch {
     return { state: "DISCONNECTED", qrDataUrl: "", connectedNumber: "", queueCount: 0, sentLog: [] };
   }
 }
 
-/** Enqueue a WhatsApp message */
-export async function enqueueWA(phone: string, body: string): Promise<{ success: boolean }> {
-  return waFetch("/enqueue", "POST", { phone, body });
+/** Enqueue a WhatsApp message for a tenant */
+export async function enqueueWA(tenantId: string, phone: string, body: string): Promise<{ success: boolean }>;
+export async function enqueueWA(phone: string, body: string): Promise<{ success: boolean }>;
+export async function enqueueWA(arg1: string, arg2: string, arg3?: string): Promise<{ success: boolean }> {
+  let tenantId = "global";
+  let phone = arg1;
+  let body = arg2;
+
+  if (arg3 !== undefined) {
+    tenantId = arg1;
+    phone = arg2;
+    body = arg3;
+  }
+
+  return waFetch("/enqueue", "POST", { tenantId, phone, body });
 }
 
-/** Disconnect current WhatsApp session and regenerate QR */
-export async function disconnectWA(): Promise<{ success: boolean }> {
-  return waFetch("/disconnect", "POST");
+/** Disconnect a WhatsApp session and regenerate QR for a tenant */
+export async function disconnectWA(tenantId = "global"): Promise<{ success: boolean }> {
+  return waFetch("/disconnect", "POST", { tenantId });
 }
 
-/** Trigger (re-)initialization of the WhatsApp client */
-export async function initializeWA(): Promise<{ success: boolean }> {
-  return waFetch("/initialize", "POST");
+/** Trigger (re-)initialization of the WhatsApp client for a tenant */
+export async function initializeWA(tenantId = "global"): Promise<{ success: boolean }> {
+  return waFetch("/initialize", "POST", { tenantId });
 }
 
 // ── Legacy compat object (used by auth.ts imports) ───
@@ -66,7 +78,7 @@ export const whatsappService = {
     return "UNKNOWN"; // synchronous state not available; use getWAStatus() instead
   },
   enqueue(phone: string, body: string) {
-    enqueueWA(phone, body).catch((e) =>
+    enqueueWA("global", phone, body).catch((e) =>
       console.error("[WA Client] Failed to enqueue:", e?.message)
     );
   },
@@ -75,3 +87,4 @@ export const whatsappService = {
 };
 
 export default whatsappService;
+
