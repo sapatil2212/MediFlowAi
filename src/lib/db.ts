@@ -137,14 +137,7 @@ if (typeof window === "undefined") {
           console.warn("[DB] ⚠️ Could not verify/create Appointment table:", err.message);
         }
 
-        // Force character set and collation to match between User and SubUser tables to prevent collation mismatch errors on JOINs
-        try {
-          await conn.query("ALTER TABLE User CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
-          await conn.query("ALTER TABLE SubUser CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
-          console.log("[DB] ✅ Forced database character set and collation to utf8mb4_unicode_ci for User and SubUser");
-        } catch (colErr: any) {
-          console.warn("[DB] ⚠️ Could not normalize collation at startup:", colErr.message);
-        }
+        // Collation normalization will be run at the end of initialization after all tables are created
 
         try {
           const result = await conn.query(
@@ -666,6 +659,23 @@ if (typeof window === "undefined") {
         } catch (adminErr: any) {
           console.warn("[DB] ⚠️ Could not seed/sync default super admins:", adminErr.message);
         }
+
+        // Normalize characters and collations across all tables to avoid mixed collation JOIN / comparison errors
+        const tablesToNormalize = [
+          "User", "Session", "OtpCode", "Appointment", "ClinicHours", "Department",
+          "Doctor", "ClinicProfile", "WhatsAppConfig", "DoctorSchedule", "DoctorLeave",
+          "Patient", "SoapNote", "Prescription", "SuperAdmin", "SuperAdminSession",
+          "SubscriptionHistory", "SubUser", "SubUserSession", "WATemplate", "WACampaign",
+          "WACampaignRecipient", "WAAutoReply"
+        ];
+        for (const tbl of tablesToNormalize) {
+          try {
+            await conn.query(`ALTER TABLE \`${tbl}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+          } catch (colErr: any) {
+            console.warn(`[DB] ⚠️ Could not normalize collation for table ${tbl}:`, colErr.message);
+          }
+        }
+        console.log("[DB] ✅ Normalized database character set and collation to utf8mb4_unicode_ci for all tables");
 
         console.log("[DB] ✅ Self-healing database tables verify completed");
 

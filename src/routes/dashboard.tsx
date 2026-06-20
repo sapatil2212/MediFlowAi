@@ -1111,6 +1111,8 @@ function DashboardPage() {
           await fetchAppointments();
           try {
             fetchPatients();
+            fetchDashboardStats();
+            fetchAnalytics();
           } catch (_) {}
           setTimeout(() => {
             setIsSchedulingApt(false);
@@ -1141,6 +1143,8 @@ function DashboardPage() {
           await fetchAppointments();
           try {
             fetchPatients();
+            fetchDashboardStats();
+            fetchAnalytics();
           } catch (_) {}
           setTimeout(() => {
             setIsSchedulingApt(false);
