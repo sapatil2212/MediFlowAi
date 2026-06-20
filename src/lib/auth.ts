@@ -1861,6 +1861,99 @@ Only return a valid JSON object matching this structure. Do not wrap the JSON in
     }
   });
 
+export const voiceRxAnalyzeServerFn = createServerFn({ method: "POST" })
+  .validator((data: { transcript: string }) => {
+    if (!data.transcript) throw new Error("Transcript is required for Voice Rx Analysis.");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("Gemini API key is not configured in .env file.");
+    }
+
+    const prompt = `You are a medical AI assistant helping a clinician parse an audio dictation or dialogue transcript into a structured prescription form.
+Here is the recorded transcript of patient-doctor interaction or doctor's prescription dictation:
+"${data.transcript}"
+
+Analyze this transcript and extract:
+1. "chiefComplaint": The patient's chief complaints and symptoms (e.g. Tooth pain for 3 days).
+2. "diagnosis": The primary diagnosis (including common ICD-10 codes if applicable, e.g. Dental caries (K02.9)).
+3. "medications": A list of prescribed medications. For each medication, extract:
+   - "name" (e.g., Paracetamol)
+   - "dosage" (e.g., 650mg)
+   - "frequency" (e.g., TID / Three times daily)
+   - "route" (e.g., Oral)
+   - "duration" (e.g., 5 days)
+   - "instructions" (e.g., Take after food)
+4. "advice": Advice, instructions, diet or lifestyle recommendations.
+
+Format the output in raw JSON format with the exact structure below:
+{
+  "chiefComplaint": "Extracted chief complaints",
+  "diagnosis": "Primary diagnosis with ICD-10 codes",
+  "medications": [
+    {
+      "name": "Drug name",
+      "dosage": "Dosage",
+      "frequency": "Frequency",
+      "route": "Route",
+      "duration": "Duration",
+      "instructions": "Instructions"
+    }
+  ],
+  "advice": "Diet, lifestyle, precautions and instructions"
+}
+
+Only return a valid JSON object matching this structure. Do not wrap the JSON in markdown code blocks or add any other text outside the JSON object.`;
+
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }],
+          generationConfig: {
+            responseMimeType: "application/json"
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Gemini API error in Voice Rx analysis:", errorText);
+        throw new Error(`Gemini API error: ${response.statusText}`);
+      }
+
+      const resJson = await response.json();
+      const content = resJson.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!content) {
+        throw new Error("Empty response from Gemini model.");
+      }
+
+      const parsed = JSON.parse(content.trim());
+      return {
+        success: true,
+        chiefComplaint: parsed.chiefComplaint || "",
+        diagnosis: parsed.diagnosis || "",
+        medications: parsed.medications || [],
+        advice: parsed.advice || ""
+      };
+    } catch (e: any) {
+      console.error("Failed to analyze Voice Rx transcript:", e);
+      throw new Error(e.message || "Failed to analyze transcript.");
+    }
+  });
+
 export const savePrescriptionServerFn = createServerFn({ method: "POST" })
   .validator((data: { patientId: string; medications: any[]; notes?: string }) => {
     if (!data.patientId) throw new Error("Patient ID is required");

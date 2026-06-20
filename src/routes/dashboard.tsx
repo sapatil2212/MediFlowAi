@@ -28,6 +28,8 @@ import {
   Building2,
   Stethoscope,
   Info,
+  Play,
+  Pause,
   Lock,
   Mail,
   Phone,
@@ -137,6 +139,7 @@ import {
   generatePrescriptionServerFn,
   savePrescriptionServerFn,
   aiAssistConsultationServerFn,
+  voiceRxAnalyzeServerFn,
   uploadProfilePhotoServerFn,
 } from "../lib/auth";
 import WhatsAppHub from "../components/WhatsAppHub";
@@ -770,6 +773,17 @@ function DashboardPage() {
   const [consultationPrivateNotes, setConsultationPrivateNotes] = useState("");
   const [recordingField, setRecordingField] = useState<string | null>(null);
   const [isAIAssisting, setIsAIAssisting] = useState(false);
+
+  // Voice Rx popup modal states
+  const [isVoiceRxModalOpen, setIsVoiceRxModalOpen] = useState(false);
+  const [voiceRxTranscript, setVoiceRxTranscript] = useState("");
+  const [isVoiceRxAnalyzing, setIsVoiceRxAnalyzing] = useState(false);
+  const [voiceRxResult, setVoiceRxResult] = useState<{
+    chiefComplaint?: string;
+    diagnosis?: string;
+    medications?: Array<{ name: string; dosage: string; frequency: string; route: string; duration: string; instructions: string }>;
+    advice?: string;
+  } | null>(null);
 
   // Vitals states
   const [vitalBP, setVitalBP] = useState("120/80");
@@ -2648,6 +2662,88 @@ function DashboardPage() {
       setRecordingSeconds(0);
       startSpeechRecognition(setter);
     }
+  };
+
+  const handleStartVoiceRx = () => {
+    setIsVoiceRxModalOpen(true);
+    setVoiceRxTranscript("");
+    setVoiceRxResult(null);
+    setIsVoiceRxAnalyzing(false);
+    
+    setIsRecording(true);
+    setRecordingField("voiceRx");
+    setRecordingSeconds(0);
+    startSpeechRecognition((text) => setVoiceRxTranscript(prev => prev + text));
+  };
+
+  const handleStopVoiceRx = () => {
+    setIsRecording(false);
+    setRecordingField(null);
+    stopSpeechRecognition();
+  };
+
+  const handleResumeVoiceRx = () => {
+    setIsRecording(true);
+    setRecordingField("voiceRx");
+    startSpeechRecognition((text) => setVoiceRxTranscript(prev => prev + text));
+  };
+
+  const handleAnalyzeVoiceRx = async () => {
+    // Ensure recording is stopped first
+    setIsRecording(false);
+    setRecordingField(null);
+    stopSpeechRecognition();
+
+    if (!voiceRxTranscript.trim()) {
+      showToast("error", "No transcript captured yet. Please speak into the mic.");
+      return;
+    }
+
+    setIsVoiceRxAnalyzing(true);
+    try {
+      const res = await voiceRxAnalyzeServerFn({
+        data: {
+          transcript: voiceRxTranscript
+        }
+      });
+
+      if (res.success) {
+        setVoiceRxResult({
+          chiefComplaint: res.chiefComplaint,
+          diagnosis: res.diagnosis,
+          medications: res.medications,
+          advice: res.advice
+        });
+        showToast("success", "Clinical audio parsed and analyzed by Gemini AI!");
+      }
+    } catch (e: any) {
+      console.error(e);
+      showToast("error", e.message || "Failed to analyze voice prescription.");
+    } finally {
+      setIsVoiceRxAnalyzing(false);
+    }
+  };
+
+  const handleApplyVoiceRx = () => {
+    if (!voiceRxResult) return;
+
+    if (voiceRxResult.chiefComplaint) {
+      setConsultationChiefComplaint(voiceRxResult.chiefComplaint);
+    }
+    if (voiceRxResult.diagnosis) {
+      setConsultationDiagnosis(voiceRxResult.diagnosis);
+    }
+    if (voiceRxResult.advice) {
+      setConsultationAdvice(voiceRxResult.advice);
+    }
+    if (voiceRxResult.medications) {
+      setPrescriptionMedications(voiceRxResult.medications);
+    }
+
+    setIsVoiceRxModalOpen(false);
+    setVoiceRxTranscript("");
+    setVoiceRxResult(null);
+    showToast("success", "Clinical prescription populated successfully!");
   };
 
   const handleAIAssist = async () => {
@@ -4937,17 +5033,11 @@ function DashboardPage() {
 
                         <button
                           type="button"
-                          onClick={() => {
-                            toggleRecordingForField("chiefComplaint", (text) => setConsultationChiefComplaint(prev => prev + text));
-                          }}
-                          className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-full shadow-sm active:scale-95 transition-all cursor-pointer ${
-                            recordingField === "chiefComplaint"
-                              ? "bg-red-500 text-white border border-red-500 animate-pulse"
-                              : "bg-emerald-600 hover:bg-emerald-500 text-white"
-                          }`}
+                          onClick={handleStartVoiceRx}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-sm active:scale-95 transition-all cursor-pointer"
                         >
                           <Mic className="h-3.5 w-3.5" />
-                          {recordingField === "chiefComplaint" ? "Stop Voice Rx" : "Voice Rx"}
+                          Voice Rx
                         </button>
 
                         <button
@@ -10673,6 +10763,253 @@ function DashboardPage() {
                   {isDeletingSubUser && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Confirm Delete
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Voice Rx AI Dictation Popup Modal */}
+      <AnimatePresence>
+        {isVoiceRxModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-md overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative bg-white rounded-[2rem] border border-zinc-200 shadow-2xl max-w-4xl w-full overflow-hidden flex flex-col my-8"
+              style={{ maxHeight: "calc(100vh - 4rem)" }}
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-emerald-600 to-teal-700 p-5 text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-white/10 rounded-xl backdrop-blur-sm">
+                    <Mic className="h-5 w-5 text-white animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold tracking-tight">Voice Rx AI Dictation</h3>
+                    <p className="text-[10px] text-emerald-100 font-medium">Record dialogue or dictate prescription instructions. AI will extract EHR fields.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleStopVoiceRx();
+                    setIsVoiceRxModalOpen(false);
+                  }}
+                  className="rounded-full p-1.5 hover:bg-white/10 text-white transition-all cursor-pointer animate-fade-in"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Scrollable Content Area */}
+              <div className="p-6 overflow-y-auto space-y-6 flex-1 text-left">
+                
+                {/* 1. Live Capturing Section */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  
+                  {/* Left panel: recording controls & waveform */}
+                  <div className="md:col-span-1 border border-zinc-200 rounded-2xl p-5 bg-zinc-50/50 flex flex-col items-center justify-center text-center space-y-4 min-h-[220px]">
+                    {isRecording && recordingField === "voiceRx" ? (
+                      <>
+                        {/* Soundwave animation */}
+                        <div className="flex items-center justify-center gap-1 h-10 w-full px-2">
+                          {[1, 2, 3, 4, 5, 6, 7].map((bar) => (
+                            <motion.div
+                              key={bar}
+                              className="w-1 bg-emerald-500 rounded-full"
+                              animate={{
+                                height: [10, 32, 10],
+                              }}
+                              transition={{
+                                duration: 0.7,
+                                repeat: Infinity,
+                                delay: bar * 0.08,
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <span className="text-[10px] font-bold text-red-500 bg-red-50 border border-red-100 rounded-full px-3 py-0.5 animate-pulse">
+                          Listening Live
+                        </span>
+                        <span className="text-xl font-mono font-bold text-zinc-700">
+                          {formatTime(recordingSeconds)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleStopVoiceRx}
+                          className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer"
+                        >
+                          <Pause className="h-4 w-4" /> Pause Capture
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="h-10 w-10 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400">
+                          <MicOff className="h-5 w-5" />
+                        </div>
+                        <span className="text-[10px] font-bold text-zinc-400 bg-zinc-100 border border-zinc-200 rounded-full px-3 py-0.5">
+                          Dictation Paused
+                        </span>
+                        <span className="text-xl font-mono font-bold text-zinc-400">
+                          {formatTime(recordingSeconds)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleResumeVoiceRx}
+                          className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer animate-bounce"
+                        >
+                          <Play className="h-4 w-4" /> Resume Capture
+                        </button>
+                      </>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setVoiceRxTranscript("")}
+                      disabled={!voiceRxTranscript}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 border border-zinc-200 hover:bg-zinc-100 text-zinc-655 text-xs font-bold rounded-xl transition-all cursor-pointer disabled:opacity-40"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Clear Text
+                    </button>
+                  </div>
+
+                  {/* Right panel: text transcription pad */}
+                  <div className="md:col-span-2 flex flex-col space-y-2">
+                    <label className="block text-[10px] font-bold text-zinc-450 uppercase tracking-wider">
+                      Live Transcription Pad (Editable)
+                    </label>
+                    <textarea
+                      value={voiceRxTranscript}
+                      onChange={(e) => setVoiceRxTranscript(e.target.value)}
+                      placeholder="Captured speech will write here automatically... You can also type or edit this text directly."
+                      className="flex-1 w-full rounded-2xl border border-zinc-200 bg-white p-4 text-xs text-zinc-700 focus:border-emerald-600 focus:outline-none transition-all resize-none min-h-[220px] font-medium leading-relaxed"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Analysis Results Section */}
+                {isVoiceRxAnalyzing && (
+                  <div className="border border-zinc-200 rounded-2xl p-8 bg-zinc-50/50 flex flex-col items-center justify-center text-center space-y-3.5 animate-pulse">
+                    <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-800">Analyzing clinical dialogue...</h4>
+                      <p className="text-[10px] text-zinc-400 mt-1 max-w-md">Gemini AI is parsing the transcript to resolve medical terminology, assign diagnosis codes, structure medication schedules, and format clinician advice.</p>
+                    </div>
+                  </div>
+                )}
+
+                {voiceRxResult && !isVoiceRxAnalyzing && (
+                  <div className="border border-zinc-200 rounded-2xl p-5 bg-emerald-50/5 space-y-5 animate-fade-in">
+                    <div className="flex items-center gap-2 border-b border-zinc-150 pb-2">
+                      <Sparkles className="h-4.5 w-4.5 text-purple-600 animate-pulse" />
+                      <h4 className="text-xs font-extrabold text-zinc-850 uppercase tracking-wide">
+                        Clinical AI Diagnostics & Recommendations
+                      </h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs text-left">
+                      
+                      {/* Left: CC, Diagnosis, Advice */}
+                      <div className="space-y-4">
+                        <div className="space-y-1 bg-white p-3.5 border border-zinc-150 rounded-xl">
+                          <span className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider block">Chief Complaint</span>
+                          <p className="text-zinc-800 font-bold">{voiceRxResult.chiefComplaint || "None extracted."}</p>
+                        </div>
+
+                        <div className="space-y-1 bg-white p-3.5 border border-zinc-150 rounded-xl">
+                          <span className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider block">Primary Diagnosis</span>
+                          <p className="text-zinc-800 font-bold">{voiceRxResult.diagnosis || "None extracted."}</p>
+                        </div>
+
+                        <div className="space-y-1 bg-white p-3.5 border border-zinc-150 rounded-xl">
+                          <span className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider block">Advice & Instructions</span>
+                          <p className="text-zinc-500 font-semibold leading-relaxed">{voiceRxResult.advice || "None extracted."}</p>
+                        </div>
+                      </div>
+
+                      {/* Right: Medications Table */}
+                      <div className="space-y-2.5">
+                        <span className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider block">Extracted Medications</span>
+                        {voiceRxResult.medications && voiceRxResult.medications.length > 0 ? (
+                          <div className="overflow-hidden border border-zinc-150 rounded-xl bg-white">
+                            <table className="min-w-full divide-y divide-zinc-200 text-[10px] text-left">
+                              <thead className="bg-zinc-50 font-bold text-zinc-400 uppercase">
+                                <tr>
+                                  <th className="p-2.5">Drug</th>
+                                  <th className="p-2.5">Dosage</th>
+                                  <th className="p-2.5">Freq</th>
+                                  <th className="p-2.5">Dur</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-zinc-150 text-zinc-700">
+                                {voiceRxResult.medications.map((m, idx) => (
+                                  <tr key={idx} className="hover:bg-zinc-50/50">
+                                    <td className="p-2.5 font-bold">{m.name}</td>
+                                    <td className="p-2.5">{m.dosage}</td>
+                                    <td className="p-2.5">{m.frequency}</td>
+                                    <td className="p-2.5 font-semibold text-zinc-500">{m.duration}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="p-4 border border-dashed border-zinc-200 rounded-xl text-center text-zinc-400 italic bg-white">
+                            No medications extracted.
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="bg-zinc-50 border-t border-zinc-150 p-4 flex items-center justify-between shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleStopVoiceRx();
+                    setIsVoiceRxModalOpen(false);
+                  }}
+                  className="rounded-full border border-zinc-200 hover:bg-zinc-50 text-zinc-600 px-5 py-2.5 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Discard & Exit
+                </button>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleAnalyzeVoiceRx}
+                    disabled={isVoiceRxAnalyzing || !voiceRxTranscript.trim()}
+                    className="rounded-full bg-purple-600 hover:bg-purple-550 text-white px-5 py-2.5 text-xs font-extrabold shadow-md flex items-center gap-1.5 transition-all cursor-pointer disabled:bg-zinc-150 disabled:text-zinc-450 disabled:shadow-none"
+                  >
+                    {isVoiceRxAnalyzing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        Analyze with AI
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleApplyVoiceRx}
+                    disabled={!voiceRxResult || isVoiceRxAnalyzing}
+                    className="rounded-full bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2.5 text-xs font-extrabold shadow-md flex items-center gap-1.5 transition-all cursor-pointer disabled:bg-zinc-150 disabled:text-zinc-455 disabled:shadow-none"
+                  >
+                    <Check className="h-4 w-4" />
+                    Apply to Prescription
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
