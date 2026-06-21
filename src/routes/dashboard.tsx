@@ -869,6 +869,7 @@ function DashboardPage() {
   const [filterAptDate, setFilterAptDate] = useState("all");
   const [isSchedulingApt, setIsSchedulingApt] = useState(false);
   const [editingApt, setEditingApt] = useState<any | null>(null);
+  const [selectedAptDetails, setSelectedAptDetails] = useState<any | null>(null);
 
   // Create/Edit form values
   const [aptName, setAptName] = useState("");
@@ -3581,24 +3582,47 @@ function DashboardPage() {
                             key={apt.id}
                             draggable
                             onDragStart={(e) => handleDragStart(e, apt.id)}
-                            onClick={() => openEditApt(apt)}
-                            className={`flex-1 rounded-xl border p-1.5 flex flex-col justify-between text-left cursor-grab active:cursor-grabbing select-none transition-all relative group/card border-l-[4px] ${statusClass}`}
+                            onClick={() => setSelectedAptDetails(apt)}
+                            className={`flex-1 rounded-xl border p-2 flex flex-col justify-between text-left cursor-grab active:cursor-grabbing select-none transition-all relative group/card border-l-[4px] shadow-none ${statusClass}`}
                             title={`${apt.name}: ${apt.reason}`}
                           >
-                            <div className="flex items-center gap-1.5">
-                              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotClass}`} />
-                              <span className="text-[10px] font-bold truncate leading-none flex items-center gap-1">
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <div className="flex items-center gap-1 truncate">
+                                  <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotClass}`} />
+                                  <span className="text-[10px] font-black text-zinc-800 truncate">
+                                    {apt.name}
+                                  </span>
+                                </div>
                                 {apt.tokenNo && (
-                                  <span className="inline-flex items-center justify-center px-0.5 rounded bg-brand/10 border border-brand/20 text-brand text-[8px] font-black shrink-0">
+                                  <span className="inline-flex items-center justify-center px-1 py-0.2 rounded bg-brand/5 border border-brand/15 text-brand text-[8px] font-black shrink-0">
                                     #{apt.tokenNo}
                                   </span>
                                 )}
-                                <span className="truncate">{apt.name}</span>
+                              </div>
+
+                              <div className="text-[8px] font-bold text-zinc-500 flex flex-wrap gap-1 leading-none uppercase">
+                                <span>{formattedStart}</span>
+                                {apt.appointmentType && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-zinc-400">{apt.appointmentType}</span>
+                                  </>
+                                )}
+                              </div>
+
+                              {apt.reason && (
+                                <p className="text-[9px] text-zinc-650 font-semibold truncate leading-tight">
+                                  {apt.reason}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="mt-1.5 flex items-center justify-between text-[8px] font-bold text-zinc-450 leading-none">
+                              <span className="truncate bg-zinc-50 border border-zinc-150 px-1 py-0.2 rounded">
+                                {doctors.find(d => d.id === apt.doctorId)?.name || "Unassigned"}
                               </span>
                             </div>
-                            <span className="text-[8px] font-extrabold text-zinc-400 mt-1 uppercase block tracking-wider leading-none">
-                              {formattedStart}
-                            </span>
                           </div>
                         );
                       })}
@@ -3683,28 +3707,55 @@ function DashboardPage() {
                           key={apt.id}
                           draggable
                           onDragStart={(e) => handleDragStart(e, apt.id)}
-                          onClick={() => openEditApt(apt)}
-                          className={`flex-1 rounded-xl border p-2 flex flex-col justify-between text-left cursor-grab active:cursor-grabbing border-l-[4px] transition-all ${statusClass}`}
+                          onClick={() => setSelectedAptDetails(apt)}
+                          className={`flex-1 rounded-xl border p-3 flex flex-col justify-between text-left cursor-grab active:cursor-grabbing border-l-[4px] transition-all hover:bg-white/85 shadow-none ${statusClass}`}
                         >
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotClass}`} />
-                              <span className="text-xs font-bold leading-none flex items-center gap-1">
-                                {apt.tokenNo && (
-                                  <span className="inline-flex items-center justify-center h-4.5 px-1 rounded bg-brand/10 border border-brand/20 text-brand text-[9px] font-black">
-                                    #{apt.tokenNo}
-                                  </span>
-                                )}
-                                <span>{apt.name}</span>
-                              </span>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} />
+                                <span className="text-xs font-black text-zinc-800 leading-none">
+                                  {apt.name}
+                                </span>
+                              </div>
+                              {apt.tokenNo && (
+                                <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-brand/5 border border-brand/20 text-brand text-[9px] font-black leading-none shrink-0">
+                                  Token #{apt.tokenNo}
+                                </span>
+                              )}
                             </div>
-                            <p className="text-[10px] text-zinc-500 mt-1 font-semibold truncate">
-                              Reason: {apt.reason}
-                            </p>
+
+                            <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-500 font-semibold leading-relaxed">
+                              <div>
+                                <span className="text-zinc-400 block text-[8px] uppercase font-bold tracking-wider">Scheduled Time</span>
+                                <span className="text-zinc-700 font-bold">{formattedTime} ({apt.appointmentType || "Standard"})</span>
+                              </div>
+                              <div>
+                                <span className="text-zinc-400 block text-[8px] uppercase font-bold tracking-wider">Assigned Doctor</span>
+                                <span className="text-zinc-700 font-bold">
+                                  {doctors.find(d => d.id === apt.doctorId)?.name || "Unassigned"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {apt.reason && (
+                              <div className="bg-zinc-50/50 p-2 rounded-lg border border-zinc-150/40">
+                                <span className="text-zinc-400 block text-[8px] uppercase font-bold tracking-wider">Chief Complaint</span>
+                                <p className="text-[10px] text-zinc-600 font-semibold mt-0.5 leading-tight">
+                                  {apt.reason}
+                                </p>
+                              </div>
+                            )}
                           </div>
-                          <span className="text-[9px] font-bold text-zinc-400 mt-2 uppercase tracking-wide">
-                            Time: {formattedTime} • Status: {apt.status}
-                          </span>
+                          
+                          <div className="mt-3 pt-2 border-t border-zinc-100 flex items-center justify-between">
+                            <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wide">
+                              Status: {apt.status}
+                            </span>
+                            <span className="text-[9px] font-bold text-zinc-455 truncate">
+                              ID: {apt.id.substring(0,8).toUpperCase()}
+                            </span>
+                          </div>
                         </div>
                       );
                     })}
@@ -3793,7 +3844,7 @@ function DashboardPage() {
                         key={apt.id}
                         draggable
                         onDragStart={(e) => handleDragStart(e, apt.id)}
-                        onClick={() => openEditApt(apt)}
+                        onClick={() => setSelectedAptDetails(apt)}
                         className="flex items-center gap-1.5 p-0.5 rounded hover:bg-zinc-100 cursor-grab text-[9px] font-bold text-zinc-700 truncate"
                         title={`${apt.name}: ${apt.reason}`}
                       >
@@ -10753,6 +10804,182 @@ function DashboardPage() {
                   )}
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Appointment Details View Modal */}
+      <AnimatePresence>
+        {selectedAptDetails && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 overflow-y-auto">
+            {/* Click outside to close */}
+            <div className="absolute inset-0" onClick={() => setSelectedAptDetails(null)} />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-md bg-white rounded-[1.75rem] border border-zinc-150 p-6 shadow-none text-left space-y-5 z-10 transition-all hover:border-zinc-200/80 duration-300"
+            >
+              {/* Close button */}
+              <button
+                type="button"
+                onClick={() => setSelectedAptDetails(null)}
+                className="absolute top-4 right-4 rounded-full p-1 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 transition-all cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              {/* Title / Header */}
+              <div className="flex items-center gap-3 pb-3 border-b border-zinc-100">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand/10 text-brand">
+                  <Calendar className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-zinc-900 leading-none">Appointment Details</h3>
+                  <span className="text-[10px] text-zinc-400 mt-1.5 block uppercase tracking-wider font-semibold">
+                    Token #{selectedAptDetails.tokenNo || "N/A"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Patient Basic Profile Card */}
+              <div className="flex items-center gap-3.5 p-3 rounded-2xl bg-zinc-50 border border-zinc-150/60">
+                <div className="h-12 w-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-750 font-extrabold text-sm uppercase shrink-0">
+                  {selectedAptDetails.name.slice(0, 2)}
+                </div>
+                <div className="space-y-0.5 min-w-0">
+                  <h4 className="text-xs font-bold text-zinc-805 leading-none truncate">{selectedAptDetails.name}</h4>
+                  <p className="text-[10px] text-zinc-500 font-semibold mt-1">
+                    {selectedAptDetails.gender || "Gender N/A"} • {selectedAptDetails.age || selectedAptDetails.dob ? `${selectedAptDetails.age || "DOB N/A"} yrs` : "Age N/A"}
+                  </p>
+                  <p className="text-[10px] text-zinc-400 font-bold mt-0.5">{selectedAptDetails.phone || "No Phone Number"}</p>
+                </div>
+              </div>
+
+              {/* Schedule and Clinical Details Grid */}
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">Date & Time</span>
+                  <p className="text-zinc-700 font-bold">
+                    {new Date(selectedAptDetails.dateTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  </p>
+                  <p className="text-[10px] text-zinc-500 font-semibold mt-0.5">
+                    {new Date(selectedAptDetails.dateTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">Appointment Type</span>
+                  <p className="text-zinc-700 font-bold">{selectedAptDetails.appointmentType || "Standard"}</p>
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold mt-1.5 shadow-none border leading-none ${
+                    selectedAptDetails.status === "Confirmed" ? "bg-teal-50 border-teal-200 text-teal-700" :
+                    selectedAptDetails.status === "Pending" ? "bg-sky-50 border-sky-200 text-sky-700" :
+                    selectedAptDetails.status === "Completed" ? "bg-zinc-105 border-zinc-200 text-zinc-700" :
+                    "bg-amber-50 border-amber-200 text-amber-700"
+                  }`}>
+                    {selectedAptDetails.status}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">Assigned Doctor</span>
+                  <p className="text-zinc-700 font-bold">
+                    {doctors.find(d => d.id === selectedAptDetails.doctorId)?.name || "Unassigned"}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">Department</span>
+                  <p className="text-zinc-700 font-bold">
+                    {departments.find(d => d.id === (doctors.find(doc => doc.id === selectedAptDetails.doctorId)?.departmentId || selectedAptDetails.departmentId))?.name || "General"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Chief Complaint / Reason */}
+              {selectedAptDetails.reason && (
+                <div className="bg-zinc-50/30 border border-zinc-150 p-3 rounded-2xl">
+                  <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Chief Complaint</span>
+                  <p className="text-xs text-zinc-650 font-semibold leading-relaxed">
+                    {selectedAptDetails.reason}
+                  </p>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const apt = selectedAptDetails;
+                    setSelectedAptDetails(null);
+                    
+                    // Run Start Consultation trigger logic
+                    setSelectedAptForConsultation(apt);
+                    const pid = resolvePatientForApt(apt);
+                    setScribePatientId(pid);
+                    setLiveTranscript(apt.reason || "");
+                    setConsultationChiefComplaint(apt.reason || "");
+                    setConsultationDiagnosis("");
+                    setConsultationAdvice("");
+                    setPrescriptionMedications([]);
+                    setConsultationLabTests([]);
+                    setConsultationReferrals([]);
+                    setConsultationFollowUpDate("");
+                    setConsultationFollowUpNotes("");
+                    setConsultationFee(1500);
+                    setConsultationPrivateNotes("");
+                    setVitalBP("120/80");
+                    setVitalPulse("72");
+                    setVitalTemp("98.6");
+                    setVitalWeight("70");
+                    setVitalHeight("170");
+                    setVitalSpO2("98");
+                    setVitalRespRate("16");
+                    setPatientChartData(null);
+                    if (pid) {
+                      getPatientChartServerFn({ data: { patientId: pid } })
+                        .then(res => setPatientChartData(res))
+                        .catch(err => console.error(err));
+                    }
+                    setActiveTab("scribe");
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-1.5 bg-brand hover:opacity-95 text-white font-extrabold text-xs py-2.5 rounded-full transition-all active:scale-[0.98] cursor-pointer shadow-none animate-pulse hover:animate-none"
+                >
+                  <Stethoscope className="h-3.5 w-3.5" />
+                  Start Consultation Scribe
+                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const apt = selectedAptDetails;
+                      setSelectedAptDetails(null);
+                      openEditApt(apt);
+                    }}
+                    className="inline-flex items-center justify-center gap-1 border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 font-bold text-xs py-2 rounded-full transition-all active:scale-[0.98] cursor-pointer shadow-none"
+                  >
+                    <Edit3 className="h-3.5 w-3.5 text-zinc-500" />
+                    Edit Booking
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const apt = selectedAptDetails;
+                      setSelectedAptDetails(null);
+                      setAptToDelete(apt);
+                    }}
+                    className="inline-flex items-center justify-center gap-1 border border-red-200 bg-red-50/20 hover:bg-red-50 text-red-655 font-bold text-xs py-2 rounded-full transition-all active:scale-[0.98] cursor-pointer shadow-none"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                    Delete Booking
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}
