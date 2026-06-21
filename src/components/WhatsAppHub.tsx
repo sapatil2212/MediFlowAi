@@ -29,10 +29,13 @@ import {
   PlusCircle,
   PhoneCall,
   UserCheck,
-  ListFilter
+  ListFilter,
+  Sparkles,
+  Save
 } from "lucide-react";
 import {
   getWATemplatesServerFn,
+  generateWATemplateServerFn,
   saveWATemplateServerFn,
   deleteWATemplateServerFn,
   getWACampaignsServerFn,
@@ -49,7 +52,11 @@ import {
   uploadWATemplateHeaderImageServerFn,
   getWhatsAppStatusServerFn,
   disconnectWhatsAppServerFn,
-  sendTestWaServerFn
+  sendTestWaServerFn,
+  getWAAIStatusServerFn,
+  toggleWAAIReplyServerFn,
+  getWAConversationsServerFn,
+  getWAConversationHistoryServerFn,
 } from "../lib/auth";
 
 interface WhatsAppHubProps {
@@ -88,6 +95,16 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
   const [loadingAutoReplies, setLoadingAutoReplies] = useState(false);
   const [editingAutoReply, setEditingAutoReply] = useState<any | null>(null);
 
+  // AI Smart Reply states
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [loadingAIToggle, setLoadingAIToggle] = useState(false);
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [selectedConvPhone, setSelectedConvPhone] = useState<string | null>(null);
+  const [convHistory, setConvHistory] = useState<any[]>([]);
+  const [loadingConvHistory, setLoadingConvHistory] = useState(false);
+  const convBottomRef = useRef<HTMLDivElement>(null);
+
   // General Hub stats
   const [stats, setStats] = useState({ totalCampaigns: 0, totalSent: 0, totalFailed: 0, activeAutoReplies: 0 });
   const [loadingStats, setLoadingStats] = useState(false);
@@ -120,13 +137,71 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
     return () => clearInterval(interval);
   }, [waStatus]);
 
+  // Poll active campaign status in real-time when it is sending messages
+  useEffect(() => {
+    if (!selectedCampaign || selectedCampaign.status !== "sending") return;
+
+    const pollInterval = setInterval(() => {
+      handleViewRecipients(selectedCampaign, true);
+    }, 3000); // refresh every 3 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [selectedCampaign?.id, selectedCampaign?.status]);
+
   // Load basic components data on tab changes
   useEffect(() => {
     loadStats();
     if (activeSubTab === "templates") loadTemplates();
     if (activeSubTab === "campaigns") loadCampaigns();
-    if (activeSubTab === "auto-reply") loadAutoReplies();
+    if (activeSubTab === "auto-reply") {
+      loadAutoReplies();
+      loadAIStatus();
+      loadConversations();
+    }
   }, [activeSubTab]);
+
+  const loadAIStatus = async () => {
+    try {
+      const res = await getWAAIStatusServerFn();
+      setAiEnabled(res.aiEnabled);
+    } catch (e) { /* silent */ }
+  };
+
+  const loadConversations = async () => {
+    setLoadingConversations(true);
+    try {
+      const rows = await getWAConversationsServerFn();
+      setConversations(rows);
+    } catch (e) { /* silent */ } finally {
+      setLoadingConversations(false);
+    }
+  };
+
+  const openConversation = async (phone: string) => {
+    setSelectedConvPhone(phone);
+    setLoadingConvHistory(true);
+    try {
+      const rows = await getWAConversationHistoryServerFn({ data: { phone } });
+      setConvHistory(rows);
+      setTimeout(() => convBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    } catch (e) { /* silent */ } finally {
+      setLoadingConvHistory(false);
+    }
+  };
+
+  const handleToggleAI = async (enable: boolean) => {
+    setLoadingAIToggle(true);
+    try {
+      await toggleWAAIReplyServerFn({ data: { enable } });
+      setAiEnabled(enable);
+      showToast("success", enable ? "🤖 AI Smart Reply enabled!" : "Switched to keyword rules mode.");
+      if (enable) loadConversations();
+    } catch (e: any) {
+      showToast("error", "Failed to toggle AI: " + e.message);
+    } finally {
+      setLoadingAIToggle(false);
+    }
+  };
 
   const loadStats = async () => {
     setLoadingStats(true);
@@ -199,715 +274,20 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
     }
   };
 
-  // ──────────────────────────────────────────────
-  // TEMPLATE BUILDER SUBCOMPONENT
-  // ──────────────────────────────────────────────
-  const TemplateBuilder = ({ template }: { template: any }) => {
-    const [name, setName] = useState(template.name || "");
-    const [category, setCategory] = useState(template.category || "marketing");
-    const [headerType, setHeaderType] = useState(template.headerType || "none");
-    const [headerText, setHeaderText] = useState(template.headerText || "");
-    const [headerImageUrl, setHeaderImageUrl] = useState(template.headerImageUrl || "");
-    const [bodyText, setBodyText] = useState(template.bodyText || "");
-    const [footerText, setFooterText] = useState(template.footerText || "");
-    
-    // Parse JSON safely
-    const parseJsonSafely = (str: any, fallback: any) => {
-      if (!str) return fallback;
-      if (typeof str === "object") return str;
-      try { return JSON.parse(str); } catch { return fallback; }
-    };
-
-    const [ctaButtons, setCtaButtons] = useState<any[]>(parseJsonSafely(template.ctaButtons, []));
-    const [quickReplyButtons, setQuickReplyButtons] = useState<string[]>(parseJsonSafely(template.quickReplyButtons, []));
-    
-    const [saving, setSaving] = useState(false);
-
-    // Parse variables from body text (e.g. {{1}}, {{2}})
-    const variables = Array.from(bodyText.matchAll(/\{\{(\d+)\}\}/g)).map(match => `{{${match[1]}}}`);
-    const uniqueVariables = Array.from(new Set(variables));
-
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      setUploadingHeaderImage(true);
-      try {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onloadend = async () => {
-          const base64 = reader.result as string;
-          const res = await uploadWATemplateHeaderImageServerFn({ data: { base64 } });
-          setHeaderImageUrl(res.url);
-          showToast("success", "Template image uploaded!");
-        };
-      } catch (err: any) {
-        showToast("error", "Image upload failed: " + err.message);
-      } finally {
-        setUploadingHeaderImage(false);
-      }
-    };
-
-    const handleSave = async () => {
-      if (!name.trim()) return showToast("error", "Template name required");
-      if (!bodyText.trim()) return showToast("error", "Template body message required");
-
-      setSaving(true);
-      try {
-        await saveWATemplateServerFn({
-          data: {
-            id: template.id,
-            name: name.trim(),
-            category,
-            headerType,
-            headerText: headerType === "text" ? headerText : null,
-            headerImageUrl: headerType === "image" ? headerImageUrl : null,
-            bodyText,
-            footerText: footerText.trim() || null,
-            ctaButtons: ctaButtons.length > 0 ? ctaButtons : null,
-            quickReplyButtons: quickReplyButtons.length > 0 ? quickReplyButtons : null,
-            variables: uniqueVariables.length > 0 ? uniqueVariables : null,
-          }
-        });
-        showToast("success", `Template saved!`);
-        setEditingTemplate(null);
-        loadTemplates();
-      } catch (err: any) {
-        showToast("error", "Save failed: " + err.message);
-      } finally {
-        setSaving(false);
-      }
-    };
-
-    return (
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Left Pane: Builder Form */}
-        <div className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-6">
-          <div className="flex items-center justify-between border-b border-zinc-150 pb-4">
-            <h3 className="text-base font-bold text-zinc-900">{template.id ? "Edit Template" : "New Message Template"}</h3>
-            <button
-              onClick={() => setEditingTemplate(null)}
-              className="text-xs text-zinc-400 hover:text-zinc-650 font-bold bg-zinc-100 px-3 py-1.5 rounded-full cursor-pointer"
-            >
-              Back to List
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            {/* Name & Category */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Template Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. appointment_reminder"
-                  value={name}
-                  onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase())}
-                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Category</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
-                >
-                  <option value="marketing">Marketing (Broadcasts, Offers)</option>
-                  <option value="utility">Utility (Reminders, Receipts)</option>
-                  <option value="greeting">Greeting (Welcome, Festive)</option>
-                  <option value="followup">Follow-up (Feedback, Check-ins)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Header Type */}
-            <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Header (Optional)</label>
-              <div className="flex gap-2 mb-2">
-                {["none", "text", "image"].map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setHeaderType(t)}
-                    className={`flex-1 rounded-full py-1.5 text-xs font-bold border transition-all cursor-pointer ${
-                      headerType === t ? "bg-zinc-950 text-white border-zinc-950" : "bg-zinc-50 border-zinc-200 text-zinc-650 hover:bg-zinc-100"
-                    }`}
-                  >
-                    {t.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-              {headerType === "text" && (
-                <input
-                  type="text"
-                  placeholder="Header text, e.g. Monthly Medical Checkup"
-                  value={headerText}
-                  onChange={(e) => setHeaderText(e.target.value)}
-                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
-                />
-              )}
-              {headerType === "image" && (
-                <div className="flex items-center gap-3">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    id="template-header-file"
-                    className="hidden"
-                  />
-                  <label
-                    htmlFor="template-header-file"
-                    className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 px-4 py-2 text-xs font-bold text-zinc-650 cursor-pointer transition-colors"
-                  >
-                    {uploadingHeaderImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Smartphone className="h-3.5 w-3.5" />}
-                    Upload Header Image
-                  </label>
-                  {headerImageUrl && (
-                    <span className="text-[10px] font-semibold text-zinc-400 truncate max-w-[200px]">Uploaded ✓</span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Body */}
-            <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Message Body</label>
-                <button
-                  type="button"
-                  onClick={() => setBodyText(prev => prev + ` {{${uniqueVariables.length + 1}}}`)}
-                  className="text-[9px] font-bold text-brand hover:underline flex items-center gap-0.5"
-                >
-                  <PlusCircle className="h-2.5 w-2.5" /> Add Variable
-                </button>
-              </div>
-              <textarea
-                rows={5}
-                placeholder="Hello {{1}}, this is a reminder for your medical checkup scheduled at {{2}}."
-                value={bodyText}
-                onChange={(e) => setBodyText(e.target.value)}
-                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand font-mono"
-              />
-              <span className="text-[9px] text-zinc-400 font-semibold block mt-1">
-                Variables parsed: {uniqueVariables.join(", ") || "None"}
-              </span>
-            </div>
-
-            {/* Footer */}
-            <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Footer Text (Optional)</label>
-              <input
-                type="text"
-                placeholder="e.g. Reply STOP to opt out"
-                value={footerText}
-                onChange={(e) => setFooterText(e.target.value)}
-                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
-              />
-            </div>
-
-            {/* Interactive Call to Action buttons */}
-            <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">CTA Buttons (Max 2)</label>
-                {ctaButtons.length < 2 && (
-                  <button
-                    type="button"
-                    onClick={() => setCtaButtons(prev => [...prev, { type: "url", label: "Visit Website", value: "https://" }])}
-                    className="text-[9px] font-bold text-brand hover:underline"
-                  >
-                    + Add Button
-                  </button>
-                )}
-              </div>
-              <div className="space-y-2">
-                {ctaButtons.map((btn, bIdx) => (
-                  <div key={bIdx} className="flex gap-2 items-center bg-zinc-50 p-2.5 rounded-xl border border-zinc-200">
-                    <select
-                      value={btn.type}
-                      onChange={(e) => {
-                        const newBtn = { ...btn, type: e.target.value, value: e.target.value === "phone" ? "" : "https://" };
-                        setCtaButtons(prev => prev.map((b, i) => i === bIdx ? newBtn : b));
-                      }}
-                      className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
-                    >
-                      <option value="url">URL Link</option>
-                      <option value="phone">Phone Call</option>
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Button Label"
-                      value={btn.label}
-                      onChange={(e) => setCtaButtons(prev => prev.map((b, i) => i === bIdx ? { ...b, label: e.target.value } : b))}
-                      className="flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
-                    />
-                    <input
-                      type="text"
-                      placeholder={btn.type === "phone" ? "+91..." : "https://..."}
-                      value={btn.value}
-                      onChange={(e) => setCtaButtons(prev => prev.map((b, i) => i === bIdx ? { ...b, value: e.target.value } : b))}
-                      className="flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setCtaButtons(prev => prev.filter((_, i) => i !== bIdx))}
-                      className="text-red-500 hover:text-red-700"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Quick Reply buttons */}
-            <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Quick Replies (Max 3)</label>
-                {quickReplyButtons.length < 3 && (
-                  <button
-                    type="button"
-                    onClick={() => setQuickReplyButtons(prev => [...prev, "Confirm Clinic Slot"])}
-                    className="text-[9px] font-bold text-brand hover:underline"
-                  >
-                    + Add Reply
-                  </button>
-                )}
-              </div>
-              <div className="space-y-2">
-                {quickReplyButtons.map((btn, bIdx) => (
-                  <div key={bIdx} className="flex gap-2 items-center bg-zinc-50 p-2 rounded-xl border border-zinc-200">
-                    <input
-                      type="text"
-                      placeholder="Quick Reply Text"
-                      value={btn}
-                      onChange={(e) => setQuickReplyButtons(prev => prev.map((b, i) => i === bIdx ? e.target.value : b))}
-                      className="flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setQuickReplyButtons(prev => prev.filter((_, i) => i !== bIdx))}
-                      className="text-red-500 hover:text-red-700"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-zinc-150 pt-4 flex gap-2">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex-1 rounded-full bg-zinc-950 text-white font-bold text-xs py-2.5 hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              Save Template
-            </button>
-          </div>
-        </div>
-
-        {/* Right Pane: Premium WhatsApp Device Mockup Previews */}
-        <div className="flex flex-col items-center justify-center p-6 bg-zinc-50 border border-zinc-200 rounded-3xl relative">
-          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest absolute top-4">Interactive Device Mockup</span>
-          <div className="w-[300px] aspect-[9/18] border-[10px] border-zinc-850 bg-[#e5ddd5] rounded-[36px] shadow-2xl relative overflow-hidden flex flex-col pt-6 px-3">
-            {/* Speaker & notch */}
-            <div className="w-24 h-4 bg-zinc-850 rounded-full absolute top-1 left-1/2 -translate-x-1/2 z-20" />
-
-            {/* Conversation Header */}
-            <div className="bg-[#075e54] text-white p-2 rounded-t-lg -mx-3 flex items-center gap-2 shrink-0">
-              <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold font-mono">MD</div>
-              <div>
-                <p className="text-[9px] font-bold leading-none">MediFlow Automated Alerts</p>
-                <p className="text-[7px] text-zinc-250 leading-none mt-0.5">Online</p>
-              </div>
-            </div>
-
-            {/* Scrollable Message Box */}
-            <div className="flex-1 overflow-y-auto py-3 space-y-2">
-              <div className="bg-white rounded-xl p-2.5 text-[10px] text-zinc-800 shadow-sm border border-zinc-200 max-w-[240px] ml-1.5 space-y-1.5 relative leading-relaxed">
-                {headerType === "text" && headerText && (
-                  <p className="font-bold text-[10px] text-zinc-900 border-b border-zinc-100 pb-1">{headerText}</p>
-                )}
-                {headerType === "image" && headerImageUrl && (
-                  <img src={headerImageUrl} alt="Header Preview" className="w-full h-24 object-cover rounded-lg" />
-                )}
-                
-                {/* Replace placeholders with generic val for mockup */}
-                <p className="whitespace-pre-line font-medium text-[9px]">{bodyText || "Your template message will appear here..."}</p>
-
-                {footerText && (
-                  <p className="text-[7.5px] text-zinc-400 font-bold">{footerText}</p>
-                )}
-              </div>
-
-              {/* Action Buttons Mockups */}
-              {ctaButtons.map((btn, bIdx) => (
-                <div key={bIdx} className="bg-white hover:bg-zinc-50 rounded-xl py-2 px-3 text-[9px] font-bold text-[#0080ff] border border-zinc-200 max-w-[240px] ml-1.5 flex items-center justify-center gap-1.5 shadow-sm">
-                  {btn.type === "phone" ? <PhoneCall className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />}
-                  {btn.label || (btn.type === "phone" ? "Call Clinic" : "Learn More")}
-                </div>
-              ))}
-
-              {quickReplyButtons.map((btn, bIdx) => (
-                <div key={bIdx} className="bg-[#dfebf5] hover:bg-[#d0e0ed] rounded-xl py-2 px-3 text-[9px] font-bold text-[#075e54] border border-[#bcd2e3] max-w-[240px] ml-1.5 flex items-center justify-center gap-1 shadow-sm">
-                  <UserCheck className="h-3 w-3" />
-                  {btn || "Quick Reply"}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // ──────────────────────────────────────────────
-  // CAMPAIGN BUILDER & BROADCASTS
-  // ──────────────────────────────────────────────
-  const CampaignWizard = () => {
-    const [wizardStep, setWizardStep] = useState(1);
-    const [campaignName, setCampaignName] = useState("");
-    const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
-    
-    // Safety
-    const [minDelay, setMinDelay] = useState(10);
-    const [maxDelay, setMaxDelay] = useState(25);
-    const [dailyLimit, setDailyLimit] = useState(200);
-
-    // Recipients
-    const [parsedRecipients, setParsedRecipients] = useState<any[]>([]);
-    const [manualNumbers, setManualNumbers] = useState("");
-    const [contactMethod, setContactMethod] = useState<"file" | "manual">("file");
-
-    const templateSelected = templates.find(t => t.id === selectedTemplateId);
-
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        try {
-          const bstr = evt.target?.result;
-          const workbook = XLSX.read(bstr, { type: "binary" });
-          const firstSheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[firstSheetName];
-          const data: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-          if (data.length <= 1) {
-            showToast("error", "The uploaded file appears to be empty or has no header row.");
-            return;
-          }
-
-          const headers = data[0].map((h: any) => String(h).trim().toLowerCase());
-          
-          // Locate phone column
-          const phoneIndex = headers.findIndex((h: string) => h.includes("phone") || h.includes("number") || h.includes("mobile") || h.includes("contact"));
-          const nameIndex = headers.findIndex((h: string) => h.includes("name") || h.includes("patient") || h.includes("customer"));
-
-          if (phoneIndex === -1) {
-            showToast("error", "Could not find phone number column. Make sure the first row contains 'phone', 'number', 'mobile', or 'contact'.");
-            return;
-          }
-
-          const recipientsList: any[] = [];
-          for (let i = 1; i < data.length; i++) {
-            const row = data[i];
-            const rawPhone = String(row[phoneIndex] || "").trim();
-            if (!rawPhone) continue;
-
-            const name = nameIndex !== -1 ? String(row[nameIndex] || "").trim() : "Recipient " + i;
-            
-            // Map row fields into a template variables dictionary
-            const variablesObj: any = {};
-            // If the template needs variables like {{1}}, {{2}}...
-            // map subsequent columns as {{1}} = column 2, {{2}} = column 3, etc.
-            let varCounter = 1;
-            headers.forEach((h: string, idx: number) => {
-              if (idx !== phoneIndex && idx !== nameIndex) {
-                variablesObj[String(varCounter++)] = row[idx] || "";
-              }
-            });
-
-            recipientsList.push({
-              phone: rawPhone,
-              name,
-              variables: variablesObj
-            });
-          }
-
-          setParsedRecipients(recipientsList);
-          showToast("success", `Parsed ${recipientsList.length} contacts from sheet!`);
-        } catch (error: any) {
-          showToast("error", "Error parsing file: " + error.message);
-        }
-      };
-      reader.readAsBinaryString(file);
-    };
-
-    const handleCreateCampaign = async () => {
-      let finalRecipients: any[] = [];
-
-      if (contactMethod === "manual") {
-        const lines = manualNumbers.split("\n").map(l => l.trim()).filter(Boolean);
-        if (lines.length === 0) {
-          showToast("error", "Please write or paste at least one phone number");
-          return;
-        }
-        finalRecipients = lines.map((line, idx) => {
-          // Line can be "Phone, Name" or just "Phone"
-          const parts = line.split(",");
-          const phone = parts[0].trim();
-          const name = parts[1] ? parts[1].trim() : "Recipient " + (idx + 1);
-          return { phone, name };
-        });
-      } else {
-        if (parsedRecipients.length === 0) {
-          showToast("error", "Please upload a valid Excel/CSV contact list file first");
-          return;
-        }
-        finalRecipients = parsedRecipients;
-      }
-
-      if (!campaignName.trim()) return showToast("error", "Campaign name is required");
-
-      try {
-        const res = await createWACampaignServerFn({
-          data: {
-            name: campaignName.trim(),
-            templateId: selectedTemplateId || null,
-            minDelaySec: minDelay,
-            maxDelaySec: maxDelay,
-            dailyLimit,
-            recipients: finalRecipients
-          }
-        });
-        showToast("success", "Campaign created successfully as Draft!");
-        setCreatingCampaign(false);
-        loadCampaigns();
-      } catch (err: any) {
-        showToast("error", "Failed to create campaign: " + err.message);
-      }
-    };
-
-    return (
-      <div className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-6">
-        <div className="flex items-center justify-between border-b border-zinc-150 pb-4">
-          <h3 className="text-base font-bold text-zinc-900">Create Broadcast Campaign (Step {wizardStep}/3)</h3>
-          <button
-            onClick={() => setCreatingCampaign(false)}
-            className="text-xs text-zinc-400 hover:text-zinc-650 font-bold bg-zinc-100 px-3 py-1.5 rounded-full cursor-pointer"
-          >
-            Cancel
-          </button>
-        </div>
-
-        {wizardStep === 1 && (
-          <div className="space-y-4">
-            <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Campaign Name</label>
-              <input
-                type="text"
-                placeholder="e.g. June Diabetic Recall Campaign"
-                value={campaignName}
-                onChange={(e) => setCampaignName(e.target.value)}
-                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
-              />
-            </div>
-
-            <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Select Message Template</label>
-              <select
-                value={selectedTemplateId}
-                onChange={(e) => setSelectedTemplateId(e.target.value)}
-                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
-              >
-                <option value="">-- Send Plain Quick Message (No Template) --</option>
-                {templates.map(t => (
-                  <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex justify-end pt-4">
-              <button
-                onClick={() => setWizardStep(2)}
-                disabled={!campaignName.trim()}
-                className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-6 py-2 cursor-pointer disabled:opacity-40"
-              >
-                Next Step
-              </button>
-            </div>
-          </div>
-        )}
-
-        {wizardStep === 2 && (
-          <div className="space-y-4">
-            <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Contacts Upload Method</label>
-              <div className="flex gap-2 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setContactMethod("file")}
-                  className={`flex-1 rounded-full py-1.5 text-xs font-bold border transition-all cursor-pointer ${
-                    contactMethod === "file" ? "bg-zinc-950 text-white border-zinc-950" : "bg-zinc-50 border-zinc-200 text-zinc-650"
-                  }`}
-                >
-                  Excel/CSV Upload
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContactMethod("manual")}
-                  className={`flex-1 rounded-full py-1.5 text-xs font-bold border transition-all cursor-pointer ${
-                    contactMethod === "manual" ? "bg-zinc-950 text-white border-zinc-950" : "bg-zinc-50 border-zinc-200 text-zinc-650"
-                  }`}
-                >
-                  Manual Entry
-                </button>
-              </div>
-
-              {contactMethod === "file" ? (
-                <div className="space-y-4">
-                  <div className="border-2 border-dashed border-zinc-200 hover:border-brand/40 bg-zinc-50/50 rounded-2xl p-6 text-center cursor-pointer transition-colors relative">
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      onChange={handleFileUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                    />
-                    <FileSpreadsheet className="h-8 w-8 text-zinc-400 mx-auto mb-2" />
-                    <p className="text-xs font-bold text-zinc-700">Drag &amp; drop Excel or CSV sheet</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold mt-1">Accepts .xlsx, .xls, .csv. Must include phone header column.</p>
-                  </div>
-
-                  {parsedRecipients.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Parsed Contacts Sample ({parsedRecipients.length})</p>
-                      <div className="border border-zinc-200 rounded-xl overflow-hidden max-h-40 overflow-y-auto">
-                        <table className="w-full text-left text-[10px] font-semibold text-zinc-650">
-                          <thead className="bg-zinc-50 text-[9px] text-zinc-400 uppercase border-b border-zinc-200">
-                            <tr>
-                              <th className="p-2">Name</th>
-                              <th className="p-2">Phone</th>
-                              <th className="p-2">Vars</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-zinc-150 bg-white">
-                            {parsedRecipients.slice(0, 5).map((r, rIdx) => (
-                              <tr key={rIdx}>
-                                <td className="p-2 font-bold">{r.name}</td>
-                                <td className="p-2">{r.phone}</td>
-                                <td className="p-2 text-zinc-400">{JSON.stringify(r.variables)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div>
-                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Paste Numbers (one per line)</label>
-                  <textarea
-                    rows={6}
-                    placeholder={`+919876543210, John Doe\n+919800012345, Jane Smith`}
-                    value={manualNumbers}
-                    onChange={(e) => setManualNumbers(e.target.value)}
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand font-mono"
-                  />
-                  <p className="text-[9px] text-zinc-400 font-semibold mt-1">Format: phone, name (optional)</p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-between pt-4">
-              <button
-                onClick={() => setWizardStep(1)}
-                className="rounded-full border border-zinc-200 hover:bg-zinc-50 text-zinc-600 font-bold text-xs px-6 py-2 cursor-pointer"
-              >
-                Back
-              </button>
-              <button
-                onClick={() => setWizardStep(3)}
-                className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-6 py-2 cursor-pointer"
-              >
-                Next Step
-              </button>
-            </div>
-          </div>
-        )}
-
-        {wizardStep === 3 && (
-          <div className="space-y-4">
-            <h4 className="text-xs font-bold text-zinc-800 border-b border-zinc-100 pb-2">Anti-Ban Campaign Settings</h4>
-            
-            {/* Delay sliders */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Min Delay: {minDelay} seconds</label>
-                <input
-                  type="range"
-                  min="5"
-                  max="60"
-                  value={minDelay}
-                  onChange={(e) => setMinDelay(parseInt(e.target.value))}
-                  className="w-full accent-zinc-950"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Max Delay: {maxDelay} seconds</label>
-                <input
-                  type="range"
-                  min="10"
-                  max="120"
-                  value={maxDelay}
-                  onChange={(e) => setMaxDelay(Math.max(minDelay + 2, parseInt(e.target.value)))}
-                  className="w-full accent-zinc-950"
-                />
-              </div>
-            </div>
-
-            {/* Daily limit */}
-            <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Max Daily Message Sending Limit (For safety)</label>
-              <input
-                type="number"
-                value={dailyLimit}
-                onChange={(e) => setDailyLimit(parseInt(e.target.value))}
-                className="w-32 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
-              />
-              <p className="text-[9px] text-zinc-400 font-semibold mt-1">Recommended is 200 messages per day per account to prevent phone number bans.</p>
-            </div>
-
-            <div className="flex justify-between pt-4 border-t border-zinc-100">
-              <button
-                onClick={() => setWizardStep(2)}
-                className="rounded-full border border-zinc-200 hover:bg-zinc-50 text-zinc-600 font-bold text-xs px-6 py-2 cursor-pointer"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleCreateCampaign}
-                className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-8 py-2.5 cursor-pointer flex items-center gap-1.5 shadow-md"
-              >
-                <Check className="h-4 w-4" /> Create Broadcast Campaign
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
+  
   const handleStartCampaign = async (id: string) => {
     try {
       await startWACampaignServerFn({ data: id });
       showToast("success", "Campaign launched! Message sending enqueued in queue.");
-      loadCampaigns();
+      
+      const campaignsList = await getWACampaignsServerFn();
+      setCampaigns(campaignsList);
+      const freshCampaign = campaignsList.find((c: any) => c.id === id);
+      if (freshCampaign) {
+        setSelectedCampaign(freshCampaign);
+        const rec = await getCampaignRecipientsServerFn({ data: id });
+        setCampaignRecipients(rec);
+      }
     } catch (err: any) {
       showToast("error", "Launch failed: " + err.message);
     }
@@ -917,7 +297,13 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
     try {
       await pauseWACampaignServerFn({ data: id });
       showToast("success", "Campaign paused in the microservice.");
-      loadCampaigns();
+      
+      const campaignsList = await getWACampaignsServerFn();
+      setCampaigns(campaignsList);
+      const freshCampaign = campaignsList.find((c: any) => c.id === id);
+      if (freshCampaign) {
+        setSelectedCampaign(freshCampaign);
+      }
     } catch (err: any) {
       showToast("error", "Pause failed: " + err.message);
     }
@@ -941,16 +327,23 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
     });
   };
 
-  const handleViewRecipients = async (campaign: any) => {
-    setSelectedCampaign(campaign);
-    setLoadingRecipients(true);
+  const handleViewRecipients = async (campaign: any, silent = false) => {
+    if (!silent) setSelectedCampaign(campaign);
+    if (!silent) setLoadingRecipients(true);
     try {
+      const campaignsList = await getWACampaignsServerFn();
+      setCampaigns(campaignsList);
+      const freshCampaign = campaignsList.find((c: any) => c.id === campaign.id);
+      if (freshCampaign) {
+        setSelectedCampaign(freshCampaign);
+      }
+
       const res = await getCampaignRecipientsServerFn({ data: campaign.id });
       setCampaignRecipients(res);
     } catch (e: any) {
-      showToast("error", "Failed to load recipients: " + e.message);
+      if (!silent) showToast("error", "Failed to load recipients: " + e.message);
     } finally {
-      setLoadingRecipients(false);
+      if (!silent) setLoadingRecipients(false);
     }
   };
 
@@ -1157,7 +550,12 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
             exit={{ opacity: 0, y: -5 }}
           >
             {editingTemplate ? (
-              <TemplateBuilder template={editingTemplate} />
+              <TemplateBuilder
+                template={editingTemplate}
+                setEditingTemplate={setEditingTemplate}
+                loadTemplates={loadTemplates}
+                showToast={showToast}
+              />
             ) : (
               <div className="bg-white border border-zinc-200 rounded-3xl p-5 space-y-4">
                 <div className="flex justify-between items-center border-b border-zinc-100 pb-3">
@@ -1242,7 +640,12 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
             exit={{ opacity: 0, y: -5 }}
           >
             {creatingCampaign ? (
-              <CampaignWizard />
+              <CampaignWizard
+                templates={templates}
+                setCreatingCampaign={setCreatingCampaign}
+                loadCampaigns={loadCampaigns}
+                showToast={showToast}
+              />
             ) : selectedCampaign ? (
               <div className="bg-white border border-zinc-200 rounded-3xl p-5 space-y-5">
                 {/* Campaign Detail Header */}
@@ -1473,170 +876,364 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
             initial={{ opacity: 0, y: 5 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -5 }}
-            className="space-y-6"
+            className="space-y-5"
           >
-            {editingAutoReply ? (
-              <form onSubmit={handleSaveAutoReply} className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-5">
-                <div className="flex items-center justify-between border-b border-zinc-150 pb-4">
-                  <h3 className="text-base font-bold text-zinc-900">{editingAutoReply.id ? "Edit Auto-Reply Rule" : "Create Auto-Reply Rule"}</h3>
-                  <button
-                    type="button"
-                    onClick={() => setEditingAutoReply(null)}
-                    className="text-xs text-zinc-400 hover:text-zinc-650 font-bold bg-zinc-100 px-3 py-1.5 rounded-full cursor-pointer"
-                  >
-                    Cancel
-                  </button>
+            {/* AI Toggle Header Card */}
+            <div className={`rounded-3xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-300 ${
+              aiEnabled
+                ? "bg-gradient-to-r from-violet-500/10 to-emerald-500/8 border-violet-200"
+                : "bg-white border-zinc-200"
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
+                  aiEnabled ? "bg-gradient-to-br from-violet-500 to-emerald-500 shadow-lg shadow-violet-200" : "bg-zinc-100"
+                }`}>
+                  <Sparkles className={`h-5 w-5 ${aiEnabled ? "text-white" : "text-zinc-400"}`} />
                 </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-zinc-900">AI Smart Reply Agent</h3>
+                    {aiEnabled && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 px-2 py-0.5 text-[9px] font-black animate-pulse">
+                        ● LIVE
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-zinc-500 font-medium mt-0.5">
+                    {aiEnabled
+                      ? "AI is analysing incoming WhatsApp messages and responding intelligently — including booking appointments."
+                      : "Enable to replace keyword rules with a conversational AI that handles greetings, FAQs and appointment bookings."}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                {/* Toggle Switch */}
+                <button
+                  onClick={() => handleToggleAI(!aiEnabled)}
+                  disabled={loadingAIToggle}
+                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-50 ${
+                    aiEnabled ? "bg-gradient-to-r from-violet-500 to-emerald-500" : "bg-zinc-200"
+                  }`}
+                >
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${
+                    aiEnabled ? "translate-x-8" : "translate-x-1"
+                  }`} />
+                  {loadingAIToggle && <Loader2 className="h-3 w-3 text-white absolute right-1.5 animate-spin" />}
+                </button>
+                <span className={`text-xs font-bold ${aiEnabled ? "text-violet-600" : "text-zinc-400"}`}>
+                  {aiEnabled ? "AI Mode ON" : "AI Mode OFF"}
+                </span>
+              </div>
+            </div>
 
-                <div className="space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
+            {/* Conditional content based on AI mode */}
+            {aiEnabled ? (
+              /* ── AI MODE: Conversations Panel ── */
+              <div className="grid gap-4 md:grid-cols-5 min-h-[500px]">
+                {/* Left: Conversation list */}
+                <div className="md:col-span-2 bg-white border border-zinc-200 rounded-3xl overflow-hidden flex flex-col">
+                  <div className="p-4 border-b border-zinc-100 flex items-center justify-between">
                     <div>
-                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Trigger Keyword</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. book, checkup, slot"
-                        value={editingAutoReply.triggerKeyword}
-                        onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, triggerKeyword: e.target.value }))}
-                        className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
-                      />
+                      <h4 className="text-xs font-bold text-zinc-900">Live Conversations</h4>
+                      <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">{conversations.length} unique senders</p>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Match Type</label>
-                      <select
-                        value={editingAutoReply.matchType}
-                        onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, matchType: e.target.value }))}
-                        className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
-                      >
-                        <option value="exact">Exact Phrase Match</option>
-                        <option value="contains">Contains Word</option>
-                        <option value="startsWith">Starts With</option>
-                        <option value="regex">Regular Expression (Advanced)</option>
-                      </select>
-                    </div>
+                    <button
+                      onClick={loadConversations}
+                      className="p-1.5 rounded-full border border-zinc-200 hover:bg-zinc-50 cursor-pointer"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 text-zinc-400 ${loadingConversations ? "animate-spin" : ""}`} />
+                    </button>
                   </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Auto-Reply Message</label>
-                    <textarea
-                      rows={4}
-                      placeholder="Thank you for reaching out! To book a clinic appointment online, visit: https://mediflow.ai/book"
-                      value={editingAutoReply.replyMessage}
-                      onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, replyMessage: e.target.value }))}
-                      className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
-                    />
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Match Priority (Higher Matches First)</label>
-                      <input
-                        type="number"
-                        value={editingAutoReply.priority}
-                        onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, priority: parseInt(e.target.value) || 0 }))}
-                        className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
-                      />
-                    </div>
-                    <div className="flex items-center pt-6 pl-1">
-                      <label className="flex items-center gap-2 text-xs font-bold text-zinc-650 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={editingAutoReply.isActive}
-                          onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, isActive: e.target.checked }))}
-                          className="rounded"
-                        />
-                        Rule Active
-                      </label>
-                    </div>
+                  <div className="flex-1 overflow-y-auto divide-y divide-zinc-100">
+                    {loadingConversations ? (
+                      <div className="flex items-center justify-center py-14">
+                        <Loader2 className="h-5 w-5 animate-spin text-zinc-300" />
+                      </div>
+                    ) : conversations.length === 0 ? (
+                      <div className="text-center py-14 px-4">
+                        <MessageCircle className="h-8 w-8 text-zinc-200 mx-auto mb-2" />
+                        <p className="text-xs font-bold text-zinc-500">No conversations yet</p>
+                        <p className="text-[9px] text-zinc-400 font-semibold mt-1">Messages will appear here when patients text your WhatsApp number.</p>
+                      </div>
+                    ) : (
+                      conversations.map((conv) => (
+                        <button
+                          key={conv.senderPhone}
+                          onClick={() => openConversation(conv.senderPhone)}
+                          className={`w-full text-left p-3.5 hover:bg-zinc-50 transition-colors cursor-pointer ${
+                            selectedConvPhone === conv.senderPhone ? "bg-violet-50 border-l-2 border-violet-400" : ""
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 rounded-full bg-gradient-to-br from-violet-400 to-emerald-400 flex items-center justify-center text-white text-[11px] font-bold shrink-0">
+                              {(conv.senderName || conv.senderPhone).charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <p className="text-xs font-bold text-zinc-800 truncate">
+                                  {conv.senderName || `+${conv.senderPhone}`}
+                                </p>
+                                <span className="text-[8px] text-zinc-400 font-semibold shrink-0">
+                                  {new Date(conv.lastActivity).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </div>
+                              <p className="text-[9.5px] text-zinc-500 font-medium truncate mt-0.5">
+                                {conv.lastDirection === "outgoing" ? "🤖 " : "👤 "}{conv.lastMessage || "..."}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      ))
+                    )}
                   </div>
                 </div>
 
-                <div className="border-t border-zinc-150 pt-4 flex gap-2">
-                  <button
-                    type="submit"
-                    className="flex-1 rounded-full bg-zinc-950 text-white font-bold text-xs py-2.5 hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    Save Auto-Reply Rule
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="bg-white border border-zinc-200 rounded-3xl p-5 space-y-4">
-                <div className="flex justify-between items-center border-b border-zinc-100 pb-3">
-                  <div>
-                    <h3 className="text-xs font-bold text-zinc-900">Auto-Reply Keyword Rules</h3>
-                    <p className="text-[10px] text-zinc-400 font-semibold">Define trigger words and custom templates replies</p>
-                  </div>
-                  <button
-                    onClick={() => setEditingAutoReply({ triggerKeyword: "", matchType: "contains", replyMessage: "", isActive: true, priority: 0 })}
-                    className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-4 py-1.5 flex items-center gap-1 cursor-pointer shadow-sm"
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Add Rule
-                  </button>
-                </div>
+                {/* Right: Chat thread */}
+                <div className="md:col-span-3 bg-white border border-zinc-200 rounded-3xl flex flex-col overflow-hidden">
+                  {selectedConvPhone ? (
+                    <>
+                      {/* Chat header */}
+                      <div className="p-4 border-b border-zinc-100 bg-[#075e54] rounded-t-3xl flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center text-white text-[11px] font-bold shrink-0">
+                          {(conversations.find(c => c.senderPhone === selectedConvPhone)?.senderName || selectedConvPhone).charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-white text-xs font-bold">
+                            {conversations.find(c => c.senderPhone === selectedConvPhone)?.senderName || `+${selectedConvPhone}`}
+                          </p>
+                          <p className="text-white/60 text-[9px] font-semibold">via AI Smart Reply</p>
+                        </div>
+                        <button
+                          onClick={() => { setSelectedConvPhone(null); setConvHistory([]); }}
+                          className="text-white/70 hover:text-white text-[10px] font-bold cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
 
-                {loadingAutoReplies ? (
-                  <div className="text-center py-10">
-                    <Loader2 className="h-6 w-6 animate-spin text-brand mx-auto" />
-                  </div>
-                ) : autoReplies.length > 0 ? (
-                  <div className="border border-zinc-200 rounded-2xl overflow-hidden shadow-sm">
-                    <table className="w-full text-left text-xs font-semibold text-zinc-650">
-                      <thead className="bg-zinc-50 text-[9.5px] text-zinc-400 uppercase border-b border-zinc-200">
-                        <tr>
-                          <th className="p-3">Trigger Keyword</th>
-                          <th className="p-3">Match</th>
-                          <th className="p-3">Reply Message</th>
-                          <th className="p-3">Priority</th>
-                          <th className="p-3">Active</th>
-                          <th className="p-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-150 bg-white">
-                        {autoReplies.map((rule) => (
-                          <tr key={rule.id} className="hover:bg-zinc-50/50">
-                            <td className="p-3 font-mono font-bold text-zinc-800">{rule.triggerKeyword}</td>
-                            <td className="p-3">
-                              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[8.5px] border border-zinc-200 font-bold">{rule.matchType}</span>
-                            </td>
-                            <td className="p-3 truncate max-w-[200px] text-[11px]" title={rule.replyMessage}>
-                              {rule.replyMessage}
-                            </td>
-                            <td className="p-3 text-zinc-400">{rule.priority}</td>
-                            <td className="p-3">
-                              <span className={`h-2.5 w-2.5 rounded-full inline-block ${rule.isActive ? "bg-emerald-500" : "bg-zinc-300"}`} />
-                            </td>
-                            <td className="p-3 text-right space-x-1.5">
-                              <button
-                                onClick={() => setEditingAutoReply({ ...rule, isActive: !!rule.isActive })}
-                                className="rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[10px] font-bold px-3 py-1 cursor-pointer"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDeleteAutoReply(rule.id)}
-                                className="rounded-full bg-red-50 hover:bg-red-100 text-red-500 text-[10px] font-bold px-3 py-1 cursor-pointer"
-                              >
-                                Delete
-                              </button>
-                            </td>
-                          </tr>
+                      {/* Messages */}
+                      <div className="flex-1 overflow-y-auto p-4 space-y-2.5 bg-[#e5ddd5]" style={{ minHeight: 360 }}>
+                        {loadingConvHistory ? (
+                          <div className="flex items-center justify-center h-40">
+                            <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+                          </div>
+                        ) : convHistory.length === 0 ? (
+                          <div className="text-center pt-10 text-zinc-400 text-xs font-semibold">No messages yet</div>
+                        ) : (
+                          convHistory.map((msg: any) => (
+                            <div
+                              key={msg.id}
+                              className={`flex ${msg.direction === "outgoing" ? "justify-end" : "justify-start"}`}
+                            >
+                              <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 shadow-sm ${
+                                msg.direction === "outgoing"
+                                  ? "bg-[#dcf8c6] text-zinc-800"
+                                  : "bg-white text-zinc-800"
+                              }`}>
+                                {msg.direction === "outgoing" && (
+                                  <span className="text-[8px] text-violet-500 font-black block mb-0.5">🤖 AI Agent</span>
+                                )}
+                                <p className="text-[11px] font-medium whitespace-pre-wrap leading-relaxed">{msg.message}</p>
+                                <p className="text-[8px] text-zinc-400 font-semibold text-right mt-1">
+                                  {new Date(msg.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                                </p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                        <div ref={convBottomRef} />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-zinc-50 rounded-3xl">
+                      <div className="h-16 w-16 rounded-3xl bg-gradient-to-br from-violet-100 to-emerald-100 flex items-center justify-center mb-4">
+                        <Sparkles className="h-7 w-7 text-violet-500" />
+                      </div>
+                      <h4 className="text-sm font-bold text-zinc-800">AI Conversation Viewer</h4>
+                      <p className="text-[10px] text-zinc-400 font-semibold mt-1 max-w-xs">
+                        Select a conversation from the left panel to see the full AI chat thread with your patients.
+                      </p>
+                      <div className="mt-5 bg-white border border-zinc-200 rounded-2xl p-4 text-left w-full max-w-xs space-y-2">
+                        <p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">What the AI Agent can do:</p>
+                        {["Greet patients warmly in any language", "Answer FAQs about clinic hours and doctors", "Collect patient name, date & reason", "Check available appointment slots", "Book and confirm appointments automatically"].map((cap, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                            <p className="text-[10px] text-zinc-600 font-medium">{cap}</p>
+                          </div>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* ── KEYWORD MODE: Existing rules UI ── */
+              <>
+                {editingAutoReply ? (
+                  <form onSubmit={handleSaveAutoReply} className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-5">
+                    <div className="flex items-center justify-between border-b border-zinc-150 pb-4">
+                      <h3 className="text-base font-bold text-zinc-900">{editingAutoReply.id ? "Edit Auto-Reply Rule" : "Create Auto-Reply Rule"}</h3>
+                      <button
+                        type="button"
+                        onClick={() => setEditingAutoReply(null)}
+                        className="text-xs text-zinc-400 hover:text-zinc-650 font-bold bg-zinc-100 px-3 py-1.5 rounded-full cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Trigger Keyword</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. book, checkup, slot"
+                            value={editingAutoReply.triggerKeyword}
+                            onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, triggerKeyword: e.target.value }))}
+                            className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Match Type</label>
+                          <select
+                            value={editingAutoReply.matchType}
+                            onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, matchType: e.target.value }))}
+                            className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+                          >
+                            <option value="exact">Exact Phrase Match</option>
+                            <option value="contains">Contains Word</option>
+                            <option value="startsWith">Starts With</option>
+                            <option value="regex">Regular Expression (Advanced)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Auto-Reply Message</label>
+                        <textarea
+                          rows={4}
+                          placeholder="Thank you for reaching out! To book a clinic appointment online, visit: https://mediflow.ai/book"
+                          value={editingAutoReply.replyMessage}
+                          onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, replyMessage: e.target.value }))}
+                          className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+                        />
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Match Priority (Higher Matches First)</label>
+                          <input
+                            type="number"
+                            value={editingAutoReply.priority}
+                            onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, priority: parseInt(e.target.value) || 0 }))}
+                            className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+                          />
+                        </div>
+                        <div className="flex items-center pt-6 pl-1">
+                          <label className="flex items-center gap-2 text-xs font-bold text-zinc-650 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={editingAutoReply.isActive}
+                              onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, isActive: e.target.checked }))}
+                              className="rounded"
+                            />
+                            Rule Active
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-zinc-150 pt-4 flex gap-2">
+                      <button
+                        type="submit"
+                        className="flex-1 rounded-full bg-zinc-950 text-white font-bold text-xs py-2.5 hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        Save Auto-Reply Rule
+                      </button>
+                    </div>
+                  </form>
                 ) : (
-                  <div className="text-center py-10 border border-dashed border-zinc-200 rounded-2xl">
-                    <RotateCcw className="h-8 w-8 text-zinc-350 mx-auto mb-2" />
-                    <p className="text-xs font-bold text-zinc-700">No Auto-Reply Rules</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold mt-1">Add trigger rules to auto-respond to incoming messages.</p>
+                  <div className="bg-white border border-zinc-200 rounded-3xl p-5 space-y-4">
+                    <div className="flex justify-between items-center border-b border-zinc-100 pb-3">
+                      <div>
+                        <h3 className="text-xs font-bold text-zinc-900">Keyword Auto-Reply Rules</h3>
+                        <p className="text-[10px] text-zinc-400 font-semibold">Define trigger words and static reply messages (used when AI mode is OFF)</p>
+                      </div>
+                      <button
+                        onClick={() => setEditingAutoReply({ triggerKeyword: "", matchType: "contains", replyMessage: "", isActive: true, priority: 0 })}
+                        className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-4 py-1.5 flex items-center gap-1 cursor-pointer shadow-sm"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add Rule
+                      </button>
+                    </div>
+
+                    {loadingAutoReplies ? (
+                      <div className="text-center py-10">
+                        <Loader2 className="h-6 w-6 animate-spin text-brand mx-auto" />
+                      </div>
+                    ) : autoReplies.length > 0 ? (
+                      <div className="border border-zinc-200 rounded-2xl overflow-hidden shadow-sm">
+                        <table className="w-full text-left text-xs font-semibold text-zinc-650">
+                          <thead className="bg-zinc-50 text-[9.5px] text-zinc-400 uppercase border-b border-zinc-200">
+                            <tr>
+                              <th className="p-3">Trigger Keyword</th>
+                              <th className="p-3">Match</th>
+                              <th className="p-3">Reply Message</th>
+                              <th className="p-3">Priority</th>
+                              <th className="p-3">Active</th>
+                              <th className="p-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-150 bg-white">
+                            {autoReplies.map((rule) => (
+                              <tr key={rule.id} className="hover:bg-zinc-50/50">
+                                <td className="p-3 font-mono font-bold text-zinc-800">{rule.triggerKeyword}</td>
+                                <td className="p-3">
+                                  <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[8.5px] border border-zinc-200 font-bold">{rule.matchType}</span>
+                                </td>
+                                <td className="p-3 truncate max-w-[200px] text-[11px]" title={rule.replyMessage}>
+                                  {rule.replyMessage}
+                                </td>
+                                <td className="p-3 text-zinc-400">{rule.priority}</td>
+                                <td className="p-3">
+                                  <span className={`h-2.5 w-2.5 rounded-full inline-block ${rule.isActive ? "bg-emerald-500" : "bg-zinc-300"}`} />
+                                </td>
+                                <td className="p-3 text-right space-x-1.5">
+                                  <button
+                                    onClick={() => setEditingAutoReply({ ...rule, isActive: !!rule.isActive })}
+                                    className="rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[10px] font-bold px-3 py-1 cursor-pointer"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteAutoReply(rule.id)}
+                                    className="rounded-full bg-red-50 hover:bg-red-100 text-red-500 text-[10px] font-bold px-3 py-1 cursor-pointer"
+                                  >
+                                    Delete
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="text-center py-10 border border-dashed border-zinc-200 rounded-2xl">
+                        <RotateCcw className="h-8 w-8 text-zinc-350 mx-auto mb-2" />
+                        <p className="text-xs font-bold text-zinc-700">No Keyword Rules</p>
+                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">Add trigger rules, or enable AI Mode above for intelligent auto-replies.</p>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </>
             )}
           </motion.div>
         )}
 
         {/* CONNECTION LINKING TAB */}
+
         {activeSubTab === "connection" && (
           <motion.div
             key="connection"
@@ -1753,3 +1350,805 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
     </div>
   );
 }
+
+
+// ──────────────────────────────────────────────
+// STANDALONE TEMPLATE BUILDER COMPONENT
+// ──────────────────────────────────────────────
+interface TemplateBuilderProps {
+  template: any;
+  setEditingTemplate: (val: any) => void;
+  loadTemplates: () => void;
+  showToast: (type: "success" | "error" | "info", message: string) => void;
+}
+
+const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToast }: TemplateBuilderProps) => {
+  const [name, setName] = useState(template.name || "");
+  const [category, setCategory] = useState(template.category || "marketing");
+  const [headerType, setHeaderType] = useState(template.headerType || "none");
+  const [headerText, setHeaderText] = useState(template.headerText || "");
+  const [headerImageUrl, setHeaderImageUrl] = useState(template.headerImageUrl || "");
+  const [bodyText, setBodyText] = useState(template.bodyText || "");
+  const [footerText, setFooterText] = useState(template.footerText || "");
+  const [uploadingHeaderImage, setUploadingHeaderImage] = useState(false);
+  
+  // Parse JSON safely
+  const parseJsonSafely = (str: any, fallback: any) => {
+    if (!str) return fallback;
+    if (typeof str === "object") return str;
+    try { return JSON.parse(str); } catch { return fallback; }
+  };
+
+  const [ctaButtons, setCtaButtons] = useState<any[]>(parseJsonSafely(template.ctaButtons, []));
+  const [quickReplyButtons, setQuickReplyButtons] = useState<string[]>(parseJsonSafely(template.quickReplyButtons, []));
+  
+  const [saving, setSaving] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [generatingAI, setGeneratingAI] = useState(false);
+
+  // Parse variables from body text (e.g. {{1}}, {{2}})
+  const variables = Array.from(bodyText.matchAll(/\{\{(\d+)\}\}/g)).map((match: any) => `{{${match[1]}}}`);
+  const uniqueVariables = Array.from(new Set(variables));
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingHeaderImage(true);
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        const res = await uploadWATemplateHeaderImageServerFn({ data: { base64 } });
+        setHeaderImageUrl(res.url);
+        showToast("success", "Template image uploaded!");
+      };
+    } catch (err: any) {
+      showToast("error", "Image upload failed: " + err.message);
+    } finally {
+      setUploadingHeaderImage(false);
+    }
+  };
+
+  const handleAIGenerate = async () => {
+    if (!aiPrompt.trim()) {
+      showToast("error", "Please enter a prompt to generate the template.");
+      return;
+    }
+    setGeneratingAI(true);
+    try {
+      const res = await generateWATemplateServerFn({ data: { prompt: aiPrompt.trim() } });
+      if (res && res.success && res.template) {
+        const t = res.template;
+        setName(t.name || "");
+        setCategory(t.category || "marketing");
+        setHeaderType(t.headerType || "none");
+        setHeaderText(t.headerText || "");
+        setBodyText(t.bodyText || "");
+        setFooterText(t.footerText || "");
+        setCtaButtons(t.ctaButtons || []);
+        setQuickReplyButtons(t.quickReplyButtons || []);
+        showToast("success", "Template generated by AI! Review and edit if needed.");
+      } else {
+        showToast("error", "AI generation returned invalid format.");
+      }
+    } catch (err: any) {
+      showToast("error", err.message || "Failed to generate template via AI.");
+    } finally {
+      setGeneratingAI(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) return showToast("error", "Template name required");
+    if (!bodyText.trim()) return showToast("error", "Template body message required");
+
+    setSaving(true);
+    try {
+      await saveWATemplateServerFn({
+        data: {
+          id: template.id,
+          name: name.trim(),
+          category,
+          headerType,
+          headerText: headerType === "text" ? headerText : null,
+          headerImageUrl: headerType === "image" ? headerImageUrl : null,
+          bodyText,
+          footerText: footerText.trim() || null,
+          ctaButtons: ctaButtons.length > 0 ? ctaButtons : null,
+          quickReplyButtons: quickReplyButtons.length > 0 ? quickReplyButtons : null,
+          variables: uniqueVariables.length > 0 ? uniqueVariables : null,
+        }
+      });
+      showToast("success", `Template saved!`);
+      setEditingTemplate(null);
+      loadTemplates();
+    } catch (err: any) {
+      showToast("error", "Save failed: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      {/* Left Pane: Builder Form */}
+      <div className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-6">
+        <div className="flex items-center justify-between border-b border-zinc-150 pb-4">
+          <h3 className="text-base font-bold text-zinc-900">{template.id ? "Edit Template" : "New Message Template"}</h3>
+          <button
+            onClick={() => setEditingTemplate(null)}
+            className="text-xs text-zinc-400 hover:text-zinc-650 font-bold bg-zinc-100 px-3 py-1.5 rounded-full cursor-pointer"
+          >
+            Back to List
+          </button>
+        </div>
+
+        {/* AI Generator Box */}
+        <div className="bg-gradient-to-r from-violet-500/10 to-brand/5 border border-violet-500/15 rounded-2xl p-4 space-y-3 shadow-sm">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-violet-600 animate-pulse" />
+            <div>
+              <h4 className="text-xs font-bold text-zinc-900">AI Template Copilot</h4>
+              <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                Describe your template idea and let AI draft all fields for you.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder="e.g. Appointment reminder for Dr. Smith with confirm and reschedule buttons"
+              className="flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleAIGenerate();
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleAIGenerate}
+              disabled={generatingAI}
+              className="rounded-full bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs px-4 py-2 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-md transition-all shrink-0"
+            >
+              {generatingAI ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              Generate
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {/* Name & Category */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Template Name</label>
+              <input
+                type="text"
+                placeholder="e.g. appointment_reminder"
+                value={name}
+                onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase())}
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Category</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+              >
+                <option value="marketing">Marketing (Broadcasts, Offers)</option>
+                <option value="utility">Utility (Reminders, Receipts)</option>
+                <option value="greeting">Greeting (Welcome, Festive)</option>
+                <option value="followup">Follow-up (Feedback, Check-ins)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Header Type */}
+          <div>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Header (Optional)</label>
+            <div className="flex gap-2 mb-2">
+              {["none", "text", "image"].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setHeaderType(t)}
+                  className={`flex-1 rounded-full py-1.5 text-xs font-bold border transition-all cursor-pointer ${
+                    headerType === t ? "bg-zinc-950 text-white border-zinc-950" : "bg-zinc-50 border-zinc-200 text-zinc-650 hover:bg-zinc-100"
+                  }`}
+                >
+                  {t.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            {headerType === "text" && (
+              <input
+                type="text"
+                placeholder="Header text, e.g. Monthly Medical Checkup"
+                value={headerText}
+                onChange={(e) => setHeaderText(e.target.value)}
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+              />
+            )}
+            {headerType === "image" && (
+              <div className="flex items-center gap-3">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  id="template-header-file"
+                  className="hidden"
+                />
+                <label
+                  htmlFor="template-header-file"
+                  className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 px-4 py-2 text-xs font-bold text-zinc-650 cursor-pointer transition-colors"
+                >
+                  {uploadingHeaderImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Smartphone className="h-3.5 w-3.5" />}
+                  Upload Header Image
+                </label>
+                {headerImageUrl && (
+                  <span className="text-[10px] font-semibold text-zinc-400 truncate max-w-[200px]">Uploaded ✓</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Body */}
+          <div>
+            <div className="flex justify-between items-center mb-1.5">
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Message Body</label>
+              <button
+                type="button"
+                onClick={() => setBodyText((prev: string) => prev + ` {{${uniqueVariables.length + 1}}}`)}
+                className="text-[9px] font-bold text-brand hover:underline flex items-center gap-0.5"
+              >
+                <PlusCircle className="h-2.5 w-2.5" /> Add Variable
+              </button>
+            </div>
+            <textarea
+              rows={5}
+              placeholder="Hello {{1}}, this is a reminder for your medical checkup scheduled at {{2}}."
+              value={bodyText}
+              onChange={(e) => setBodyText(e.target.value)}
+              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand font-mono"
+            />
+            <span className="text-[9px] text-zinc-400 font-semibold block mt-1">
+              Variables parsed: {uniqueVariables.join(", ") || "None"}
+            </span>
+          </div>
+
+          {/* Footer */}
+          <div>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Footer Text (Optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. Reply STOP to opt out"
+              value={footerText}
+              onChange={(e) => setFooterText(e.target.value)}
+              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+            />
+          </div>
+
+          {/* Interactive Call to Action buttons */}
+          <div>
+            <div className="flex justify-between items-center mb-1.5">
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">CTA Buttons (Max 2)</label>
+              {ctaButtons.length < 2 && (
+                <button
+                  type="button"
+                  onClick={() => setCtaButtons(prev => [...prev, { type: "url", label: "Visit Website", value: "https://" }])}
+                  className="text-[9px] font-bold text-brand hover:underline"
+                >
+                  + Add Button
+                </button>
+              )}
+            </div>
+            <div className="space-y-2">
+              {ctaButtons.map((btn, bIdx) => (
+                <div key={bIdx} className="flex gap-2 items-center bg-zinc-50 p-2.5 rounded-xl border border-zinc-200">
+                  <select
+                    value={btn.type}
+                    onChange={(e) => {
+                      const newBtn = { ...btn, type: e.target.value, value: e.target.value === "phone" ? "" : "https://" };
+                      setCtaButtons(prev => prev.map((b, i) => i === bIdx ? newBtn : b));
+                    }}
+                    className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
+                  >
+                    <option value="url">URL Link</option>
+                    <option value="phone">Phone Call</option>
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="Button Label"
+                    value={btn.label}
+                    onChange={(e) => setCtaButtons(prev => prev.map((b, i) => i === bIdx ? { ...b, label: e.target.value } : b))}
+                    className="flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    placeholder={btn.type === "phone" ? "+91..." : "https://..."}
+                    value={btn.value}
+                    onChange={(e) => setCtaButtons(prev => prev.map((b, i) => i === bIdx ? { ...b, value: e.target.value } : b))}
+                    className="flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCtaButtons(prev => prev.filter((_, i) => i !== bIdx))}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick Reply buttons */}
+          <div>
+            <div className="flex justify-between items-center mb-1.5">
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Quick Replies (Max 3)</label>
+              {quickReplyButtons.length < 3 && (
+                <button
+                  type="button"
+                  onClick={() => setQuickReplyButtons(prev => [...prev, "Confirm Clinic Slot"])}
+                  className="text-[9px] font-bold text-brand hover:underline"
+                >
+                  + Add Reply
+                </button>
+              )}
+            </div>
+            <div className="space-y-2">
+              {quickReplyButtons.map((btn, bIdx) => (
+                <div key={bIdx} className="flex gap-2 items-center bg-zinc-50 p-2 rounded-xl border border-zinc-200">
+                  <input
+                    type="text"
+                    placeholder="Quick Reply Text"
+                    value={btn}
+                    onChange={(e) => setQuickReplyButtons(prev => prev.map((b, i) => i === bIdx ? e.target.value : b))}
+                    className="flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setQuickReplyButtons(prev => prev.filter((_, i) => i !== bIdx))}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Save/Cancel Actions */}
+        <div className="pt-4 border-t border-zinc-150 flex gap-3">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 rounded-xl bg-violet-600 hover:bg-violet-750 text-white font-bold text-xs py-3 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-md hover:shadow-lg transition-all"
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {template.id ? "Update Template" : "Save Template"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditingTemplate(null)}
+            className="rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-650 font-bold text-xs px-6 py-3 cursor-pointer transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      {/* Right Pane: Premium WhatsApp Device Mockup Previews */}
+      <div className="flex flex-col items-center justify-center p-6 bg-zinc-50 border border-zinc-200 rounded-3xl relative">
+        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest absolute top-4">Interactive Device Mockup</span>
+        <div className="w-[300px] aspect-[9/18] border-[10px] border-zinc-850 bg-[#e5ddd5] rounded-[36px] shadow-2xl relative overflow-hidden flex flex-col pt-6 px-3">
+          {/* Speaker & notch */}
+          <div className="w-24 h-4 bg-zinc-850 rounded-full absolute top-1 left-1/2 -translate-x-1/2 z-20" />
+
+          {/* Conversation Header */}
+          <div className="bg-[#075e54] text-white p-2 rounded-t-lg -mx-3 flex items-center gap-2 shrink-0">
+            <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold font-mono">MD</div>
+            <div>
+              <p className="text-[9px] font-bold leading-none">MediFlow Automated Alerts</p>
+              <p className="text-[7px] text-zinc-250 leading-none mt-0.5">Online</p>
+            </div>
+          </div>
+
+          {/* Scrollable Message Box */}
+          <div className="flex-1 overflow-y-auto py-3 space-y-2">
+            <div className="bg-white rounded-xl p-2.5 text-[10px] text-zinc-800 shadow-sm border border-zinc-200 max-w-[240px] ml-1.5 space-y-1.5 relative leading-relaxed">
+              {headerType === "text" && headerText && (
+                <p className="font-bold text-[10px] text-zinc-900 border-b border-zinc-100 pb-1">{headerText}</p>
+              )}
+              {headerType === "image" && headerImageUrl && (
+                <img src={headerImageUrl} alt="Header Preview" className="w-full h-24 object-cover rounded-lg" />
+              )}
+              
+              {/* Replace placeholders with generic val for mockup */}
+              <p className="whitespace-pre-line font-medium text-[9px]">{bodyText || "Your template message will appear here..."}</p>
+
+              {footerText && (
+                <p className="text-[7.5px] text-zinc-400 font-bold">{footerText}</p>
+              )}
+            </div>
+
+            {/* Action Buttons Mockups */}
+            {ctaButtons.map((btn, bIdx) => (
+              <div key={bIdx} className="bg-white hover:bg-zinc-50 rounded-xl py-2 px-3 text-[9px] font-bold text-[#0080ff] border border-zinc-200 max-w-[240px] ml-1.5 flex items-center justify-center gap-1.5 shadow-sm">
+                {btn.type === "phone" ? <PhoneCall className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />}
+                {btn.label || (btn.type === "phone" ? "Call Clinic" : "Learn More")}
+              </div>
+            ))}
+
+            {quickReplyButtons.map((btn, bIdx) => (
+              <div key={bIdx} className="bg-[#dfebf5] hover:bg-[#d0e0ed] rounded-xl py-2 px-3 text-[9px] font-bold text-[#075e54] border border-[#bcd2e3] max-w-[240px] ml-1.5 flex items-center justify-center gap-1 shadow-sm">
+                <UserCheck className="h-3 w-3" />
+                {btn || "Quick Reply"}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ──────────────────────────────────────────────
+// STANDALONE CAMPAIGN WIZARD COMPONENT
+// ──────────────────────────────────────────────
+interface CampaignWizardProps {
+  templates: any[];
+  setCreatingCampaign: (val: boolean) => void;
+  loadCampaigns: () => void;
+  showToast: (type: "success" | "error" | "info", message: string) => void;
+}
+
+const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToast }: CampaignWizardProps) => {
+  const [wizardStep, setWizardStep] = useState(1);
+  const [campaignName, setCampaignName] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  
+  // Safety
+  const [minDelay, setMinDelay] = useState(10);
+  const [maxDelay, setMaxDelay] = useState(25);
+  const [dailyLimit, setDailyLimit] = useState(200);
+
+  // Recipients
+  const [parsedRecipients, setParsedRecipients] = useState<any[]>([]);
+  const [manualNumbers, setManualNumbers] = useState("");
+  const [contactMethod, setContactMethod] = useState<"file" | "manual">("file");
+
+  const templateSelected = templates.find(t => t.id === selectedTemplateId);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const workbook = XLSX.read(bstr, { type: "binary" });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const data: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+        if (data.length <= 1) {
+          showToast("error", "The uploaded file appears to be empty or has no header row.");
+          return;
+        }
+
+        const headers = data[0].map((h: any) => String(h).trim().toLowerCase());
+        
+        // Locate phone column
+        const phoneIndex = headers.findIndex((h: string) => h.includes("phone") || h.includes("number") || h.includes("mobile") || h.includes("contact"));
+        const nameIndex = headers.findIndex((h: string) => h.includes("name") || h.includes("patient") || h.includes("customer"));
+
+        if (phoneIndex === -1) {
+          showToast("error", "Could not find phone number column. Make sure the first row contains 'phone', 'number', 'mobile', or 'contact'.");
+          return;
+        }
+
+        const recipientsList: any[] = [];
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i];
+          const rawPhone = String(row[phoneIndex] || "").trim();
+          if (!rawPhone) continue;
+
+          const name = nameIndex !== -1 ? String(row[nameIndex] || "").trim() : "Recipient " + i;
+          
+          // Map row fields into a template variables dictionary
+          const variablesObj: any = {};
+          let varCounter = 1;
+          headers.forEach((h: string, idx: number) => {
+            if (idx !== phoneIndex && idx !== nameIndex) {
+              variablesObj[String(varCounter++)] = row[idx] || "";
+            }
+          });
+
+          recipientsList.push({
+            phone: rawPhone,
+            name,
+            variables: variablesObj
+          });
+        }
+
+        setParsedRecipients(recipientsList);
+        showToast("success", `Parsed ${recipientsList.length} contacts from sheet!`);
+      } catch (error: any) {
+        showToast("error", "Error parsing file: " + error.message);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleCreateCampaign = async () => {
+    let finalRecipients: any[] = [];
+
+    if (contactMethod === "manual") {
+      const lines = manualNumbers.split("\n").map(l => l.trim()).filter(Boolean);
+      if (lines.length === 0) {
+        showToast("error", "Please write or paste at least one phone number");
+        return;
+      }
+      finalRecipients = lines.map((line, idx) => {
+        const parts = line.split(",");
+        const phone = parts[0].trim();
+        const name = parts[1] ? parts[1].trim() : "Recipient " + (idx + 1);
+        return { phone, name };
+      });
+    } else {
+      if (parsedRecipients.length === 0) {
+        showToast("error", "Please upload a valid Excel/CSV contact list file first");
+        return;
+      }
+      finalRecipients = parsedRecipients;
+    }
+
+    if (!campaignName.trim()) return showToast("error", "Campaign name is required");
+
+    try {
+      await createWACampaignServerFn({
+        data: {
+          name: campaignName.trim(),
+          templateId: selectedTemplateId || null,
+          minDelaySec: minDelay,
+          maxDelaySec: maxDelay,
+          dailyLimit,
+          recipients: finalRecipients
+        }
+      });
+      showToast("success", "Campaign created successfully as Draft!");
+      setCreatingCampaign(false);
+      loadCampaigns();
+    } catch (err: any) {
+      showToast("error", "Failed to create campaign: " + err.message);
+    }
+  };
+
+  return (
+    <div className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-6">
+      <div className="flex items-center justify-between border-b border-zinc-150 pb-4">
+        <h3 className="text-base font-bold text-zinc-900">Create Broadcast Campaign (Step {wizardStep}/3)</h3>
+        <button
+          onClick={() => setCreatingCampaign(false)}
+          className="text-xs text-zinc-400 hover:text-zinc-650 font-bold bg-zinc-100 px-3 py-1.5 rounded-full cursor-pointer"
+        >
+          Cancel
+        </button>
+      </div>
+
+      {wizardStep === 1 && (
+        <div className="space-y-4">
+          <div>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Campaign Name</label>
+            <input
+              type="text"
+              placeholder="e.g. June Diabetic Recall Campaign"
+              value={campaignName}
+              onChange={(e) => setCampaignName(e.target.value)}
+              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Select Message Template</label>
+            <select
+              value={selectedTemplateId}
+              onChange={(e) => setSelectedTemplateId(e.target.value)}
+              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+            >
+              <option value="">-- Send Plain Quick Message (No Template) --</option>
+              {templates.map(t => (
+                <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex justify-end pt-4">
+            <button
+              onClick={() => setWizardStep(2)}
+              disabled={!campaignName.trim()}
+              className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-6 py-2 cursor-pointer disabled:opacity-40"
+            >
+              Next Step
+            </button>
+          </div>
+        </div>
+      )}
+
+      {wizardStep === 2 && (
+        <div className="space-y-4">
+          <div>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Contacts Upload Method</label>
+            <div className="flex gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => setContactMethod("file")}
+                className={`flex-1 rounded-full py-1.5 text-xs font-bold border transition-all cursor-pointer ${
+                  contactMethod === "file" ? "bg-zinc-950 text-white border-zinc-950" : "bg-zinc-50 border-zinc-200 text-zinc-650"
+                }`}
+              >
+                Excel/CSV Upload
+              </button>
+              <button
+                type="button"
+                onClick={() => setContactMethod("manual")}
+                className={`flex-1 rounded-full py-1.5 text-xs font-bold border transition-all cursor-pointer ${
+                  contactMethod === "manual" ? "bg-zinc-950 text-white border-zinc-950" : "bg-zinc-50 border-zinc-200 text-zinc-650"
+                }`}
+              >
+                Manual Entry
+              </button>
+            </div>
+
+            {contactMethod === "file" ? (
+              <div className="space-y-4">
+                <div className="border-2 border-dashed border-zinc-200 hover:border-brand/40 bg-zinc-50/50 rounded-2xl p-6 text-center cursor-pointer transition-colors relative">
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleFileUpload}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                  />
+                  <FileSpreadsheet className="h-8 w-8 text-zinc-400 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-zinc-700">Drag &amp; drop Excel or CSV sheet</p>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-1">Accepts .xlsx, .xls, .csv. Must include phone header column.</p>
+                </div>
+
+                {parsedRecipients.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Parsed Contacts Sample ({parsedRecipients.length})</p>
+                    <div className="border border-zinc-200 rounded-xl overflow-hidden max-h-40 overflow-y-auto">
+                      <table className="w-full text-left text-[10px] font-semibold text-zinc-650">
+                        <thead className="bg-zinc-50 text-[9px] text-zinc-400 uppercase border-b border-zinc-200">
+                          <tr>
+                            <th className="p-2">Name</th>
+                            <th className="p-2">Phone</th>
+                            <th className="p-2">Vars</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-150 bg-white">
+                          {parsedRecipients.slice(0, 5).map((r, rIdx) => (
+                            <tr key={rIdx}>
+                              <td className="p-2 font-bold">{r.name}</td>
+                              <td className="p-2">{r.phone}</td>
+                              <td className="p-2 text-zinc-400">{JSON.stringify(r.variables)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Paste Numbers (one per line)</label>
+                <textarea
+                  rows={6}
+                  placeholder={`+919876543210, John Doe\n+919800012345, Jane Smith`}
+                  value={manualNumbers}
+                  onChange={(e) => setManualNumbers(e.target.value)}
+                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand font-mono"
+                />
+                <p className="text-[9px] text-zinc-400 font-semibold mt-1">Format: phone, name (optional)</p>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-between pt-4">
+            <button
+              onClick={() => setWizardStep(1)}
+              className="rounded-full border border-zinc-200 hover:bg-zinc-50 text-zinc-650 font-bold text-xs px-6 py-2 cursor-pointer"
+            >
+              Back
+            </button>
+            <button
+              onClick={() => setWizardStep(3)}
+              className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-6 py-2 cursor-pointer"
+            >
+              Next Step
+            </button>
+          </div>
+        </div>
+      )}
+
+      {wizardStep === 3 && (
+        <div className="space-y-4">
+          <h4 className="text-xs font-bold text-zinc-800 border-b border-zinc-100 pb-2">Anti-Ban Campaign Settings</h4>
+          
+          {/* Delay sliders */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Min Delay: {minDelay} seconds</label>
+              <input
+                type="range"
+                min="5"
+                max="60"
+                value={minDelay}
+                onChange={(e) => setMinDelay(parseInt(e.target.value))}
+                className="w-full accent-zinc-950"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Max Delay: {maxDelay} seconds</label>
+              <input
+                type="range"
+                min="10"
+                max="120"
+                value={maxDelay}
+                onChange={(e) => setMaxDelay(Math.max(minDelay + 2, parseInt(e.target.value)))}
+                className="w-full accent-zinc-950"
+              />
+            </div>
+          </div>
+
+          {/* Daily limit */}
+          <div>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Max Daily Message Sending Limit (For safety)</label>
+            <input
+              type="number"
+              value={dailyLimit}
+              onChange={(e) => setDailyLimit(parseInt(e.target.value))}
+              className="w-32 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
+            />
+            <p className="text-[9px] text-zinc-400 font-semibold mt-1">Recommended is 200 messages per day per account to prevent phone number bans.</p>
+          </div>
+
+          <div className="flex justify-between pt-4 border-t border-zinc-100">
+            <button
+              onClick={() => setWizardStep(2)}
+              className="rounded-full border border-zinc-200 hover:bg-zinc-50 text-zinc-650 font-bold text-xs px-6 py-2 cursor-pointer"
+            >
+              Back
+            </button>
+            <button
+              onClick={handleCreateCampaign}
+              className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-8 py-2.5 cursor-pointer flex items-center gap-1.5 shadow-md"
+            >
+              <Check className="h-4 w-4" /> Create Broadcast Campaign
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

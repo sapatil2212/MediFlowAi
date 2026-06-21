@@ -1,6 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { HeartPulse, ArrowRight, Menu, X } from "lucide-react";
+import { ArrowRight, Menu, X, ChevronRight } from "lucide-react";
+import bmtLogo from "@/assets/bmt-logo.png";
 
 const links = [
   { to: "/", label: "Home" },
@@ -36,10 +37,7 @@ export function Nav() {
         {/* Left side: Logo */}
         <div className="flex flex-1 justify-start">
           <Link to="/" className="group flex items-center gap-2">
-            <div className="relative flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-brand-light ring-1 ring-brand/30">
-              <HeartPulse className="size-4 text-white" />
-            </div>
-            <span className="text-sm font-semibold tracking-tight">MediFlow AI</span>
+            <img src={bmtLogo} alt="BMT Logo" className="h-12 w-auto object-contain" />
           </Link>
         </div>
 
@@ -68,7 +66,8 @@ export function Nav() {
           </Link>
           <Link
             to="/signup"
-            className="group relative inline-flex items-center gap-1 overflow-hidden rounded-md bg-zinc-900 px-2.5 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm font-medium text-zinc-50 ring-1 ring-zinc-950/10 transition-transform hover:scale-[1.03] whitespace-nowrap"
+            className="group relative inline-flex items-center gap-1 overflow-hidden rounded-md px-2.5 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm font-semibold text-white transition-transform hover:scale-[1.03] whitespace-nowrap"
+            style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)", boxShadow: "0 2px 12px rgba(0,89,198,0.35)" }}
           >
             <span className="relative z-10 flex items-center gap-1 sm:gap-1.5">
               14 Days Free Trial
@@ -108,7 +107,8 @@ export function Nav() {
             </Link>
             <Link
               to="/signup"
-              className="mt-2 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-50 text-center"
+              className="mt-2 rounded-md px-3 py-2 text-sm font-semibold text-white text-center"
+              style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
             >
               14 Days Free Trial
             </Link>

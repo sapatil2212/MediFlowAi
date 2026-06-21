@@ -5,9 +5,10 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --color-brand: #0f766e;
-  --color-brand-light: #14b8a6;
-  --color-brand-dark: #0b5a54;
+  --color-brand: #0059C6;
+  --color-brand-light: #0D83FF;
+  --color-brand-dark: #00246D;
+  --color-brand-accent: #A7D3FF;
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -195,8 +196,8 @@
 
 .bg-grid {
   background-image:
-    linear-gradient(to right, rgba(15, 118, 110, 0.08) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(15, 118, 110, 0.08) 1px, transparent 1px);
+    linear-gradient(to right, rgba(0, 89, 198, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 89, 198, 0.08) 1px, transparent 1px);
   background-size: 48px 48px;
 }
 .bg-grid-dark {
@@ -209,12 +210,12 @@
   mask-image: radial-gradient(ellipse at center, black 40%, transparent 75%);
 }
 .text-gradient-brand {
-  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 50%, #2dd4bf 100%);
+  background: linear-gradient(135deg, #0059C6 0%, #0D83FF 50%, #A7D3FF 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 .bg-aurora {
-  background: linear-gradient(125deg, #0f766e, #14b8a6, #67e8f9, #14b8a6, #0f766e);
+  background: linear-gradient(125deg, #00246D, #0059C6, #0D83FF, #A7D3FF, #0059C6);
   background-size: 300% 300%;
 }

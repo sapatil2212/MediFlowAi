@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+﻿import { Link } from "@tanstack/react-router";
 import {
   motion,
   useInView,
@@ -53,6 +53,24 @@ import {
   LayoutDashboard,
   LogOut,
   ClipboardList,
+  Scissors,
+  Dumbbell,
+  GraduationCap,
+  Scale,
+  Calculator,
+  Handshake,
+  Leaf,
+  BookOpen,
+  Briefcase,
+  Zap,
+  MapPin,
+  WifiOff,
+  QrCode,
+  CheckCircle2,
+  Smartphone,
+  CheckCheck,
+  Send,
+  X,
 } from "lucide-react";
 import {
   AreaChart,
@@ -169,40 +187,33 @@ export function PageHeader({
  * HERO  (home)
  * ======================================================= */
 export function Hero() {
-  const words = ["Anywhere!", "Anytime!"];
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setIndex((prev) => (prev + 1) % words.length);
-    }, 2500);
-    return () => clearInterval(interval);
-  }, []);
+  const features = [
+    "Dedicated Booking Link", "Unique QR Code for Every Business",
+    "WhatsApp Appointment Notifications", "AI-Powered Customer Assistant",
+    "Customer & Staff Management", "Smart CRM Dashboard",
+    "Multi-Location Support", "Affordable Subscription Plans",
+  ];
 
   return (
-    <section className="relative overflow-hidden pt-16 pb-20 lg:pt-20 lg:pb-28 min-h-screen flex flex-col items-center justify-start text-center" style={{ background: "linear-gradient(170deg, #E6F4F1 0%, #F0F9F8 35%, #E1F0ED 65%, #ECF7F5 100%)" }}>
-      {/* Background orbs */}
-      <div className="absolute top-[-80px] left-1/2 -translate-x-1/2 w-[900px] h-[550px] pointer-events-none z-0" style={{ background: "radial-gradient(ellipse, rgba(255,255,255,0.88) 0%, transparent 60%)" }} />
-      <div className="absolute top-[60px] right-[-60px] w-[400px] h-[400px] pointer-events-none z-0" style={{ background: "radial-gradient(circle, rgba(20,184,166,0.16) 0%, transparent 65%)" }} />
-      <div className="absolute top-[80px] left-[-60px] w-[360px] h-[360px] pointer-events-none z-0" style={{ background: "radial-gradient(circle, rgba(15,118,110,0.12) 0%, transparent 65%)" }} />
+    <section
+      className="relative overflow-hidden pt-16 pb-20 lg:pt-20 lg:pb-28"
+      style={{ background: "linear-gradient(170deg, #EEF5FF 0%, #F5F9FF 35%, #EAF2FF 65%, #F0F6FF 100%)" }}
+    >
+      <div className="absolute top-[-80px] left-1/2 -translate-x-1/2 w-[900px] h-[550px] pointer-events-none z-0" style={{ background: "radial-gradient(ellipse, rgba(255,255,255,0.9) 0%, transparent 60%)" }} />
+      <div className="absolute top-[60px] right-[-60px] w-[400px] h-[400px] pointer-events-none z-0" style={{ background: "radial-gradient(circle, rgba(13,131,255,0.14) 0%, transparent 65%)" }} />
+      <div className="absolute top-[80px] left-[-60px] w-[360px] h-[360px] pointer-events-none z-0" style={{ background: "radial-gradient(circle, rgba(0,89,198,0.1) 0%, transparent 65%)" }} />
 
-      {/* Rotating Stamp */}
+      {/* Rotating stamp */}
       <div className="absolute right-[calc(5%+8px)] top-[135px] w-24 h-24 z-10 hidden md:block select-none pointer-events-none">
-        <motion.svg 
-          viewBox="0 0 96 96" 
-          className="w-24 h-24"
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 18, ease: "linear" }}
-        >
-          <defs>
-            <path id="mn-sp" d="M 48,48 m -37,0 a 37,37 0 1,1 74,0 a 37,37 0 1,1 -74,0" fill="none" />
-          </defs>
-          <text fill="#0f766e" fontSize="9" fontWeight="600" letterSpacing="1.6" fontFamily="Inter, sans-serif">
-            <textPath href="#mn-sp">One Platform • Complete Care • Health •</textPath>
+        <motion.svg viewBox="0 0 96 96" className="w-24 h-24" animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 18, ease: "linear" }}>
+          <defs><path id="bmt-sp" d="M 48,48 m -37,0 a 37,37 0 1,1 74,0 a 37,37 0 1,1 -74,0" fill="none" /></defs>
+          <text fill="#0059C6" fontSize="9" fontWeight="600" letterSpacing="1.6" fontFamily="Inter, sans-serif">
+            <textPath href="#bmt-sp">BookMyTime • Automate • Grow • Book •</textPath>
           </text>
         </motion.svg>
-        <motion.div 
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-9 bg-gradient-to-br from-[#0f766e] to-[#0b5a54] rounded-full flex items-center justify-center shadow-[0_4px_14px_rgba(15,118,110,0.4)]"
+        <motion.div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center shadow-[0_4px_14px_rgba(0,89,198,0.4)]"
+          style={{ background: "linear-gradient(135deg, #0059C6, #00246D)" }}
           animate={{ rotate: -360 }}
           transition={{ repeat: Infinity, duration: 18, ease: "linear" }}
         >
@@ -210,347 +221,145 @@ export function Hero() {
         </motion.div>
       </div>
 
-      {/* Hero Content */}
-      <div className="relative z-10 max-w-[820px] mx-auto w-full px-6">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/90 border border-[#0f766e]/20 text-xs font-semibold text-[#0f766e] mb-7 shadow-[0_2px_10px_rgba(15,118,110,0.08)] backdrop-blur-md"
-        >
-          <Sparkles className="size-3 text-[#0f766e]" />
-          Seamless healthcare
-        </motion.div>
+      <div className="relative z-10 mx-auto max-w-7xl px-6">
+        <div className="grid lg:grid-cols-2 gap-16 items-center">
 
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="text-4xl md:text-5xl lg:text-[52px] font-semibold leading-[1.12] tracking-tight text-[#0F172A] mb-5"
-        >
-          Smarter healthcare connecting doctors and patients{" "}
-          <span className="inline-block relative h-[1.15em] w-[160px] sm:w-[170px] md:w-[210px] lg:w-[230px] text-left align-bottom overflow-hidden">
-            <AnimatePresence mode="wait">
-              <motion.span
-                key={words[index]}
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                transition={{ duration: 0.35 }}
-                className="absolute left-0 font-serif italic font-medium text-[#0f766e]"
+          {/* Left */}
+          <div>
+            <motion.div
+              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/90 border border-[#0059C6]/20 text-xs font-semibold text-[#0059C6] mb-7 shadow-[0_2px_10px_rgba(0,89,198,0.08)] backdrop-blur-md"
+            >
+              <Zap className="size-3 text-[#0059C6]" /> Trusted by Growing Businesses Across Multiple Industries
+            </motion.div>
+
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+              className="text-4xl md:text-5xl lg:text-[52px] font-semibold leading-[1.12] tracking-tight text-[#0F172A] mb-5"
+            >
+              One Platform to Manage{" "}
+              <span className="text-gradient-brand">Bookings, Customers</span>{" "}
+              & Business Growth
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+              className="text-sm md:text-base text-[#64748B] leading-relaxed max-w-[540px] mb-6 font-normal"
+            >
+              Automate bookings, manage customers, send WhatsApp reminders, and grow your business with AI-powered tools.
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+              className="flex flex-wrap items-center gap-3 mb-6"
+            >
+              <Link to="/signup" className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:-translate-y-[1px]"
+                style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)", boxShadow: "0 2px 12px rgba(0,89,198,0.35)" }}
               >
-                {words[index]}
-              </motion.span>
-            </AnimatePresence>
-          </span>
-        </motion.h1>
+                <Sparkles className="size-4" /> Get Started Free
+              </Link>
+              <Link to="/demo" className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all hover:-translate-y-[1px] bg-white border hover:border-[#0059C6] hover:text-[#0059C6]"
+                style={{ borderColor: "rgba(0,89,198,0.2)", color: "#0F172A", boxShadow: "0 2px 10px rgba(0,89,198,0.08)" }}
+              >
+                <CalendarDays className="size-4" /> Book a Demo
+              </Link>
+            </motion.div>
+          </div>
 
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="text-sm md:text-base text-[#64748B] leading-relaxed max-w-[480px] mx-auto mb-8 font-normal"
-        >
-          Connect doctors and patients with effortless scheduling, secure records, and smooth hospital operations — all in one platform.
-        </motion.p>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="flex flex-wrap items-center justify-center gap-3"
-        >
-          <Link
-            to="/demo"
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-[#0f766e] to-[#0b5a54] shadow-[0_2px_12px_rgba(15,118,110,0.3)] hover:shadow-[0_6px_20px_rgba(15,118,110,0.4)] transition-all hover:-translate-y-[1px]"
+          {/* Right: Dashboard mockup */}
+          <motion.div
+            initial={{ opacity: 0, x: 30, scale: 0.97 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            transition={{ delay: 0.2, duration: 0.7 }}
+            className="relative"
           >
-            <CalendarDays className="size-4" />
-            Book Demo
-          </Link>
-          <a
-            href="http://localhost:8080/signup"
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium text-[#0F172A] bg-white/92 border border-[#0f766e]/16 hover:border-[#0f766e] hover:text-[#0f766e] shadow-[0_2px_10px_rgba(15,118,110,0.08)] hover:-translate-y-[1px] transition-all backdrop-blur-md"
-          >
-            free 14 days trial
-          </a>
-        </motion.div>
-      </div>
-
-      {/* Dashboard Preview Section */}
-      <DashboardPreview />
-    </section>
-  );
-}
-
-function DashboardPreview() {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 40, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ delay: 0.25, duration: 0.7 }}
-      className="relative mt-14 w-full max-w-[1040px] px-4 z-10"
-    >
-      {/* Floating Client Reviews Card */}
-      <motion.div 
-        className="absolute bottom-[30px] -left-6 bg-white rounded-xl shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-3 border border-[#CCFBF1] min-w-[155px] z-20 hidden md:block text-left" 
-        animate={{ y: [0, -8, 0] }} 
-        transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-      >
-        <div className="flex items-center gap-0.5 mb-1">
-          {[...Array(5)].map((_, i) => (
-            <Star key={i} className="size-[11px] fill-[#F59E0B] stroke-[#F59E0B]" />
-          ))}
-          <span className="text-[10px] font-bold text-[#0F172A] ml-1">4.9</span>
-        </div>
-        <div className="text-[11px] font-bold text-[#0F172A] mb-1.5">from client reviews</div>
-        <div className="flex -space-x-1.5">
-          <div className="w-5 h-5 rounded-full border border-white text-[7px] font-bold text-white flex items-center justify-center bg-[#0f766e]">PS</div>
-          <div className="w-5 h-5 rounded-full border border-white text-[7px] font-bold text-white flex items-center justify-center bg-[#0EA5E9]">RN</div>
-          <div className="w-5 h-5 rounded-full border border-white text-[7px] font-bold text-white flex items-center justify-center bg-[#059669]">AP</div>
-          <div className="w-5 h-5 rounded-full border border-white text-[7px] font-bold text-white flex items-center justify-center bg-[#F59E0B]">SM</div>
-        </div>
-      </motion.div>
-
-      {/* Floating Trusted Doctors Card */}
-      <motion.div 
-        className="absolute bottom-[140px] -right-4 bg-white rounded-xl shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-3 border border-[#CCFBF1] flex items-center gap-2.5 z-20 hidden md:flex text-left" 
-        animate={{ y: [0, -8, 0] }} 
-        transition={{ repeat: Infinity, duration: 4, ease: "easeInOut", delay: 1.5 }}
-      >
-        <div className="w-[34px] h-[34px] rounded-full bg-gradient-to-br from-[#14b8a6] to-[#0f766e] flex items-center justify-center shrink-0">
-          <Check className="size-[17px] text-white stroke-[3px]" />
-        </div>
-        <div>
-          <div className="text-[11px] font-bold text-[#0F172A] leading-tight">Trusted by Doctors</div>
-          <div className="text-[9px] text-[#64748B] mt-0.5">500+ clinics onboard</div>
-        </div>
-      </motion.div>
-
-      {/* Window Wrapper */}
-      <div className="pointer-events-none select-none rounded-3xl border border-white bg-white/80 p-2 shadow-[0_-4px_60px_rgba(15,118,110,0.12),0_24px_80px_rgba(0,0,0,0.07)] backdrop-blur-xl ring-1 ring-zinc-950/5 overflow-hidden">
-        <div className="bg-white rounded-2xl overflow-hidden shadow-inner border border-zinc-100">
-          
-          {/* Main Layout Grid */}
-          <div className="flex h-[550px] w-full overflow-hidden bg-zinc-50 font-sans text-zinc-900">
-            
-            {/* Sidebar Column */}
-            <aside className="hidden w-56 border-r border-zinc-200 bg-white p-4 flex-col justify-between md:flex text-left select-none shrink-0">
-              <div className="space-y-5">
-                {/* Brand Logo Header */}
-                <div className="flex items-center gap-2.5 px-1">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-brand-light shadow-sm">
-                    <HeartPulse className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold tracking-tight block leading-none">
-                      MediFlow AI
-                    </span>
-                    <span className="text-[8px] font-semibold text-zinc-400">
-                      CLINICAL OS v1.2
-                    </span>
-                  </div>
-                </div>
-
-                {/* Clinician Card */}
-                <div className="rounded-xl bg-zinc-50 border border-zinc-250/30 p-2.5 flex items-center gap-2.5">
-                  <div className="h-7 w-7 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-bold text-[10px]">
-                    Dr
-                  </div>
-                  <div className="overflow-hidden">
-                    <h4 className="text-[10px] font-bold text-zinc-800 truncate leading-tight">
-                      Dr. Clinician
-                    </h4>
-                    <span className="text-[8px] font-medium text-zinc-400 truncate block">
-                      Medical Group
-                    </span>
-                  </div>
-                </div>
-
-                {/* Navigation Links */}
-                <nav className="space-y-0.5">
-                  {[
-                    { id: "overview", label: "Overview", icon: LayoutDashboard, active: true },
-                    { id: "scribe", label: "AI Clinical Scribe", icon: Mic },
-                    { id: "appointments", label: "Appointments", icon: Calendar },
-                    { id: "patients", label: "Patient Records", icon: Users },
-                    { id: "settings", label: "Settings", icon: Settings },
-                  ].map((tab) => {
-                    const Icon = tab.icon;
-                    return (
-                      <div
-                        key={tab.id}
-                        className={`flex w-full items-center gap-2.5 rounded-full px-3 py-2 text-[10px] font-semibold transition-all cursor-pointer ${
-                          tab.active
-                            ? "bg-zinc-950 text-white shadow-sm"
-                            : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-                        }`}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        {tab.label}
-                      </div>
-                    );
-                  })}
-                </nav>
+            <motion.div
+              className="absolute -left-6 bottom-12 bg-white rounded-xl shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-3 border border-[#A7D3FF]/60 min-w-[155px] z-20 hidden md:block"
+              animate={{ y: [0, -8, 0] }} transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+            >
+              <div className="flex items-center gap-0.5 mb-1">
+                {[...Array(5)].map((_, i) => <Star key={i} className="size-[11px] fill-[#F59E0B] stroke-[#F59E0B]" />)}
+                <span className="text-[10px] font-bold text-[#0F172A] ml-1">4.9</span>
               </div>
-
-              {/* Sidebar Footer */}
-              <div className="space-y-1">
-                <div className="flex w-full items-center gap-2.5 rounded-full px-3 py-2 text-[9px] font-semibold text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 cursor-pointer">
-                  <Building2 className="h-3.5 w-3.5" />
-                  Home Website
-                </div>
-                <div className="flex w-full items-center gap-2.5 rounded-full px-3 py-2 text-[9px] font-semibold text-red-650 hover:bg-red-50 cursor-pointer text-red-650 transition-colors">
-                  <LogOut className="h-3.5 w-3.5" />
-                  Sign Out
-                </div>
+              <div className="text-[11px] font-bold text-[#0F172A] mb-1.5">from verified customers</div>
+              <div className="flex -space-x-1.5">
+                {["BS","RK","AP","SM"].map((init, i) => (
+                  <div key={i} className="w-5 h-5 rounded-full border border-white text-[7px] font-bold text-white flex items-center justify-center" style={{ background: ["#0059C6","#0D83FF","#00246D","#A7D3FF"][i], color: i === 3 ? "#00246D" : "white" }}>{init}</div>
+                ))}
               </div>
-            </aside>
+            </motion.div>
 
-            {/* Main Content Area */}
-            <main className="flex-1 flex flex-col h-full overflow-hidden text-left bg-zinc-50">
-              
-              {/* Header Strip */}
-              <header className="h-12 border-b border-zinc-200 bg-white px-4 sm:px-6 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <h2 className="text-xs font-bold text-zinc-900">
-                    Dashboard Overview
-                  </h2>
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[8px] font-bold text-emerald-600 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-100">
-                    Session Live
-                  </span>
-                </div>
+            <motion.div
+              className="absolute -right-4 top-10 bg-white rounded-xl shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-3 border border-[#A7D3FF]/60 flex items-center gap-2.5 z-20 hidden md:flex"
+              animate={{ y: [0, -8, 0] }} transition={{ repeat: Infinity, duration: 4, ease: "easeInOut", delay: 1.5 }}
+            >
+              <div className="w-[34px] h-[34px] rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, #0D83FF, #0059C6)" }}>
+                <Check className="size-[17px] text-white stroke-[3px]" />
+              </div>
+              <div>
+                <div className="text-[11px] font-bold text-[#0F172A] leading-tight">5,000+ Businesses</div>
+                <div className="text-[9px] text-[#64748B] mt-0.5">Across India</div>
+              </div>
+            </motion.div>
 
-                <div className="flex items-center gap-3">
-                  <span className="text-[9px] font-medium text-zinc-400 hidden sm:inline">
-                    Today: {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-                  </span>
-                  <div className="h-3 w-[1px] bg-zinc-200 hidden sm:block" />
-                  <div className="rounded-full bg-brand/10 text-brand text-[9px] font-bold px-3 py-1 flex items-center gap-1 cursor-pointer">
-                    <Mic className="h-3 w-3" /> Quick Scribe
+            <div className="rounded-3xl border border-white bg-white/80 p-2 shadow-[0_-4px_60px_rgba(0,89,198,0.1),0_24px_80px_rgba(0,0,0,0.07)] backdrop-blur-xl ring-1 ring-[#0059C6]/10 overflow-hidden">
+              <div className="bg-white rounded-2xl overflow-hidden border border-zinc-100">
+                <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: "#00246D" }}>
+                  <div className="flex gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                   </div>
+                  <span className="text-[10px] text-[#A7D3FF] ml-2">BookMyTime — Smart Booking Dashboard</span>
                 </div>
-              </header>
-
-              {/* Scrollable Content Workspace */}
-              <div className="flex-1 overflow-hidden p-4 space-y-4">
-                
-                {/* 1. Statistics Cards Grid */}
-                <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-                  {[
-                    { label: "Today's Schedule", value: "3 Bookings", info: "1 pending review", icon: Calendar, color: "text-brand bg-brand/5 border-brand/10" },
-                    { label: "Total Active Patients", value: "128 Patients", info: "Registered in directory", icon: Users, color: "text-amber-600 bg-amber-50 border-amber-100" },
-                    { label: "All-Time Appointments", value: "1,420 Bookings", info: "1,240 confirmed, 180 completed", icon: ClipboardList, color: "text-emerald-600 bg-emerald-50 border-emerald-100" },
-                    { label: "Completion Rate", value: "94%", info: "Completed vs cancelled", icon: TrendingUp, color: "text-indigo-600 bg-indigo-50 border-indigo-100" }
-                  ].map((stat, idx) => {
-                    const Icon = stat.icon;
-                    return (
-                      <div key={idx} className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[8px] font-bold tracking-tight text-zinc-400 uppercase">
-                            {stat.label}
-                          </span>
-                          <div className={`p-1 rounded-lg border ${stat.color}`}>
-                            <Icon className="h-3.5 w-3.5" />
+                <div className="p-4 space-y-3 bg-zinc-50">
+                  <div className="text-center pb-2 border-b border-zinc-100">
+                    <p className="text-[11px] font-bold text-zinc-800">Smart Booking Management for Every Business</p>
+                    <p className="text-[9px] text-zinc-400 mt-0.5">Manage appointments, customers, staff, payments, reminders, and communication from one powerful dashboard.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: "Today's Bookings", value: "24", icon: Calendar, bg: "#EEF5FF", color: "#0059C6" },
+                      { label: "Active Customers", value: "1,248", icon: Users, bg: "#FEF3C7", color: "#D97706" },
+                      { label: "This Month", value: "₹84,200", icon: TrendingUp, bg: "#ECFDF5", color: "#059669" },
+                      { label: "Completion Rate", value: "96%", icon: Check, bg: "#EEF2FF", color: "#4F46E5" },
+                    ].map((s, i) => {
+                      const Icon = s.icon;
+                      return (
+                        <div key={i} className="bg-white rounded-xl border border-zinc-200 p-2.5 flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg" style={{ background: s.bg }}>
+                            <Icon className="h-3 w-3" style={{ color: s.color }} />
+                          </div>
+                          <div>
+                            <p className="text-[9px] text-zinc-400">{s.label}</p>
+                            <p className="text-xs font-bold text-zinc-900">{s.value}</p>
                           </div>
                         </div>
-                        <div>
-                          <h3 className="text-sm font-extrabold text-zinc-900 leading-none">
-                            {stat.value}
-                          </h3>
-                          <p className="text-[8.5px] font-semibold text-zinc-400 mt-1">
-                            {stat.info}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* 2. Main Row (Scribe Emulator & Timeline) */}
-                <div className="grid gap-4 lg:grid-cols-3">
-                  
-                  {/* Left Column: Scribe Emulator Widget */}
-                  <div className="lg:col-span-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <Stethoscope className="h-3.5 w-3.5 text-brand" />
-                        <h3 className="text-[10px] font-bold text-zinc-800 uppercase tracking-tight">
-                          Real-time AI SOAP Dictation
-                        </h3>
-                      </div>
-                      <div>
-                        <select
-                          className="rounded-full border border-zinc-250 bg-zinc-50 px-2 py-0.5 text-[8.5px] font-bold focus:outline-none pointer-events-none"
-                          defaultValue="Family Medicine"
-                        >
-                          <option>Family Medicine</option>
-                          <option>Cardiology</option>
-                          <option>Pediatrics</option>
-                          <option>Psychiatry</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Idle Dictation Area */}
-                    <div className="rounded-xl border border-zinc-150 bg-zinc-50/50 p-4 flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[140px]">
-                      <div className="space-y-2">
-                        <div className="h-10 w-10 rounded-full bg-brand shadow flex items-center justify-center text-white cursor-pointer mx-auto">
-                          <Mic className="h-4.5 w-4.5" />
-                        </div>
-                        <div>
-                          <h4 className="text-[10px] font-bold text-zinc-800">
-                            Start Scribing
-                          </h4>
-                          <p className="text-[8.5px] text-zinc-400 mt-0.5 max-w-[240px] mx-auto">
-                            Click to dictate patient dialogue. AI will synthesize structured SOAP notes.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                      );
+                    })}
                   </div>
-
-                  {/* Right Column: Timeline Widget */}
-                  <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5 text-brand" />
-                        <h3 className="text-[10px] font-bold text-zinc-800 uppercase tracking-tight">
-                          Today's Patient Timeline
-                        </h3>
-                      </div>
-                      <span className="text-[8px] font-semibold text-zinc-400">4 Scheduled</span>
-                    </div>
-
-                    <div className="relative border-l border-zinc-200 pl-4 ml-1 space-y-3.5 text-left">
-                      {[
-                        { time: "09:00 AM", patient: "Eleanor Vance", reason: "Persistent cough & fever", status: "Completed", color: "bg-emerald-500 ring-emerald-100" },
-                        { time: "10:30 AM", patient: "Arthur Pendelton", reason: "Angina follow-up", status: "In Progress", color: "bg-blue-500 ring-blue-100" },
-                        { time: "02:00 PM", patient: "Maya Lin", reason: "Ear pain & congestion", status: "Pending Review", color: "bg-amber-500 ring-amber-100" },
-                        { time: "04:15 PM", patient: "David Kross", reason: "Anxiety monitoring", status: "Scheduled", color: "bg-zinc-400 ring-zinc-100" },
-                      ].map((item, idx) => (
-                        <div key={idx} className="relative group text-left">
-                          <div className={`absolute -left-[21px] mt-1 size-2 rounded-full ring-4 ${item.color}`} />
-                          <div className="flex justify-between items-start">
-                            <span className="text-[8px] font-bold text-zinc-450 tracking-tight">{item.time}</span>
-                            <span className="text-[7.5px] font-bold px-1.5 py-0.5 rounded-full bg-zinc-50 border border-zinc-200 text-zinc-500 scale-90 origin-right">{item.status}</span>
-                          </div>
-                          <h4 className="text-[9px] font-bold text-zinc-800 mt-0.5 truncate">{item.patient}</h4>
-                          <p className="text-[8px] text-zinc-450 truncate">{item.reason}</p>
+                  <div className="bg-white rounded-xl border border-zinc-200 p-3">
+                    <p className="text-[9px] font-bold uppercase tracking-wider mb-2" style={{ color: "#0059C6" }}>Platform Features</p>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                      {features.map((f) => (
+                        <div key={f} className="flex items-center gap-1">
+                          <Check className="h-2.5 w-2.5 shrink-0" style={{ color: "#0059C6" }} />
+                          <span className="text-[8.5px] text-zinc-600 font-medium">{f}</span>
                         </div>
                       ))}
                     </div>
                   </div>
-                  
+                  <p className="text-center text-[9px] text-zinc-400 italic pb-1">
+                    Built for businesses that want enterprise-level booking automation without enterprise-level costs.
+                  </p>
                 </div>
-
               </div>
-            </main>
-
-          </div>
+            </div>
+          </motion.div>
 
         </div>
       </div>
-    </motion.div>
+    </section>
   );
 }
 
@@ -559,37 +368,37 @@ function DashboardPreview() {
  * ======================================================= */
 export function LogosMarquee() {
   const logos = [
-    "Cleveland Health",
-    "Mayo Partners",
-    "Apollo Clinics",
-    "Bupa Group",
-    "MedStar",
-    "Sunrise Dental",
-    "Pulse Aesthetics",
-    "NovaCare",
-    "BrightSmile",
-    "VitalDx",
-    "Carevida",
-    "NorthernMed",
+    { icon: Scissors, label: "Beauty Studios" },
+    { icon: HeartPulse, label: "Healthcare Clinics" },
+    { icon: Dumbbell, label: "Fitness Centers" },
+    { icon: Scale, label: "Law Firms" },
+    { icon: Calculator, label: "CA Offices" },
+    { icon: Handshake, label: "Consultants" },
+    { icon: GraduationCap, label: "Coaching Institutes" },
+    { icon: Building2, label: "Real Estate Agencies" },
+    { icon: Stethoscope, label: "Dental Clinics" },
+    { icon: Leaf, label: "Wellness Centers" },
+    { icon: BookOpen, label: "Training Academies" },
+    { icon: Briefcase, label: "Professional Services" },
   ];
   return (
     <section className="relative border-y border-zinc-950/5 bg-white py-10">
       <div className="mx-auto mb-6 max-w-7xl px-6 text-center">
         <p className="text-xs font-medium uppercase tracking-widest text-zinc-500">
-          Trusted by 4,200+ practices in 38 countries
+          TRUSTED BY BUSINESSES ACROSS MULTIPLE INDUSTRIES
         </p>
       </div>
       <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_15%,black_85%,transparent)]">
-        <div className="flex w-max animate-marquee gap-12 pr-12">
-          {[...logos, ...logos].map((l, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-2 text-zinc-400 transition-colors hover:text-brand"
-            >
-              <Building2 className="size-5" />
-              <span className="whitespace-nowrap text-base font-semibold tracking-tight">{l}</span>
-            </div>
-          ))}
+        <div className="flex w-max animate-marquee gap-10 pr-10">
+          {[...logos, ...logos].map((l, i) => {
+            const Icon = l.icon;
+            return (
+              <div key={i} className="flex items-center gap-2 text-zinc-500 transition-colors hover:text-brand whitespace-nowrap">
+                <Icon className="size-4 shrink-0" />
+                <span className="text-sm font-semibold tracking-tight">{l.label}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>
@@ -601,10 +410,10 @@ export function LogosMarquee() {
  * ======================================================= */
 export function Stats() {
   const stats = [
-    { v: 73, suf: "%", label: "Less admin work", sub: "per doctor, per week" },
-    { v: 18, suf: "h", label: "Hours saved weekly", sub: "average per provider" },
-    { v: 4200, suf: "+", label: "Active practices", sub: "across 38 countries" },
-    { v: 2.4, suf: "M", label: "Patient encounters", sub: "automated last quarter" },
+    { v: 85, suf: "%", label: "Reduction in Manual Booking Work", sub: "Average across all industries" },
+    { v: 25, suf: "h", label: "Saved Every Week", sub: "Through automation & reminders" },
+    { v: 5000, suf: "+", label: "Active Businesses", sub: "Using BookMyTime daily" },
+    { v: 1.8, suf: "M+", label: "Appointments Managed", sub: "Across multiple industries" },
   ];
   return (
     <section className="relative bg-gradient-to-b from-white to-zinc-50 py-20">
@@ -637,31 +446,54 @@ export function Stats() {
  * ======================================================= */
 export function BenefitsSection() {
   const before = [
-    "Doctors typing notes after 8pm",
-    "Front desk on hold with insurance",
-    "Patients ghosting unconfirmed slots",
-    "5 different SaaS tools that don't talk",
-    "Manual coding errors costing $40k/yr",
-    "Spreadsheets for clinic analytics",
+    "Missed calls turning into lost bookings",
+    "Manual appointment tracking in spreadsheets",
+    "Customers forgetting appointments",
+    "No dedicated booking system",
+    "Managing customers across multiple tools",
+    "No centralized CRM or customer history",
+    "Staff spending hours on repetitive tasks",
+    "No automation for reminders and follow-ups",
   ];
   const after = [
-    "AI drafts SOAP notes during the visit",
-    "Voice agent verifies eligibility in 12s",
-    "Smart reminders cut no-shows by 58%",
-    "One platform, one login, one bill",
-    "Auto ICD-10 + CPT with 99.2% accuracy",
-    "Real-time multi-location dashboards",
+    "Dedicated booking page and QR code",
+    "Online appointment booking 24/7",
+    "Automated WhatsApp reminders & updates",
+    "Smart customer and staff management",
+    "AI-powered chatbot for instant responses",
+    "Centralized CRM for all customer interactions",
+    "Real-time booking and business insights",
+    "One platform, one dashboard, complete control",
   ];
   return (
     <section className="relative py-24">
       <div className="mx-auto max-w-7xl px-6">
         <div className="mb-14 text-center">
-          <SectionEyebrow>THE SHIFT</SectionEyebrow>
+          <SectionEyebrow>THE DIFFERENCE</SectionEyebrow>
           <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
-            Stop running your practice on{" "}
-            <span className="line-through decoration-red-400/60 decoration-4">paperwork</span>.
+            Stop managing bookings{" "}
+            <span className="relative inline-block">
+              <span className="text-zinc-400">manually</span>
+              <motion.svg
+                viewBox="0 0 120 20"
+                className="absolute left-0 w-full overflow-visible pointer-events-none"
+                style={{ top: "45%", transform: "translateY(-50%)" }}
+              >
+                <motion.path
+                  d="M 0 18 L 120 2"
+                  stroke="#ef4444"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  fill="none"
+                  initial={{ pathLength: 0, opacity: 0 }}
+                  whileInView={{ pathLength: 1, opacity: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
+                />
+              </motion.svg>
+            </span>.
             <br />
-            Start running it on <span className="text-gradient-brand">intelligence</span>.
+            Start growing your business <span className="text-gradient-brand">smarter</span>.
           </h2>
         </div>
 
@@ -673,9 +505,9 @@ export function BenefitsSection() {
             className="rounded-2xl border border-red-200/60 bg-red-50/30 p-8"
           >
             <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-red-500">
-              Without MediFlow
+              Without BookMyTime
             </p>
-            <h3 className="mb-6 text-xl font-semibold text-zinc-900">The chaos tax</h3>
+            <h3 className="mb-6 text-xl font-semibold text-zinc-900">The Daily Struggle</h3>
             <ul className="space-y-3">
               {before.map((b, i) => (
                 <motion.li
@@ -686,8 +518,8 @@ export function BenefitsSection() {
                   transition={{ delay: i * 0.05 }}
                   className="flex items-start gap-3 text-sm text-zinc-700"
                 >
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-red-400" />
-                  <span className="line-through decoration-red-300/60">{b}</span>
+                  <span className="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-500 text-[10px] font-bold">✕</span>
+                  <span>{b}</span>
                 </motion.li>
               ))}
             </ul>
@@ -697,13 +529,14 @@ export function BenefitsSection() {
             initial={{ opacity: 0, x: 20 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            className="relative overflow-hidden rounded-2xl border border-brand/20 bg-gradient-to-br from-brand/5 via-white to-cyan-50/40 p-8 ring-1 ring-brand/10"
+            className="relative overflow-hidden rounded-2xl border p-8 ring-1"
+            style={{ borderColor: "rgba(0,89,198,0.2)", background: "linear-gradient(135deg, rgba(0,89,198,0.04) 0%, #ffffff 50%, rgba(167,211,255,0.15) 100%)", boxShadow: "0 0 0 1px rgba(0,89,198,0.1)" }}
           >
-            <div className="absolute -right-20 -top-20 size-64 rounded-full bg-brand/10 blur-3xl" />
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-brand">
-              With MediFlow AI
+            <div className="absolute -right-20 -top-20 size-64 rounded-full blur-3xl" style={{ background: "rgba(13,131,255,0.08)" }} />
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wider" style={{ color: "#0059C6" }}>
+              With BookMyTime
             </p>
-            <h3 className="mb-6 text-xl font-semibold text-zinc-900">The compound advantage</h3>
+            <h3 className="mb-6 text-xl font-semibold text-zinc-900">The Smart Advantage</h3>
             <ul className="relative space-y-3">
               {after.map((a, i) => (
                 <motion.li
@@ -714,7 +547,7 @@ export function BenefitsSection() {
                   transition={{ delay: i * 0.05 }}
                   className="flex items-start gap-3 text-sm text-zinc-800"
                 >
-                  <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-brand text-white">
+                  <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full text-white" style={{ background: "#0059C6" }}>
                     <Check className="size-3" />
                   </span>
                   <span className="font-medium">{a}</span>
@@ -729,168 +562,190 @@ export function BenefitsSection() {
 }
 
 /* =========================================================
- * FEATURE BENTO  (interactive tabs added)
+ * QR CODE BOOKING SHOWCASE
  * ======================================================= */
-function VoiceWaveMock() {
-  const bars = Array.from({ length: 28 });
+export function QRShowcase() {
+  const points = [
+    { icon: MapPin, text: "Place your QR anywhere" },
+    { icon: Smartphone, text: "Customers scan and book instantly" },
+    { icon: WifiOff, text: "No app download required" },
+    { icon: Clock, text: "Available 24/7" },
+  ];
+
   return (
-    <div className="mt-4 flex items-end gap-1 h-16">
-      {bars.map((_, i) => (
-        <motion.div
-          key={i}
-          animate={{
-            height: [
-              `${20 + Math.random() * 60}%`,
-              `${20 + Math.random() * 80}%`,
-              `${20 + Math.random() * 60}%`,
-            ],
-          }}
-          transition={{ duration: 1 + Math.random(), repeat: Infinity, delay: i * 0.05 }}
-          className="w-1.5 rounded-full bg-gradient-to-t from-brand to-brand-light"
-        />
-      ))}
-    </div>
-  );
-}
+    <section className="relative overflow-hidden py-20 bg-zinc-950">
+      {/* Subtle dot grid */}
+      <div className="pointer-events-none absolute inset-0 opacity-10"
+        style={{ backgroundImage: "radial-gradient(rgba(167,211,255,0.6) 1px, transparent 1px)", backgroundSize: "28px 28px" }} />
+      {/* Top glow */}
+      <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[400px] rounded-full blur-3xl"
+        style={{ background: "radial-gradient(ellipse, rgba(0,89,198,0.3) 0%, transparent 70%)" }} />
 
-function MiniBarChart() {
-  const d = [{ v: 30 }, { v: 55 }, { v: 42 }, { v: 78 }, { v: 65 }, { v: 90 }, { v: 72 }];
-  return (
-    <div className="h-24 w-32">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={d}>
-          <Bar dataKey="v" radius={[3, 3, 0, 0]} fill="#14b8a6" />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
+      <div className="relative mx-auto max-w-6xl px-6">
+        <div className="grid lg:grid-cols-2 gap-12 items-center">
 
-function BentoCard({
-  children,
-  className = "",
-  glow = false,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  glow?: boolean;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-50px" }}
-      className={`group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm transition-all hover:border-brand/40 hover:bg-white/[0.06] ${className}`}
-    >
-      {glow && (
-        <div className="pointer-events-none absolute -right-20 -top-20 size-64 rounded-full bg-brand/20 blur-3xl" />
-      )}
-      <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-light/60 to-transparent" />
-      </div>
-      <div className="relative h-full">{children}</div>
-    </motion.div>
-  );
-}
+          {/* ── Left: content ── */}
+          <div>
+            <motion.span
+              initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold tracking-widest mb-5"
+              style={{ background: "rgba(167,211,255,0.1)", color: "#A7D3FF", border: "1px solid rgba(167,211,255,0.2)" }}
+            >
+              <QrCode className="size-3" /> QR CODE BOOKING
+            </motion.span>
 
-export function FeatureBento() {
-  return (
-    <section id="features" className="relative bg-zinc-950 py-24 text-white">
-      <div className="pointer-events-none absolute inset-0 bg-grid-dark bg-radial-fade opacity-50" />
-      <div className="pointer-events-none absolute left-1/2 top-0 size-[600px] -translate-x-1/2 rounded-full bg-brand/30 blur-3xl" />
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.05 }}
+              className="text-3xl md:text-4xl font-bold leading-tight tracking-tight text-white mb-4"
+            >
+              Turn Every{" "}
+              <span className="relative inline-block">
+                <span className="text-gradient-brand">Walk-In</span>
+                <motion.svg viewBox="0 0 100 8" className="absolute -bottom-1 left-0 w-full" preserveAspectRatio="none">
+                  <motion.path d="M 0 6 Q 50 0 100 6" stroke="#0D83FF" strokeWidth="2" strokeLinecap="round" fill="none"
+                    initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.4 }} />
+                </motion.svg>
+              </span>{" "}
+              <span className="text-gradient-brand">Into a Future Customer</span>
+            </motion.h2>
 
-      <div className="relative mx-auto max-w-7xl px-6">
-        <div className="mx-auto mb-16 max-w-2xl text-center">
-          <SectionEyebrow tone="dark">EVERYTHING IN ONE PLATFORM</SectionEyebrow>
-          <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
-            The end of the <span className="text-gradient-brand">SaaS sprawl</span>
-          </h2>
-          <p className="mt-4 text-zinc-400">
-            Twelve modules. One database. Built for how modern medicine actually runs.
-          </p>
-        </div>
+            <motion.p
+              initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}
+              className="text-sm leading-relaxed mb-8" style={{ color: "rgba(167,211,255,0.75)" }}
+            >
+              One QR code. Infinite bookings. Print it, share it, pin it — and let customers schedule themselves while you focus on serving them.
+            </motion.p>
 
-        <div className="grid auto-rows-[14rem] grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-4">
-          <BentoCard className="md:col-span-2 md:row-span-2" glow>
-            <div className="flex h-full flex-col justify-between">
-              <div>
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-brand/20 px-2.5 py-1">
-                  <Bot className="size-3.5 text-brand-light" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-brand-light">
-                    Voice AI
-                  </span>
+            <ul className="space-y-3 mb-8">
+              {points.map((p, i) => {
+                const Icon = p.icon;
+                return (
+                  <motion.li
+                    key={p.text}
+                    initial={{ opacity: 0, x: -16 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.12 + i * 0.07 }}
+                    className="flex items-center gap-3"
+                  >
+                    <div className="flex size-7 shrink-0 items-center justify-center rounded-lg"
+                      style={{ background: "rgba(167,211,255,0.12)", border: "1px solid rgba(167,211,255,0.2)" }}>
+                      <Icon className="size-3.5" style={{ color: "#A7D3FF" }} />
+                    </div>
+                    <span className="text-sm text-white/90">{p.text}</span>
+                  </motion.li>
+                );
+              })}
+            </ul>
+
+            <motion.a
+              href="/signup"
+              initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.45 }}
+              className="inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition-all hover:-translate-y-[1px]"
+              style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)", color: "#ffffff", boxShadow: "0 4px 24px rgba(0,89,198,0.4)" }}
+            >
+              <QrCode className="size-4" /> Get Your Free QR Code
+            </motion.a>
+          </div>
+
+          {/* ── Right: QR code card ── */}
+          <div className="flex items-center justify-center">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ duration: 0.6, delay: 0.15 }}
+              className="relative"
+            >
+              {/* Outer glow */}
+              <motion.div
+                className="absolute -inset-4 rounded-3xl blur-2xl"
+                style={{ background: "rgba(13,131,255,0.2)" }}
+                animate={{ opacity: [0.4, 0.8, 0.4] }}
+                transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+              />
+
+              {/* Card */}
+              <div className="relative rounded-3xl p-7 shadow-2xl overflow-hidden"
+                style={{ background: "linear-gradient(135deg, #0a0f1e 0%, #0d1a3a 50%, #0a1628 100%)", boxShadow: "0 25px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,89,198,0.3)" }}>
+                {/* Subtle circuit grid overlay */}
+                <div className="pointer-events-none absolute inset-0 opacity-10"
+                  style={{ backgroundImage: "radial-gradient(rgba(13,131,255,0.8) 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
+                {/* Blue glow top-right */}
+                <div className="pointer-events-none absolute -top-10 -right-10 w-40 h-40 rounded-full blur-2xl" style={{ background: "rgba(13,131,255,0.2)" }} />
+                {/* Header */}
+                <div className="relative flex items-center justify-between mb-5">
+                  <div>
+                    <p className="text-xs font-bold text-white leading-none">BookMyTime</p>
+                    <p className="text-[10px] mt-0.5" style={{ color: "rgba(167,211,255,0.7)" }}>Scan to book instantly</p>
+                  </div>
+                  <div className="flex size-8 items-center justify-center rounded-lg" style={{ background: "#0059C6" }}>
+                    <QrCode className="size-4 text-white" />
+                  </div>
                 </div>
-                <h3 className="text-2xl font-semibold tracking-tight">
-                  AI receptionist that never sleeps
-                </h3>
-                <p className="mt-2 max-w-md text-sm text-zinc-400">
-                  Answers in 38 languages, books appointments, verifies insurance, triages urgency
-                  — all while writing directly into your EMR.
-                </p>
+
+                {/* QR pattern — proper 21x21 matrix */}
+                <div className="relative mx-auto">
+                  {(() => {
+                    const M = 9, Q = 6, color = "#A7D3FF";
+                    const matrix = [
+                      [1,1,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1],
+                      [1,0,0,0,0,0,1,0,0,1,0,1,0,0,1,0,0,0,0,0,1],
+                      [1,0,1,1,1,0,1,0,1,0,1,0,1,0,1,0,1,1,1,0,1],
+                      [1,0,1,1,1,0,1,0,0,1,0,1,0,0,1,0,1,1,1,0,1],
+                      [1,0,1,1,1,0,1,0,1,0,1,0,1,0,1,0,1,1,1,0,1],
+                      [1,0,0,0,0,0,1,0,0,0,0,1,0,0,1,0,0,0,0,0,1],
+                      [1,1,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1],
+                      [0,0,0,0,0,0,0,0,1,1,0,1,0,1,0,0,0,0,0,0,0],
+                      [1,1,0,1,1,0,1,1,0,0,1,0,1,0,1,0,1,1,0,1,1],
+                      [0,1,0,0,1,0,0,1,1,0,0,1,0,1,0,0,1,0,1,1,0],
+                      [1,0,1,1,0,1,1,0,0,1,1,0,1,1,0,1,0,0,1,0,1],
+                      [0,1,1,0,1,0,0,1,0,1,0,1,0,0,1,0,1,1,0,1,0],
+                      [1,0,0,1,0,1,1,0,1,0,1,0,1,1,0,0,1,0,1,0,1],
+                      [0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,1,0,1,1,0,0],
+                      [1,1,1,1,1,1,1,0,0,1,1,0,1,0,1,0,1,0,0,1,0],
+                      [1,0,0,0,0,0,1,0,1,0,0,1,0,1,0,1,0,0,1,0,1],
+                      [1,0,1,1,1,0,1,1,0,1,1,0,1,0,0,0,1,0,0,1,0],
+                      [1,0,1,1,1,0,1,0,0,1,0,1,1,1,0,1,0,1,0,0,1],
+                      [1,0,1,1,1,0,1,0,1,0,1,0,0,0,1,0,1,0,1,1,0],
+                      [1,0,0,0,0,0,1,0,0,1,0,1,0,1,0,1,0,0,0,1,0],
+                      [1,1,1,1,1,1,1,0,1,0,1,0,1,0,1,0,0,1,1,0,1],
+                    ] as const;
+                    const els: React.ReactElement[] = [];
+                    (matrix as readonly (readonly number[])[]).forEach((row, r) => {
+                      row.forEach((cell, c) => {
+                        if (!cell) return;
+                        const inFinder =
+                          (r < 7 && c < 7) ||
+                          (r < 7 && c > 13) ||
+                          (r > 13 && c < 7);
+                        els.push(
+                          <rect
+                            key={`${r}-${c}`}
+                            x={Q + c * M + 0.5}
+                            y={Q + r * M + 0.5}
+                            width={M - 1}
+                            height={M - 1}
+                            rx={inFinder ? 0 : 2}
+                            fill={color}
+                          />
+                        );
+                      });
+                    });
+                    return (
+                      <svg viewBox={`0 0 ${Q*2+21*M} ${Q*2+21*M}`} className="w-64 h-64" xmlns="http://www.w3.org/2000/svg">
+                        <rect width={Q*2+21*M} height={Q*2+21*M} fill="#0d1a3a"/>
+                        {els}
+                      </svg>
+                    );
+                  })()}
+                  {/* Scan laser */}
+                  <motion.div
+                    className="absolute left-1 right-1 h-[2px] rounded-full pointer-events-none"
+                    style={{ background: "linear-gradient(90deg, transparent, #0D83FF 30%, #0D83FF 70%, transparent)", boxShadow: "0 0 8px 2px rgba(13,131,255,0.55)" }}
+                    animate={{ top: ["4%", "93%", "4%"] }}
+                    transition={{ repeat: Infinity, duration: 2.4, ease: "easeInOut" }}
+                  />
+                </div>
+
               </div>
-              <VoiceWaveMock />
-            </div>
-          </BentoCard>
+            </motion.div>
+          </div>
 
-          <BentoCard>
-            <FileText className="size-5 text-brand-light" />
-            <h3 className="mt-3 font-semibold">Auto SOAP notes</h3>
-            <p className="mt-1 text-xs text-zinc-400">
-              Ambient listening generates structured documentation in 2.3 seconds.
-            </p>
-          </BentoCard>
-
-          <BentoCard>
-            <Calendar className="size-5 text-brand-light" />
-            <h3 className="mt-3 font-semibold">Omnichannel booking</h3>
-            <p className="mt-1 text-xs text-zinc-400">
-              Automated booking widgets. Real-time sync across all calendars and doctors.
-            </p>
-          </BentoCard>
-
-          <BentoCard className="md:col-span-2">
-            <div className="flex h-full items-center gap-6">
-              <div className="flex-1">
-                <CreditCard className="size-5 text-brand-light" />
-                <h3 className="mt-3 font-semibold">Smart billing & RCM</h3>
-                <p className="mt-1 text-xs text-zinc-400">
-                  Auto ICD-10 + CPT coding with 99.2% first-pass accuracy. Eligibility checks in
-                  12s.
-                </p>
-              </div>
-              <MiniBarChart />
-            </div>
-          </BentoCard>
-
-          <BentoCard>
-            <Video className="size-5 text-brand-light" />
-            <h3 className="mt-3 font-semibold">Telemedicine</h3>
-            <p className="mt-1 text-xs text-zinc-400">
-              HD video, e-prescriptions, embedded directly in the browser.
-            </p>
-          </BentoCard>
-
-          <BentoCard>
-            <Pill className="size-5 text-brand-light" />
-            <h3 className="mt-3 font-semibold">e-Prescription</h3>
-            <p className="mt-1 text-xs text-zinc-400">DEA-compliant with drug-interaction AI.</p>
-          </BentoCard>
-
-          <BentoCard>
-            <BarChart3 className="size-5 text-brand-light" />
-            <h3 className="mt-3 font-semibold">Real-time analytics</h3>
-            <p className="mt-1 text-xs text-zinc-400">
-              Multi-tenant dashboards across every location.
-            </p>
-          </BentoCard>
-
-          <BentoCard>
-            <MessageSquare className="size-5 text-brand-light" />
-            <h3 className="mt-3 font-semibold">Patient messaging</h3>
-            <p className="mt-1 text-xs text-zinc-400">
-              HIPAA SMS, WhatsApp, email — all in one inbox.
-            </p>
-          </BentoCard>
         </div>
       </div>
     </section>
@@ -898,226 +753,344 @@ export function FeatureBento() {
 }
 
 /* =========================================================
- * INTERACTIVE FEATURE TABS
+ * WHATSAPP AUTOMATION
  * ======================================================= */
-export function FeatureTabs() {
-  const tabs = [
+export function WhatsAppSection() {
+  const messages = [
     {
-      key: "scribe",
-      icon: FileText,
-      title: "Ambient AI Scribe",
-      blurb:
-        "Listens to your visit, drafts a clean SOAP note in your style, codes the encounter, and queues the claim — all before you reach the next door.",
-      bullets: [
-        "Multilingual (38 languages)",
-        "Specialty-tuned templates",
-        "Auto ICD-10 + CPT + HCC",
-        "Edit and sign in one click",
-      ],
-      preview: (
-        <div className="space-y-2 text-[11px] font-mono">
-          {[
-            { k: "S", t: "62M presents with intermittent chest pressure x3 days…" },
-            { k: "O", t: "BP 142/88, HR 78, SpO2 98%. EKG: NSR, no ST changes." },
-            { k: "A", t: "Atypical chest pain. R/o ACS. CAD risk elevated." },
-            { k: "P", t: "Trop x3, stress test, ASA 81, statin, cardiology f/u." },
-          ].map((row, i) => (
-            <motion.div
-              key={row.k}
-              initial={{ opacity: 0, y: 5 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="flex gap-2 rounded-md bg-zinc-50 px-2 py-1.5 ring-1 ring-zinc-950/5"
-            >
-              <span className="font-bold text-brand">{row.k}</span>
-              <span className="text-zinc-700">{row.t}</span>
-            </motion.div>
-          ))}
-        </div>
-      ),
+      type: "out" as const,
+      icon: CheckCircle2,
+      label: "Booking Confirmation",
+      text: "Your appointment is confirmed for Tomorrow at 10:00 AM. See you soon! 🎉",
+      time: "9:42 AM",
+      color: "#25D366",
     },
     {
-      key: "voice",
-      icon: Mic,
-      title: "Voice Receptionist",
-      blurb:
-        "A human-sounding agent answers every call, books slots, verifies insurance, and routes urgencies — 24/7 with zero hold time.",
-      bullets: [
-        "Avg. response: 800ms",
-        "Books, reschedules, cancels",
-        "Real-time insurance eligibility",
-        "Escalates clinical urgency",
-      ],
-      preview: (
-        <div className="space-y-2 text-[11px]">
-          {[
-            { who: "Patient", t: "Hi, I need to see Dr. Lee for my back pain." },
-            { who: "MediFlow AI", t: "Of course. I have Tuesday 10:15 or Thursday 2pm." },
-            { who: "Patient", t: "Tuesday works." },
-            { who: "MediFlow AI", t: "Booked. Confirming insurance via Aetna… eligible. ✓" },
-          ].map((row, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, x: i % 2 ? 8 : -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.12 }}
-              className={`max-w-[85%] rounded-2xl px-3 py-1.5 ${
-                row.who === "Patient"
-                  ? "bg-zinc-100 text-zinc-700"
-                  : "ml-auto bg-brand text-white"
-              }`}
-            >
-              {row.t}
-            </motion.div>
-          ))}
-        </div>
-      ),
+      type: "out" as const,
+      icon: Bell,
+      label: "Appointment Reminder",
+      text: "Reminder: You have an appointment in 1 hour. Please arrive 5 minutes early. ⏰",
+      time: "9:00 AM",
+      color: "#0059C6",
     },
     {
-      key: "billing",
-      icon: CreditCard,
-      title: "Autonomous Billing",
-      blurb:
-        "Submit clean claims the day of service. Catch denials before they happen. Recover lost revenue you didn't know existed.",
-      bullets: [
-        "99.2% first-pass acceptance",
-        "Real-time eligibility & estimates",
-        "Auto appeal denied claims",
-        "Patient text-to-pay",
-      ],
-      preview: (
-        <div className="space-y-2 text-[11px]">
-          {[
-            { c: "99213", d: "Office visit, established", $: "$112", ok: true },
-            { c: "93000", d: "EKG, complete", $: "$58", ok: true },
-            { c: "G0438", d: "Annual wellness, initial", $: "$167", ok: true },
-            { c: "—", d: "Predicted denial: missing modifier", $: "—", ok: false },
-          ].map((r) => (
-            <div
-              key={r.c}
-              className={`flex items-center justify-between rounded-md px-2 py-1.5 ring-1 ${
-                r.ok ? "bg-emerald-50/60 ring-emerald-200" : "bg-amber-50/60 ring-amber-200"
-              }`}
-            >
-              <span className="font-mono">{r.c}</span>
-              <span className="flex-1 px-2 text-zinc-600">{r.d}</span>
-              <span className="font-semibold">{r.$}</span>
-            </div>
-          ))}
-        </div>
-      ),
+      type: "out" as const,
+      icon: RefreshCcw,
+      label: "Reschedule Notification",
+      text: "Your appointment has been rescheduled to Friday at 3:00 PM. Need help? Reply here.",
+      time: "Yesterday",
+      color: "#F59E0B",
     },
     {
-      key: "analytics",
-      icon: BarChart3,
-      title: "Live Analytics",
-      blurb:
-        "Watch revenue, occupancy, provider productivity and patient experience update in real time across every location.",
-      bullets: [
-        "Predictive no-show scoring",
-        "Revenue per provider/service line",
-        "Retention cohort analysis",
-        "Custom KPIs + alerting",
-      ],
-      preview: <MiniAreaPreview />,
+      type: "out" as const,
+      icon: MessageSquare,
+      label: "Follow-up Message",
+      text: "How was your experience? We'd love your feedback! ⭐ Reply to rate us.",
+      time: "Mon",
+      color: "#8B5CF6",
+    },
+    {
+      type: "out" as const,
+      icon: Star,
+      label: "Promotional Campaign",
+      text: "🎁 Exclusive offer for you: Book this week and get 20% off your next visit!",
+      time: "Sun",
+      color: "#EC4899",
     },
   ];
-  const [active, setActive] = useState(0);
-  const tab = tabs[active];
-  return (
-    <section className="relative bg-white py-24">
-      <div className="mx-auto max-w-7xl px-6">
-        <div className="mx-auto mb-12 max-w-2xl text-center">
-          <SectionEyebrow>EXPLORE THE PLATFORM</SectionEyebrow>
-          <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
-            Click through. <span className="text-gradient-brand">See it work.</span>
-          </h2>
-        </div>
 
-        <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-          <div className="flex flex-row gap-2 overflow-x-auto lg:flex-col">
-            {tabs.map((t, i) => {
-              const Icon = t.icon;
-              const isActive = i === active;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setActive(i)}
-                  className={`group relative flex w-full shrink-0 items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
-                    isActive
-                      ? "border-brand/30 bg-brand/5"
-                      : "border-zinc-950/5 bg-zinc-50 hover:bg-zinc-100"
-                  }`}
-                >
-                  <div
-                    className={`flex size-9 items-center justify-center rounded-lg ${
-                      isActive ? "bg-brand text-white" : "bg-white text-zinc-500 ring-1 ring-zinc-950/5"
-                    }`}
-                  >
-                    <Icon className="size-4" />
-                  </div>
+  const [active, setActive] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setActive(p => (p + 1) % messages.length), 2800);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <section className="relative py-14 bg-white overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 bg-grid bg-radial-fade opacity-20" />
+
+      <div className="relative mx-auto max-w-6xl px-6">
+        <div className="grid lg:grid-cols-2 items-center">
+
+          {/* ── Left: Phone mockup ── */}
+          <motion.div
+            initial={{ opacity: 0, x: -30 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            className="flex justify-center lg:justify-end lg:pr-0"
+          >
+            <div className="relative">
+              <div className="absolute inset-0 rounded-[3rem] blur-3xl scale-90"
+                style={{ background: "radial-gradient(circle, rgba(37,211,102,0.12) 0%, rgba(0,89,198,0.08) 60%, transparent 100%)" }} />
+              <div className="relative w-60 rounded-[2rem] border-[5px] border-zinc-900 bg-zinc-900 shadow-2xl overflow-hidden">
+                {/* Status bar */}
+                <div className="bg-zinc-900 px-4 pt-2.5 pb-1 flex justify-between items-center">
+                  <span className="text-[8px] text-white font-bold">9:41</span>
+                  <div className="w-7 h-2 rounded-full bg-black border border-zinc-700" />
+                  <div className="w-2.5 h-1.5 rounded-sm bg-white opacity-70" />
+                </div>
+                {/* WhatsApp header */}
+                <div className="flex items-center gap-2 px-2.5 py-2" style={{ background: "#075E54" }}>
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-black shrink-0"
+                    style={{ background: "linear-gradient(135deg, #25D366, #128C7E)" }}>B</div>
                   <div>
-                    <p className={`text-sm font-semibold ${isActive ? "text-brand" : "text-zinc-900"}`}>
-                      {t.title}
-                    </p>
+                    <p className="text-[10px] font-bold text-white leading-none">BookMyTime</p>
+                    <p className="text-[8px]" style={{ color: "#A8E6B0" }}>Business · Online</p>
                   </div>
-                  {isActive && (
-                    <motion.span
-                      layoutId="tabbar"
-                      className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-brand"
+                </div>
+                {/* Chat area */}
+                <div className="px-2.5 py-2.5 space-y-2 min-h-[320px]" style={{ background: "#E5DDD5" }}>
+                  <p className="text-center text-[7px] text-zinc-500 bg-white/60 rounded-full px-2 py-0.5 w-fit mx-auto">Today</p>
+                  <AnimatePresence mode="wait">
+                    {messages.map((msg, i) =>
+                      i === active ? (
+                        <motion.div key={msg.label}
+                          initial={{ opacity: 0, y: 10, scale: 0.97 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                          transition={{ duration: 0.3 }}
+                          className="flex justify-end"
+                        >
+                          <div className="max-w-[88%] rounded-xl rounded-tr-sm px-2.5 py-1.5 shadow-sm" style={{ background: "#DCF8C6" }}>
+                            <p className="text-[7px] font-bold mb-0.5" style={{ color: msg.color }}>{msg.label}</p>
+                            <p className="text-[8px] text-zinc-800 leading-relaxed">{msg.text}</p>
+                            <div className="flex items-center justify-end gap-1 mt-0.5">
+                              <span className="text-[6px] text-zinc-400">{msg.time}</span>
+                              <CheckCheck className="size-2" style={{ color: "#4FC3F7" }} />
+                            </div>
+                          </div>
+                        </motion.div>
+                      ) : null
+                    )}
+                  </AnimatePresence>
+                  <div className="flex justify-start">
+                    <div className="bg-white rounded-xl rounded-tl-sm px-2 py-1.5 shadow-sm flex items-center gap-1">
+                      {[0,1,2].map(i => (
+                        <motion.div key={i} className="w-1 h-1 rounded-full bg-zinc-400"
+                          animate={{ y: [0, -3, 0] }}
+                          transition={{ repeat: Infinity, duration: 0.7, delay: i * 0.15 }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                {/* Input bar */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5" style={{ background: "#F0F0F0" }}>
+                  <div className="flex-1 bg-white rounded-full px-2.5 py-1 text-[8px] text-zinc-400">Type a message</div>
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "#25D366" }}>
+                    <Send className="size-2.5 text-white" />
+                  </div>
+                </div>
+              </div>
+              {/* Floating open rate */}
+              <motion.div
+                className="absolute -right-4 top-12 bg-white rounded-lg shadow-lg px-2.5 py-1.5 border border-zinc-100"
+                animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+              >
+                <p className="text-[8px] text-zinc-400">Open Rate</p>
+                <p className="text-base font-black leading-none" style={{ color: "#25D366" }}>98%</p>
+                <p className="text-[7px] text-zinc-400">vs 22% email</p>
+              </motion.div>
+              {/* Floating auto-sent */}
+              <motion.div
+                className="absolute -left-4 bottom-16 bg-white rounded-lg shadow-lg px-2.5 py-1.5 border border-zinc-100 flex items-center gap-1.5"
+                animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 3.5, ease: "easeInOut", delay: 1 }}
+              >
+                <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(37,211,102,0.15)" }}>
+                  <Send className="size-2.5" style={{ color: "#25D366" }} />
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-zinc-900 leading-none">Auto-sent</p>
+                  <p className="text-[7px] text-zinc-400">Zero manual work</p>
+                </div>
+              </motion.div>
+            </div>
+          </motion.div>
+
+          {/* ── Right: Content ── */}
+          <div className="lg:pl-10">
+            <motion.span
+              initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold mb-3 border"
+              style={{ background: "rgba(37,211,102,0.08)", color: "#128C7E", borderColor: "rgba(37,211,102,0.2)" }}
+            >
+              <MessageSquare className="size-2.5" /> WHATSAPP AUTOMATION
+            </motion.span>
+
+            <motion.h2
+              initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.05 }}
+              className="text-2xl md:text-3xl font-semibold leading-tight tracking-tight text-zinc-900 mb-2"
+            >
+              Never Let Customers{" "}
+              <span className="text-gradient-brand">Forget Their Appointments</span>
+            </motion.h2>
+
+            <motion.p
+              initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}
+              className="text-xs text-zinc-500 leading-relaxed mb-5"
+            >
+              BookMyTime sends automated WhatsApp messages at every stage — so you never follow up manually again.
+            </motion.p>
+
+            {/* Feature list */}
+            <div className="space-y-1.5">
+              {messages.map((msg, i) => {
+                const Icon = msg.icon;
+                const isActive = i === active;
+                return (
+                  <motion.button
+                    key={msg.label}
+                    type="button"
+                    onClick={() => setActive(i)}
+                    initial={{ opacity: 0, x: 16 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.08 + i * 0.06 }}
+                    className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all duration-200 cursor-pointer"
+                    style={{
+                      background: isActive ? "rgba(0,89,198,0.06)" : "transparent",
+                      border: isActive ? "1px solid rgba(0,89,198,0.2)" : "1px solid transparent",
+                    }}
+                  >
+                    <div className="flex size-7 shrink-0 items-center justify-center rounded-lg"
+                      style={{ background: `${msg.color}18` }}>
+                      <Icon className="size-3.5" style={{ color: msg.color }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-zinc-900 leading-tight">{msg.label}</p>
+                      <p className="text-[10px] text-zinc-400 truncate mt-0.5">{msg.text}</p>
+                    </div>
+                    <motion.div
+                      animate={{ scale: isActive ? 1 : 0 }}
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ background: "#0059C6" }}
                     />
-                  )}
-                </button>
-              );
-            })}
+                  </motion.button>
+                );
+              })}
+            </div>
           </div>
 
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={tab.key}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.25 }}
-              className="grid gap-6 rounded-2xl border border-zinc-950/5 bg-gradient-to-br from-zinc-50 to-white p-8 md:grid-cols-2"
-            >
-              <div>
-                <h3 className="text-2xl font-semibold tracking-tight">{tab.title}</h3>
-                <p className="mt-3 text-sm text-zinc-600">{tab.blurb}</p>
-                <ul className="mt-5 space-y-2">
-                  {tab.bullets.map((b) => (
-                    <li key={b} className="flex items-center gap-2 text-sm text-zinc-700">
-                      <Check className="size-4 text-brand" />
-                      {b}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="rounded-xl border border-zinc-950/5 bg-white p-4">{tab.preview}</div>
-            </motion.div>
-          </AnimatePresence>
         </div>
       </div>
     </section>
   );
 }
 
-function MiniAreaPreview() {
-  const data = Array.from({ length: 12 }, (_, i) => ({ m: i, v: 40 + Math.sin(i / 2) * 30 + i * 5 }));
+/* =========================================================
+ * BEFORE VS AFTER
+ * ======================================================= */
+export function BeforeAfter() {
+  const before = [
+    "Missed calls",
+    "Manual diary",
+    "No reminders",
+    "Lost customers",
+    "Scattered customer data",
+  ];
+  const after = [
+    "Online booking",
+    "Automated reminders",
+    "Centralized CRM",
+    "Better customer retention",
+    "More bookings",
+  ];
+
   return (
-    <div className="h-40">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data}>
-          <defs>
-            <linearGradient id="pa" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#14b8a6" stopOpacity={0.5} />
-              <stop offset="100%" stopColor="#14b8a6" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <Area type="monotone" dataKey="v" stroke="#0f766e" strokeWidth={2.5} fill="url(#pa)" />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
+    <section className="relative py-20 bg-white overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 bg-grid bg-radial-fade opacity-20" />
+
+      <div className="relative mx-auto max-w-5xl px-6">
+        {/* Header */}
+        <div className="text-center mb-12">
+          <motion.span
+            initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold tracking-widest mb-4"
+            style={{ background: "rgba(0,89,198,0.07)", color: "#0059C6", border: "1px solid rgba(0,89,198,0.15)" }}
+          >
+            BEFORE VS AFTER
+          </motion.span>
+          <motion.h2
+            initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.05 }}
+            className="text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900"
+          >
+            See the <span className="text-gradient-brand">difference BookMyTime makes</span>
+          </motion.h2>
+        </div>
+
+        {/* Cards */}
+        <div className="grid md:grid-cols-2 gap-5">
+
+          {/* Before */}
+          <motion.div
+            initial={{ opacity: 0, x: -24 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}
+            className="rounded-2xl border border-red-100 bg-red-50/40 p-6"
+          >
+            <div className="flex items-center gap-2 mb-5">
+              <div className="flex size-7 items-center justify-center rounded-lg bg-red-100">
+                <X className="size-3.5 text-red-500" />
+              </div>
+              <h3 className="text-sm font-bold text-zinc-900">Before BookMyTime</h3>
+            </div>
+            <ul className="space-y-3">
+              {before.map((item, i) => (
+                <motion.li
+                  key={item}
+                  initial={{ opacity: 0, x: -12 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.06 }}
+                  className="flex items-center gap-3 text-sm text-zinc-600"
+                >
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-500 text-[10px] font-bold">✕</span>
+                  {item}
+                </motion.li>
+              ))}
+            </ul>
+          </motion.div>
+
+          {/* After */}
+          <motion.div
+            initial={{ opacity: 0, x: 24 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.1 }}
+            className="rounded-2xl p-6 relative overflow-hidden"
+            style={{ background: "linear-gradient(135deg, rgba(0,89,198,0.06) 0%, rgba(13,131,255,0.04) 100%)", border: "1px solid rgba(0,89,198,0.15)" }}
+          >
+            <div className="pointer-events-none absolute -top-8 -right-8 w-32 h-32 rounded-full blur-2xl" style={{ background: "rgba(13,131,255,0.1)" }} />
+            <div className="flex items-center gap-2 mb-5">
+              <div className="flex size-7 items-center justify-center rounded-lg" style={{ background: "rgba(0,89,198,0.1)" }}>
+                <Check className="size-3.5" style={{ color: "#0059C6" }} />
+              </div>
+              <h3 className="text-sm font-bold text-zinc-900">After BookMyTime</h3>
+            </div>
+            <ul className="space-y-3">
+              {after.map((item, i) => (
+                <motion.li
+                  key={item}
+                  initial={{ opacity: 0, x: 12 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 + i * 0.06 }}
+                  className="flex items-center gap-3 text-sm text-zinc-700"
+                >
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full text-white text-[10px]"
+                    style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}>✓</span>
+                  <span className="font-medium">{item}</span>
+                </motion.li>
+              ))}
+            </ul>
+          </motion.div>
+
+        </div>
+
+        {/* Bottom arrow connector */}
+        <motion.div
+          initial={{ opacity: 0, scaleX: 0 }} whileInView={{ opacity: 1, scaleX: 1 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.3 }}
+          className="hidden md:flex items-center justify-center mt-6 gap-3"
+        >
+          <div className="h-px flex-1 max-w-[160px]" style={{ background: "linear-gradient(90deg, transparent, #ef4444)" }} />
+          <div className="flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold text-white"
+            style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}>
+            <ArrowRight className="size-3.5" /> Switch to BookMyTime
+          </div>
+          <div className="h-px flex-1 max-w-[160px]" style={{ background: "linear-gradient(90deg, #0059C6, transparent)" }} />
+        </motion.div>
+      </div>
+    </section>
   );
 }
 

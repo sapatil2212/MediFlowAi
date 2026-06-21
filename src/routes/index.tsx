@@ -7,11 +7,13 @@ import {
   LogosMarquee,
   Stats,
   BenefitsSection,
-  FeatureTabs,
+  BeforeAfter,
   AIFlowSection,
   SpecialtiesSection,
   Testimonials,
   CTA,
+  QRShowcase,
+  WhatsAppSection,
 } from "@/components/site/sections";
 
 export const Route = createFileRoute("/")({
@@ -45,8 +47,10 @@ function LandingPage() {
       <LogosMarquee />
       <Stats />
       <BenefitsSection />
+      <BeforeAfter />
       <HowItWorks />
-      <FeatureTabs />
+      <QRShowcase />
+      <WhatsAppSection />
       <AIFlowSection />
       <SpecialtiesSection />
       <Testimonials />

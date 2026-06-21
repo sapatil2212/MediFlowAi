@@ -4,7 +4,8 @@
  * This file is safe to import in TanStack/Vite SSR — no Puppeteer, no CJS globals.
  */
 
-const WA_BASE = "http://127.0.0.1:3001";
+const WA_PORT = (typeof process !== "undefined" && process.env?.WA_PORT) || "3001";
+const WA_BASE = `http://127.0.0.1:${WA_PORT}`;
 
 export interface WASentLog {
   timestamp: string;

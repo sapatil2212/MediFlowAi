@@ -23,6 +23,11 @@ import { Route as CustomersRouteImport } from './routes/customers'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashboardsProfessionalRouteImport } from './routes/dashboards/professional'
+import { Route as DashboardsMedicalRouteImport } from './routes/dashboards/medical'
+import { Route as DashboardsGymRouteImport } from './routes/dashboards/gym'
+import { Route as DashboardsEducationRouteImport } from './routes/dashboards/education'
+import { Route as DashboardsBeautyRouteImport } from './routes/dashboards/beauty'
 import { Route as BookTenantIdRouteImport } from './routes/book.$tenantId'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
@@ -97,6 +102,31 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardsProfessionalRoute = DashboardsProfessionalRouteImport.update({
+  id: '/dashboards/professional',
+  path: '/dashboards/professional',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardsMedicalRoute = DashboardsMedicalRouteImport.update({
+  id: '/dashboards/medical',
+  path: '/dashboards/medical',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardsGymRoute = DashboardsGymRouteImport.update({
+  id: '/dashboards/gym',
+  path: '/dashboards/gym',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardsEducationRoute = DashboardsEducationRouteImport.update({
+  id: '/dashboards/education',
+  path: '/dashboards/education',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardsBeautyRoute = DashboardsBeautyRouteImport.update({
+  id: '/dashboards/beauty',
+  path: '/dashboards/beauty',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BookTenantIdRoute = BookTenantIdRouteImport.update({
   id: '/book/$tenantId',
   path: '/book/$tenantId',
@@ -131,6 +161,11 @@ export interface FileRoutesByFullPath {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
+  '/dashboards/beauty': typeof DashboardsBeautyRoute
+  '/dashboards/education': typeof DashboardsEducationRoute
+  '/dashboards/gym': typeof DashboardsGymRoute
+  '/dashboards/medical': typeof DashboardsMedicalRoute
+  '/dashboards/professional': typeof DashboardsProfessionalRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -150,6 +185,11 @@ export interface FileRoutesByTo {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
+  '/dashboards/beauty': typeof DashboardsBeautyRoute
+  '/dashboards/education': typeof DashboardsEducationRoute
+  '/dashboards/gym': typeof DashboardsGymRoute
+  '/dashboards/medical': typeof DashboardsMedicalRoute
+  '/dashboards/professional': typeof DashboardsProfessionalRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -170,6 +210,11 @@ export interface FileRoutesById {
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
+  '/dashboards/beauty': typeof DashboardsBeautyRoute
+  '/dashboards/education': typeof DashboardsEducationRoute
+  '/dashboards/gym': typeof DashboardsGymRoute
+  '/dashboards/medical': typeof DashboardsMedicalRoute
+  '/dashboards/professional': typeof DashboardsProfessionalRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -191,6 +236,11 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
+    | '/dashboards/beauty'
+    | '/dashboards/education'
+    | '/dashboards/gym'
+    | '/dashboards/medical'
+    | '/dashboards/professional'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -210,6 +260,11 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
+    | '/dashboards/beauty'
+    | '/dashboards/education'
+    | '/dashboards/gym'
+    | '/dashboards/medical'
+    | '/dashboards/professional'
   id:
     | '__root__'
     | '/'
@@ -229,6 +284,11 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
+    | '/dashboards/beauty'
+    | '/dashboards/education'
+    | '/dashboards/gym'
+    | '/dashboards/medical'
+    | '/dashboards/professional'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -249,6 +309,11 @@ export interface RootRouteChildren {
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminLoginRoute: typeof AdminLoginRoute
   BookTenantIdRoute: typeof BookTenantIdRoute
+  DashboardsBeautyRoute: typeof DashboardsBeautyRoute
+  DashboardsEducationRoute: typeof DashboardsEducationRoute
+  DashboardsGymRoute: typeof DashboardsGymRoute
+  DashboardsMedicalRoute: typeof DashboardsMedicalRoute
+  DashboardsProfessionalRoute: typeof DashboardsProfessionalRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -351,6 +416,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboards/professional': {
+      id: '/dashboards/professional'
+      path: '/dashboards/professional'
+      fullPath: '/dashboards/professional'
+      preLoaderRoute: typeof DashboardsProfessionalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboards/medical': {
+      id: '/dashboards/medical'
+      path: '/dashboards/medical'
+      fullPath: '/dashboards/medical'
+      preLoaderRoute: typeof DashboardsMedicalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboards/gym': {
+      id: '/dashboards/gym'
+      path: '/dashboards/gym'
+      fullPath: '/dashboards/gym'
+      preLoaderRoute: typeof DashboardsGymRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboards/education': {
+      id: '/dashboards/education'
+      path: '/dashboards/education'
+      fullPath: '/dashboards/education'
+      preLoaderRoute: typeof DashboardsEducationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboards/beauty': {
+      id: '/dashboards/beauty'
+      path: '/dashboards/beauty'
+      fullPath: '/dashboards/beauty'
+      preLoaderRoute: typeof DashboardsBeautyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/book/$tenantId': {
       id: '/book/$tenantId'
       path: '/book/$tenantId'
@@ -393,6 +493,11 @@ const rootRouteChildren: RootRouteChildren = {
   AdminDashboardRoute: AdminDashboardRoute,
   AdminLoginRoute: AdminLoginRoute,
   BookTenantIdRoute: BookTenantIdRoute,
+  DashboardsBeautyRoute: DashboardsBeautyRoute,
+  DashboardsEducationRoute: DashboardsEducationRoute,
+  DashboardsGymRoute: DashboardsGymRoute,
+  DashboardsMedicalRoute: DashboardsMedicalRoute,
+  DashboardsProfessionalRoute: DashboardsProfessionalRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

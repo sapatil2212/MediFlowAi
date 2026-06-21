@@ -9,7 +9,7 @@ export async function verifySession() {
     const session = await queryOne<any>(
       `SELECT s.id as sessionId, s.userId, s.token, s.expiresAt,
               u.id as uid, u.name, u.email, u.phone, u.clinicName, u.practiceSize, u.tenantId,
-              u.subscriptionStatus, u.subscriptionPlan, u.subscriptionExpiresAt, u.paymentAmount, u.billingInterval, u.paymentMethod, u.createdAt as uCreatedAt, u.profilePhoto
+              u.subscriptionStatus, u.subscriptionPlan, u.subscriptionExpiresAt, u.paymentAmount, u.billingInterval, u.paymentMethod, u.createdAt as uCreatedAt, u.profilePhoto, u.profession
        FROM Session s
        JOIN User u ON s.userId = u.id
        WHERE s.token = ? AND s.expiresAt > ?
@@ -34,6 +34,7 @@ export async function verifySession() {
         createdAt: session.uCreatedAt instanceof Date ? session.uCreatedAt.toISOString() : session.uCreatedAt,
         profilePhoto: session.profilePhoto || null,
         role: "admin" as const,
+        profession: session.profession || "Healthcare and medical",
       };
     }
   }
@@ -44,7 +45,7 @@ export async function verifySession() {
     const subSession = await queryOne<any>(
       `SELECT ss.id as sessionId, ss.subUserId, ss.token, ss.expiresAt,
               su.id as uid, su.name, su.email, su.phone, su.role, su.tenantId, su.isActive, su.doctorId,
-              u.clinicName, u.practiceSize,
+              u.clinicName, u.practiceSize, u.profession,
               u.subscriptionStatus, u.subscriptionPlan, u.subscriptionExpiresAt,
               u.paymentAmount, u.billingInterval, u.paymentMethod, u.createdAt as uCreatedAt
        FROM SubUserSession ss
@@ -72,6 +73,7 @@ export async function verifySession() {
         createdAt: subSession.uCreatedAt instanceof Date ? subSession.uCreatedAt.toISOString() : subSession.uCreatedAt,
         role: subSession.role as "reception" | "doctor",
         doctorId: subSession.doctorId,
+        profession: subSession.profession || "Healthcare and medical",
       };
     }
   }

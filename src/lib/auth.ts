@@ -122,6 +122,7 @@ export const signupServerFn = createServerFn({ method: "POST" })
     practiceSize: string;
     password?: string;
     plan?: string;
+    profession?: string;
   }) => {
     if (!data.name || !data.phone || !data.email || !data.clinicName || !data.practiceSize) {
       throw new Error("Required fields missing");
@@ -129,26 +130,45 @@ export const signupServerFn = createServerFn({ method: "POST" })
     return data;
   })
   .handler(async ({ data }) => {
-    // Check if user already exists
-    const existingUser = await queryOne<any>(
-      "SELECT id FROM User WHERE email = ? OR phone = ? LIMIT 1",
-      [data.email, data.phone]
+    // Check if email already exists
+    const existingEmail = await queryOne<any>(
+      "SELECT id FROM User WHERE email = ? LIMIT 1",
+      [data.email]
     );
+    if (existingEmail) {
+      throw new Error("Email already registered");
+    }
 
-    if (existingUser) {
-      throw new Error("A user with this email or phone number already exists");
+    // Check if phone number already exists
+    const existingPhone = await queryOne<any>(
+      "SELECT id FROM User WHERE phone = ? LIMIT 1",
+      [data.phone]
+    );
+    if (existingPhone) {
+      throw new Error("Phone number already registered");
     }
 
     const rawPassword = data.password || "MediFlow123";
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
     const userId = generateId();
-    const tenantId = "clinic-" + Math.floor(100000 + Math.random() * 900000).toString();
+    const profession = data.profession || "Healthcare and medical";
+    let tenantPrefix = "clinic-";
+    if (profession === "Fitness Gym etc") {
+      tenantPrefix = "gym-";
+    } else if (profession === "Beauty and wellness") {
+      tenantPrefix = "beauty-";
+    } else if (profession === "Professional services like law, consultant, real estate, CA") {
+      tenantPrefix = "advisory-";
+    } else if (profession === "Education institutions") {
+      tenantPrefix = "edu-";
+    }
+    const tenantId = tenantPrefix + Math.floor(100000 + Math.random() * 900000).toString();
     const selectedPlan = data.plan || "Solo";
 
     await execute(
-      `INSERT INTO User (id, tenantId, name, email, phone, clinicName, practiceSize, password, subscriptionPlan, subscriptionExpiresAt, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 14 DAY), NOW(), NOW())`,
-      [userId, tenantId, data.name, data.email, data.phone, data.clinicName, data.practiceSize, hashedPassword, selectedPlan]
+      `INSERT INTO User (id, tenantId, name, email, phone, clinicName, practiceSize, password, subscriptionPlan, subscriptionExpiresAt, createdAt, updatedAt, profession)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 14 DAY), NOW(), NOW(), ?)`,
+      [userId, tenantId, data.name, data.email, data.phone, data.clinicName, data.practiceSize, hashedPassword, selectedPlan, profession]
     );
 
     // Log initial trialing subscription log
@@ -368,7 +388,21 @@ export const getClinicProfileServerFn = createServerFn({ method: "GET" })
   });
 
 export const updateProfileServerFn = createServerFn({ method: "POST" })
-  .validator((data: { name: string; phone: string; clinicName: string; practiceSize: string }) => {
+  .validator((data: { 
+    name: string; 
+    phone: string; 
+    clinicName: string; 
+    practiceSize: string; 
+    address?: string;
+    contactDetails?: string;
+    shortDescription?: string;
+    services?: string;
+    email?: string;
+    contactNo?: string;
+    whatsappNo?: string;
+    landlineNo?: string;
+    profession?: string;
+  }) => {
     if (!data.name || !data.phone || !data.clinicName || !data.practiceSize) {
       throw new Error("Required fields missing");
     }
@@ -378,11 +412,22 @@ export const updateProfileServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
+    // Check if phone number is already registered under another account
+    const existingPhoneUser = await queryOne<any>(
+      "SELECT id FROM User WHERE phone = ? AND id != ? LIMIT 1",
+      [data.phone, user.id]
+    );
+    if (existingPhoneUser) {
+      throw new Error("This phone number is already registered under another account.");
+    }
+
+    const profession = data.profession || "Healthcare and medical";
+
     // Save/update ClinicProfile
     await execute(
-      `INSERT INTO ClinicProfile (id, tenantId, clinicName, clinicianName, phone, practiceSize)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE clinicName = ?, clinicianName = ?, phone = ?, practiceSize = ?`,
+      `INSERT INTO ClinicProfile (id, tenantId, clinicName, clinicianName, phone, practiceSize, address, contactDetails, shortDescription, services, email, contactNo, whatsappNo, landlineNo, profession)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE clinicName = ?, clinicianName = ?, phone = ?, practiceSize = ?, address = ?, contactDetails = ?, shortDescription = ?, services = ?, email = ?, contactNo = ?, whatsappNo = ?, landlineNo = ?, profession = ?`,
       [
         generateId(),
         user.tenantId,
@@ -390,17 +435,35 @@ export const updateProfileServerFn = createServerFn({ method: "POST" })
         data.name,
         data.phone,
         data.practiceSize,
+        data.address || null,
+        data.contactDetails || null,
+        data.shortDescription || null,
+        data.services || null,
+        data.email || null,
+        data.contactNo || null,
+        data.whatsappNo || null,
+        data.landlineNo || null,
+        profession,
         data.clinicName,
         data.name,
         data.phone,
-        data.practiceSize
+        data.practiceSize,
+        data.address || null,
+        data.contactDetails || null,
+        data.shortDescription || null,
+        data.services || null,
+        data.email || null,
+        data.contactNo || null,
+        data.whatsappNo || null,
+        data.landlineNo || null,
+        profession
       ]
     );
 
     // Sync to User table for session/compatibility
     await execute(
-      `UPDATE User SET name = ?, phone = ?, clinicName = ?, practiceSize = ?, updatedAt = NOW() WHERE id = ?`,
-      [data.name, data.phone, data.clinicName, data.practiceSize, user.id]
+      `UPDATE User SET name = ?, phone = ?, clinicName = ?, practiceSize = ?, profession = ?, updatedAt = NOW() WHERE id = ?`,
+      [data.name, data.phone, data.clinicName, data.practiceSize, profession, user.id]
     );
 
     return { success: true };
@@ -855,7 +918,18 @@ export const getDoctorsServerFn = createServerFn({ method: "GET" })
   });
 
 export const saveDoctorServerFn = createServerFn({ method: "POST" })
-  .validator((data: { id?: string; name: string; email: string; phone: string; qualifications: string; departmentId: string }) => {
+  .validator((data: {
+    id?: string;
+    name: string;
+    email: string;
+    phone: string;
+    qualifications: string;
+    departmentId: string;
+    designation?: string;
+    employeeId?: string;
+    joiningDate?: string;
+    subjectsTaught?: string;
+  }) => {
     if (!data.name || !data.email || !data.phone || !data.qualifications || !data.departmentId) {
       throw new Error("Missing required fields");
     }
@@ -880,17 +954,41 @@ export const saveDoctorServerFn = createServerFn({ method: "POST" })
 
     if (data.id) {
       await execute(
-        `UPDATE Doctor SET name = ?, email = ?, phone = ?, qualifications = ?, departmentId = ?
+        `UPDATE Doctor SET name = ?, email = ?, phone = ?, qualifications = ?, departmentId = ?, designation = ?, employeeId = ?, joiningDate = ?, subjectsTaught = ?
          WHERE id = ? AND tenantId = ?`,
-        [data.name, data.email, data.phone, data.qualifications, data.departmentId, data.id, user.tenantId]
+        [
+          data.name,
+          data.email,
+          data.phone,
+          data.qualifications,
+          data.departmentId,
+          data.designation || null,
+          data.employeeId || null,
+          data.joiningDate || null,
+          data.subjectsTaught || null,
+          data.id,
+          user.tenantId
+        ]
       );
       return { success: true, doctorId: data.id };
     } else {
       const id = crypto.randomUUID();
       await execute(
-        `INSERT INTO Doctor (id, tenantId, name, email, phone, qualifications, departmentId)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, user.tenantId, data.name, data.email, data.phone, data.qualifications, data.departmentId]
+        `INSERT INTO Doctor (id, tenantId, name, email, phone, qualifications, departmentId, designation, employeeId, joiningDate, subjectsTaught)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          user.tenantId,
+          data.name,
+          data.email,
+          data.phone,
+          data.qualifications,
+          data.departmentId,
+          data.designation || null,
+          data.employeeId || null,
+          data.joiningDate || null,
+          data.subjectsTaught || null
+        ]
       );
       return { success: true, doctorId: id };
     }
@@ -2190,8 +2288,8 @@ export const subUserLoginServerFn = createServerFn({ method: "POST" })
 export const getWATemplatesServerFn = createServerFn({ method: "GET" })
   .handler(async () => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
-    return query("SELECT * FROM WATemplate WHERE tenantId = ? ORDER BY createdAt DESC", [user.id]);
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    return query("SELECT * FROM WATemplate WHERE tenantId = ? ORDER BY createdAt DESC", [user.tenantId]);
   });
 
 export const saveWATemplateServerFn = createServerFn({ method: "POST" })
@@ -2210,7 +2308,7 @@ export const saveWATemplateServerFn = createServerFn({ method: "POST" })
   }) => data)
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
     
     const id = data.id || crypto.randomUUID();
     const ctaJson = data.ctaButtons ? JSON.stringify(data.ctaButtons) : null;
@@ -2225,7 +2323,7 @@ export const saveWATemplateServerFn = createServerFn({ method: "POST" })
          WHERE id = ? AND tenantId = ?`,
         [
           data.name, data.category, data.headerType, data.headerText || null, data.headerImageUrl || null,
-          data.bodyText, data.footerText || null, ctaJson, qrJson, varsJson, id, user.id
+          data.bodyText, data.footerText || null, ctaJson, qrJson, varsJson, id, user.tenantId
         ]
       );
     } else {
@@ -2235,7 +2333,7 @@ export const saveWATemplateServerFn = createServerFn({ method: "POST" })
           bodyText, footerText, ctaButtons, quickReplyButtons, variables
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          id, user.id, data.name, data.category, data.headerType, data.headerText || null, data.headerImageUrl || null,
+          id, user.tenantId, data.name, data.category, data.headerType, data.headerText || null, data.headerImageUrl || null,
           data.bodyText, data.footerText || null, ctaJson, qrJson, varsJson
         ]
       );
@@ -2247,21 +2345,21 @@ export const deleteWATemplateServerFn = createServerFn({ method: "POST" })
   .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
-    await execute("DELETE FROM WATemplate WHERE id = ? AND tenantId = ?", [id, user.id]);
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    await execute("DELETE FROM WATemplate WHERE id = ? AND tenantId = ?", [id, user.tenantId]);
     return { success: true };
   });
 
 export const getWACampaignsServerFn = createServerFn({ method: "GET" })
   .handler(async () => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
     return query(`
       SELECT c.*, t.name as templateName 
       FROM WACampaign c
       LEFT JOIN WATemplate t ON c.templateId = t.id
       WHERE c.tenantId = ? ORDER BY c.createdAt DESC
-    `, [user.id]);
+    `, [user.tenantId]);
   });
 
 export const createWACampaignServerFn = createServerFn({ method: "POST" })
@@ -2275,7 +2373,7 @@ export const createWACampaignServerFn = createServerFn({ method: "POST" })
   }) => data)
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     const campaignId = crypto.randomUUID();
     
@@ -2283,7 +2381,7 @@ export const createWACampaignServerFn = createServerFn({ method: "POST" })
       `INSERT INTO WACampaign (
         id, tenantId, name, templateId, status, totalRecipients, sentCount, failedCount, minDelaySec, maxDelaySec, dailyLimit
        ) VALUES (?, ?, ?, ?, 'draft', ?, 0, 0, ?, ?, ?)`,
-      [campaignId, user.id, data.name, data.templateId, data.recipients.length, data.minDelaySec, data.maxDelaySec, data.dailyLimit]
+      [campaignId, user.tenantId, data.name, data.templateId, data.recipients.length, data.minDelaySec, data.maxDelaySec, data.dailyLimit]
     );
 
     for (const r of data.recipients) {
@@ -2302,11 +2400,11 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
   .validator((campaignId: string) => campaignId)
   .handler(async ({ data: campaignId }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     const campaign = await queryOne<any>(
       "SELECT * FROM WACampaign WHERE id = ? AND tenantId = ?",
-      [campaignId, user.id]
+      [campaignId, user.tenantId]
     );
     if (!campaign) throw new Error("Campaign not found");
 
@@ -2314,7 +2412,7 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
     if (campaign.templateId) {
       template = await queryOne<any>(
         "SELECT * FROM WATemplate WHERE id = ? AND tenantId = ?",
-        [campaign.templateId, user.id]
+        [campaign.templateId, user.tenantId]
       );
     }
 
@@ -2330,7 +2428,6 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
     const messages = [];
     for (const r of recipients) {
       let body = template ? template.bodyText : "Hello";
-      const headerUrl = template?.headerImageUrl || null;
       
       if (r.variables) {
         const variablesObj = typeof r.variables === "string" ? JSON.parse(r.variables) : r.variables;
@@ -2342,6 +2439,45 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
         }
       }
 
+      if (template && template.headerType === "text" && template.headerText) {
+        body = `*${template.headerText}*\n\n` + body;
+      }
+
+      if (template && template.footerText) {
+        body = body + `\n\n_${template.footerText}_`;
+      }
+
+      if (template && template.ctaButtons) {
+        try {
+          const ctas = typeof template.ctaButtons === "string" ? JSON.parse(template.ctaButtons) : template.ctaButtons;
+          if (Array.isArray(ctas) && ctas.length > 0) {
+            body += "\n\n-------------------";
+            for (const btn of ctas) {
+              if (btn.type === "url") {
+                body += `\n🔗 *${btn.label}*: ${btn.value}`;
+              } else if (btn.type === "phone") {
+                body += `\n📞 *${btn.label}*: ${btn.value}`;
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Failed to parse ctaButtons in campaign send:", e);
+        }
+      }
+
+      if (template && template.quickReplyButtons) {
+        try {
+          const qrs = typeof template.quickReplyButtons === "string" ? JSON.parse(template.quickReplyButtons) : template.quickReplyButtons;
+          if (Array.isArray(qrs) && qrs.length > 0) {
+            body += `\n\n💡 *Replies*: ` + qrs.map((q: string) => `"${q}"`).join(" | ");
+          }
+        } catch (e) {
+          console.error("Failed to parse quickReplyButtons in campaign send:", e);
+        }
+      }
+
+      const headerUrl = template?.headerImageUrl || null;
+
       messages.push({
         recipientId: r.id,
         phone: r.phone,
@@ -2351,7 +2487,7 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
     }
 
     await enqueueWABulk(
-      user.id,
+      user.tenantId,
       campaignId,
       messages,
       campaign.minDelaySec,
@@ -2365,9 +2501,9 @@ export const pauseWACampaignServerFn = createServerFn({ method: "POST" })
   .validator((campaignId: string) => campaignId)
   .handler(async ({ data: campaignId }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    await pauseWACampaign(user.id, campaignId);
+    await pauseWACampaign(user.tenantId, campaignId);
     return { success: true };
   });
 
@@ -2375,14 +2511,20 @@ export const deleteWACampaignServerFn = createServerFn({ method: "POST" })
   .validator((campaignId: string) => campaignId)
   .handler(async ({ data: campaignId }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     try {
-      await pauseWACampaign(user.id, campaignId);
+      await pauseWACampaign(user.tenantId, campaignId);
     } catch (_) {}
 
+    const campaign = await queryOne<any>(
+      "SELECT id FROM WACampaign WHERE id = ? AND tenantId = ? LIMIT 1",
+      [campaignId, user.tenantId]
+    );
+    if (!campaign) throw new Error("Campaign not found or unauthorized");
+
     await execute("DELETE FROM WACampaignRecipient WHERE campaignId = ?", [campaignId]);
-    await execute("DELETE FROM WACampaign WHERE id = ? AND tenantId = ?", [campaignId, user.id]);
+    await execute("DELETE FROM WACampaign WHERE id = ? AND tenantId = ?", [campaignId, user.tenantId]);
 
     return { success: true };
   });
@@ -2391,16 +2533,22 @@ export const getCampaignRecipientsServerFn = createServerFn({ method: "GET" })
   .validator((campaignId: string) => campaignId)
   .handler(async ({ data: campaignId }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
     
+    const campaign = await queryOne<any>(
+      "SELECT id FROM WACampaign WHERE id = ? AND tenantId = ? LIMIT 1",
+      [campaignId, user.tenantId]
+    );
+    if (!campaign) throw new Error("Campaign not found or unauthorized");
+
     return query("SELECT * FROM WACampaignRecipient WHERE campaignId = ?", [campaignId]);
   });
 
 export const getWAAutoRepliesServerFn = createServerFn({ method: "GET" })
   .handler(async () => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
-    return query("SELECT * FROM WAAutoReply WHERE tenantId = ? ORDER BY priority DESC, createdAt DESC", [user.id]);
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    return query("SELECT * FROM WAAutoReply WHERE tenantId = ? ORDER BY priority DESC, createdAt DESC", [user.tenantId]);
   });
 
 export const saveWAAutoReplyServerFn = createServerFn({ method: "POST" })
@@ -2414,20 +2562,20 @@ export const saveWAAutoReplyServerFn = createServerFn({ method: "POST" })
   }) => data)
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     const id = data.id || crypto.randomUUID();
     if (data.id) {
       await execute(
         `UPDATE WAAutoReply SET triggerKeyword = ?, matchType = ?, replyMessage = ?, isActive = ?, priority = ? 
          WHERE id = ? AND tenantId = ?`,
-        [data.triggerKeyword, data.matchType, data.replyMessage, data.isActive, data.priority, id, user.id]
+        [data.triggerKeyword, data.matchType, data.replyMessage, data.isActive, data.priority, id, user.tenantId]
       );
     } else {
       await execute(
         `INSERT INTO WAAutoReply (id, tenantId, triggerKeyword, matchType, replyMessage, isActive, priority) 
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, user.id, data.triggerKeyword, data.matchType, data.replyMessage, data.isActive, data.priority]
+        [id, user.tenantId, data.triggerKeyword, data.matchType, data.replyMessage, data.isActive, data.priority]
       );
     }
     return { success: true, id };
@@ -2437,8 +2585,8 @@ export const deleteWAAutoReplyServerFn = createServerFn({ method: "POST" })
   .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
-    await execute("DELETE FROM WAAutoReply WHERE id = ? AND tenantId = ?", [id, user.id]);
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    await execute("DELETE FROM WAAutoReply WHERE id = ? AND tenantId = ?", [id, user.tenantId]);
     return { success: true };
   });
 
@@ -2451,7 +2599,7 @@ export const sendBulkWAServerFn = createServerFn({ method: "POST" })
   }) => data)
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     const formattedMessages = data.numbers.map((num) => ({
       recipientId: crypto.randomUUID(),
@@ -2459,23 +2607,23 @@ export const sendBulkWAServerFn = createServerFn({ method: "POST" })
       body: data.message
     }));
 
-    await enqueueWABulk(user.id, null, formattedMessages, data.minDelay, data.maxDelay);
+    await enqueueWABulk(user.tenantId, null, formattedMessages, data.minDelay, data.maxDelay);
     return { success: true, count: formattedMessages.length };
   });
 
 export const getWACampaignStatsServerFn = createServerFn({ method: "GET" })
   .handler(async () => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     const totalCampaignsResult = await queryOne<any>(
-      "SELECT COUNT(*) as count FROM WACampaign WHERE tenantId = ?", [user.id]
+      "SELECT COUNT(*) as count FROM WACampaign WHERE tenantId = ?", [user.tenantId]
     );
     const totalSentResult = await queryOne<any>(
-      "SELECT SUM(sentCount) as sent, SUM(failedCount) as failed FROM WACampaign WHERE tenantId = ?", [user.id]
+      "SELECT SUM(sentCount) as sent, SUM(failedCount) as failed FROM WACampaign WHERE tenantId = ?", [user.tenantId]
     );
     const activeRulesResult = await queryOne<any>(
-      "SELECT COUNT(*) as count FROM WAAutoReply WHERE tenantId = ? AND isActive = 1", [user.id]
+      "SELECT COUNT(*) as count FROM WAAutoReply WHERE tenantId = ? AND isActive = 1", [user.tenantId]
     );
 
     return {
@@ -2493,7 +2641,7 @@ export const uploadWATemplateHeaderImageServerFn = createServerFn({ method: "POS
   })
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     const cloudinary = await import("cloudinary");
     const cloud = cloudinary.v2;
@@ -2504,9 +2652,220 @@ export const uploadWATemplateHeaderImageServerFn = createServerFn({ method: "POS
     });
 
     const result = await cloud.uploader.upload(data.base64, {
-      folder: `mediflow/whatsapp_templates/${user.id}`,
+      folder: `mediflow/whatsapp_templates/${user.tenantId}`,
       overwrite: true,
     });
 
     return { success: true, url: result.secure_url };
+  });
+
+export const generateWATemplateServerFn = createServerFn({ method: "POST" })
+  .validator((data: { prompt: string }) => {
+    if (!data.prompt) throw new Error("Prompt is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      throw new Error("OpenRouter API key is not configured in .env file.");
+    }
+
+    const aiPrompt = `You are a professional copywriting assistant specialized in creating WhatsApp Business message templates.
+Based on the user's description, create a highly engaging and context-appropriate WhatsApp template.
+User prompt/request: "${data.prompt}"
+
+Provide the response in raw JSON format with the following keys:
+- name: A URL-safe, snake_case, lowercase template name (maximum 30 characters, no spaces, e.g. "appointment_followup").
+- category: One of "marketing", "utility", "greeting", "followup".
+- headerType: One of "none", "text", "image" (default to "none" unless explicitly requested).
+- headerText: Header text if headerType is "text", else null or empty.
+- bodyText: The main message body text. Use variables like {{1}}, {{2}}, {{3}} for placeholders (e.g., patient name, appointment time, clinic name). Be clear and concise.
+- footerText: Small footer text (e.g. "Reply STOP to unsubscribe" or "HealthSync AI Automated").
+- ctaButtons: A JSON array of call-to-action buttons (maximum 2). Each button should have:
+  - type: either "url" or "phone"
+  - label: button text (e.g. "Visit Website", "Call Clinic")
+  - value: URL string (starting with https://) or phone number
+  If no buttons are appropriate, return an empty array [].
+- quickReplyButtons: A JSON array of quick reply button labels (maximum 3, e.g. ["Confirm Slot", "Reschedule"]). If none, return [].
+
+Only return a valid JSON object matching this structure. Do not wrap the JSON in markdown code blocks or add any other text outside the JSON object.`;
+
+    try {
+    const modelsToTry = [
+      "google/gemini-2.5-flash",
+      "openrouter/free",
+      "deepseek/deepseek-r1:free",
+      "meta-llama/llama-3.3-70b-instruct:free",
+      "qwen/qwen-2.5-72b-instruct:free"
+    ];
+
+    let response: any = null;
+    let resJson: any = null;
+    let lastError: Error | null = null;
+
+    for (let i = 0; i < modelsToTry.length; i++) {
+      const model = modelsToTry[i];
+      try {
+        if (i > 0) {
+          console.warn(`[AI Template Copilot] Trying fallback model: ${model}`);
+        }
+        const currentResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8080",
+            "X-Title": "HealthSync AI"
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              { role: "system", content: "You are a professional copywriting assistant that outputs only clean JSON." },
+              { role: "user", content: aiPrompt }
+            ],
+            response_format: { type: "json_object" },
+            max_tokens: 1000
+          })
+        });
+
+        if (currentResponse.ok) {
+          const bodyJson = await currentResponse.clone().json();
+          if (bodyJson.error) {
+            throw new Error(bodyJson.error.message || JSON.stringify(bodyJson.error));
+          }
+          response = currentResponse;
+          resJson = bodyJson;
+          break;
+        } else {
+          let errMsg = `Status ${currentResponse.status} ${currentResponse.statusText}`;
+          try {
+            const errJson = await currentResponse.clone().json();
+            if (errJson?.error?.message) {
+              errMsg = errJson.error.message;
+            }
+          } catch (_) {}
+          throw new Error(errMsg);
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[AI Template Copilot] Model ${model} failed:`, err.message);
+      }
+    }
+
+    if (!response || !resJson) {
+      throw lastError || new Error("Failed to generate template via AI with all available models.");
+    }
+      const content = resJson.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error("Empty response from AI model.");
+      }
+
+      const generated = JSON.parse(content.trim());
+      return {
+        success: true,
+        template: {
+          name: generated.name || "custom_template",
+          category: generated.category || "utility",
+          headerType: generated.headerType || "none",
+          headerText: generated.headerText || null,
+          bodyText: generated.bodyText || "",
+          footerText: generated.footerText || null,
+          ctaButtons: Array.isArray(generated.ctaButtons) ? generated.ctaButtons : [],
+          quickReplyButtons: Array.isArray(generated.quickReplyButtons) ? generated.quickReplyButtons : [],
+        }
+      };
+    } catch (e: any) {
+      console.error("Failed to generate WhatsApp template via AI:", e);
+      throw new Error(e.message || "Failed to generate template via AI.");
+    }
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI SMART REPLY SERVER FUNCTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getWAAIStatusServerFn = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const config = await queryOne<any>(
+      "SELECT aiEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1",
+      [user.tenantId]
+    );
+    return { aiEnabled: config?.aiEnabled === 1 || config?.aiEnabled === "1" };
+  });
+
+export const toggleWAAIReplyServerFn = createServerFn({ method: "POST" })
+  .validator((data: { enable: boolean }) => data)
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    // Upsert the WhatsAppConfig row
+    const existing = await queryOne<any>(
+      "SELECT id FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1",
+      [user.tenantId]
+    );
+    if (existing) {
+      await execute(
+        "UPDATE WhatsAppConfig SET aiEnabled = ? WHERE tenantId = ?",
+        [data.enable ? 1 : 0, user.tenantId]
+      );
+    } else {
+      await execute(
+        "INSERT INTO WhatsAppConfig (id, tenantId, isEnabled, aiEnabled) VALUES (?, ?, 0, ?)",
+        [crypto.randomUUID(), user.tenantId, data.enable ? 1 : 0]
+      );
+    }
+    return { success: true, aiEnabled: data.enable };
+  });
+
+export const getWAConversationsServerFn = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    // Get distinct senders with the latest message snippet per sender
+    const rows = await query<any>(
+      `SELECT 
+        senderPhone,
+        MAX(senderName) as senderName,
+        MAX(createdAt) as lastActivity,
+        COUNT(*) as messageCount,
+        SUBSTRING(
+          (SELECT message FROM WAConversation c2 
+           WHERE c2.senderPhone = c.senderPhone 
+             AND c2.tenantId = c.tenantId 
+           ORDER BY c2.createdAt DESC LIMIT 1),
+          1, 100
+        ) as lastMessage,
+        (SELECT direction FROM WAConversation c3 
+         WHERE c3.senderPhone = c.senderPhone 
+           AND c3.tenantId = c.tenantId 
+         ORDER BY c3.createdAt DESC LIMIT 1) as lastDirection
+      FROM WAConversation c
+      WHERE tenantId = ?
+      GROUP BY senderPhone
+      ORDER BY lastActivity DESC
+      LIMIT 50`,
+      [user.tenantId]
+    );
+    return rows;
+  });
+
+export const getWAConversationHistoryServerFn = createServerFn({ method: "POST" })
+  .validator((data: { phone: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const rows = await query<any>(
+      `SELECT id, senderPhone, senderName, direction, message, createdAt
+       FROM WAConversation
+       WHERE tenantId = ? AND senderPhone = ?
+       ORDER BY createdAt ASC
+       LIMIT 200`,
+      [user.tenantId, data.phone]
+    );
+    return rows;
   });

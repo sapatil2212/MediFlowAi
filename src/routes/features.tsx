@@ -3,8 +3,6 @@ import { Nav } from "@/components/site/Nav";
 import { SiteShell } from "@/components/site/Footer";
 import {
   PageHeader,
-  FeatureBento,
-  FeatureTabs,
   AIFlowSection,
   AnalyticsSection,
   IntegrationsGrid,
@@ -41,8 +39,6 @@ function FeaturesPage() {
         highlight="in one workspace"
         subtitle="Twelve deeply-integrated modules — designed to replace your EMR, scheduler, receptionist, biller and analytics stack."
       />
-      <FeatureTabs />
-      <FeatureBento />
       <AIFlowSection />
       <AnalyticsSection />
       <IntegrationsGrid />

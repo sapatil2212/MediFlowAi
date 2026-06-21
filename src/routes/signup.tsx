@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { HeartPulse, Home, ChevronDown, Check, X, Loader2, Eye, EyeOff } from "lucide-react";
 import { sendOtpServerFn, verifyOtpServerFn, signupServerFn, checkEmailServerFn } from "../lib/auth";
+import bmtLogo from "../assets/bmt-logo.png";
 
 export const Route = createFileRoute("/signup")({
   validateSearch: (search: Record<string, unknown>): { plan?: string } => ({
@@ -44,6 +45,21 @@ function getInitialPlan(param: string | undefined): string {
   return "Solo";
 }
 
+function getBusinessNameLabel(profession: string): string {
+  switch (profession) {
+    case "Beauty and wellness":
+      return "Salon / Spa Name";
+    case "Fitness Gym etc":
+      return "Gym / Fitness Center Name";
+    case "Professional services like law, consultant, real estate, CA":
+      return "Firm / Office Name";
+    case "Education institutions":
+      return "Institution / Academy Name";
+    default:
+      return "Clinic / Hospital Name";
+  }
+}
+
 function SignupPage() {
   const { plan: urlPlan } = Route.useSearch();
   const initialPlan = getInitialPlan(urlPlan);
@@ -65,7 +81,9 @@ function SignupPage() {
   );
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [profession, setProfession] = useState("Healthcare and medical");
   const [emailError, setEmailError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSignupSuccess, setIsSignupSuccess] = useState(false);
 
@@ -80,6 +98,21 @@ function SignupPage() {
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
   const [otpError, setOtpError] = useState("");
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsOnline(navigator.onLine);
+      const handleOnline = () => setIsOnline(true);
+      const handleOffline = () => setIsOnline(false);
+      window.addEventListener("online", handleOnline);
+      window.addEventListener("offline", handleOffline);
+      return () => {
+        window.removeEventListener("online", handleOnline);
+        window.removeEventListener("offline", handleOffline);
+      };
+    }
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -103,6 +136,10 @@ function SignupPage() {
 
   // Handle Send OTP
   const handleSendOtp = async () => {
+    if (!navigator.onLine) {
+      setEmailError("No internet connection detected. Please check your network and try again.");
+      return;
+    }
     if (!email || !email.includes("@")) {
       setEmailError("Please enter a valid email address first.");
       return;
@@ -178,7 +215,12 @@ function SignupPage() {
   // Handle Form Registration Submission
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!navigator.onLine) {
+      setFormError("No internet connection detected. Please check your network and try again.");
+      return;
+    }
     setEmailError("");
+    setPhoneError("");
     setFormError("");
     setFormSuccess("");
 
@@ -210,6 +252,7 @@ function SignupPage() {
           practiceSize,
           password,
           plan: selectedPlan,
+          profession,
         },
       });
       setIsSignupSuccess(true);
@@ -217,8 +260,12 @@ function SignupPage() {
         navigate({ to: "/login" });
       }, 1500);
     } catch (err: any) {
-      if (err.message?.includes("already registered") || err.message?.includes("already exists")) {
+      if (err.message === "Email already registered") {
         setEmailError("Email already registered");
+      } else if (err.message === "Phone number already registered") {
+        setPhoneError("Phone number already registered");
+      } else if (err.message?.includes("already registered") || err.message?.includes("already exists")) {
+        setEmailError("Email or phone number already registered");
       } else {
         setFormError(err.message || "Registration failed");
       }
@@ -232,12 +279,7 @@ function SignupPage() {
       {/* Back button/Logo at top left with Home icon */}
       <div className="absolute top-6 left-6">
         <Link to="/" className="group flex items-center gap-1.5 text-zinc-600 hover:text-zinc-950 transition-colors">
-          <div className="relative flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-brand-light ring-1 ring-brand/30">
-            <HeartPulse className="size-3.5 text-white" />
-          </div>
-          <span className="text-xs font-semibold tracking-tight text-zinc-800">
-            MediFlow AI
-          </span>
+          <img src={bmtLogo} alt="Book MyTime Logo" className="h-8 w-auto object-contain" />
           <span className="mx-1.5 text-zinc-300">|</span>
           <Home className="size-3.5 text-zinc-400 group-hover:text-zinc-600 transition-colors" />
           <span className="text-[10px] font-medium">Home</span>
@@ -285,12 +327,20 @@ function SignupPage() {
                   value={phone}
                   onChange={(e) => {
                     setPhone(e.target.value);
+                    if (phoneError) setPhoneError("");
                     if (formError) setFormError("");
                   }}
-                  className="w-full rounded-full border border-zinc-200/80 bg-white px-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
+                  className={`w-full rounded-full border bg-white px-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none transition-all ${
+                    phoneError
+                      ? "border-red-500 focus:border-red-500"
+                      : "border-zinc-200/80 focus:border-brand"
+                  }`}
                   required
                   disabled={loading}
                 />
+                {phoneError && (
+                  <p className="mt-1 text-[10px] text-red-500 pl-4">{phoneError}</p>
+                )}
               </div>
 
               {/* 3. Email (with OTP verification logic) */}
@@ -365,11 +415,31 @@ function SignupPage() {
                 </div>
               </div>
 
-              {/* 5. Clinic / Hospital Name */}
-              <div>
+              {/* Profession Selection */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider pl-1">Business Profession / Industry</label>
+                <select
+                  value={profession}
+                  onChange={(e) => setProfession(e.target.value)}
+                  disabled={loading}
+                  className="w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all cursor-pointer"
+                >
+                  <option value="Healthcare and medical">Healthcare & Medical</option>
+                  <option value="Beauty and wellness">Beauty & Wellness</option>
+                  <option value="Fitness Gym etc">Fitness & Gym</option>
+                  <option value="Professional services like law, consultant, real estate, CA">Professional Services (Law, Consultant, Real Estate, CA)</option>
+                  <option value="Education institutions">Education Institutions</option>
+                </select>
+              </div>
+
+              {/* 5. Business Name (Clinic / Hospital / Salon, etc. depending on Business Profession) */}
+              <div className="space-y-1 animate-fade-in">
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider pl-1">
+                  {getBusinessNameLabel(profession)}
+                </label>
                 <input
                   type="text"
-                  placeholder="Clinic / Hospital Name"
+                  placeholder={getBusinessNameLabel(profession)}
                   value={clinicName}
                   onChange={(e) => {
                     setClinicName(e.target.value);
@@ -412,6 +482,15 @@ function SignupPage() {
               </div>
 
               {/* Note: Practice size is auto-assigned based on your selected plan */}
+
+              {/* Offline network alert */}
+              {!isOnline && (
+                <div className="rounded-xl bg-red-50 border border-red-200 p-2.5 text-center mt-2">
+                  <p className="text-[10px] text-red-650 font-extrabold text-red-600">
+                    No internet connection detected. Please check your network and try again.
+                  </p>
+                </div>
+              )}
 
               {/* Form alerts */}
               {formError && (

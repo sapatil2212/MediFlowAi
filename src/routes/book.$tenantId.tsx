@@ -20,7 +20,12 @@ export const Route = createFileRoute("/book/$tenantId")({
   
   // Clinic states
   const [clinicName, setClinicName] = useState("");
+  const [profession, setProfession] = useState("Healthcare and medical");
   const [fetchingClinic, setFetchingClinic] = useState(true);
+  const isGym = profession === "Fitness Gym etc" || (tenantId ? tenantId.startsWith("gym-") : false);
+  const isEducation = profession === "Education institutions" || (tenantId ? tenantId.startsWith("edu-") : false);
+  const isBeauty = profession === "Beauty and wellness" || (tenantId ? tenantId.startsWith("beauty-") : false);
+  const isProfessional = profession === "Professional services like law, consultant, real estate, CA" || (tenantId ? tenantId.startsWith("prof-") : false);
   const [clinicError, setClinicError] = useState(false);
 
   // Lists from backend
@@ -98,8 +103,21 @@ export const Route = createFileRoute("/book/$tenantId")({
     })
       .then((res) => {
         setClinicName(res.clinicName);
+        const resolvedProfession = res.profession || "Healthcare and medical";
+        setProfession(resolvedProfession);
         setDepartments(res.departments || []);
         setDoctors(res.doctors || []);
+
+        const isGymTenant = resolvedProfession === "Fitness Gym etc" || tenantId.startsWith("gym-");
+        const isEduTenant = resolvedProfession === "Education institutions" || tenantId.startsWith("edu-");
+        if (isGymTenant || isEduTenant) {
+          if (res.departments && res.departments.length > 0) {
+            setSelectedDeptId(res.departments[0].id);
+          }
+          if (res.doctors && res.doctors.length > 0) {
+            setSelectedDoctorId(res.doctors[0].id);
+          }
+        }
       })
       .catch((err) => {
         console.error("Failed to load clinic details:", err);
@@ -110,9 +128,16 @@ export const Route = createFileRoute("/book/$tenantId")({
       });
   }, [tenantId]);
 
-  // Load slots dynamically
+  // Load slots dynamically (not needed for education or gym)
   useEffect(() => {
-    if (!selectedDoctorId || !selectedDate || !tenantId) {
+    if (!selectedDate || !tenantId || isEducation || isGym) {
+      setAvailableSlots([]);
+      setSelectedSlot("");
+      return;
+    }
+
+    // For non-gym, non-education: require a doctor selection
+    if (!isGym && !selectedDoctorId) {
       setAvailableSlots([]);
       setSelectedSlot("");
       return;
@@ -136,7 +161,18 @@ export const Route = createFileRoute("/book/$tenantId")({
       .finally(() => {
         setLoadingSlots(false);
       });
-  }, [selectedDoctorId, selectedDate, tenantId]);
+  }, [selectedDoctorId, selectedDate, tenantId, isGym]);
+
+  // Auto-populate dateTime for gyms when a date is selected, since gyms don't have slots
+  useEffect(() => {
+    if (isGym && selectedDate) {
+      const dateObj = new Date(selectedDate);
+      dateObj.setHours(9, 0, 0, 0); // Default to 9:00 AM
+      const tzoffset = dateObj.getTimezoneOffset() * 60000;
+      const localISOTime = new Date(dateObj.getTime() - tzoffset).toISOString().slice(0, 16);
+      setDateTime(localISOTime);
+    }
+  }, [selectedDate, isGym]);
 
   const handleSelectSlot = (slot: string) => {
     setSelectedSlot(slot);
@@ -164,7 +200,7 @@ export const Route = createFileRoute("/book/$tenantId")({
     setErrors({});
 
     const newErrors: Record<string, string> = {};
-    if (!name.trim()) newErrors.name = "Patient Name is required";
+    if (!name.trim()) newErrors.name = (isGym || isBeauty || isProfessional) ? "Client Name is required" : isEducation ? "Student Name is required" : "Patient Name is required";
     
     if (!email.trim()) {
       newErrors.email = "Email Address is required";
@@ -178,12 +214,21 @@ export const Route = createFileRoute("/book/$tenantId")({
       newErrors.phone = "Please enter a valid contact number (10-15 digits)";
     }
     
-    if (!selectedDeptId) newErrors.department = "Department is required";
-    if (!selectedDoctorId) newErrors.doctor = "Doctor is required";
-    if (!selectedDate) newErrors.date = "Appointment Date is required";
-    if (!selectedSlot) newErrors.timeSlot = "Appointment Time is required";
-    if (!appointmentType) newErrors.appointmentType = "Appointment Type is required";
-    if (!reason.trim()) newErrors.reason = "Reason for visit is required";
+    if (!isGym && !isEducation) {
+      if (!selectedDeptId) newErrors.department = "Department is required";
+      if (!selectedDoctorId) newErrors.doctor = "Doctor is required";
+    }
+    if (isEducation) {
+      if (!selectedDeptId) newErrors.department = "Subject is required";
+    }
+    if (!selectedDate) newErrors.date = (isGym || isEducation) ? "Session Date is required" : isBeauty ? "Service Date is required" : isProfessional ? "Consultation Date is required" : "Appointment Date is required";
+    if (!isEducation && !isGym) {
+      if (!selectedSlot) newErrors.timeSlot = isBeauty ? "Service Time is required" : isProfessional ? "Consultation Time is required" : "Appointment Time is required";
+    }
+    if (!isEducation) {
+      if (!appointmentType) newErrors.appointmentType = isGym ? "Session Type is required" : isBeauty ? "Service Type is required" : isProfessional ? "Consultation Type is required" : "Appointment Type is required";
+    }
+    if (!reason.trim()) newErrors.reason = isGym ? "Training goals are required" : isEducation ? "Purpose of visit is required" : isBeauty ? "Service requests are required" : isProfessional ? "Consultation objectives are required" : "Reason for visit is required";
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -192,18 +237,27 @@ export const Route = createFileRoute("/book/$tenantId")({
 
     setLoading(true);
     try {
+      // For education, build dateTime from selectedDate (no time slot)
+      const effectiveDateTime = isEducation
+        ? (() => {
+            const d = new Date(selectedDate);
+            const tzoffset = d.getTimezoneOffset() * 60000;
+            return new Date(d.getTime() - tzoffset).toISOString().slice(0, 16);
+          })()
+        : dateTime;
+
       const result = await createAppointmentServerFn({
         data: {
           tenantId,
           name,
           email,
           phone,
-          dateTime,
+          dateTime: effectiveDateTime,
           reason,
           doctorId: selectedDoctorId,
-          timeSlot: selectedSlot,
+          timeSlot: isEducation ? undefined : selectedSlot,
           whatsapp,
-          appointmentType
+          appointmentType: isEducation ? undefined : appointmentType
         },
       });
 
@@ -233,7 +287,7 @@ export const Route = createFileRoute("/book/$tenantId")({
           </div>
         </div>
         <p className="text-xs font-semibold text-zinc-500 animate-pulse">
-          Loading clinic workspace details...
+          {isGym ? "Loading gym workspace details..." : isEducation ? "Loading academy workspace details..." : isBeauty ? "Loading salon workspace details..." : isProfessional ? "Loading firm workspace details..." : "Loading clinic workspace details..."}
         </p>
       </div>
     );
@@ -247,9 +301,9 @@ export const Route = createFileRoute("/book/$tenantId")({
             <AlertCircle className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-zinc-900">Clinic Portal Not Found</h2>
+            <h2 className="text-sm font-bold text-zinc-900">{isGym ? "Gym Portal Not Found" : isEducation ? "Academy Portal Not Found" : isBeauty ? "Salon Portal Not Found" : isProfessional ? "Firm Portal Not Found" : "Clinic Portal Not Found"}</h2>
             <p className="mt-1 text-xs text-zinc-400">
-              The booking link you followed seems to be invalid or the clinic does not exist. Please check the URL and try again.
+              {isGym ? "The booking link you followed seems to be invalid or the gym does not exist. Please check the URL and try again." : isEducation ? "The booking link you followed seems to be invalid or the academy does not exist. Please check the URL and try again." : isBeauty ? "The booking link you followed seems to be invalid or the salon/spa does not exist. Please check the URL and try again." : isProfessional ? "The booking link you followed seems to be invalid or the firm does not exist. Please check the URL and try again." : "The booking link you followed seems to be invalid or the clinic does not exist. Please check the URL and try again."}
             </p>
           </div>
           <div className="pt-2">
@@ -269,7 +323,7 @@ export const Route = createFileRoute("/book/$tenantId")({
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-zinc-50 px-4 py-8">
-      <div className="w-full max-w-lg overflow-hidden rounded-[1.75rem] border border-zinc-200/60 bg-white p-6 sm:p-8">
+      <div className="w-full max-w-lg rounded-[1.75rem] border border-zinc-200/60 bg-white p-6 sm:p-8">
         
         {/* Success Screen */}
         <AnimatePresence mode="wait">
@@ -285,9 +339,9 @@ export const Route = createFileRoute("/book/$tenantId")({
               </div>
               
               <div>
-                <h2 className="text-lg font-bold text-zinc-900">Appointment Scheduled!</h2>
+                <h2 className="text-lg font-bold text-zinc-900">{isGym ? "Training Session Scheduled!" : isEducation ? "Session Booked!" : isBeauty ? "Service Scheduled!" : isProfessional ? "Consultation Scheduled!" : "Appointment Scheduled!"}</h2>
                 <p className="mt-1 text-xs text-zinc-400">
-                  Your appointment at <strong className="text-zinc-700">{clinicName}</strong> has been successfully booked.
+                  Your {isGym ? "session" : isEducation ? "class/session" : isBeauty ? "service" : isProfessional ? "consultation" : "appointment"} at <strong className="text-zinc-700">{clinicName}</strong> has been successfully booked.
                 </p>
               </div>
 
@@ -297,12 +351,12 @@ export const Route = createFileRoute("/book/$tenantId")({
                   <span className="font-mono font-bold text-zinc-800">{appointmentId.substring(0, 8).toUpperCase()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-zinc-400 font-bold uppercase text-[9px]">Patient Name</span>
+                  <span className="text-zinc-400 font-bold uppercase text-[9px]">{isGym ? "Client Name" : isEducation ? "Student Name" : (isBeauty || isProfessional) ? "Client Name" : "Patient Name"}</span>
                   <span className="font-semibold text-zinc-750">{name}</span>
                 </div>
                 {selectedDoctor && (
                   <div className="flex justify-between">
-                    <span className="text-zinc-400 font-bold uppercase text-[9px]">Provider / Doctor</span>
+                    <span className="text-zinc-400 font-bold uppercase text-[9px]">{isGym ? "Coach / Trainer" : isEducation ? "Teacher / Instructor" : isBeauty ? "Stylist / Therapist" : isProfessional ? "Advisor / Consultant" : "Provider / Doctor"}</span>
                     <span className="font-semibold text-zinc-750">{selectedDoctor.name}</span>
                   </div>
                 )}
@@ -314,7 +368,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                       month: "short",
                       day: "numeric",
                       year: "numeric"
-                    })} at {selectedSlot}
+                    })}{!isEducation && !isGym && selectedSlot ? ` at ${selectedSlot}` : ""}
                   </span>
                 </div>
                 {whatsapp && (
@@ -325,27 +379,29 @@ export const Route = createFileRoute("/book/$tenantId")({
                 )}
                 {appointmentType && (
                   <div className="flex justify-between">
-                    <span className="text-zinc-400 font-bold uppercase text-[9px]">Appointment Type</span>
+                    <span className="text-zinc-400 font-bold uppercase text-[9px]">{isGym ? "Session Type" : isBeauty ? "Service Type" : isProfessional ? "Consultation Type" : "Appointment Type"}</span>
                     <span className="font-semibold text-zinc-750">{appointmentType}</span>
                   </div>
                 )}
               </div>
 
               <p className="text-[10px] text-zinc-400 px-6">
-                A confirmation has been sent to your registered contact details. Please arrive 15 minutes before your scheduled slot.
+                A confirmation has been sent to your registered contact details. {isGym ? "Please arrive 10 minutes before your scheduled session." : isEducation ? "Please arrive 5 minutes before your class." : isBeauty ? "Please arrive 10 minutes before your scheduled service." : isProfessional ? "Please arrive 5 minutes before your consultation." : "Please arrive 15 minutes before your scheduled slot."}
               </p>
             </motion.div>
           ) : (
             <motion.div key="form" className="space-y-6">
               {/* Header */}
               <div className="text-center space-y-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-brand-light mx-auto">
-                  <HeartPulse className="h-5 w-5 text-white" />
-                </div>
+                {!isGym && !isEducation && !isBeauty && !isProfessional && (
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-brand-light mx-auto">
+                    <HeartPulse className="h-5 w-5 text-white" />
+                  </div>
+                )}
                 <div>
-                  <h1 className="text-lg font-bold text-zinc-900">Book an Appointment</h1>
+                  <h1 className="text-lg font-bold text-zinc-900">{isGym ? "Book Session" : isEducation ? "Book Session" : isBeauty ? "Book Service" : isProfessional ? "Book Consultation" : "Book Appointment"}</h1>
                   <p className="text-xs text-zinc-400">
-                    Scheduling online portal for <strong className="text-brand">{clinicName}</strong>
+                    {isGym ? "Booking portal for " : isEducation ? "Academy scheduling portal for " : isBeauty ? "Salon booking portal for " : isProfessional ? "Firm consultation portal for " : "Scheduling online portal for "}<strong className="text-brand">{clinicName}</strong>
                   </p>
                 </div>
               </div>
@@ -355,7 +411,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                 
                 {/* Patient Name */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Patient Full Name</label>
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Full Name" : isEducation ? "Student / Visitor Full Name" : (isBeauty || isProfessional) ? "Client Full Name" : "Patient Full Name"}</label>
                   <div className="relative">
                     <User className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
                     <input
@@ -446,9 +502,10 @@ export const Route = createFileRoute("/book/$tenantId")({
                     </div>
                   </div>
 
-                  {/* Appointment Type Custom Dropdown */}
-                  <div className="space-y-1 relative">
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Appointment Type</label>
+                  {/* Appointment Type Custom Dropdown — hidden for education */}
+                  {!isEducation && (
+                  <div className={`space-y-1 relative ${typeOpen ? "z-40" : "z-10"}`}>
+                    <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Session Type" : isBeauty ? "Service Type" : isProfessional ? "Consultation Type" : "Appointment Type"}</label>
                     <div className="relative">
                       <button
                         type="button"
@@ -465,7 +522,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                         disabled={loading}
                       >
                         <span className={appointmentType ? "font-semibold text-zinc-800" : "text-zinc-400"}>
-                          {appointmentType ? appointmentType : "Select Type"}
+                          {appointmentType ? appointmentType : (isGym ? "Select Session Type" : isBeauty ? "Select Service Type" : isProfessional ? "Select Consultation Type" : "Select Type")}
                         </span>
                         <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${typeOpen ? "rotate-180" : ""}`} />
                       </button>
@@ -478,7 +535,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                             exit={{ opacity: 0, y: -10 }}
                             className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl p-1.5 space-y-0.5"
                           >
-                            {["First Time", "Follow up"].map((type) => (
+                            {(isGym ? ["Trial Session", "Regular Training"] : isBeauty ? ["Standard Service", "Premium Treatment"] : isProfessional ? ["Initial Consultation", "Follow-up Advisory"] : ["First Time", "Follow up"]).map((type) => (
                               <button
                                 key={type}
                                 type="button"
@@ -503,156 +560,225 @@ export const Route = createFileRoute("/book/$tenantId")({
                       <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.appointmentType}</p>
                     )}
                   </div>
+                  )}
                 </div>
 
-                <hr className="border-zinc-100 my-2" />
+                {isEducation && (
+                  <>
+                    <hr className="border-zinc-100 my-2" />
 
-                {/* Step 1: Select Department Custom Dropdown */}
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1 relative">
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Department</label>
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeptOpen(!deptOpen);
-                          setDocOpen(false);
-                          setTypeOpen(false);
-                          setCalendarOpen(false);
-                          setClockOpen(false);
-                        }}
-                        className={`w-full rounded-full border bg-white px-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
-                          errors.department ? "border-red-500" : "border-zinc-200"
-                        }`}
-                        disabled={loading}
-                      >
-                        <span className={selectedDeptId ? "font-semibold text-zinc-800" : "text-zinc-400"}>
-                          {selectedDeptId ? departments.find(d => d.id === selectedDeptId)?.name : "Select Department"}
-                        </span>
-                        <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${deptOpen ? "rotate-180" : ""}`} />
-                      </button>
+                    {/* Education: Select Subject (full width) */}
+                    <div className={`space-y-1 relative ${deptOpen ? "z-40" : "z-10"}`}>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Subject</label>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeptOpen(!deptOpen);
+                            setDocOpen(false);
+                            setTypeOpen(false);
+                            setCalendarOpen(false);
+                            setClockOpen(false);
+                          }}
+                          className={`w-full rounded-full border bg-white px-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
+                            errors.department ? "border-red-500" : "border-zinc-200"
+                          }`}
+                          disabled={loading}
+                        >
+                          <span className={selectedDeptId ? "font-semibold text-zinc-800" : "text-zinc-400"}>
+                            {selectedDeptId ? departments.find(d => d.id === selectedDeptId)?.name : "Select Subject"}
+                          </span>
+                          <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${deptOpen ? "rotate-180" : ""}`} />
+                        </button>
 
-                      <AnimatePresence>
-                        {deptOpen && (
-                          <motion.div
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
-                          >
-                            {departments.map((dept) => (
-                              <button
-                                key={dept.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedDeptId(dept.id);
-                                  setSelectedDoctorId(""); // Reset doctor
-                                  setSelectedDate(""); // Reset date/time slot since doctor changed
-                                  setSelectedSlot("");
-                                  setDeptOpen(false);
-                                  if (errors.department) setErrors(prev => ({ ...prev, department: "" }));
-                                }}
-                                className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                  selectedDeptId === dept.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
-                                }`}
-                              >
-                                <span>{dept.name}</span>
-                                {selectedDeptId === dept.id && <Check className="h-3.5 w-3.5 text-brand" />}
-                              </button>
-                            ))}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                    {errors.department && (
-                      <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.department}</p>
-                    )}
-                  </div>
-
-                  {/* Step 2: Select Doctor Custom Dropdown */}
-                  <div className="space-y-1 relative">
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Doctor</label>
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDocOpen(!docOpen);
-                          setDeptOpen(false);
-                          setTypeOpen(false);
-                          setCalendarOpen(false);
-                          setClockOpen(false);
-                        }}
-                        className={`w-full rounded-full border bg-white px-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
-                          errors.doctor ? "border-red-500" : "border-zinc-200"
-                        }`}
-                        disabled={loading}
-                      >
-                        <span className={selectedDoctorId ? "font-semibold text-zinc-800" : "text-zinc-400"}>
-                          {selectedDoctorId ? doctors.find(d => d.id === selectedDoctorId)?.name : "Select Doctor"}
-                        </span>
-                        <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${docOpen ? "rotate-180" : ""}`} />
-                      </button>
-
-                      <AnimatePresence>
-                        {docOpen && (
-                          <motion.div
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
-                          >
-                            {filteredDoctors.length > 0 ? (
-                              filteredDoctors.map((doc) => (
+                        <AnimatePresence>
+                          {deptOpen && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
+                            >
+                              {departments.map((dept) => (
                                 <button
-                                  key={doc.id}
+                                  key={dept.id}
                                   type="button"
                                   onClick={() => {
-                                    setSelectedDoctorId(doc.id);
-                                    setSelectedDate(""); // Reset date/time slot since doctor changed
-                                    setSelectedSlot("");
-                                    setDocOpen(false);
-                                    if (errors.doctor) setErrors(prev => ({ ...prev, doctor: "" }));
+                                    setSelectedDeptId(dept.id);
+                                    setDeptOpen(false);
+                                    if (errors.department) setErrors(prev => ({ ...prev, department: "" }));
                                   }}
                                   className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                    selectedDoctorId === doc.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
+                                    selectedDeptId === dept.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
                                   }`}
                                 >
-                                  <div className="flex flex-col">
-                                    <span className="font-semibold">{doc.name}</span>
-                                    <span className="text-[9px] text-zinc-400 font-normal">{doc.qualifications}</span>
-                                  </div>
-                                  {selectedDoctorId === doc.id && <Check className="h-3.5 w-3.5 text-brand" />}
+                                  <span>{dept.name}</span>
+                                  {selectedDeptId === dept.id && <Check className="h-3.5 w-3.5 text-brand" />}
                                 </button>
-                              ))
-                            ) : (
-                              <div className="px-3.5 py-3 text-xs text-zinc-450 italic text-center">
-                                Please select a department first
-                              </div>
-                            )}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+                              ))}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                      {errors.department && (
+                        <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.department}</p>
+                      )}
                     </div>
-                    {errors.doctor && (
-                      <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.doctor}</p>
-                    )}
-                  </div>
-                </div>
+                  </>
+                )}
 
-                {selectedDoctor && (
-                  <p className="text-[10px] text-zinc-455 italic pl-1 leading-normal">
-                    Qualifications: <strong className="text-zinc-650">{selectedDoctor.qualifications}</strong>
-                  </p>
+                {!isGym && !isEducation && (
+                  <>
+                    <hr className="border-zinc-100 my-2" />
+
+                    {/* Step 1: Select Department Custom Dropdown */}
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className={`space-y-1 relative ${deptOpen ? "z-40" : "z-10"}`}>
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isBeauty ? "Select Service Category" : isProfessional ? "Select Practice Area" : "Select Department"}</label>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeptOpen(!deptOpen);
+                              setDocOpen(false);
+                              setTypeOpen(false);
+                              setCalendarOpen(false);
+                              setClockOpen(false);
+                            }}
+                            className={`w-full rounded-full border bg-white px-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
+                              errors.department ? "border-red-500" : "border-zinc-200"
+                            }`}
+                            disabled={loading}
+                          >
+                            <span className={selectedDeptId ? "font-semibold text-zinc-800" : "text-zinc-400"}>
+                              {selectedDeptId ? departments.find(d => d.id === selectedDeptId)?.name : (isBeauty ? "Select Service Category" : isProfessional ? "Select Practice Area" : "Select Department")}
+                            </span>
+                            <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${deptOpen ? "rotate-180" : ""}`} />
+                          </button>
+
+                          <AnimatePresence>
+                            {deptOpen && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
+                              >
+                                {departments.map((dept) => (
+                                  <button
+                                    key={dept.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedDeptId(dept.id);
+                                      setSelectedDoctorId(""); // Reset doctor
+                                      setSelectedDate(""); // Reset date/time slot since doctor changed
+                                      setSelectedSlot("");
+                                      setDeptOpen(false);
+                                      if (errors.department) setErrors(prev => ({ ...prev, department: "" }));
+                                    }}
+                                    className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                      selectedDeptId === dept.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
+                                    }`}
+                                  >
+                                    <span>{dept.name}</span>
+                                    {selectedDeptId === dept.id && <Check className="h-3.5 w-3.5 text-brand" />}
+                                  </button>
+                                ))}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                        {errors.department && (
+                          <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.department}</p>
+                        )}
+                      </div>
+
+                      {/* Step 2: Select Doctor Custom Dropdown */}
+                      <div className={`space-y-1 relative ${docOpen ? "z-40" : "z-10"}`}>
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isBeauty ? "Select Stylist / Therapist" : isProfessional ? "Select Advisor / Consultant" : "Select Doctor"}</label>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDocOpen(!docOpen);
+                              setDeptOpen(false);
+                              setTypeOpen(false);
+                              setCalendarOpen(false);
+                              setClockOpen(false);
+                            }}
+                            className={`w-full rounded-full border bg-white px-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
+                              errors.doctor ? "border-red-500" : "border-zinc-200"
+                            }`}
+                            disabled={loading}
+                          >
+                            <span className={selectedDoctorId ? "font-semibold text-zinc-800" : "text-zinc-400"}>
+                              {selectedDoctorId ? doctors.find(d => d.id === selectedDoctorId)?.name : (isBeauty ? "Select Stylist / Therapist" : isProfessional ? "Select Advisor / Consultant" : "Select Doctor")}
+                            </span>
+                            <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${docOpen ? "rotate-180" : ""}`} />
+                          </button>
+
+                          <AnimatePresence>
+                            {docOpen && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
+                              >
+                                {filteredDoctors.length > 0 ? (
+                                  filteredDoctors.map((doc) => (
+                                    <button
+                                      key={doc.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedDoctorId(doc.id);
+                                        setSelectedDate(""); // Reset date/time slot since doctor changed
+                                        setSelectedSlot("");
+                                        setDocOpen(false);
+                                        if (errors.doctor) setErrors(prev => ({ ...prev, doctor: "" }));
+                                      }}
+                                      className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                        selectedDoctorId === doc.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
+                                      }`}
+                                    >
+                                      <div className="flex flex-col">
+                                        <span className="font-semibold">{doc.name}</span>
+                                        <span className="text-[9px] text-zinc-400 font-normal">{doc.qualifications}</span>
+                                      </div>
+                                      {selectedDoctorId === doc.id && <Check className="h-3.5 w-3.5 text-brand" />}
+                                    </button>
+                                  ))
+                                ) : (
+                                  <div className="px-3.5 py-3 text-xs text-zinc-455 italic text-center">
+                                    Please select a department first
+                                  </div>
+                                )}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                        {errors.doctor && (
+                          <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.doctor}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedDoctor && (
+                      <p className="text-[10px] text-zinc-455 italic pl-1 leading-normal">
+                        Qualifications: <strong className="text-zinc-650">{selectedDoctor.qualifications}</strong>
+                      </p>
+                    )}
+                  </>
                 )}
 
                 {/* Step 3: Custom Popover Calendar Date Picker */}
-                <div className="space-y-1 relative">
-                  <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Appointment Date</label>
+                <div className={`space-y-1 relative ${calendarOpen ? "z-40" : "z-10"}`}>
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Select Session Date" : isEducation ? "Select Date" : isBeauty ? "Select Service Date" : isProfessional ? "Select Consultation Date" : "Select Date"}</label>
                   <div className="relative">
                     <button
                       type="button"
                       onClick={() => {
-                        if (!selectedDoctorId) {
+                        if (!isGym && !isEducation && !selectedDoctorId) {
                           setErrors(prev => ({ ...prev, date: "Please select a doctor first" }));
                           return;
                         }
@@ -665,7 +791,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                       className={`w-full rounded-full border bg-white pl-10 pr-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
                         errors.date ? "border-red-500" : "border-zinc-200"
                       }`}
-                      disabled={loading || !selectedDoctorId}
+                      disabled={loading || (!isGym && !isEducation && !selectedDoctorId)}
                     >
                       <Calendar className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
                       <span className={selectedDate ? "font-semibold text-zinc-800" : "text-zinc-400"}>
@@ -773,9 +899,9 @@ export const Route = createFileRoute("/book/$tenantId")({
                   )}
                 </div>
 
-                {/* Step 4: Custom Popover Time Slot Picker */}
-                {selectedDoctorId && selectedDate && (
-                  <div className="space-y-1 relative">
+                {/* Step 4: Custom Popover Time Slot Picker — hidden for education/gym */}
+                {!isEducation && !isGym && selectedDoctorId && selectedDate && (
+                  <div className={`space-y-1 relative ${clockOpen ? "z-40" : "z-10"}`}>
                     <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1 font-semibold flex items-center gap-1.5">
                       Select Available Time Slot
                     </label>
@@ -796,7 +922,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                       >
                         <Clock className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
                         <span className={selectedSlot ? "font-semibold text-zinc-800" : "text-zinc-400"}>
-                          {selectedSlot ? selectedSlot : "Select Time Slot"}
+                          {selectedSlot ? selectedSlot : (isBeauty ? "Select Service Time" : isProfessional ? "Select Consultation Time" : "Select Time Slot")}
                         </span>
                         <ChevronDown className="h-4 w-4 text-zinc-400" />
                       </button>
@@ -858,12 +984,12 @@ export const Route = createFileRoute("/book/$tenantId")({
 
                 {/* Symptoms / Reason */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Reason for Visit / Chief Complaint</label>
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Training Goals / Focus Area" : isEducation ? "Purpose of Visit" : isBeauty ? "Service Requests / Style Goals" : isProfessional ? "Consultation Objectives" : "Reason for Visit / Chief Complaint"}</label>
                   <div className="relative">
                     <FileText className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
                     <input
                       type="text"
-                      placeholder="Brief details of your symptoms"
+                      placeholder={isGym ? "e.g. weight loss, build muscle, stamina" : isEducation ? "e.g. academic counselling, exam inquiry, subject query" : isBeauty ? "e.g. haircut, facial, hair coloring, massage" : isProfessional ? "e.g. tax advisory, business coaching, contract review" : "Brief details of your symptoms"}
                       value={reason}
                       onChange={(e) => {
                         setReason(e.target.value);
@@ -896,7 +1022,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                   className="w-full rounded-full bg-zinc-950 hover:bg-zinc-850 py-2.5 text-xs font-semibold text-white transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer mt-2 disabled:bg-zinc-150 disabled:text-zinc-400"
                 >
                   {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  Schedule Appointment
+                  {isGym ? "Schedule Session" : isEducation ? "Book Appointment" : isBeauty ? "Book Service" : isProfessional ? "Schedule Consultation" : "Schedule Appointment"}
                 </button>
               </form>
             </motion.div>

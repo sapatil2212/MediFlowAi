@@ -12,15 +12,18 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
     return data;
   })
   .handler(async ({ data }) => {
-    // 1. Resolve clinic details
+    // 1. Resolve clinic details and business profession
     let clinicName = "";
+    let profession = "Healthcare and medical";
     const profile = await queryOne<any>("SELECT clinicName FROM ClinicProfile WHERE tenantId = ? LIMIT 1", [data.tenantId]);
-    if (profile) {
+    const userClinic = await queryOne<any>("SELECT clinicName, profession FROM User WHERE tenantId = ? LIMIT 1", [data.tenantId]);
+    if (userClinic) {
+      profession = userClinic.profession || "Healthcare and medical";
+      clinicName = profile ? profile.clinicName : userClinic.clinicName;
+    } else if (profile) {
       clinicName = profile.clinicName;
     } else {
-      const userClinic = await queryOne<any>("SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1", [data.tenantId]);
-      if (!userClinic) throw new Error("Clinic not found");
-      clinicName = userClinic.clinicName;
+      throw new Error("Clinic not found");
     }
 
     // 2. Resolve active departments
@@ -38,12 +41,15 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
 
     // 4. If date and doctorId are selected, compute dynamic available slots
     let slots: string[] = [];
-    if (data.date && data.doctorId) {
+    const isEducation = profession === "Education institutions";
+    const isGym = profession === "Fitness Gym etc";
+
+    if (data.date && (data.doctorId || isEducation || isGym)) {
       const selectedDate = new Date(data.date);
       const dayOfWeek = selectedDate.getDay();
       const dateStr = selectedDate.toISOString().split("T")[0];
 
-      // A. Check if the clinic is closed on this day
+      // A. Check if the clinic/institution/gym is closed on this day
       const clinicHours = await queryOne<any>(
         "SELECT * FROM ClinicHours WHERE tenantId = ? AND dayOfWeek = ? LIMIT 1",
         [data.tenantId, dayOfWeek]
@@ -51,26 +57,13 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
       const clinicClosed = clinicHours ? !!clinicHours.isClosed : (dayOfWeek === 0 || dayOfWeek === 6);
 
       if (!clinicClosed) {
-        // B. Check if the doctor is on holiday/leave on this date
-        const leave = await queryOne<any>(
-          "SELECT id FROM DoctorLeave WHERE doctorId = ? AND leaveDate = ? LIMIT 1",
-          [data.doctorId, dateStr]
-        );
+        if (isEducation || isGym) {
+          // ── Education: generate slots from ClinicHours (working hours) ──
+          if (clinicHours && clinicHours.openTime && clinicHours.closeTime) {
+            const duration = clinicHours.slotDuration || 30;
 
-        if (!leave) {
-          // C. Get doctor schedule for this day
-          const docSchedule = await queryOne<any>(
-            "SELECT * FROM DoctorSchedule WHERE doctorId = ? AND dayOfWeek = ? LIMIT 1",
-            [data.doctorId, dayOfWeek]
-          );
-
-          if (docSchedule) {
-            const startTimeStr = docSchedule.startTime;
-            const endTimeStr = docSchedule.endTime;
-            const duration = docSchedule.slotDuration || 30;
-
-            const [startHour, startMin] = startTimeStr.split(":").map(Number);
-            const [endHour, endMin] = endTimeStr.split(":").map(Number);
+            const [startHour, startMin] = clinicHours.openTime.split(":").map(Number);
+            const [endHour, endMin] = clinicHours.closeTime.split(":").map(Number);
 
             const startObj = new Date(selectedDate);
             startObj.setHours(startHour, startMin, 0, 0);
@@ -78,15 +71,14 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
             const endObj = new Date(selectedDate);
             endObj.setHours(endHour, endMin, 0, 0);
 
-            // Get existing bookings for this doctor on this day
+            // Get existing bookings for this tenant on this day
             const existingBookings = await query<any>(
-              `SELECT dateTime, timeSlot FROM Appointment
-               WHERE doctorId = ? AND DATE(dateTime) = ? AND status != 'Cancelled'`,
-              [data.doctorId, dateStr]
+              `SELECT timeSlot FROM Appointment
+               WHERE tenantId = ? AND DATE(dateTime) = ? AND status != 'Cancelled'`,
+              [data.tenantId, dateStr]
             );
             const bookedSlots = existingBookings.map((b: any) => b.timeSlot || "");
 
-            // Generate slots
             const temp = new Date(startObj);
             while (temp < endObj) {
               const slotTimeStr = temp.toLocaleTimeString("en-US", {
@@ -100,12 +92,65 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
               temp.setMinutes(temp.getMinutes() + duration);
             }
           }
+        } else {
+          // ── Standard: generate slots from DoctorSchedule ──
+          // B. Check if the doctor is on holiday/leave on this date
+          const leave = await queryOne<any>(
+            "SELECT id FROM DoctorLeave WHERE doctorId = ? AND leaveDate = ? LIMIT 1",
+            [data.doctorId, dateStr]
+          );
+
+          if (!leave) {
+            // C. Get doctor schedule for this day
+            const docSchedule = await queryOne<any>(
+              "SELECT * FROM DoctorSchedule WHERE doctorId = ? AND dayOfWeek = ? LIMIT 1",
+              [data.doctorId, dayOfWeek]
+            );
+
+            if (docSchedule) {
+              const startTimeStr = docSchedule.startTime;
+              const endTimeStr = docSchedule.endTime;
+              const duration = docSchedule.slotDuration || 30;
+
+              const [startHour, startMin] = startTimeStr.split(":").map(Number);
+              const [endHour, endMin] = endTimeStr.split(":").map(Number);
+
+              const startObj = new Date(selectedDate);
+              startObj.setHours(startHour, startMin, 0, 0);
+
+              const endObj = new Date(selectedDate);
+              endObj.setHours(endHour, endMin, 0, 0);
+
+              // Get existing bookings for this doctor on this day
+              const existingBookings = await query<any>(
+                `SELECT dateTime, timeSlot FROM Appointment
+                 WHERE doctorId = ? AND DATE(dateTime) = ? AND status != 'Cancelled'`,
+                [data.doctorId, dateStr]
+              );
+              const bookedSlots = existingBookings.map((b: any) => b.timeSlot || "");
+
+              // Generate slots
+              const temp = new Date(startObj);
+              while (temp < endObj) {
+                const slotTimeStr = temp.toLocaleTimeString("en-US", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true
+                });
+                if (!bookedSlots.includes(slotTimeStr)) {
+                  slots.push(slotTimeStr);
+                }
+                temp.setMinutes(temp.getMinutes() + duration);
+              }
+            }
+          }
         }
       }
     }
 
     return {
       clinicName: clinicName,
+      profession: profession,
       departments,
       doctors,
       slots

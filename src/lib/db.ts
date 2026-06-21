@@ -193,12 +193,30 @@ if (typeof window === "undefined") {
               phone VARCHAR(255) NOT NULL,
               qualifications VARCHAR(255) NOT NULL,
               departmentId VARCHAR(255) NOT NULL,
+              designation VARCHAR(255) NULL,
+              employeeId VARCHAR(255) NULL,
+              joiningDate VARCHAR(255) NULL,
+              subjectsTaught VARCHAR(255) NULL,
               createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
           `);
         } catch (err: any) {
           console.error("[DB] ❌ Failed to create Doctor table:", err.message);
         }
+
+        // Migrate: add extra teacher fields to Doctor if they don't exist
+        try {
+          await conn.query(`ALTER TABLE Doctor ADD COLUMN designation VARCHAR(255) NULL`);
+        } catch (_) {}
+        try {
+          await conn.query(`ALTER TABLE Doctor ADD COLUMN employeeId VARCHAR(255) NULL`);
+        } catch (_) {}
+        try {
+          await conn.query(`ALTER TABLE Doctor ADD COLUMN joiningDate VARCHAR(255) NULL`);
+        } catch (_) {}
+        try {
+          await conn.query(`ALTER TABLE Doctor ADD COLUMN subjectsTaught VARCHAR(255) NULL`);
+        } catch (_) {}
 
         // Create ClinicProfile Table
         try {
@@ -217,6 +235,53 @@ if (typeof window === "undefined") {
         } catch (err: any) {
           console.error("[DB] ❌ Failed to create ClinicProfile table:", err.message);
         }
+
+        // Migrate: add address column to ClinicProfile if it doesn't exist
+        try {
+          await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN address VARCHAR(500) NULL`);
+          console.log("[DB] ✅ Added address column to ClinicProfile table");
+        } catch (_) { /* column already exists */ }
+
+        // Migrate: add rich info columns to ClinicProfile if they don't exist
+        try {
+          await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN contactDetails VARCHAR(500) NULL`);
+          console.log("[DB] ✅ Added contactDetails column to ClinicProfile table");
+        } catch (_) { /* column already exists */ }
+
+        try {
+          await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN shortDescription TEXT NULL`);
+          console.log("[DB] ✅ Added shortDescription column to ClinicProfile table");
+        } catch (_) { /* column already exists */ }
+
+        try {
+          await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN services TEXT NULL`);
+          console.log("[DB] ✅ Added services column to ClinicProfile table");
+        } catch (_) { /* column already exists */ }
+
+        try {
+          await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN email VARCHAR(255) NULL`);
+          console.log("[DB] ✅ Added email column to ClinicProfile table");
+        } catch (_) { /* column already exists */ }
+
+        try {
+          await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN contactNo VARCHAR(50) NULL`);
+          console.log("[DB] ✅ Added contactNo column to ClinicProfile table");
+        } catch (_) { /* column already exists */ }
+
+        try {
+          await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN whatsappNo VARCHAR(50) NULL`);
+          console.log("[DB] ✅ Added whatsappNo column to ClinicProfile table");
+        } catch (_) { /* column already exists */ }
+
+        try {
+          await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN landlineNo VARCHAR(50) NULL`);
+          console.log("[DB] ✅ Added landlineNo column to ClinicProfile table");
+        } catch (_) { /* column already exists */ }
+
+        try {
+          await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN profession VARCHAR(100) DEFAULT 'Healthcare and medical' NULL`);
+          console.log("[DB] ✅ Added profession column to ClinicProfile table");
+        } catch (_) { /* column already exists */ }
 
         // Create WhatsAppConfig Table
         try {
@@ -575,6 +640,30 @@ if (typeof window === "undefined") {
           console.error("[DB] ❌ Failed to create WAAutoReply table:", err.message);
         }
 
+        // Create WAConversation Table (AI chat log per tenant+sender)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS WAConversation (
+              id VARCHAR(255) PRIMARY KEY,
+              tenantId VARCHAR(255) NOT NULL,
+              senderPhone VARCHAR(50) NOT NULL,
+              senderName VARCHAR(255) NULL,
+              direction ENUM('incoming', 'outgoing') NOT NULL DEFAULT 'incoming',
+              message TEXT NOT NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              INDEX idx_tenant_phone (tenantId, senderPhone)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create WAConversation table:", err.message);
+        }
+
+        // Migrate: add aiEnabled column to WhatsAppConfig if missing
+        try {
+          await conn.query(`ALTER TABLE WhatsAppConfig ADD COLUMN aiEnabled TINYINT(1) DEFAULT 0`);
+          console.log("[DB] ✅ Added aiEnabled column to WhatsAppConfig table");
+        } catch (_) { /* column already exists */ }
+
         // Check and add SaaS columns to User (Tenant) table
         try {
           const userCols: any[] = await conn.query("SHOW COLUMNS FROM User");
@@ -619,6 +708,10 @@ if (typeof window === "undefined") {
           if (!userColNames.includes("profilePhoto")) {
             await conn.query("ALTER TABLE User ADD COLUMN profilePhoto VARCHAR(500) NULL");
             console.log("[DB] ✅ Added profilePhoto column to User table");
+          }
+          if (!userColNames.includes("profession")) {
+            await conn.query("ALTER TABLE User ADD COLUMN profession VARCHAR(100) DEFAULT 'Healthcare and medical'");
+            console.log("[DB] ✅ Added profession column to User table");
           }
         } catch (err: any) {
           console.warn("[DB] ⚠️ Could not verify/alter User columns:", err.message);
@@ -670,7 +763,7 @@ if (typeof window === "undefined") {
           "Doctor", "ClinicProfile", "WhatsAppConfig", "DoctorSchedule", "DoctorLeave",
           "Patient", "SoapNote", "Prescription", "SuperAdmin", "SuperAdminSession",
           "SubscriptionHistory", "SubUser", "SubUserSession", "WATemplate", "WACampaign",
-          "WACampaignRecipient", "WAAutoReply"
+          "WACampaignRecipient", "WAAutoReply", "WAConversation"
         ];
         for (const tbl of tablesToNormalize) {
           try {
@@ -680,6 +773,23 @@ if (typeof window === "undefined") {
           }
         }
         console.log("[DB] ✅ Normalized database character set and collation to utf8mb4_unicode_ci for all tables");
+
+        // Migrate WhatsApp tables from user.id to user.tenantId
+        try {
+          const waTables = ["WATemplate", "WACampaign", "WAAutoReply", "WAConversation"];
+          for (const tbl of waTables) {
+            const migRes = await conn.query(
+              `UPDATE \`${tbl}\` t
+               JOIN User u ON t.tenantId COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
+               SET t.tenantId = u.tenantId`
+            );
+            if (migRes.affectedRows > 0) {
+              console.log(`[DB] ✅ Migrated ${migRes.affectedRows} records in ${tbl} from user.id to user.tenantId`);
+            }
+          }
+        } catch (migErr: any) {
+          console.warn("[DB] ⚠️ Could not run WhatsApp tenantId migration:", migErr.message);
+        }
 
         console.log("[DB] ✅ Self-healing database tables verify completed");
 
