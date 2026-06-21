@@ -42,6 +42,8 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isLoginSuccess, setIsLoginSuccess] = useState(false);
+  const [successName, setSuccessName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -94,11 +96,11 @@ function LoginPage() {
           localStorage.removeItem("remembered_username");
           localStorage.removeItem("remember_me_checked");
         }
-        const roleLabel = result.role === "reception" ? "Reception Staff" : result.role === "doctor" ? "Doctor" : "";
-        toast.success(`Welcome back, ${result.user.name}!${roleLabel ? ` (${roleLabel})` : ""}`);
+        setIsLoginSuccess(true);
+        setSuccessName(result.user.name);
         setTimeout(() => {
           window.location.href = result.redirectTo || "/dashboard";
-        }, 1000);
+        }, 1200);
       }
     } catch (err: any) {
       const msg = err.message || "Failed to sign in. Please verify your credentials.";
@@ -314,11 +316,38 @@ function LoginPage() {
               {/* Login Button */}
               <button
                 type="submit"
-                disabled={loading}
-                className="w-full rounded-full bg-zinc-950 py-2.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 transition-all active:scale-[0.99] flex items-center justify-center gap-1.5"
+                disabled={loading || isLoginSuccess}
+                className={`w-full rounded-full py-2.5 text-xs font-semibold text-white transition-all duration-300 active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer ${
+                  isLoginSuccess
+                    ? "bg-emerald-600 hover:bg-emerald-650 shadow-md"
+                    : "bg-zinc-950 hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed"
+                }`}
               >
-                {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Login
+                <AnimatePresence mode="wait">
+                  {isLoginSuccess ? (
+                    <motion.div
+                      key="success"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="flex items-center justify-center gap-1.5"
+                    >
+                      <Check className="h-3.5 w-3.5 stroke-[3]" />
+                      <span>Welcome back, {successName || "User"}!</span>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="normal"
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="flex items-center justify-center gap-1.5"
+                    >
+                      {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      <span>Login</span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </button>
             </form>
           </div>

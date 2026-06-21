@@ -67,6 +67,7 @@ function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isSignupSuccess, setIsSignupSuccess] = useState(false);
 
   // OTP Verification states
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
@@ -211,7 +212,7 @@ function SignupPage() {
           plan: selectedPlan,
         },
       });
-      setFormSuccess("Account created successfully! Redirecting to login...");
+      setIsSignupSuccess(true);
       setTimeout(() => {
         navigate({ to: "/login" });
       }, 1500);
@@ -419,20 +420,41 @@ function SignupPage() {
                 </div>
               )}
 
-              {formSuccess && (
-                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-2.5 text-center mt-2">
-                  <p className="text-[10px] text-emerald-650 font-medium text-emerald-600">{formSuccess}</p>
-                </div>
-              )}
-
               {/* 6. Sign Up Button */}
               <button
                 type="submit"
-                disabled={loading}
-                className="w-full rounded-full bg-zinc-950 py-2.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed transition-all active:scale-[0.99] mt-2 flex items-center justify-center gap-1.5 cursor-pointer"
+                disabled={loading || isSignupSuccess}
+                className={`w-full rounded-full py-2.5 text-xs font-semibold text-white transition-all duration-300 active:scale-[0.99] mt-2 flex items-center justify-center gap-1.5 cursor-pointer ${
+                  isSignupSuccess
+                    ? "bg-emerald-600 hover:bg-emerald-650 shadow-md"
+                    : "bg-zinc-950 hover:bg-zinc-800 disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed"
+                }`}
               >
-                {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Sign Up
+                <AnimatePresence mode="wait">
+                  {isSignupSuccess ? (
+                    <motion.div
+                      key="success"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="flex items-center justify-center gap-1.5"
+                    >
+                      <Check className="h-3.5 w-3.5 stroke-[3]" />
+                      <span>Account Created Successfully!</span>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="normal"
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 10 }}
+                      className="flex items-center justify-center gap-1.5"
+                    >
+                      {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      <span>Sign Up</span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </button>
             </form>
           </div>
