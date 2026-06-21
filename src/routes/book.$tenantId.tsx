@@ -7,7 +7,7 @@ import { getClinicInfoAndSlotsServerFn, createAppointmentPublicServerFn as creat
 export const Route = createFileRoute("/book/$tenantId")({
   head: () => ({
     meta: [
-      { title: "Book Appointment — MediFlow AI" },
+      { title: "Book Appointment — BookMyTime" },
       {
         name: "description",
         content: "Schedule your appointment online with our integrated patient portal.",

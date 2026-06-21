@@ -91,7 +91,7 @@ export const verifyOtpServerFn = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     // Allow test bypass for development domains
-    if (data.code === "1234" && (data.email.endsWith("@example.com") || data.email.endsWith("@mediflowai.com"))) {
+    if (data.code === "1234" && (data.email.endsWith("@example.com") || data.email.endsWith("@bookmytime.com"))) {
       return { success: true };
     }
 
@@ -148,7 +148,7 @@ export const signupServerFn = createServerFn({ method: "POST" })
       throw new Error("Phone number already registered");
     }
 
-    const rawPassword = data.password || "MediFlow123";
+    const rawPassword = data.password || "BookMyTime123";
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
     const userId = generateId();
     const profession = data.profession || "Healthcare and medical";
@@ -190,7 +190,7 @@ export const loginServerFn = createServerFn({ method: "POST" })
     return data;
   })
   .handler(async ({ data }) => {
-    const rawPassword = data.password || "MediFlow123";
+    const rawPassword = data.password || "BookMyTime123";
     const { setCookie } = await import("@tanstack/react-start/server");
 
     // ── 1. Try main clinic owner (User table) ──
@@ -204,7 +204,7 @@ export const loginServerFn = createServerFn({ method: "POST" })
       if (!passwordMatch) throw new Error("Incorrect password");
 
       if (user.subscriptionStatus === "Cancelled") {
-        throw new Error("Your clinic account is deactivated. Please contact MediFlow AI support at infomedinex@gmail.com.");
+        throw new Error("Your clinic account is deactivated. Please contact BookMyTime support at infomedinex@gmail.com.");
       }
       if (user.subscriptionExpiresAt) {
         const expiry = new Date(user.subscriptionExpiresAt);
@@ -330,7 +330,7 @@ export const resetPasswordServerFn = createServerFn({ method: "POST" })
       throw new Error("No user registered with this email address");
     }
 
-    const rawPassword = data.password || "MediFlow123";
+    const rawPassword = data.password || "BookMyTime123";
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
     await execute(
@@ -488,7 +488,7 @@ export const uploadProfilePhotoServerFn = createServerFn({ method: "POST" })
     });
 
     const result = await cloud.uploader.upload(data.base64, {
-      folder: "mediflow/profiles",
+      folder: "bookmytime/profiles",
       public_id: `profile_${user.id}`,
       overwrite: true,
       transformation: [{ width: 400, height: 400, crop: "fill", gravity: "face" }],
@@ -2652,7 +2652,7 @@ export const uploadWATemplateHeaderImageServerFn = createServerFn({ method: "POS
     });
 
     const result = await cloud.uploader.upload(data.base64, {
-      folder: `mediflow/whatsapp_templates/${user.tenantId}`,
+      folder: `bookmytime/whatsapp_templates/${user.tenantId}`,
       overwrite: true,
     });
 

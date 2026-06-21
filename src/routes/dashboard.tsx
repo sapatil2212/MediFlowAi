@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react";
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
     meta: [
-      { title: "MediFlow AI — Workspace Dashboard Gateway" },
+      { title: "BookMyTime — Workspace Dashboard Gateway" },
       {
         name: "description",
         content: "Redirecting to your customized workspace dashboard...",

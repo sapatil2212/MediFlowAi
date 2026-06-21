@@ -1113,7 +1113,7 @@ function autoRestoreSessions() {
       if (file.startsWith("session-")) {
         const tenantId = file.replace("session-", "");
         // Do not restore the legacy name
-        if (tenantId && tenantId !== "mediflow-session") {
+        if (tenantId && tenantId !== "bookmytime-session") {
           console.log(`[WA Startup] 🔄 Restoring active session for tenant: ${tenantId}`);
           initClient(tenantId).catch(err => {
             console.error(`[WA Startup] Failed to restore session for ${tenantId}:`, err.message);

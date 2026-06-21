@@ -170,7 +170,7 @@ export function OnboardingWizard() {
           Personalize in 30 seconds
         </div>
         <h2 className="mt-4 text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl dark:text-zinc-50">
-          See MediFlow built for{" "}
+          See BookMyTime built for{" "}
           <span className="text-gradient-brand">your practice</span>
         </h2>
         <p className="mt-3 text-zinc-600 dark:text-zinc-400">
@@ -414,7 +414,7 @@ export function OnboardingWizard() {
                   Tailored for you
                 </div>
                 <h3 className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-                  MediFlow{" "}
+                  BookMyTime{" "}
                   <span className="text-gradient-brand">{rec.plan}</span> is the
                   right fit
                 </h3>

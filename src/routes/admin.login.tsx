@@ -8,10 +8,10 @@ import { loginSuperAdminServerFn, getAdminConfigServerFn } from "../lib/admin";
 export const Route = createFileRoute("/admin/login")({
   head: () => ({
     meta: [
-      { title: "SaaS Owner Control Center — MediFlow AI" },
+      { title: "SaaS Owner Control Center — BookMyTime" },
       {
         name: "description",
-        content: "Administrative login portal for MediFlow AI platform owners.",
+        content: "Administrative login portal for BookMyTime platform owners.",
       },
     ],
   }),
@@ -25,7 +25,7 @@ function AdminLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showSecurityKey, setShowSecurityKey] = useState(false);
   
-  const [config, setConfig] = useState({ adminEmail: "admin@mediflow.ai", hasSecurityKey: false });
+  const [config, setConfig] = useState({ adminEmail: "admin@bookmytime.ai", hasSecurityKey: false });
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -98,7 +98,7 @@ function AdminLoginPage() {
                 Administrative Portal
               </h1>
               <p className="mt-1.5 text-xs text-zinc-550">
-                Access the MediFlow AI SaaS Owner Management Console.
+                Access the BookMyTime SaaS Owner Management Console.
               </p>
             </div>
           </div>
@@ -115,7 +115,7 @@ function AdminLoginPage() {
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
                 <input
                   type="email"
-                  placeholder="admin@mediflow.ai"
+                  placeholder="admin@bookmytime.ai"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-10 pr-4 py-3 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all shadow-inner font-semibold"

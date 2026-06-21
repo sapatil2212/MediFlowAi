@@ -1113,7 +1113,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                         <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Auto-Reply Message</label>
                         <textarea
                           rows={4}
-                          placeholder="Thank you for reaching out! To book a clinic appointment online, visit: https://mediflow.ai/book"
+                          placeholder="Thank you for reaching out! To book a clinic appointment online, visit: https://bookmytime.ai/book"
                           value={editingAutoReply.replyMessage}
                           onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, replyMessage: e.target.value }))}
                           className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
@@ -1766,7 +1766,7 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
           <div className="bg-[#075e54] text-white p-2 rounded-t-lg -mx-3 flex items-center gap-2 shrink-0">
             <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold font-mono">MD</div>
             <div>
-              <p className="text-[9px] font-bold leading-none">MediFlow Automated Alerts</p>
+              <p className="text-[9px] font-bold leading-none">BookMyTime Automated Alerts</p>
               <p className="text-[7px] text-zinc-250 leading-none mt-0.5">Online</p>
             </div>
           </div>

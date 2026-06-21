@@ -42,7 +42,7 @@ export function Footer() {
               <div className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-brand-light">
                 <HeartPulse className="size-4 text-white" />
               </div>
-              <span className="text-sm font-semibold tracking-tight">MediFlow AI</span>
+              <span className="text-sm font-semibold tracking-tight">BookMyTime</span>
             </div>
             <p className="max-w-xs text-xs leading-relaxed text-zinc-500">
               The AI operating system for modern medicine. Built for clinics, hospitals, dental and
@@ -83,7 +83,7 @@ export function Footer() {
         </div>
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-zinc-950/5 pt-8 md:flex-row">
           <p className="text-[11px] text-zinc-500">
-            © 2026 MediFlow AI Systems Inc. All rights reserved.
+            © 2026 BookMyTime Systems Inc. All rights reserved.
           </p>
           <div className="flex flex-wrap items-center gap-4 text-[11px] text-zinc-500">
             <span className="flex items-center gap-1.5">

@@ -12,13 +12,13 @@ import {
 export const Route = createFileRoute("/features")({
   head: () => ({
     meta: [
-      { title: "Features — MediFlow AI" },
+      { title: "Features — BookMyTime" },
       {
         name: "description",
         content:
-          "Explore MediFlow AI: ambient SOAP scribe, voice receptionist, autonomous billing, real-time analytics, telemedicine and 40+ integrations.",
+          "Explore BookMyTime: ambient SOAP scribe, voice receptionist, autonomous billing, real-time analytics, telemedicine and 40+ integrations.",
       },
-      { property: "og:title", content: "MediFlow AI — Features" },
+      { property: "og:title", content: "BookMyTime — Features" },
       {
         property: "og:description",
         content:

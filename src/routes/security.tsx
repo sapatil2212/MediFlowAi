@@ -19,17 +19,17 @@ import {
 export const Route = createFileRoute("/security")({
   head: () => ({
     meta: [
-      { title: "Security & Trust — MediFlow AI" },
+      { title: "Security & Trust — BookMyTime" },
       {
         name: "description",
         content:
           "HIPAA, SOC 2 Type II, ISO 27001, GDPR. End-to-end encryption, regional residency, and zero PHI in model training.",
       },
-      { property: "og:title", content: "Security & Trust — MediFlow AI" },
+      { property: "og:title", content: "Security & Trust — BookMyTime" },
       {
         property: "og:description",
         content:
-          "How MediFlow AI protects patient data: certifications, architecture, and operational controls.",
+          "How BookMyTime protects patient data: certifications, architecture, and operational controls.",
       },
     ],
   }),

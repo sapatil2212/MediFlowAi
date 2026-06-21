@@ -150,7 +150,7 @@ import WhatsAppHub from "../../components/WhatsAppHub";
 export const Route = createFileRoute("/dashboards/medical")({
   head: () => ({
     meta: [
-      { title: "Clinician Dashboard — MediFlow AI" },
+      { title: "Clinician Dashboard — BookMyTime" },
       {
         name: "description",
         content: "Secure clinical EHR dashboard and AI scribe workspace.",
@@ -2449,7 +2449,7 @@ function MedicalDashboardPage() {
         doc.setFont("Helvetica", "bold");
         doc.setFontSize(20);
         doc.setTextColor(12, 114, 114); // Dark teal matching brand color
-        doc.text("MediFlow AI Clinic", 14, 20);
+        doc.text("BookMyTime Clinic", 14, 20);
         
         doc.setFont("Helvetica", "normal");
         doc.setFontSize(11);
@@ -2916,7 +2916,7 @@ function MedicalDashboardPage() {
 
   const handleDownloadPrescriptionPDF = () => {
     const doc = new jsPDF();
-    const clinicName = user?.clinicName || "MediFlow AI Medical Center";
+    const clinicName = user?.clinicName || "BookMyTime Medical Center";
     const doctorName = user?.name || "Dr. Staff Clinician";
     const doctorQualifications = (user as any)?.qualifications || "M.D., General Medicine";
 
@@ -3157,7 +3157,7 @@ function MedicalDashboardPage() {
       return;
     }
 
-    const clinicName = user?.clinicName || "MediFlow AI Medical Center";
+    const clinicName = user?.clinicName || "BookMyTime Medical Center";
     const doctorName = user?.name || "Dr. Staff Clinician";
     const doctorQualifications = (user as any)?.qualifications || "M.D., General Medicine";
 
@@ -3204,7 +3204,7 @@ function MedicalDashboardPage() {
           </div>
           <div class="clinic-info">
             <div style="font-weight: bold; font-size: 16px; color: #10b981;">${clinicName}</div>
-            <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">MediFlow EHR Automated Prescription</div>
+            <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">BookMyTime EHR Automated Prescription</div>
           </div>
         </div>
         
@@ -3241,7 +3241,7 @@ function MedicalDashboardPage() {
         ` : ''}
 
         <div class="footer">
-          <div>Generated securely via MediFlow AI Clinical Workspace</div>
+          <div>Generated securely via BookMyTime Clinical Workspace</div>
           <div>
             <div class="signature-box">Signature Authorized</div>
             <div style="text-align: center; margin-top: 5px; font-size: 11px;">${doctorName}</div>
@@ -4828,7 +4828,7 @@ function MedicalDashboardPage() {
                               Structuring Clinical Note
                             </h4>
                             <p className="text-[10px] text-zinc-400 mt-1">
-                              MediFlow AI is synthesizing the dialogue into standard SOAP format...
+                              BookMyTime is synthesizing the dialogue into standard SOAP format...
                             </p>
                           </div>
                         </div>
@@ -7083,7 +7083,7 @@ function MedicalDashboardPage() {
                     {/* Efficiency Scorecard */}
                     <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3">
                       <h4 className="text-xs font-bold text-zinc-800 uppercase tracking-tight">
-                        MediFlow AI efficiency scorecard
+                        BookMyTime efficiency scorecard
                       </h4>
                       <div className="grid gap-4 sm:grid-cols-3 text-center">
                         <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-150">
@@ -8746,7 +8746,7 @@ function MedicalDashboardPage() {
                                   type="email"
                                   value={docEmail}
                                   onChange={(e) => setDocEmail(e.target.value)}
-                                  placeholder="watson@mediflowai.com"
+                                  placeholder="watson@bookmytime.com"
                                   required
                                   className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
                                 />
@@ -9123,7 +9123,7 @@ function MedicalDashboardPage() {
                           <div className="space-y-1">
                             <label className="text-[9px] font-bold text-zinc-400 uppercase pl-1">Message</label>
                             <textarea
-                              placeholder="Hello! This is a test notification from MediFlow AI..."
+                              placeholder="Hello! This is a test notification from BookMyTime..."
                               value={testWaBody}
                               onChange={(e) => setTestWaBody(e.target.value)}
                               rows={2}

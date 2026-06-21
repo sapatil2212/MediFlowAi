@@ -729,9 +729,9 @@ if (typeof window === "undefined") {
             const adminId = cryptoModule.randomUUID();
             await conn.query(
               "INSERT INTO SuperAdmin (id, name, email, password) VALUES (?, ?, ?, ?)",
-              [adminId, "SaaS Owner", "admin@mediflow.ai", hashedPassword]
+              [adminId, "SaaS Owner", "admin@bookmytime.ai", hashedPassword]
             );
-            console.log("[DB] ✅ Seeded default super admin: admin@mediflow.ai / admin123");
+            console.log("[DB] ✅ Seeded default super admin: admin@bookmytime.ai / admin123");
           }
 
           // Sync or seed custom SUPER_ADMIN from .env if defined
@@ -744,7 +744,7 @@ if (typeof window === "undefined") {
               const adminId = cryptoModule.randomUUID();
               await conn.query(
                 "INSERT INTO SuperAdmin (id, name, email, password) VALUES (?, ?, ?, ?)",
-                [adminId, "MediFlow Admin", envEmail, hashedEnvPassword]
+                [adminId, "BookMyTime Admin", envEmail, hashedEnvPassword]
               );
               console.log(`[DB] ✅ Seeded custom super admin from .env: ${envEmail}`);
             } else {

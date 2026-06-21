@@ -14,16 +14,16 @@ import { TrendingUp, Clock, Users } from "lucide-react";
 export const Route = createFileRoute("/customers")({
   head: () => ({
     meta: [
-      { title: "Customers — MediFlow AI" },
+      { title: "Customers — BookMyTime" },
       {
         name: "description",
         content:
-          "4,200+ practices in 38 countries trust MediFlow AI. Read real stories from clinics that cut admin work by 73% and grew throughput by 38%.",
+          "4,200+ practices in 38 countries trust BookMyTime. Read real stories from clinics that cut admin work by 73% and grew throughput by 38%.",
       },
-      { property: "og:title", content: "MediFlow AI — Customer stories" },
+      { property: "og:title", content: "BookMyTime — Customer stories" },
       {
         property: "og:description",
-        content: "Real metrics from real clinics using MediFlow AI.",
+        content: "Real metrics from real clinics using BookMyTime.",
       },
     ],
   }),
@@ -35,7 +35,7 @@ const cases = [
     name: "Mercy Health Group",
     type: "12 clinics · Primary care",
     quote:
-      "After 90 days on MediFlow, our providers reclaimed 22 hours per week and our front desk never picks up an insurance call again.",
+      "After 90 days on BookMyTime, our providers reclaimed 22 hours per week and our front desk never picks up an insurance call again.",
     metrics: [
       { icon: TrendingUp, v: "+38%", l: "patient throughput" },
       { icon: Clock, v: "22h", l: "saved per provider / wk" },

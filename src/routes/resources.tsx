@@ -18,13 +18,13 @@ import {
 export const Route = createFileRoute("/resources")({
   head: () => ({
     meta: [
-      { title: "Resources — MediFlow AI" },
+      { title: "Resources — BookMyTime" },
       {
         name: "description",
         content:
           "Guides, customer stories, product updates, and on-demand webinars for healthcare operators.",
       },
-      { property: "og:title", content: "Resources — MediFlow AI" },
+      { property: "og:title", content: "Resources — BookMyTime" },
       {
         property: "og:description",
         content:

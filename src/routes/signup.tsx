@@ -11,10 +11,10 @@ export const Route = createFileRoute("/signup")({
   }),
   head: () => ({
     meta: [
-      { title: "Sign Up — MediFlow AI" },
+      { title: "Sign Up — BookMyTime" },
       {
         name: "description",
-        content: "Create your MediFlow AI clinician or workspace account.",
+        content: "Create your BookMyTime clinician or workspace account.",
       },
     ],
   }),

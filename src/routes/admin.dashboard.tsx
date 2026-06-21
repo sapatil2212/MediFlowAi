@@ -50,7 +50,7 @@ import {
 export const Route = createFileRoute("/admin/dashboard")({
   head: () => ({
     meta: [
-      { title: "Platform Owner Console — MediFlow AI" },
+      { title: "Platform Owner Console — BookMyTime" },
       { name: "description", content: "Platform settings, billing and system monitoring." },
     ],
   }),

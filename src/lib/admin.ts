@@ -73,7 +73,7 @@ export const loginSuperAdminServerFn = createServerFn({ method: "POST" })
 export const getAdminConfigServerFn = createServerFn({ method: "GET" })
   .handler(async () => {
     return {
-      adminEmail: process.env.SUPER_ADMIN_EMAIL || "admin@mediflow.ai",
+      adminEmail: process.env.SUPER_ADMIN_EMAIL || "admin@bookmytime.ai",
       hasSecurityKey: !!process.env.SUPER_ADMIN_SECURITY_KEY,
     };
   });

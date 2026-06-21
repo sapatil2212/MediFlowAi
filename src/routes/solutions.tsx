@@ -12,13 +12,13 @@ import {
 export const Route = createFileRoute("/solutions")({
   head: () => ({
     meta: [
-      { title: "Solutions — MediFlow AI" },
+      { title: "Solutions — BookMyTime" },
       {
         name: "description",
         content:
           "Tailored deployments for solo practitioners, multi-location clinics, hospitals, dental groups, aesthetic centers and diagnostic labs.",
       },
-      { property: "og:title", content: "MediFlow AI — Solutions" },
+      { property: "og:title", content: "BookMyTime — Solutions" },
       {
         property: "og:description",
         content:
@@ -37,7 +37,7 @@ function SolutionsPage() {
         eyebrow="SOLUTIONS"
         title="Built for every kind of"
         highlight="medical practice"
-        subtitle="Whether you're one provider or two hundred, MediFlow flexes to your workflows, your specialty, and your IT constraints."
+        subtitle="Whether you're one provider or two hundred, BookMyTime flexes to your workflows, your specialty, and your IT constraints."
       />
       <SolutionsGrid />
       <SpecialtiesSection />

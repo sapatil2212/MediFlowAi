@@ -9,13 +9,13 @@ import { Mail, Phone, MapPin, Check, ArrowRight, MessageSquare, CalendarClock } 
 export const Route = createFileRoute("/contact")({
   head: () => ({
     meta: [
-      { title: "Contact — MediFlow AI" },
+      { title: "Contact — BookMyTime" },
       {
         name: "description",
         content:
           "Book a demo, talk to sales, or get a custom onboarding plan for your clinic, hospital network or specialty group.",
       },
-      { property: "og:title", content: "Contact MediFlow AI" },
+      { property: "og:title", content: "Contact BookMyTime" },
       {
         property: "og:description",
         content: "Talk to a healthcare specialist. Average response: under 4 hours.",
@@ -41,7 +41,7 @@ function ContactPage() {
             <InfoCard
               icon={Mail}
               title="Email"
-              line="hello@mediflow.ai"
+              line="hello@bookmytime.ai"
               sub="Replies within 4 business hours"
             />
             <InfoCard
@@ -127,7 +127,7 @@ function ContactForm() {
             </div>
             <h3 className="mt-4 text-2xl font-semibold tracking-tight">Got it, {form.name || "doc"}.</h3>
             <p className="mt-2 max-w-md text-sm text-zinc-600">
-              A MediFlow specialist will reach out within 4 business hours with a custom demo plan
+              A BookMyTime specialist will reach out within 4 business hours with a custom demo plan
               for your practice.
             </p>
           </motion.div>

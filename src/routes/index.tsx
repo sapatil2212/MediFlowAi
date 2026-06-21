@@ -19,7 +19,7 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "MediFlow AI — The AI operating system for modern medicine" },
+      { title: "BookMyTime — The AI operating system for modern medicine" },
       {
         name: "description",
         content:
@@ -27,7 +27,7 @@ export const Route = createFileRoute("/")({
       },
       {
         property: "og:title",
-        content: "MediFlow AI — Clinical intelligence for modern medicine",
+        content: "BookMyTime — Clinical intelligence for modern medicine",
       },
       {
         property: "og:description",

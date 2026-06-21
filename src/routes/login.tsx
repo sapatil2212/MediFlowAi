@@ -8,10 +8,10 @@ import { loginServerFn, sendOtpServerFn, verifyOtpServerFn, resetPasswordServerF
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Sign In — MediFlow AI" },
+      { title: "Sign In — BookMyTime" },
       {
         name: "description",
-        content: "Sign in to your MediFlow AI clinic workspace.",
+        content: "Sign in to your BookMyTime clinic workspace.",
       },
     ],
   }),
@@ -217,7 +217,7 @@ function LoginPage() {
             <HeartPulse className="size-3.5 text-white" />
           </div>
           <span className="text-xs font-semibold tracking-tight text-zinc-800">
-            MediFlow AI
+            BookMyTime
           </span>
         </Link>
       </div>

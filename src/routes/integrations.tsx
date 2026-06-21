@@ -23,17 +23,17 @@ import {
 export const Route = createFileRoute("/integrations")({
   head: () => ({
     meta: [
-      { title: "Integrations — MediFlow AI" },
+      { title: "Integrations — BookMyTime" },
       {
         name: "description",
         content:
           "120+ native integrations: Stripe, Twilio, WhatsApp, Google Calendar, Epic, Cerner, HL7 / FHIR and more.",
       },
-      { property: "og:title", content: "Integrations — MediFlow AI" },
+      { property: "og:title", content: "Integrations — BookMyTime" },
       {
         property: "og:description",
         content:
-          "Connect MediFlow to your EHR, payments, messaging, calendar, and lab partners in one click.",
+          "Connect BookMyTime to your EHR, payments, messaging, calendar, and lab partners in one click.",
       },
     ],
   }),
@@ -121,7 +121,7 @@ function IntegrationsPage() {
             <span className="text-gradient-brand">Every tool you already use.</span>
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-zinc-600">
-            Plug MediFlow into your EHR, payments, messaging, identity, and
+            Plug BookMyTime into your EHR, payments, messaging, identity, and
             analytics stack — no middleware, no consultants, no surprises.
           </p>
 

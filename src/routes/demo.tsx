@@ -21,13 +21,13 @@ import {
 export const Route = createFileRoute("/demo")({
   head: () => ({
     meta: [
-      { title: "Live demo — MediFlow AI" },
+      { title: "Live demo — BookMyTime" },
       {
         name: "description",
         content:
-          "Watch MediFlow handle a real patient call, book the appointment, draft the SOAP note, and send the invoice — in 90 seconds.",
+          "Watch BookMyTime handle a real patient call, book the appointment, draft the SOAP note, and send the invoice — in 90 seconds.",
       },
-      { property: "og:title", content: "Live demo — MediFlow AI" },
+      { property: "og:title", content: "Live demo — BookMyTime" },
       {
         property: "og:description",
         content:
@@ -80,7 +80,7 @@ function DemoPage() {
             <Sparkles className="h-3.5 w-3.5" /> 90-second interactive demo
           </div>
           <h1 className="mx-auto mt-5 max-w-3xl text-5xl font-bold tracking-tight text-zinc-900 sm:text-6xl">
-            See MediFlow{" "}
+            See BookMyTime{" "}
             <span className="text-gradient-brand">run a real patient call</span>
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-zinc-600">

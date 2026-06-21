@@ -1284,7 +1284,7 @@ export function AnalyticsSection() {
                       stroke="#0f766e"
                       strokeWidth={2.5}
                       dot={false}
-                      name="With MediFlow"
+                      name="With BookMyTime"
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -1404,7 +1404,7 @@ export function Testimonials() {
       role: "Family Medicine · Mercy Health Group",
       source: "via Google Reviews",
       quote:
-        "I haven't written a SOAP note in 4 months. MediFlow's AI scribe captures everything during the visit. I see two more patients a day and I'm home for dinner with my family.",
+        "I haven't written a SOAP note in 4 months. BookMyTime's AI scribe captures everything during the visit. I see two more patients a day and I'm home for dinner with my family.",
       stat: "+38% patient throughput",
     },
     {
@@ -1422,7 +1422,7 @@ export function Testimonials() {
       role: "Dental Director · BrightSmile Network",
       source: "via G2 Reviews",
       quote:
-        "We rolled out MediFlow across 14 clinics in 9 days. No-shows dropped from 11% to 3.1% within the first month. The onboarding team was exceptional.",
+        "We rolled out BookMyTime across 14 clinics in 9 days. No-shows dropped from 11% to 3.1% within the first month. The onboarding team was exceptional.",
       stat: "-58% no-show rate",
     },
     {
@@ -1431,7 +1431,7 @@ export function Testimonials() {
       role: "Chief Medical Officer · NovaCare Health",
       source: "via Google Reviews",
       quote:
-        "It feels like having an extra resident on the team — one who never sleeps. MediFlow listens, drafts, codes and learns your style within weeks of going live.",
+        "It feels like having an extra resident on the team — one who never sleeps. BookMyTime listens, drafts, codes and learns your style within weeks of going live.",
       stat: "2× faster documentation",
     },
   ];
@@ -1912,7 +1912,7 @@ export function FAQ() {
       a: "Most solo practices are live in under 12 minutes. Multi-location clinics typically complete onboarding in 3–5 days, including EMR data migration.",
     },
     {
-      q: "Is MediFlow HIPAA compliant?",
+      q: "Is BookMyTime HIPAA compliant?",
       a: "Yes. We're HIPAA compliant, SOC 2 Type II certified, and offer BAAs at every tier. Data is encrypted at rest (AES-256) and in transit (TLS 1.3).",
     },
     {
@@ -1993,7 +1993,7 @@ export function CTA() {
           Give your clinic its <span className="text-gradient-brand">superpower</span> back.
         </motion.h2>
         <p className="mt-6 text-lg text-zinc-300">
-          Join 4,200+ practices using MediFlow AI to see more patients, write zero notes, and run
+          Join 4,200+ practices using BookMyTime to see more patients, write zero notes, and run
           smarter operations.
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
