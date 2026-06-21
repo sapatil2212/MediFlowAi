@@ -7236,39 +7236,58 @@ function DashboardPage() {
                             <table className="min-w-full divide-y divide-zinc-200 text-left">
                               <thead className="bg-zinc-50 text-[10px] font-bold text-zinc-400 uppercase">
                                 <tr>
-                                  <th className="px-4 h-10 text-center">Token</th>
-                                  <th className="px-6 h-10">Patient</th>
-                                  <th className="px-6 h-10">Contact Info</th>
-                                  <th className="px-6 h-10">Date & Time</th>
-                                  <th className="px-6 h-10">Chief Complaint</th>
-                                  <th className="px-6 h-10">Status</th>
-                                  <th className="px-6 h-10 text-right">Actions</th>
+                                  <th className="px-5 py-3">Patient Info</th>
+                                  <th className="px-5 py-3">Date & Time</th>
+                                  <th className="px-5 py-3">Chief Complaint</th>
+                                  <th className="px-5 py-3">Status</th>
+                                  <th className="px-5 py-3 text-right">Actions</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-zinc-150 text-xs">
                                 {list.map((apt) => (
-                                  <tr key={apt.id} className="hover:bg-zinc-50/50">
-                                    <td className="px-4 py-4 text-center">
-                                      <span className="inline-flex items-center justify-center h-7 min-w-[28px] px-1.5 rounded-lg bg-brand/10 border border-brand/20 text-brand text-[11px] font-black">
-                                        #{apt.tokenNo || '—'}
-                                      </span>
-                                    </td>
-                                    <td className="px-6 py-4 font-bold text-zinc-800">
-                                      <span>{apt.name}</span>
-                                      {apt.appointmentType && (
-                                        <span className="block text-[9px] font-extrabold text-brand bg-brand/5 border border-brand/10 rounded px-1.5 py-0.5 mt-1.5 w-max">
-                                          {apt.appointmentType}
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="px-6 py-4 text-zinc-500">
-                                      <span className="block font-semibold">{apt.email}</span>
-                                      <div className="flex flex-col text-[10px] text-zinc-400 gap-0.5">
-                                        <span>Phone: {apt.phone}</span>
-                                        {apt.whatsapp && <span>WA: {apt.whatsapp}</span>}
+                                  <tr key={apt.id} className="hover:bg-zinc-50/40 transition-colors">
+                                    {/* Patient Info */}
+                                    <td className="px-5 py-3.5">
+                                      <div className="flex flex-col">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          {apt.tokenNo && (
+                                            <span className="inline-flex items-center justify-center px-1 rounded bg-brand/10 border border-brand/20 text-brand text-[8px] font-black shrink-0">
+                                              #{apt.tokenNo}
+                                            </span>
+                                          )}
+                                          <span className="font-extrabold text-zinc-800 text-xs sm:text-[13px]">{apt.name}</span>
+                                          {apt.appointmentType && (
+                                            <span className="inline-flex items-center justify-center px-1.5 py-0.2 rounded bg-brand/5 border border-brand/10 text-brand text-[8px] font-extrabold shrink-0">
+                                              {apt.appointmentType}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-400 font-semibold mt-1">
+                                          {apt.age && <span>{apt.age} Yrs</span>}
+                                          {apt.gender && (
+                                            <>
+                                              <span className="w-1 h-1 rounded-full bg-zinc-300"></span>
+                                              <span>{apt.gender}</span>
+                                            </>
+                                          )}
+                                          {apt.phone && (
+                                            <>
+                                              <span className="w-1 h-1 rounded-full bg-zinc-300"></span>
+                                              <span>{apt.phone}</span>
+                                            </>
+                                          )}
+                                          {apt.email && (
+                                            <>
+                                              <span className="w-1 h-1 rounded-full bg-zinc-300"></span>
+                                              <span className="truncate max-w-[120px]">{apt.email}</span>
+                                            </>
+                                          )}
+                                        </div>
                                       </div>
                                     </td>
-                                    <td className="px-6 py-4 text-zinc-700 font-bold">
+
+                                    {/* Date & Time */}
+                                    <td className="px-5 py-3.5 font-bold text-zinc-700 whitespace-nowrap">
                                       {new Date(apt.dateTime).toLocaleString("en-US", {
                                         month: "short",
                                         day: "numeric",
@@ -7277,8 +7296,14 @@ function DashboardPage() {
                                         minute: "2-digit",
                                       })}
                                     </td>
-                                    <td className="px-6 py-4 text-zinc-500 max-w-[200px] truncate">{apt.reason}</td>
-                                    <td className="px-6 py-4 relative">
+
+                                    {/* Chief Complaint */}
+                                    <td className="px-5 py-3.5 max-w-[200px] truncate text-zinc-500 font-medium">
+                                      {apt.reason || "General consultation visit"}
+                                    </td>
+
+                                    {/* Status */}
+                                    <td className="px-5 py-3.5 relative">
                                       <button
                                         type="button"
                                         onClick={() => setActiveStatusDropdownId(activeStatusDropdownId === apt.id ? null : apt.id)}
@@ -7289,7 +7314,7 @@ function DashboardPage() {
                                               ? "bg-emerald-50 text-emerald-700 border-emerald-100"
                                               : apt.status === "Cancelled"
                                                 ? "bg-red-50 text-red-700 border-red-100"
-                                                : "bg-amber-50 text-amber-700 border-amber-100"
+                                                : "bg-amber-55 text-amber-700 border-amber-100"
                                         }`}
                                       >
                                         <span>{apt.status}</span>
@@ -7302,7 +7327,7 @@ function DashboardPage() {
                                             className="fixed inset-0 z-10" 
                                             onClick={() => setActiveStatusDropdownId(null)} 
                                           />
-                                          <div className="absolute left-6 mt-1 w-32 rounded-xl bg-white border border-zinc-150 shadow-lg py-1 z-20 animate-in fade-in slide-in-from-top-1 duration-100">
+                                          <div className="absolute left-5 mt-1 w-32 rounded-xl bg-white border border-zinc-150 shadow-lg py-1 z-20 animate-in fade-in slide-in-from-top-1 duration-100">
                                             {(["Pending", "Confirmed", "Completed", "Cancelled"] as const).map((status) => (
                                               <button
                                                 key={status}
@@ -7320,22 +7345,70 @@ function DashboardPage() {
                                         </>
                                       )}
                                     </td>
-                                    <td className="px-6 py-4 text-right space-x-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => openEditApt(apt)}
-                                        className="text-brand font-bold hover:underline cursor-pointer"
-                                      >
-                                        Edit
-                                      </button>
-                                      
-                                      <button
-                                        type="button"
-                                        onClick={() => setAptToDelete(apt)}
-                                        className="text-red-500 font-bold hover:underline cursor-pointer"
-                                      >
-                                        Delete
-                                      </button>
+
+                                    {/* Action buttons */}
+                                    <td className="px-5 py-3.5">
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        {/* Consultation link */}
+                                        <button
+                                          type="button"
+                                          title="Start Consultation"
+                                          onClick={() => {
+                                            setSelectedAptForConsultation(apt);
+                                            const pid = resolvePatientForApt(apt);
+                                            setScribePatientId(pid);
+                                            setLiveTranscript(apt.reason || "");
+                                            setConsultationChiefComplaint(apt.reason || "");
+                                            setConsultationDiagnosis("");
+                                            setConsultationAdvice("");
+                                            setPrescriptionMedications([]);
+                                            setConsultationLabTests([]);
+                                            setConsultationReferrals([]);
+                                            setConsultationFollowUpDate("");
+                                            setConsultationFollowUpNotes("");
+                                            setConsultationFee(1500);
+                                            setConsultationPrivateNotes("");
+                                            setVitalBP("120/80");
+                                            setVitalPulse("72");
+                                            setVitalTemp("98.6");
+                                            setVitalWeight("70");
+                                            setVitalHeight("170");
+                                            setVitalSpO2("98");
+                                            setVitalRespRate("16");
+                                            setPatientChartData(null);
+                                            if (pid) {
+                                              getPatientChartServerFn({ data: { patientId: pid } })
+                                                .then(res => setPatientChartData(res))
+                                                .catch(err => console.error(err));
+                                            }
+                                            setActiveTab("scribe");
+                                          }}
+                                          className="inline-flex items-center gap-1 bg-brand text-white hover:opacity-90 transition-all font-bold px-3 py-1 rounded-full text-[10px] cursor-pointer shrink-0 shadow-none active:scale-[0.98]"
+                                        >
+                                          <Stethoscope className="h-3 w-3" />
+                                          Consult
+                                        </button>
+
+                                        {/* Edit button */}
+                                        <button
+                                          type="button"
+                                          title="Edit Booking"
+                                          onClick={() => openEditApt(apt)}
+                                          className="p-1 rounded bg-zinc-50 hover:bg-zinc-100 text-zinc-550 border border-zinc-200 transition-colors cursor-pointer shrink-0"
+                                        >
+                                          <Edit3 className="h-3.5 w-3.5" />
+                                        </button>
+
+                                        {/* Delete button */}
+                                        <button
+                                          type="button"
+                                          title="Delete Booking"
+                                          onClick={() => setAptToDelete(apt)}
+                                          className="p-1 rounded bg-red-50/10 hover:bg-red-50 text-red-500 border border-red-100 transition-colors cursor-pointer shrink-0"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
                                     </td>
                                   </tr>
                                 ))}
