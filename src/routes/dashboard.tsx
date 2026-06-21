@@ -10784,7 +10784,7 @@ function DashboardPage() {
 
               <div className="space-y-2">
                 <h3 className="text-sm font-bold text-zinc-900 leading-none">{confirmDialog.title}</h3>
-                <p className="text-xs text-zinc-450 leading-relaxed font-semibold">
+                <p className="text-[11px] text-zinc-400 leading-relaxed font-medium">
                   {confirmDialog.message}
                 </p>
               </div>
@@ -10849,8 +10849,8 @@ function DashboardPage() {
 
               <div className="space-y-2">
                 <h3 className="text-sm font-bold text-zinc-900 leading-none">Delete Staff Account?</h3>
-                <p className="text-xs text-zinc-450 leading-relaxed font-semibold">
-                  Are you sure you want to delete the account for <span className="font-bold text-zinc-800">{subUserToDelete.name}</span>? This action cannot be undone and they will immediately lose access.
+                <p className="text-[11px] text-zinc-400 leading-relaxed font-medium">
+                  Are you sure you want to delete the account for <span className="font-semibold text-zinc-650">{subUserToDelete.name}</span>? This action cannot be undone and they will immediately lose access.
                 </p>
               </div>
 
@@ -11161,8 +11161,8 @@ function DashboardPage() {
 
               <div className="space-y-2">
                 <h3 className="text-sm font-bold text-zinc-900 leading-none">Delete Appointment</h3>
-                <p className="text-xs text-zinc-450 leading-relaxed font-semibold">
-                  Are you sure you want to delete the appointment for <span className="font-bold text-zinc-800">{aptToDelete.name}</span>? This action is permanent and cannot be undone.
+                <p className="text-[11px] text-zinc-400 leading-relaxed font-medium">
+                  Are you sure you want to delete the appointment for <span className="font-semibold text-zinc-650">{aptToDelete.name}</span>? This action is permanent and cannot be undone.
                 </p>
               </div>
 
