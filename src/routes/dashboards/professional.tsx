@@ -5311,60 +5311,211 @@ function DashboardPage() {
                       <Loader2 className="mx-auto h-6 w-6 animate-spin text-zinc-400 mb-2" />
                       <p className="text-xs text-zinc-400">Loading registry profiles...</p>
                     </div>
-                  ) : filteredPatients.length === 0 ? (
-                    <div className="space-y-6">
-                      <div className="p-8 text-center bg-white rounded-2xl">
-                        <Users className="mx-auto h-8 w-8 text-zinc-300 mb-2" />
-                        <p className="text-xs text-zinc-400 font-bold">No client profiles match your query.</p>
-                      </div>
-
-                      {(() => {
-                        const confirmedApts = appointments.filter(apt => apt.status === "Confirmed");
-                        if (confirmedApts.length === 0) return null;
-                        return (
-                          <div className="border-t border-zinc-200 bg-zinc-50/50 p-6 space-y-4">
-                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-                              <ClipboardCheck className="h-4 w-4 text-emerald-500" />
-                              Confirmed Consultations
-                            </h4>
-                            <div className="grid gap-3 sm:grid-cols-2">
+                  ) : filteredPatients.length === 0 ? ( (() => {
+                    const confirmedApts = appointments.filter(apt => apt.status === "Confirmed");
+                    if (confirmedApts.length === 0) {
+                      return (
+                        <div className="p-8 text-center bg-white rounded-2xl">
+                          <Users className="mx-auto h-8 w-8 text-zinc-300 mb-2" />
+                          <p className="text-xs text-zinc-400 font-bold">No client profiles match your query.</p>
+                        </div>
+                      );
+                    }
+                    
+                    return (
+                      <div className="space-y-4">
+                        <div className="bg-zinc-50 border-b border-zinc-150 px-6 py-3 flex items-center justify-between">
+                          <h4 className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+                            <ClipboardCheck className="h-4 w-4 text-emerald-500" />
+                            Confirmed Consultations / Meetings
+                          </h4>
+                          <span className="text-[10px] font-bold text-zinc-400">
+                            {confirmedApts.length} active
+                          </span>
+                        </div>
+                        
+                        {/* Desktop Table View */}
+                        <div className="hidden md:block overflow-x-auto">
+                          <table className="min-w-full divide-y divide-zinc-200 text-left">
+                            <thead className="bg-zinc-50 text-[10px] font-bold text-zinc-400 uppercase">
+                              <tr>
+                                <th className="px-6 py-3">Client Info</th>
+                                <th className="px-6 py-3">Date & Time</th>
+                                <th className="px-6 py-3">Consultation / Goal</th>
+                                <th className="px-6 py-3 text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-150 text-xs">
                               {confirmedApts.map((apt) => (
-                                <div key={apt.id} className="bg-white border border-zinc-200/80 rounded-xl p-4 flex flex-col justify-between hover:shadow-sm transition-all">
-                                  <div className="flex justify-between items-start gap-2">
-                                    <div>
-                                      <h5 className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                                <tr key={apt.id} className="hover:bg-zinc-50/40 transition-colors">
+                                  {/* Info */}
+                                  <td className="px-6 py-3.5">
+                                    <div className="flex flex-col">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
                                         {apt.tokenNo && (
-                                          <span className="inline-flex items-center justify-center px-1 rounded bg-brand/10 border border-brand/20 text-brand text-[8px] font-black">
+                                          <span className="inline-flex items-center justify-center px-1 rounded bg-brand/10 border border-brand/20 text-brand text-[8px] font-black shrink-0">
                                             #{apt.tokenNo}
                                           </span>
                                         )}
-                                        {apt.name}
-                                      </h5>
-                                      <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">{apt.phone}</p>
+                                        <span className="font-extrabold text-zinc-800 text-xs sm:text-[13px]">{apt.name}</span>
+                                        {apt.appointmentType && (
+                                          <span className="inline-flex items-center justify-center px-1.5 py-0.2 rounded bg-brand/5 border border-brand/10 text-brand text-[8px] font-extrabold shrink-0">
+                                            {apt.appointmentType}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-400 font-semibold mt-1">
+                                        {apt.phone && <span>{apt.phone}</span>}
+                                        {apt.email && (
+                                          <>
+                                            <span className="w-1 h-1 rounded-full bg-zinc-300"></span>
+                                            <span className="truncate max-w-[120px]">{apt.email}</span>
+                                          </>
+                                        )}
+                                      </div>
                                     </div>
-                                    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[8px] font-bold border bg-brand/5 text-brand border-brand/10">
-                                      Confirmed
-                                    </span>
-                                  </div>
-                                  <div className="border-t border-zinc-100 mt-3 pt-2 flex items-center justify-between text-[10px] text-zinc-500">
-                                    <span>
-                                      {new Date(apt.dateTime).toLocaleString("en-US", {
-                                        month: "short",
-                                        day: "numeric",
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      })}
-                                    </span>
-                                    <span className="truncate max-w-[120px] font-semibold text-zinc-700">{apt.reason || "General consulting session"}</span>
+                                  </td>
+
+                                  {/* Date & Time */}
+                                  <td className="px-6 py-3.5 font-bold text-zinc-700 whitespace-nowrap">
+                                    {new Date(apt.dateTime).toLocaleString("en-US", {
+                                      month: "short",
+                                      day: "numeric",
+                                      year: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </td>
+
+                                  {/* Goal / Focus */}
+                                  <td className="px-6 py-3.5 max-w-[200px] truncate text-zinc-550 font-medium">
+                                    {apt.reason || "General consulting session"}
+                                  </td>
+
+                                  {/* Actions */}
+                                  <td className="px-6 py-3.5 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        const pid = resolvePatientForApt(apt);
+                                        if (pid) {
+                                          const matched = patientsList.find(p => p.id === pid);
+                                          if (matched) {
+                                            setSelectedPatient(matched);
+                                          } else {
+                                            setLoadingPatients(true);
+                                            try {
+                                              const res = await getPatientChartServerFn({ data: { patientId: pid } });
+                                              if (res && res.patient) {
+                                                setSelectedPatient(res.patient);
+                                              }
+                                            } catch (e) {
+                                              console.error("Failed to load chart:", e);
+                                              showToast("error", "Failed to load client profile");
+                                            } finally {
+                                              setLoadingPatients(false);
+                                            }
+                                          }
+                                        } else {
+                                          showToast("error", "No profile found for this booking.");
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1 bg-brand text-white hover:opacity-90 transition-all font-bold px-3 py-1 rounded-full text-[10px] cursor-pointer shrink-0 shadow-none active:scale-[0.98]"
+                                    >
+                                      <User className="h-3 w-3" />
+                                      View Profile
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Mobile List View */}
+                        <div className="md:hidden divide-y divide-zinc-150">
+                          {confirmedApts.map((apt) => (
+                            <div key={apt.id} className="p-4 space-y-3">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h4 className="text-sm font-bold text-zinc-800 flex items-center gap-1.5">
+                                    {apt.tokenNo && (
+                                      <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-md bg-brand/10 border border-brand/20 text-brand text-[9px] font-black">
+                                        #{apt.tokenNo}
+                                      </span>
+                                    )}
+                                    <span>{apt.name}</span>
+                                    {apt.appointmentType && (
+                                      <span className="text-[8px] font-extrabold text-brand bg-brand/5 border border-brand/10 rounded px-1.5 py-0.5">
+                                        {apt.appointmentType}
+                                      </span>
+                                    )}
+                                  </h4>
+                                  <div className="flex flex-col text-[10px] text-zinc-400 gap-0.5 mt-0.5">
+                                    <span>Phone: {apt.phone}</span>
                                   </div>
                                 </div>
-                              ))}
+                                <span className="inline-block rounded-full px-2.5 py-0.5 text-[9px] font-bold border bg-brand/5 text-brand border-brand/10">
+                                  Confirmed
+                                </span>
+                              </div>
+
+                              <div className="space-y-1 text-xs border-t border-b border-zinc-100/70 py-2">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-zinc-400 font-semibold uppercase text-[9px] tracking-wide block w-20 shrink-0">Schedule:</span>
+                                  <span className="text-zinc-700 font-bold">
+                                    {new Date(apt.dateTime).toLocaleString("en-US", {
+                                      month: "short",
+                                      day: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-zinc-400 font-semibold uppercase text-[9px] tracking-wide block w-20 shrink-0">Goal:</span>
+                                  <span className="text-zinc-550 truncate">{apt.reason}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-end gap-3 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const pid = resolvePatientForApt(apt);
+                                    if (pid) {
+                                      const matched = patientsList.find(p => p.id === pid);
+                                      if (matched) {
+                                        setSelectedPatient(matched);
+                                      } else {
+                                        setLoadingPatients(true);
+                                        try {
+                                          const res = await getPatientChartServerFn({ data: { patientId: pid } });
+                                          if (res && res.patient) {
+                                            setSelectedPatient(res.patient);
+                                          }
+                                        } catch (e) {
+                                          console.error("Failed to load chart:", e);
+                                          showToast("error", "Failed to load client profile");
+                                        } finally {
+                                          setLoadingPatients(false);
+                                        }
+                                      }
+                                    } else {
+                                      showToast("error", "No profile found.");
+                                    }
+                                  }}
+                                  className="text-brand font-bold text-xs cursor-pointer mr-auto"
+                                >
+                                  View Profile
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  ) : (
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })() ) : (
                     <>
                       {/* Desktop Table View */}
                       <div className="hidden md:block">
