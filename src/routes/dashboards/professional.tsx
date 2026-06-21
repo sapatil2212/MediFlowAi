@@ -5155,6 +5155,876 @@ function DashboardPage() {
               </motion.div>
             )}
 
+
+            {/* ──────────────────────────────────────────────
+                TAB: CLIENT RECORDS (PATIENTS)
+                ────────────────────────────────────────────── */}
+            {activeTab === "patients" && (
+              <motion.div
+                key="patients"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="space-y-6"
+              >
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  {/* Search Bar */}
+                  <div className="relative flex-1 min-w-[240px]">
+                    <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
+                    <input
+                      type="text"
+                      placeholder="Search client registry by name, ID, or goals..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full rounded-full border border-zinc-200 bg-white pl-10 pr-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all font-semibold"
+                    />
+                  </div>
+
+                  {/* Add Client trigger */}
+                  <button
+                    onClick={() => setIsAddingPatient(!isAddingPatient)}
+                    className="rounded-full bg-zinc-950 hover:bg-zinc-850 text-white text-xs font-semibold px-4 py-2 flex items-center gap-1.5 cursor-pointer transition-transform active:scale-[0.98]"
+                  >
+                    <Plus className="h-4 w-4" /> Add Client File
+                  </button>
+                </div>
+
+                {/* Add Client Card Form */}
+                <AnimatePresence>
+                  {isAddingPatient && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <form onSubmit={handleAddPatientSubmit} className="rounded-2xl border border-zinc-200 bg-white p-5 grid gap-4 sm:grid-cols-4 items-end">
+                        <div className="sm:col-span-4 font-bold text-xs text-zinc-800 border-b border-zinc-100 pb-2 mb-2">
+                          {editingPatient ? `Edit Client Registry File (${editingPatient.patientNo})` : "Create New Client Registry File"}
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase">Client Name</label>
+                          <input
+                            type="text"
+                            value={newPatientName}
+                            onChange={(e) => setNewPatientName(e.target.value)}
+                            placeholder="John Doe"
+                            className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand font-semibold"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase">Age</label>
+                          <input
+                            type="number"
+                            value={newPatientAge}
+                            onChange={(e) => setNewPatientAge(e.target.value)}
+                            placeholder="34"
+                            className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand font-semibold"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase">Gender</label>
+                          <select
+                            value={newPatientGender}
+                            onChange={(e) => setNewPatientGender(e.target.value)}
+                            className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand cursor-pointer font-bold"
+                          >
+                            <option>Female</option>
+                            <option>Male</option>
+                            <option>Other</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase">Phone Number</label>
+                          <input
+                            type="tel"
+                            value={newPatientPhone}
+                            onChange={(e) => setNewPatientPhone(e.target.value)}
+                            placeholder="919876543210"
+                            className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand font-semibold"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase">Email Address</label>
+                          <input
+                            type="email"
+                            value={newPatientEmail}
+                            onChange={(e) => setNewPatientEmail(e.target.value)}
+                            placeholder="client@example.com"
+                            className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand font-semibold"
+                          />
+                        </div>
+                        <div className="space-y-1 sm:col-span-3">
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase">Residential Address</label>
+                          <input
+                            type="text"
+                            value={newPatientAddress}
+                            onChange={(e) => setNewPatientAddress(e.target.value)}
+                            placeholder="123 Main St, Apartment 4B"
+                            className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand font-semibold"
+                          />
+                        </div>
+                        <div className="space-y-1 sm:col-span-2">
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase">Primary Consulting Goal</label>
+                          <input
+                            type="text"
+                            value={newPatientReason}
+                            onChange={(e) => setNewPatientReason(e.target.value)}
+                            placeholder="Financial planning, legal advice, career coaching, etc."
+                            className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand font-semibold"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1 sm:col-span-2">
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase">Business Background / Context</label>
+                          <input
+                            type="text"
+                            value={newPatientNotes}
+                            onChange={(e) => setNewPatientNotes(e.target.value)}
+                            placeholder="Prior consulting history, business constraints, etc."
+                            className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand font-semibold"
+                          />
+                        </div>
+                        <div className="sm:col-span-4 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              clearPatientForm();
+                              setIsAddingPatient(false);
+                            }}
+                            className="text-xs font-semibold text-zinc-400 hover:text-zinc-655 px-3 py-1 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={savingPatient}
+                            className="rounded-full bg-brand text-white text-xs font-semibold px-5 py-2.5 cursor-pointer shadow-md disabled:bg-zinc-150 disabled:text-zinc-400 flex items-center gap-1.5"
+                          >
+                            {savingPatient && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                            {editingPatient ? "Update Client Profile" : "Create Client Profile"}
+                          </button>
+                        </div>
+                      </form>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Client Table Grid / Card Grid */}
+                <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
+                  {loadingPatients ? (
+                    <div className="p-6 text-center">
+                      <Loader2 className="mx-auto h-6 w-6 animate-spin text-zinc-400 mb-2" />
+                      <p className="text-xs text-zinc-400">Loading registry profiles...</p>
+                    </div>
+                  ) : filteredPatients.length === 0 ? (
+                    <div className="p-8 text-center">
+                      <Users className="mx-auto h-8 w-8 text-zinc-300 mb-2" />
+                      <p className="text-xs text-zinc-400 font-bold">No client profiles match your query.</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Desktop Table View */}
+                      <div className="hidden md:block">
+                        <table className="min-w-full divide-y divide-zinc-200 text-left">
+                          <thead className="bg-zinc-50 text-[10px] font-bold text-zinc-400 uppercase">
+                            <tr>
+                              <th className="px-6 h-10">Client ID</th>
+                              <th className="px-6 h-10">Name</th>
+                              <th className="px-6 h-10">Demographics</th>
+                              <th className="px-6 h-10">Primary Goal</th>
+                              <th className="px-6 h-10">Registry Date</th>
+                              <th className="px-6 h-10 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-150 text-xs">
+                            {filteredPatients.map((p) => (
+                              <tr key={p.id} className="hover:bg-zinc-50/50">
+                                <td className="px-6 py-4 font-mono font-bold text-zinc-400">{p.patientNo}</td>
+                                <td className="px-6 py-4 font-bold text-zinc-800">{p.name}</td>
+                                <td className="px-6 py-4 text-zinc-500">
+                                  {p.age} y/o {p.gender}
+                                </td>
+                                <td className="px-6 py-4 text-zinc-500 max-w-[240px] truncate">{p.chiefComplaint || p.reason}</td>
+                                <td className="px-6 py-4 text-zinc-400">{new Date(p.createdAt).toLocaleDateString()}</td>
+                                <td className="px-6 py-4 text-right">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      title="View Client Profile"
+                                      onClick={() => setSelectedPatient(p)}
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-brand hover:bg-brand/5 transition-colors cursor-pointer shrink-0"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Edit Client File"
+                                      onClick={() => {
+                                        setEditingPatient(p);
+                                        setNewPatientName(p.name);
+                                        setNewPatientAge(String(p.age));
+                                        setNewPatientGender(p.gender);
+                                        setNewPatientPhone(p.phone || "");
+                                        setNewPatientEmail(p.email || "");
+                                        setNewPatientAddress(p.address || "");
+                                        setNewPatientReason(p.chiefComplaint || p.reason || "");
+                                        setNewPatientNotes(p.notes || "");
+                                        setIsAddingPatient(true);
+                                      }}
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-650 hover:bg-indigo-50 transition-colors cursor-pointer shrink-0"
+                                    >
+                                      <Edit3 className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Delete Client File"
+                                      onClick={() => {
+                                        setConfirmDialog({
+                                          open: true,
+                                          title: "Delete Client File?",
+                                          message: `Are you sure you want to delete ${p.name}'s client record? This will also purge all linked consultation history and strategy plans.`,
+                                          onConfirm: async () => {
+                                            try {
+                                              const res = await deletePatientServerFn({ data: { id: p.id } });
+                                              if (res.success) {
+                                                showToast("success", "Client registry file deleted successfully.");
+                                                fetchPatients();
+                                              }
+                                            } catch (err: any) {
+                                              showToast("error", err.message || "Failed to delete client");
+                                            } finally {
+                                              setConfirmDialog(null);
+                                            }
+                                          }
+                                        });
+                                      }}
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-55 hover:bg-red-50 transition-colors cursor-pointer shrink-0"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Mobile Card View */}
+                      <div className="md:hidden divide-y divide-zinc-150">
+                        {filteredPatients.map((p) => (
+                          <div key={p.id} className="p-4 space-y-3">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h4 className="text-sm font-bold text-zinc-800">{p.name}</h4>
+                                <span className="text-[10px] text-zinc-400 font-mono">ID: {p.patientNo}</span>
+                              </div>
+                              <span className="text-[10px] text-zinc-500">
+                                {p.age} y/o {p.gender}
+                              </span>
+                            </div>
+
+                            <div className="space-y-1 text-xs border-t border-b border-zinc-100/70 py-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-zinc-400 font-semibold uppercase text-[9px] tracking-wide block w-20 shrink-0">Goal:</span>
+                                <span className="text-zinc-700 font-bold truncate">{p.chiefComplaint || p.reason}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-zinc-400 font-semibold uppercase text-[9px] tracking-wide block w-20 shrink-0">Registered:</span>
+                                <span className="text-zinc-500">{new Date(p.createdAt).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-3 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedPatient(p)}
+                                className="text-brand font-bold text-xs cursor-pointer mr-auto"
+                              >
+                                View Chart
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingPatient(p);
+                                  setNewPatientName(p.name);
+                                  setNewPatientAge(String(p.age));
+                                  setNewPatientGender(p.gender);
+                                  setNewPatientPhone(p.phone || "");
+                                  setNewPatientEmail(p.email || "");
+                                  setNewPatientAddress(p.address || "");
+                                  setNewPatientReason(p.chiefComplaint || p.reason || "");
+                                  setNewPatientNotes(p.notes || "");
+                                  setIsAddingPatient(true);
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                className="text-zinc-500 hover:text-zinc-850 font-bold text-xs cursor-pointer"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setConfirmDialog({
+                                    open: true,
+                                    title: "Delete Client File?",
+                                    message: `Are you sure you want to delete ${p.name}'s client record? This will also purge all linked consultation history and strategy plans.`,
+                                    onConfirm: async () => {
+                                      try {
+                                        const res = await deletePatientServerFn({ data: { id: p.id } });
+                                        if (res.success) {
+                                          showToast("success", "Client registry file deleted successfully.");
+                                          fetchPatients();
+                                        }
+                                      } catch (err: any) {
+                                        showToast("error", err.message || "Failed to delete client");
+                                      } finally {
+                                        setConfirmDialog(null);
+                                      }
+                                    }
+                                  });
+                                }}
+                                className="text-red-500 font-bold text-xs cursor-pointer"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Pagination for clients */}
+                      {patientsTotal > 20 && (
+                        <div className="flex items-center justify-between border-t border-zinc-100 bg-white px-6 py-4">
+                          <div className="flex-1 flex justify-between sm:hidden">
+                            <button
+                              type="button"
+                              onClick={() => setPatientsPage(prev => Math.max(prev - 1, 1))}
+                              disabled={patientsPage === 1}
+                              className="relative inline-flex items-center px-4 py-2 border border-zinc-200 text-xs font-semibold rounded-full text-zinc-500 bg-white hover:bg-zinc-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPatientsPage(prev => Math.min(prev + 1, Math.ceil(patientsTotal / 20)))}
+                              disabled={patientsPage >= Math.ceil(patientsTotal / 20)}
+                              className="ml-3 relative inline-flex items-center px-4 py-2 border border-zinc-200 text-xs font-semibold rounded-full text-zinc-500 bg-white hover:bg-zinc-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Next
+                            </button>
+                          </div>
+                          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-[11px] text-zinc-500 font-medium">
+                                Showing <span className="font-bold text-zinc-800">{(patientsPage - 1) * 20 + 1}</span> to{" "}
+                                <span className="font-bold text-zinc-800">{Math.min(patientsPage * 20, patientsTotal)}</span> of{" "}
+                                <span className="font-bold text-zinc-800">{patientsTotal}</span> clients
+                              </p>
+                            </div>
+                            <div>
+                              <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                                <button
+                                  type="button"
+                                  onClick={() => setPatientsPage(prev => Math.max(prev - 1, 1))}
+                                  disabled={patientsPage === 1}
+                                  className="relative inline-flex items-center px-2.5 py-1.5 rounded-l-lg border border-zinc-200 bg-white text-xs font-medium text-zinc-400 hover:bg-zinc-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <span className="sr-only">Previous</span>
+                                  <ChevronLeft className="h-3.5 w-3.5" />
+                                </button>
+                                {Array.from({ length: Math.ceil(patientsTotal / 20) }).map((_, idx) => {
+                                  const pageNum = idx + 1;
+                                  const isCurrent = pageNum === patientsPage;
+                                  return (
+                                    <button
+                                      key={pageNum}
+                                      type="button"
+                                      onClick={() => setPatientsPage(pageNum)}
+                                      className={`relative inline-flex items-center px-3 py-1.5 border text-[11px] font-bold cursor-pointer transition-all ${
+                                        isCurrent
+                                          ? "z-10 bg-zinc-950 border-zinc-950 text-white"
+                                          : "bg-white border-zinc-200 text-zinc-500 hover:bg-zinc-50"
+                                      }`}
+                                    >
+                                      {pageNum}
+                                    </button>
+                                  );
+                                })}
+                                <button
+                                  type="button"
+                                  onClick={() => setPatientsPage(prev => Math.min(prev + 1, Math.ceil(patientsTotal / 20)))}
+                                  disabled={patientsPage >= Math.ceil(patientsTotal / 20)}
+                                  className="relative inline-flex items-center px-2.5 py-1.5 rounded-r-lg border border-zinc-200 bg-white text-xs font-medium text-zinc-400 hover:bg-zinc-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <span className="sr-only">Next</span>
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                </button>
+                              </nav>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ──────────────────────────────────────────────
+                TAB: BOOKINGS LIST (APPOINTMENTS)
+                ────────────────────────────────────────────── */}
+            {activeTab === "appointments" && (
+              <motion.div
+                key="appointments"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="space-y-6"
+              >
+                {/* 1. Statistics Bar */}
+                <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Total Sessions</span>
+                    <h3 className="text-xl font-extrabold text-zinc-900 mt-1">{appointmentsTotal}</h3>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Pending Review</span>
+                    <h3 className="text-xl font-extrabold text-amber-600 mt-1">
+                      {appointmentSummary?.pending || 0}
+                    </h3>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Confirmed</span>
+                    <h3 className="text-xl font-extrabold text-brand mt-1">
+                      {appointmentSummary?.confirmed || 0}
+                    </h3>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Completed</span>
+                    <h3 className="text-xl font-extrabold text-emerald-600 mt-1">
+                      {appointmentSummary?.completed || 0}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* 2. Control & Filters Bar */}
+                <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                  <div className="flex flex-1 flex-col sm:flex-row gap-3 items-stretch sm:items-center max-w-2xl">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                      <input
+                        type="text"
+                        placeholder="Search bookings by name, email, phone, or goal..."
+                        value={searchAptQuery}
+                        onChange={(e) => setSearchAptQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 text-xs rounded-full border border-zinc-200 bg-white placeholder-zinc-400 focus:outline-none focus:border-brand font-semibold"
+                      />
+                    </div>
+                    <select
+                      value={filterAptStatus}
+                      onChange={(e) => setFilterAptStatus(e.target.value)}
+                      className="px-4 py-2 text-xs rounded-full border border-zinc-200 bg-white font-bold text-zinc-700 focus:outline-none cursor-pointer"
+                    >
+                      <option value="All">All Statuses</option>
+                      <option value="Pending">Pending Review</option>
+                      <option value="Confirmed">Confirmed</option>
+                      <option value="Completed">Completed</option>
+                      <option value="Cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      openCreateApt();
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="inline-flex items-center justify-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-zinc-900 hover:bg-zinc-800 transition-all rounded-full shadow-sm cursor-pointer whitespace-nowrap"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Book Consultation
+                  </button>
+                </div>
+
+                {/* 3. Responsive Table & Card View */}
+                {loadingAppointments ? (
+                  <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-center">
+                    <Loader2 className="mx-auto h-6 w-6 animate-spin text-zinc-400 mb-2" />
+                    <p className="text-xs text-zinc-400">Loading bookings...</p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
+                    {(() => {
+                      if (appointments.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-zinc-400 font-semibold text-xs">
+                            No consulting sessions found matching constraints.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <>
+                          {/* Desktop Table view */}
+                          <div className="hidden md:block overflow-x-auto">
+                            <table className="min-w-full divide-y divide-zinc-200 text-left">
+                              <thead className="bg-zinc-50 text-[10px] font-bold text-zinc-400 uppercase">
+                                <tr>
+                                  <th className="px-5 py-3">Client Info</th>
+                                  <th className="px-5 py-3">Date & Time</th>
+                                  <th className="px-5 py-3">Focus / Goal</th>
+                                  <th className="px-5 py-3">Status</th>
+                                  <th className="px-5 py-3 text-right">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-zinc-150 text-xs">
+                                {appointments.map((apt) => (
+                                  <tr key={apt.id} className="hover:bg-zinc-50/40 transition-colors">
+                                    {/* Client Info */}
+                                    <td className="px-5 py-3.5">
+                                      <div className="flex flex-col">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          {apt.tokenNo && (
+                                            <span className="inline-flex items-center justify-center px-1 rounded bg-brand/10 border border-brand/20 text-brand text-[8px] font-black shrink-0">
+                                              #{apt.tokenNo}
+                                            </span>
+                                          )}
+                                          <span className="font-extrabold text-zinc-800 text-xs sm:text-[13px]">{apt.name}</span>
+                                          {apt.appointmentType && (
+                                            <span className="inline-flex items-center justify-center px-1.5 py-0.2 rounded bg-brand/5 border border-brand/10 text-brand text-[8px] font-extrabold shrink-0">
+                                              {apt.appointmentType}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-400 font-semibold mt-1">
+                                          {apt.phone && <span>{apt.phone}</span>}
+                                          {apt.email && (
+                                            <>
+                                              <span className="w-1 h-1 rounded-full bg-zinc-300"></span>
+                                              <span className="truncate max-w-[120px]">{apt.email}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </td>
+
+                                    {/* Date & Time */}
+                                    <td className="px-5 py-3.5 font-bold text-zinc-700 whitespace-nowrap">
+                                      {new Date(apt.dateTime).toLocaleString("en-US", {
+                                        month: "short",
+                                        day: "numeric",
+                                        year: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}
+                                    </td>
+
+                                    {/* Focus / Goal */}
+                                    <td className="px-5 py-3.5 max-w-[200px] truncate text-zinc-500 font-medium">
+                                      {apt.reason || "General consulting session"}
+                                    </td>
+
+                                    {/* Status */}
+                                    <td className="px-5 py-3.5 relative">
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveStatusDropdownId(activeStatusDropdownId === apt.id ? null : apt.id)}
+                                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[9px] font-bold border transition-colors cursor-pointer hover:opacity-80 active:scale-[0.98] ${
+                                          apt.status === "Confirmed"
+                                            ? "bg-brand/5 text-brand border-brand/10"
+                                            : apt.status === "Completed"
+                                              ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                                              : apt.status === "Cancelled"
+                                                ? "bg-red-50 text-red-700 border-red-100"
+                                                : "bg-amber-50 text-amber-700 border-amber-100"
+                                        }`}
+                                      >
+                                        <span>{apt.status}</span>
+                                        <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+                                      </button>
+
+                                      {activeStatusDropdownId === apt.id && (
+                                        <>
+                                          <div 
+                                            className="fixed inset-0 z-10" 
+                                            onClick={() => setActiveStatusDropdownId(null)} 
+                                          />
+                                          <div className="absolute left-5 mt-1 w-32 rounded-xl bg-white border border-zinc-150 shadow-lg py-1 z-20 animate-in fade-in slide-in-from-top-1 duration-100">
+                                            {(["Pending", "Confirmed", "Completed", "Cancelled"] as const).map((status) => (
+                                              <button
+                                                key={status}
+                                                type="button"
+                                                onClick={() => handleUpdateStatus(apt, status)}
+                                                className={`w-full text-left px-3 py-1.5 text-[10px] font-bold transition-colors hover:bg-zinc-50 flex items-center justify-between cursor-pointer ${
+                                                  apt.status === status ? "text-brand" : "text-zinc-600"
+                                                }`}
+                                              >
+                                                <span>{status === "Pending" ? "Pending Review" : status}</span>
+                                                {apt.status === status && <Check className="h-3 w-3 text-brand" />}
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </>
+                                      )}
+                                    </td>
+
+                                    {/* Action buttons */}
+                                    <td className="px-5 py-3.5">
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        {/* View client profile */}
+                                        <button
+                                          type="button"
+                                          title="View Client Profile"
+                                          onClick={async () => {
+                                            const pid = resolvePatientForApt(apt);
+                                            if (pid) {
+                                              const matched = patientsList.find(p => p.id === pid);
+                                              if (matched) {
+                                                setSelectedPatient(matched);
+                                              } else {
+                                                setLoadingPatients(true);
+                                                try {
+                                                  const res = await getPatientChartServerFn({ data: { patientId: pid } });
+                                                  if (res && res.patient) {
+                                                    setSelectedPatient(res.patient);
+                                                  }
+                                                } catch (e) {
+                                                  console.error("Failed to load client chart:", e);
+                                                  showToast("error", "Failed to load client profile");
+                                                } finally {
+                                                  setLoadingPatients(false);
+                                                }
+                                              }
+                                            } else {
+                                              showToast("error", "No client profile found for this booking.");
+                                            }
+                                          }}
+                                          className="inline-flex items-center gap-1 bg-brand text-white hover:opacity-90 transition-all font-bold px-3 py-1 rounded-full text-[10px] cursor-pointer shrink-0 shadow-none active:scale-[0.98]"
+                                        >
+                                          <User className="h-3 w-3" />
+                                          View Profile
+                                        </button>
+
+                                        {/* Edit button */}
+                                        <button
+                                          type="button"
+                                          title="Edit Booking"
+                                          onClick={() => openEditApt(apt)}
+                                          className="p-1 rounded bg-zinc-50 hover:bg-zinc-100 text-zinc-550 border border-zinc-200 transition-colors cursor-pointer shrink-0"
+                                        >
+                                          <Edit3 className="h-3.5 w-3.5" />
+                                        </button>
+
+                                        {/* Delete button */}
+                                        <button
+                                          type="button"
+                                          title="Delete Booking"
+                                          onClick={() => setAptToDelete(apt)}
+                                          className="p-1 rounded bg-red-50/10 hover:bg-red-50 text-red-500 border border-red-100 transition-colors cursor-pointer shrink-0"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Mobile Card list view */}
+                          <div className="md:hidden divide-y divide-zinc-150">
+                            {appointments.map((apt) => (
+                              <div key={apt.id} className="p-4 space-y-3">
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <h4 className="text-sm font-bold text-zinc-800 flex items-center gap-1.5">
+                                      {apt.tokenNo && (
+                                        <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-md bg-brand/10 border border-brand/20 text-brand text-[9px] font-black">
+                                          #{apt.tokenNo}
+                                        </span>
+                                      )}
+                                      <span>{apt.name}</span>
+                                      {apt.appointmentType && (
+                                        <span className="text-[8px] font-extrabold text-brand bg-brand/5 border border-brand/10 rounded px-1.5 py-0.5">
+                                          {apt.appointmentType}
+                                        </span>
+                                      )}
+                                    </h4>
+                                    <div className="flex flex-col text-[10px] text-zinc-400 gap-0.5 mt-0.5">
+                                      <span>Phone: {apt.phone}</span>
+                                    </div>
+                                  </div>
+                                  <span
+                                    className={`inline-block rounded-full px-2.5 py-0.5 text-[9px] font-bold border ${
+                                      apt.status === "Confirmed"
+                                        ? "bg-brand/5 text-brand border-brand/10"
+                                        : apt.status === "Completed"
+                                          ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                                          : apt.status === "Cancelled"
+                                            ? "bg-red-50 text-red-700 border-red-100"
+                                            : "bg-amber-50 text-amber-700 border-amber-100"
+                                    }`}
+                                  >
+                                    {apt.status === "Pending" ? "Pending Review" : apt.status}
+                                  </span>
+                                </div>
+
+                                <div className="space-y-1 text-xs border-t border-b border-zinc-100/70 py-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-zinc-400 font-semibold uppercase text-[9px] tracking-wide block w-20 shrink-0">Schedule:</span>
+                                    <span className="text-zinc-700 font-bold">
+                                      {new Date(apt.dateTime).toLocaleString("en-US", {
+                                        month: "short",
+                                        day: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-zinc-400 font-semibold uppercase text-[9px] tracking-wide block w-20 shrink-0">Goal:</span>
+                                    <span className="text-zinc-500 truncate">{apt.reason}</span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-end gap-3 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const pid = resolvePatientForApt(apt);
+                                      if (pid) {
+                                        const matched = patientsList.find(p => p.id === pid);
+                                        if (matched) {
+                                          setSelectedPatient(matched);
+                                        } else {
+                                          setLoadingPatients(true);
+                                          try {
+                                            const res = await getPatientChartServerFn({ data: { patientId: pid } });
+                                            if (res && res.patient) {
+                                              setSelectedPatient(res.patient);
+                                            }
+                                          } catch (e) {
+                                            console.error("Failed to load client chart:", e);
+                                            showToast("error", "Failed to load client profile");
+                                          } finally {
+                                            setLoadingPatients(false);
+                                          }
+                                        }
+                                      } else {
+                                        showToast("error", "No client profile found.");
+                                      }
+                                    }}
+                                    className="text-brand font-bold text-xs cursor-pointer mr-auto"
+                                  >
+                                    View Profile
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      openEditApt(apt);
+                                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }}
+                                    className="text-zinc-500 hover:text-zinc-855 font-bold text-xs cursor-pointer"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAptToDelete(apt)}
+                                    className="text-red-500 font-bold text-xs cursor-pointer"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
+
+                    {/* Bookings Pagination Controls */}
+                    {appointmentsTotal > 20 && (
+                      <div className="flex items-center justify-between border-t border-zinc-100 bg-white px-6 py-4">
+                        <div className="flex-1 flex justify-between sm:hidden">
+                          <button
+                            type="button"
+                            onClick={() => setAppointmentsPage(prev => Math.max(prev - 1, 1))}
+                            disabled={appointmentsPage === 1}
+                            className="relative inline-flex items-center px-4 py-2 border border-zinc-200 text-xs font-semibold rounded-full text-zinc-500 bg-white hover:bg-zinc-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Previous
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAppointmentsPage(prev => Math.min(prev + 1, Math.ceil(appointmentsTotal / 20)))}
+                            disabled={appointmentsPage >= Math.ceil(appointmentsTotal / 20)}
+                            className="ml-3 relative inline-flex items-center px-4 py-2 border border-zinc-200 text-xs font-semibold rounded-full text-zinc-500 bg-white hover:bg-zinc-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Next
+                          </button>
+                        </div>
+                        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-[11px] text-zinc-500 font-medium">
+                              Showing <span className="font-bold text-zinc-800">{(appointmentsPage - 1) * 20 + 1}</span> to{" "}
+                              <span className="font-bold text-zinc-800">{Math.min(appointmentsPage * 20, appointmentsTotal)}</span> of{" "}
+                              <span className="font-bold text-zinc-800">{appointmentsTotal}</span> bookings
+                            </p>
+                          </div>
+                          <div>
+                            <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                              <button
+                                type="button"
+                                onClick={() => setAppointmentsPage(prev => Math.max(prev - 1, 1))}
+                                disabled={appointmentsPage === 1}
+                                className="relative inline-flex items-center px-2.5 py-1.5 rounded-l-lg border border-zinc-200 bg-white text-xs font-medium text-zinc-400 hover:bg-zinc-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <span className="sr-only">Previous</span>
+                                <ChevronLeft className="h-3.5 w-3.5" />
+                              </button>
+                              {Array.from({ length: Math.ceil(appointmentsTotal / 20) }).map((_, idx) => {
+                                const pageNum = idx + 1;
+                                const isCurrent = pageNum === appointmentsPage;
+                                return (
+                                  <button
+                                    key={pageNum}
+                                    type="button"
+                                    onClick={() => setAppointmentsPage(pageNum)}
+                                    className={`relative inline-flex items-center px-3 py-1.5 border text-[11px] font-bold cursor-pointer transition-all ${
+                                      isCurrent
+                                        ? "z-10 bg-zinc-950 border-zinc-950 text-white"
+                                        : "bg-white border-zinc-200 text-zinc-500 hover:bg-zinc-50"
+                                    }`}
+                                  >
+                                    {pageNum}
+                                  </button>
+                                );
+                              })}
+                              <button
+                                type="button"
+                                onClick={() => setAppointmentsPage(prev => Math.min(prev + 1, Math.ceil(appointmentsTotal / 20)))}
+                                disabled={appointmentsPage >= Math.ceil(appointmentsTotal / 20)}
+                                className="relative inline-flex items-center px-2.5 py-1.5 rounded-r-lg border border-zinc-200 bg-white text-xs font-medium text-zinc-400 hover:bg-zinc-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <span className="sr-only">Next</span>
+                                <ChevronRight className="h-3.5 w-3.5" />
+                              </button>
+                            </nav>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+
             {/* ──────────────────────────────────────────────
                 TAB: SETTINGS
                 ────────────────────────────────────────────── */}
