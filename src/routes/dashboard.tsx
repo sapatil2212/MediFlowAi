@@ -838,6 +838,7 @@ function DashboardPage() {
 
   // Confirm dialog
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void } | null>(null);
+  const [isDialogConfirming, setIsDialogConfirming] = useState(false);
 
   // Patient CRUD modal states
   const [isAddingPatient, setIsAddingPatient] = useState(false);
@@ -10757,6 +10758,71 @@ function DashboardPage() {
         )}
       </AnimatePresence>
 
+      {/* Generic Confirmation Modal (used for Patients, WhatsApp, etc.) */}
+      <AnimatePresence>
+        {confirmDialog && confirmDialog.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-white rounded-[1.75rem] border border-zinc-150 p-6 max-w-sm w-full mx-4 shadow-none text-center space-y-4"
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(null)}
+                className="absolute top-4 right-4 rounded-full p-1 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 transition-all cursor-pointer"
+                disabled={isDialogConfirming}
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 border border-red-100 mx-auto text-red-650">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-sm font-bold text-zinc-900 leading-none">{confirmDialog.title}</h3>
+                <p className="text-xs text-zinc-450 leading-relaxed font-semibold">
+                  {confirmDialog.message}
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDialog(null)}
+                  disabled={isDialogConfirming}
+                  className="w-full rounded-full border border-zinc-200 py-2.5 text-xs font-bold text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 transition-all active:scale-95 cursor-pointer shadow-none"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsDialogConfirming(true);
+                    try {
+                      await confirmDialog.onConfirm();
+                    } catch (e) {
+                      console.error("Confirmation error:", e);
+                    } finally {
+                      setIsDialogConfirming(false);
+                      setConfirmDialog(null);
+                    }
+                  }}
+                  disabled={isDialogConfirming}
+                  className="w-full rounded-full bg-red-650 hover:bg-red-750 py-2.5 text-xs font-bold text-white disabled:opacity-50 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none"
+                >
+                  {isDialogConfirming && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Confirm Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Sub-user Delete Confirmation Modal */}
       <AnimatePresence>
         {subUserToDelete && (
@@ -10765,7 +10831,7 @@ function DashboardPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-white rounded-[1.75rem] border border-zinc-200/60 p-6 max-w-sm w-full mx-4 shadow-2xl text-center space-y-4"
+              className="relative bg-white rounded-[1.75rem] border border-zinc-150 p-6 max-w-sm w-full mx-4 shadow-none text-center space-y-4"
             >
               {/* Close Button */}
               <button
@@ -10783,8 +10849,8 @@ function DashboardPage() {
 
               <div className="space-y-2">
                 <h3 className="text-sm font-bold text-zinc-900 leading-none">Delete Staff Account?</h3>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Are you sure you want to delete the account for <span className="font-semibold text-zinc-700">{subUserToDelete.name}</span>? This action cannot be undone and they will immediately lose access.
+                <p className="text-xs text-zinc-450 leading-relaxed font-semibold">
+                  Are you sure you want to delete the account for <span className="font-bold text-zinc-800">{subUserToDelete.name}</span>? This action cannot be undone and they will immediately lose access.
                 </p>
               </div>
 
@@ -10793,7 +10859,7 @@ function DashboardPage() {
                   type="button"
                   onClick={() => setSubUserToDelete(null)}
                   disabled={isDeletingSubUser}
-                  className="w-full rounded-full border border-zinc-200 py-2.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 transition-colors cursor-pointer"
+                  className="w-full rounded-full border border-zinc-200 py-2.5 text-xs font-bold text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 transition-all active:scale-95 cursor-pointer shadow-none"
                 >
                   Cancel
                 </button>
@@ -10813,7 +10879,7 @@ function DashboardPage() {
                     }
                   }}
                   disabled={isDeletingSubUser}
-                  className="w-full rounded-full bg-red-600 hover:bg-red-700 py-2.5 text-xs font-semibold text-white disabled:opacity-50 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  className="w-full rounded-full bg-red-650 hover:bg-red-700 py-2.5 text-xs font-bold text-white disabled:opacity-50 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none"
                 >
                   {isDeletingSubUser && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Confirm Delete
@@ -11073,43 +11139,38 @@ function DashboardPage() {
 
       <AnimatePresence>
         {aptToDelete && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            {/* Backdrop */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm">
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setAptToDelete(null)}
-              className="fixed inset-0 bg-zinc-950/40 backdrop-blur-sm"
-            />
-
-            {/* Modal Content Card */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl text-left z-10"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-white rounded-[1.75rem] border border-zinc-150 p-6 max-w-sm w-full mx-4 shadow-none text-center space-y-4"
             >
-              <div className="flex items-start gap-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500">
-                  <Trash2 className="h-5 w-5" />
-                </div>
-                <div className="space-y-1.5 flex-1">
-                  <h3 className="text-sm font-extrabold text-zinc-900">
-                    Delete Appointment
-                  </h3>
-                  <p className="text-xs text-zinc-500 font-semibold leading-relaxed">
-                    Are you sure you want to delete the appointment for <strong className="text-zinc-800 font-bold">{aptToDelete.name}</strong>? This action is permanent and cannot be undone.
-                  </p>
-                </div>
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setAptToDelete(null)}
+                className="absolute top-4 right-4 rounded-full p-1 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 transition-all cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 border border-red-100 mx-auto text-red-650">
+                <Trash2 className="h-5 w-5 text-red-600" />
               </div>
 
-              {/* Buttons */}
-              <div className="mt-6 flex justify-end gap-2.5">
+              <div className="space-y-2">
+                <h3 className="text-sm font-bold text-zinc-900 leading-none">Delete Appointment</h3>
+                <p className="text-xs text-zinc-450 leading-relaxed font-semibold">
+                  Are you sure you want to delete the appointment for <span className="font-bold text-zinc-800">{aptToDelete.name}</span>? This action is permanent and cannot be undone.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setAptToDelete(null)}
-                  className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-bold text-zinc-700 hover:bg-zinc-50 cursor-pointer active:scale-[0.98] transition-all"
+                  className="w-full rounded-full border border-zinc-200 py-2.5 text-xs font-bold text-zinc-600 hover:bg-zinc-50 transition-all active:scale-95 cursor-pointer shadow-none"
                 >
                   Cancel
                 </button>
@@ -11120,9 +11181,9 @@ function DashboardPage() {
                     setAptToDelete(null);
                     await handleDeleteAppointment(id);
                   }}
-                  className="rounded-full bg-red-650 px-4.5 py-2 text-xs font-extrabold text-white hover:bg-red-550 shadow-md cursor-pointer active:scale-[0.98] transition-all"
+                  className="w-full rounded-full bg-red-650 hover:bg-red-700 py-2.5 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none"
                 >
-                  Delete
+                  Confirm Delete
                 </button>
               </div>
             </motion.div>
