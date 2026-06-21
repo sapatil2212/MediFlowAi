@@ -4262,9 +4262,7 @@ function MedicalDashboardPage() {
               <Menu className="h-4.5 w-4.5" />
             </button>
 
-            <h2 className="text-sm font-bold text-zinc-900 capitalize">
-              {activeTab === "overview" ? "Dashboard Overview" : activeTab === "patients" ? "Clients" : activeTab === "appointments" ? "Bookings List" : activeTab.replace("-", " ")}
-            </h2>
+
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-[10px] font-bold text-emerald-600 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-100 hidden xs:inline-block">
               Session Live
