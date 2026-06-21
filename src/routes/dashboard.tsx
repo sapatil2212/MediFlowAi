@@ -5074,7 +5074,7 @@ function DashboardPage() {
                           type="button"
                           onClick={handleAIAssist}
                           disabled={isAIAssisting}
-                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-650 hover:from-purple-550 hover:to-indigo-550 text-white text-xs font-bold rounded-full shadow-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-purple-50 text-purple-700 border border-purple-200/80 hover:bg-purple-100/70 text-xs font-extrabold rounded-full transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-none"
                         >
                           {isAIAssisting ? (
                             <>
@@ -5092,7 +5092,7 @@ function DashboardPage() {
                         <button
                           type="button"
                           onClick={handleStartVoiceRx}
-                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-full shadow-sm active:scale-95 transition-all cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100/70 text-xs font-extrabold rounded-full transition-all cursor-pointer active:scale-95 shadow-none"
                         >
                           <Mic className="h-3.5 w-3.5" />
                           Voice Rx
@@ -5101,7 +5101,7 @@ function DashboardPage() {
                         <button
                           type="button"
                           onClick={handleDownloadPrescriptionPDF}
-                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-bold rounded-full shadow-sm active:scale-95 transition-all cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-extrabold rounded-full transition-all cursor-pointer active:scale-95 shadow-none"
                         >
                           <FileDown className="h-3.5 w-3.5 text-zinc-500" />
                           Download PDF
@@ -5112,7 +5112,7 @@ function DashboardPage() {
                           onClick={() => {
                             showToast("success", "Prescription emailed to patient successfully!");
                           }}
-                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-bold rounded-full shadow-sm active:scale-95 transition-all cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-extrabold rounded-full transition-all cursor-pointer active:scale-95 shadow-none"
                         >
                           <Mail className="h-3.5 w-3.5 text-zinc-500" />
                           Email
@@ -5122,7 +5122,7 @@ function DashboardPage() {
                           type="button"
                           onClick={handleSaveConsultationAndPrescription}
                           disabled={isSavingPrescription}
-                          className="inline-flex items-center gap-1.5 px-5 py-2 bg-brand text-white text-xs font-bold rounded-full shadow-md hover:opacity-90 active:scale-95 transition-all cursor-pointer disabled:bg-zinc-100 disabled:text-zinc-400"
+                          className="inline-flex items-center gap-1.5 px-5 py-2 bg-brand text-white text-xs font-extrabold rounded-full hover:opacity-95 transition-all cursor-pointer active:scale-95 disabled:bg-zinc-150 disabled:text-zinc-450 shadow-none"
                         >
                           {isSavingPrescription ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -5369,10 +5369,10 @@ function DashboardPage() {
                             <button
                               type="button"
                               onClick={() => toggleRecordingForField("chiefComplaint", (text) => setConsultationChiefComplaint(prev => prev + text))}
-                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all shadow-sm ${
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border border-zinc-200/80 shadow-none ${
                                 recordingField === "chiefComplaint"
-                                  ? "bg-red-500 text-white animate-pulse"
-                                  : "bg-zinc-100 hover:bg-zinc-150 text-zinc-655"
+                                  ? "bg-red-500 text-white animate-pulse border-red-500"
+                                  : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600"
                               }`}
                             >
                               <Mic className="h-3 w-3" />
@@ -5416,10 +5416,10 @@ function DashboardPage() {
                             <button
                               type="button"
                               onClick={() => toggleRecordingForField("diagnosis", (text) => setConsultationDiagnosis(prev => prev + text))}
-                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all shadow-sm ${
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border border-zinc-200/80 shadow-none ${
                                 recordingField === "diagnosis"
-                                  ? "bg-red-500 text-white animate-pulse"
-                                  : "bg-zinc-100 hover:bg-zinc-150 text-zinc-655"
+                                  ? "bg-red-500 text-white animate-pulse border-red-500"
+                                  : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600"
                               }`}
                             >
                               <Mic className="h-3 w-3" />
@@ -5570,7 +5570,7 @@ function DashboardPage() {
                                   { name: "", dosage: "", frequency: "", route: "", duration: "", instructions: "" }
                                 ]);
                               }}
-                              className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full border border-zinc-250 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 text-xs font-bold transition-all cursor-pointer shadow-sm"
+                              className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 text-xs font-extrabold transition-all cursor-pointer shadow-none active:scale-[0.98]"
                             >
                               <Plus className="h-3.5 w-3.5 text-zinc-500" />
                               Add Medication
@@ -5646,7 +5646,7 @@ function DashboardPage() {
                               onClick={() => {
                                 setConsultationLabTests(prev => [...prev, { name: "", instructions: "" }]);
                               }}
-                              className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full border border-zinc-250 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 text-xs font-bold transition-all cursor-pointer shadow-sm"
+                              className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 text-xs font-extrabold transition-all cursor-pointer shadow-none active:scale-[0.98]"
                             >
                               <Plus className="h-3.5 w-3.5 text-zinc-500" />
                               Add Test
@@ -5748,7 +5748,7 @@ function DashboardPage() {
                               onClick={() => {
                                 setConsultationReferrals(prev => [...prev, { departmentId: "General" }]);
                               }}
-                              className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full border border-zinc-250 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 text-xs font-bold transition-all cursor-pointer shadow-sm"
+                              className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 text-xs font-extrabold transition-all cursor-pointer shadow-none active:scale-[0.98]"
                             >
                               <Plus className="h-3.5 w-3.5 text-zinc-500" />
                               Add Referral
@@ -5765,10 +5765,10 @@ function DashboardPage() {
                             <button
                               type="button"
                               onClick={() => toggleRecordingForField("advice", (text) => setConsultationAdvice(prev => prev + text))}
-                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all shadow-sm ${
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border border-zinc-200/80 shadow-none ${
                                 recordingField === "advice"
-                                  ? "bg-red-500 text-white animate-pulse"
-                                  : "bg-zinc-100 hover:bg-zinc-150 text-zinc-655"
+                                  ? "bg-red-500 text-white animate-pulse border-red-500"
+                                  : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600"
                               }`}
                             >
                               <Mic className="h-3 w-3" />
