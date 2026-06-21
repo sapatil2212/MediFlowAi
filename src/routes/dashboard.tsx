@@ -5049,7 +5049,7 @@ function DashboardPage() {
                     className="space-y-6 animate-fade-in"
                   >
                     {/* Header Toolbar */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-zinc-200 p-4 rounded-2xl shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-zinc-50/80 to-white border border-zinc-150 p-4 rounded-2xl shadow-none">
                       <div className="flex items-center gap-3">
                         <button
                           type="button"
@@ -5141,7 +5141,7 @@ function DashboardPage() {
                       <div className="space-y-6">
                         
                         {/* Demographic details card */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-indigo-50/15 via-white to-zinc-50/30 p-5 space-y-4 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <div className="flex items-center gap-3">
                             <div className="h-12 w-12 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-black text-lg shadow-inner">
                               {(selectedAptForConsultation.name || "P")[0].toUpperCase()}
@@ -5202,7 +5202,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Patient History Accordion/Section */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-zinc-50/40 via-white to-zinc-50/20 p-5 space-y-4 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <h4 className="text-xs font-bold text-zinc-800 uppercase tracking-wide">
                             Patient History ({patientChartData?.soapNotes?.length || 1})
                           </h4>
@@ -5268,7 +5268,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Vitals Form Card */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-rose-50/15 via-white to-zinc-50/20 p-5 space-y-4 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <div className="flex items-center gap-2">
                             <Activity className="h-4 w-4 text-rose-500" />
                             <h4 className="text-xs font-bold text-zinc-800 uppercase tracking-wide">
@@ -5361,7 +5361,7 @@ function DashboardPage() {
                       <div className="lg:col-span-2 space-y-6">
                         
                         {/* Chief Complaint Widget */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3.5 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-blue-50/15 via-white to-zinc-50/20 p-5 space-y-3.5 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <div className="flex items-center justify-between">
                             <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
                               Chief Complaint
@@ -5408,7 +5408,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Diagnosis Widget */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3.5 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-purple-50/15 via-white to-zinc-50/20 p-5 space-y-3.5 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <div className="flex items-center justify-between">
                             <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
                               Diagnosis
@@ -5437,7 +5437,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Medications Widget */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-emerald-50/15 via-white to-zinc-50/20 p-5 space-y-4 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
                             <h4 className="text-xs font-bold text-zinc-855 uppercase tracking-wide">
                               Medications ({prescriptionMedications.length})
@@ -5579,7 +5579,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Lab Tests Widget */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-amber-50/15 via-white to-zinc-50/20 p-5 space-y-4 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
                             <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
                               Lab Tests ({consultationLabTests.length})
@@ -5655,7 +5655,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Sub-Dept Referrals Widget */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-indigo-50/15 via-white to-zinc-50/20 p-5 space-y-4 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <div className="border-b border-zinc-100 pb-2">
                             <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
                               Sub-Dept Referrals ({consultationReferrals.length})
@@ -5757,7 +5757,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Advice & Instructions Widget */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3.5 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-teal-50/15 via-white to-zinc-50/20 p-5 space-y-3.5 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <div className="flex items-center justify-between">
                             <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
                               Advice & Instructions
@@ -5786,7 +5786,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Follow-up Widget */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-violet-50/15 via-white to-zinc-50/20 p-5 space-y-4 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <h4 className="text-xs font-bold text-zinc-855 uppercase tracking-wide">
                             Follow-up
                           </h4>
@@ -5815,7 +5815,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Assign Treatment Plan Widget */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3.5 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-cyan-50/15 via-white to-zinc-50/20 p-5 space-y-3.5 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <h4 className="text-xs font-bold text-zinc-850 uppercase tracking-wide">
                             Assign Treatment Plan
                           </h4>
@@ -5825,7 +5825,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Consultation Fee Widget */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3.5 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-yellow-50/15 via-white to-zinc-50/20 p-5 space-y-3.5 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <h4 className="text-xs font-bold text-zinc-855 uppercase tracking-wide">
                             Consultation Fee
                           </h4>
@@ -5847,7 +5847,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Doctor's Private Notes Widget */}
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-3 shadow-sm text-left">
+                        <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-zinc-50/40 via-white to-zinc-100/10 p-5 space-y-3 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <h4 className="text-xs font-bold text-zinc-855 uppercase tracking-wide">
                             Doctor's Private Notes
                           </h4>
