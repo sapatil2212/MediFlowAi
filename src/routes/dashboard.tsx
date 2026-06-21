@@ -806,6 +806,8 @@ function DashboardPage() {
   const [consultationSubTab, setConsultationSubTab] = useState<"appointments" | "followups">("appointments");
   const [selectedAptIds, setSelectedAptIds] = useState<string[]>([]);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [activeStatusDropdownId, setActiveStatusDropdownId] = useState<string | null>(null);
+  const [aptToDelete, setAptToDelete] = useState<any | null>(null);
 
   // Navigation and Detail Drawers
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
@@ -878,8 +880,7 @@ function DashboardPage() {
   const [aptSuccess, setAptSuccess] = useState("");
   const [savingApt, setSavingApt] = useState(false);
 
-  // Deletion confirmation
-  const [deletingAptId, setDeletingAptId] = useState<string | null>(null);
+
 
   // Settings Sub-tab and Clinic Management States
   const [settingsSubTab, setSettingsSubTab] = useState<"profile" | "hours" | "departments" | "doctors" | "whatsapp" | "users">("profile");
@@ -1246,10 +1247,44 @@ function DashboardPage() {
       const res = await deleteAppointmentServerFn({ data: id });
       if (res.success) {
         await fetchAppointments();
-        setDeletingAptId(null);
       }
     } catch (err: any) {
       console.error("Failed to delete appointment:", err);
+    }
+  };
+
+  const handleUpdateStatus = async (apt: any, newStatus: string) => {
+    setActiveStatusDropdownId(null);
+    if (apt.status === newStatus) return;
+
+    try {
+      const res = await updateAppointmentServerFn({
+        data: {
+          id: apt.id,
+          name: apt.name,
+          email: apt.email,
+          phone: apt.phone,
+          dateTime: apt.dateTime,
+          reason: apt.reason,
+          status: newStatus,
+          doctorId: apt.doctorId || undefined,
+          timeSlot: apt.timeSlot || undefined,
+          whatsapp: apt.whatsapp || undefined,
+          appointmentType: apt.appointmentType || undefined,
+          patientId: apt.patientId || null
+        }
+      });
+
+      if (res.success) {
+        showToast("success", `Appointment status updated to ${newStatus}`);
+        await fetchAppointments();
+        try {
+          fetchDashboardStats();
+          fetchAnalytics();
+        } catch (_) {}
+      }
+    } catch (err: any) {
+      showToast("error", err.message || "Failed to update appointment status.");
     }
   };
 
@@ -6264,9 +6299,11 @@ function DashboardPage() {
                                   </td>
 
                                   {/* Status */}
-                                  <td className="px-5 py-3.5">
-                                    <span
-                                      className={`inline-block rounded-full px-2.5 py-0.5 text-[9px] font-bold border ${
+                                  <td className="px-5 py-3.5 relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveStatusDropdownId(activeStatusDropdownId === apt.id ? null : apt.id)}
+                                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[9px] font-bold border transition-colors cursor-pointer hover:opacity-80 active:scale-[0.98] ${
                                         apt.status === "Confirmed"
                                           ? "bg-brand/5 text-brand border-brand/10"
                                           : apt.status === "Completed"
@@ -6276,8 +6313,33 @@ function DashboardPage() {
                                               : "bg-amber-50 text-amber-700 border-amber-100"
                                       }`}
                                     >
-                                      {apt.status}
-                                    </span>
+                                      <span>{apt.status}</span>
+                                      <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+                                    </button>
+
+                                    {activeStatusDropdownId === apt.id && (
+                                      <>
+                                        <div 
+                                          className="fixed inset-0 z-10" 
+                                          onClick={() => setActiveStatusDropdownId(null)} 
+                                        />
+                                        <div className="absolute left-5 mt-1 w-32 rounded-xl bg-white border border-zinc-150 shadow-lg py-1 z-20 animate-in fade-in slide-in-from-top-1 duration-100">
+                                          {(["Pending", "Confirmed", "Completed", "Cancelled"] as const).map((status) => (
+                                            <button
+                                              key={status}
+                                              type="button"
+                                              onClick={() => handleUpdateStatus(apt, status)}
+                                              className={`w-full text-left px-3 py-1.5 text-[10px] font-bold transition-colors hover:bg-zinc-50 flex items-center justify-between cursor-pointer ${
+                                                apt.status === status ? "text-brand" : "text-zinc-600"
+                                              }`}
+                                            >
+                                              <span>{status}</span>
+                                              {apt.status === status && <Check className="h-3 w-3 text-brand" />}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </>
+                                    )}
                                   </td>
 
                                   {/* Action */}
@@ -6365,33 +6427,14 @@ function DashboardPage() {
                                       </button>
 
                                       {/* Delete Appointment */}
-                                      {deletingAptId === apt.id ? (
-                                        <span className="inline-flex items-center gap-1.5 animate-in fade-in duration-200 shrink-0">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleDeleteAppointment(apt.id)}
-                                            className="text-xs text-red-650 hover:underline font-bold cursor-pointer"
-                                          >
-                                            Confirm
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => setDeletingAptId(null)}
-                                            className="text-xs text-zinc-400 hover:text-zinc-650 font-bold cursor-pointer"
-                                          >
-                                            Cancel
-                                          </button>
-                                        </span>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          title="Delete Appointment"
-                                          onClick={() => setDeletingAptId(apt.id)}
-                                          className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer shrink-0"
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        </button>
-                                      )}
+                                      <button
+                                        type="button"
+                                        title="Delete Appointment"
+                                        onClick={() => setAptToDelete(apt)}
+                                        className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer shrink-0"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
                                     </div>
                                   </td>
                                 </tr>
@@ -7183,9 +7226,11 @@ function DashboardPage() {
                                       })}
                                     </td>
                                     <td className="px-6 py-4 text-zinc-500 max-w-[200px] truncate">{apt.reason}</td>
-                                    <td className="px-6 py-4">
-                                      <span
-                                        className={`inline-block rounded-full px-2.5 py-0.5 text-[9px] font-bold border ${
+                                    <td className="px-6 py-4 relative">
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveStatusDropdownId(activeStatusDropdownId === apt.id ? null : apt.id)}
+                                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[9px] font-bold border transition-colors cursor-pointer hover:opacity-80 active:scale-[0.98] ${
                                           apt.status === "Confirmed"
                                             ? "bg-brand/5 text-brand border-brand/10"
                                             : apt.status === "Completed"
@@ -7195,8 +7240,33 @@ function DashboardPage() {
                                                 : "bg-amber-50 text-amber-700 border-amber-100"
                                         }`}
                                       >
-                                        {apt.status}
-                                      </span>
+                                        <span>{apt.status}</span>
+                                        <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+                                      </button>
+
+                                      {activeStatusDropdownId === apt.id && (
+                                        <>
+                                          <div 
+                                            className="fixed inset-0 z-10" 
+                                            onClick={() => setActiveStatusDropdownId(null)} 
+                                          />
+                                          <div className="absolute left-6 mt-1 w-32 rounded-xl bg-white border border-zinc-150 shadow-lg py-1 z-20 animate-in fade-in slide-in-from-top-1 duration-100">
+                                            {(["Pending", "Confirmed", "Completed", "Cancelled"] as const).map((status) => (
+                                              <button
+                                                key={status}
+                                                type="button"
+                                                onClick={() => handleUpdateStatus(apt, status)}
+                                                className={`w-full text-left px-3 py-1.5 text-[10px] font-bold transition-colors hover:bg-zinc-50 flex items-center justify-between cursor-pointer ${
+                                                  apt.status === status ? "text-brand" : "text-zinc-600"
+                                                }`}
+                                              >
+                                                <span>{status}</span>
+                                                {apt.status === status && <Check className="h-3 w-3 text-brand" />}
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </>
+                                      )}
                                     </td>
                                     <td className="px-6 py-4 text-right space-x-2">
                                       <button
@@ -7207,32 +7277,13 @@ function DashboardPage() {
                                         Edit
                                       </button>
                                       
-                                      {deletingAptId === apt.id ? (
-                                        <span className="inline-flex items-center gap-1.5 animate-in fade-in duration-200">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleDeleteAppointment(apt.id)}
-                                            className="text-red-650 hover:underline font-bold"
-                                          >
-                                            Confirm
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => setDeletingAptId(null)}
-                                            className="text-zinc-400 hover:text-zinc-650 font-bold"
-                                          >
-                                            Cancel
-                                          </button>
-                                        </span>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => setDeletingAptId(apt.id)}
-                                          className="text-red-500 font-bold hover:underline cursor-pointer"
-                                        >
-                                          Cancel
-                                        </button>
-                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => setAptToDelete(apt)}
+                                        className="text-red-500 font-bold hover:underline cursor-pointer"
+                                      >
+                                        Delete
+                                      </button>
                                     </td>
                                   </tr>
                                 ))}
@@ -7308,32 +7359,13 @@ function DashboardPage() {
                                   >
                                     Edit
                                   </button>
-                                  {deletingAptId === apt.id ? (
-                                    <span className="inline-flex items-center gap-1.5 animate-in fade-in duration-200">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteAppointment(apt.id)}
-                                        className="text-red-650 hover:underline font-bold text-xs"
-                                      >
-                                        Confirm
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setDeletingAptId(null)}
-                                        className="text-zinc-455 hover:text-zinc-650 font-bold text-xs"
-                                      >
-                                        Cancel
-                                      </button>
-                                    </span>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => setDeletingAptId(apt.id)}
-                                      className="text-red-500 font-bold text-xs cursor-pointer"
-                                    >
-                                      Cancel
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => setAptToDelete(apt)}
+                                    className="text-red-500 font-bold text-xs cursor-pointer"
+                                  >
+                                    Delete
+                                  </button>
                                 </div>
                               </div>
                             ))}
@@ -11033,6 +11065,65 @@ function DashboardPage() {
                     Apply to Prescription
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {aptToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setAptToDelete(null)}
+              className="fixed inset-0 bg-zinc-950/40 backdrop-blur-sm"
+            />
+
+            {/* Modal Content Card */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl text-left z-10"
+            >
+              <div className="flex items-start gap-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div className="space-y-1.5 flex-1">
+                  <h3 className="text-sm font-extrabold text-zinc-900">
+                    Delete Appointment
+                  </h3>
+                  <p className="text-xs text-zinc-500 font-semibold leading-relaxed">
+                    Are you sure you want to delete the appointment for <strong className="text-zinc-800 font-bold">{aptToDelete.name}</strong>? This action is permanent and cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div className="mt-6 flex justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setAptToDelete(null)}
+                  className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-bold text-zinc-700 hover:bg-zinc-50 cursor-pointer active:scale-[0.98] transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const id = aptToDelete.id;
+                    setAptToDelete(null);
+                    await handleDeleteAppointment(id);
+                  }}
+                  className="rounded-full bg-red-650 px-4.5 py-2 text-xs font-extrabold text-white hover:bg-red-550 shadow-md cursor-pointer active:scale-[0.98] transition-all"
+                >
+                  Delete
+                </button>
               </div>
             </motion.div>
           </div>
