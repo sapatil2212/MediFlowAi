@@ -10812,7 +10812,7 @@ function DashboardPage() {
                     }
                   }}
                   disabled={isDialogConfirming}
-                  className="w-full rounded-full bg-red-650 hover:bg-red-750 py-2.5 text-xs font-bold text-white disabled:opacity-50 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none"
+                  className="w-full rounded-full bg-red-600 hover:bg-red-700 py-2.5 text-xs font-bold text-white disabled:opacity-50 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none"
                 >
                   {isDialogConfirming && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Confirm Delete
@@ -10879,7 +10879,7 @@ function DashboardPage() {
                     }
                   }}
                   disabled={isDeletingSubUser}
-                  className="w-full rounded-full bg-red-650 hover:bg-red-700 py-2.5 text-xs font-bold text-white disabled:opacity-50 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none"
+                  className="w-full rounded-full bg-red-600 hover:bg-red-700 py-2.5 text-xs font-bold text-white disabled:opacity-50 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none"
                 >
                   {isDeletingSubUser && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Confirm Delete
@@ -11181,7 +11181,7 @@ function DashboardPage() {
                     setAptToDelete(null);
                     await handleDeleteAppointment(id);
                   }}
-                  className="w-full rounded-full bg-red-650 hover:bg-red-700 py-2.5 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none"
+                  className="w-full rounded-full bg-red-600 hover:bg-red-700 py-2.5 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none"
                 >
                   Confirm Delete
                 </button>
