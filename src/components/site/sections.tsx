@@ -372,7 +372,6 @@ function DashboardPreview() {
                     { id: "scribe", label: "AI Clinical Scribe", icon: Mic },
                     { id: "appointments", label: "Appointments", icon: Calendar },
                     { id: "patients", label: "Patient Records", icon: Users },
-                    { id: "analytics", label: "Practice Analytics", icon: TrendingUp },
                     { id: "settings", label: "Settings", icon: Settings },
                   ].map((tab) => {
                     const Icon = tab.icon;
