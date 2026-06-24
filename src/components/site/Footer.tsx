@@ -1,33 +1,28 @@
 import { Link } from "@tanstack/react-router";
-import { HeartPulse, ShieldCheck, Globe, Lock, Database } from "lucide-react";
+import { ShieldCheck, Globe, Lock, Database } from "lucide-react";
+import bmtLogo from "@/assets/bmt-logo.png";
 
 const cols = [
   {
-    title: "Product",
+    title: "Features",
     links: [
-      { label: "Features", to: "/features" as const },
-      { label: "AI Receptionist", to: "/features" as const },
-      { label: "Clinical Notes", to: "/features" as const },
-      { label: "Billing", to: "/features" as const },
-      { label: "Analytics", to: "/features" as const },
-    ],
-  },
-  {
-    title: "Solutions",
-    links: [
-      { label: "Solo Practice", to: "/solutions" as const },
-      { label: "Multi-clinic", to: "/solutions" as const },
-      { label: "Hospitals", to: "/solutions" as const },
-      { label: "Dental", to: "/solutions" as const },
-      { label: "Aesthetic", to: "/solutions" as const },
+      { label: "AI Booking Assistant", to: "/features" as const },
+      { label: "Online Scheduling", to: "/features" as const },
+      { label: "WhatsApp Notifications", to: "/features" as const },
+      { label: "Booking Portal", to: "/features" as const },
+      { label: "QR Code Booking", to: "/features" as const },
+      { label: "Customer Management", to: "/features" as const },
+      { label: "Analytics & Reports", to: "/features" as const },
     ],
   },
   {
     title: "Company",
     links: [
-      { label: "Customers", to: "/customers" as const },
       { label: "Pricing", to: "/pricing" as const },
       { label: "Contact", to: "/contact" as const },
+      { label: "Privacy Policy", to: "/privacy" as const },
+      { label: "Terms", to: "/terms" as const },
+      { label: "Refund Policy", to: "/refund" as const },
     ],
   },
 ];
@@ -38,26 +33,13 @@ export function Footer() {
       <div className="mx-auto max-w-7xl px-6">
         <div className="grid gap-12 md:grid-cols-[1.5fr_3fr]">
           <div>
-            <div className="mb-4 flex items-center gap-2">
-              <div className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-brand-light">
-                <HeartPulse className="size-4 text-white" />
-              </div>
-              <span className="text-sm font-semibold tracking-tight">BookMyTime</span>
-            </div>
+            <Link to="/" className="mb-4 inline-flex items-center gap-2">
+              <img src={bmtLogo} alt="BMT Logo" className="h-20 w-auto object-contain" />
+            </Link>
             <p className="max-w-xs text-xs leading-relaxed text-zinc-500">
-              The AI operating system for modern medicine. Built for clinics, hospitals, dental and
-              aesthetic centers — by engineers who shipped at Epic, Mayo and Stripe.
+              The AI-Powered Booking Engine for Modern Businesses.
+              Automate appointments, deliver seamless booking experiences with intelligent scheduling and customer engagement.
             </p>
-            <div className="mt-6 flex gap-2">
-              {[Globe, ShieldCheck, Lock, Database].map((Icon, i) => (
-                <div
-                  key={i}
-                  className="flex size-8 items-center justify-center rounded-lg bg-white ring-1 ring-zinc-950/5"
-                >
-                  <Icon className="size-3.5 text-zinc-500" />
-                </div>
-              ))}
-            </div>
           </div>
           <div className="grid grid-cols-2 gap-8 md:grid-cols-3">
             {cols.map((c) => (
@@ -79,30 +61,36 @@ export function Footer() {
                 </ul>
               </div>
             ))}
+            {/* Contact Info Column */}
+            <div>
+              <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                Contact Us
+              </p>
+              <ul className="space-y-4">
+
+                <li>
+                  <p className="text-xs text-zinc-600 leading-relaxed">
+                    <span className="block font-semibold text-zinc-900">Email:</span>
+                    bookmytime1355@gmail.com
+                  </p>
+                </li>
+                <li>
+                  <p className="text-xs text-zinc-600 leading-relaxed">
+                    <span className="block font-semibold text-zinc-900">Phone:</span>
+                    +91 98765 43210
+                  </p>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
-        <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-zinc-950/5 pt-8 md:flex-row">
+        <div className="mt-12 border-t border-zinc-950/5 pt-8 text-center">
           <p className="text-[11px] text-zinc-500">
             © 2026 BookMyTime Systems Inc. All rights reserved.
+            <span className="hidden sm:inline"> | </span>
+            <br className="sm:hidden" />
+            A product of Brightwave Digital Products
           </p>
-          <div className="flex flex-wrap items-center gap-4 text-[11px] text-zinc-500">
-            <span className="flex items-center gap-1.5">
-              <ShieldCheck className="size-3.5 text-brand" />
-              HIPAA
-            </span>
-            <span className="flex items-center gap-1.5">
-              <ShieldCheck className="size-3.5 text-brand" />
-              SOC 2 Type II
-            </span>
-            <span className="flex items-center gap-1.5">
-              <ShieldCheck className="size-3.5 text-brand" />
-              GDPR
-            </span>
-            <span className="flex items-center gap-1.5">
-              <ShieldCheck className="size-3.5 text-brand" />
-              ISO 27001
-            </span>
-          </div>
         </div>
       </div>
     </footer>

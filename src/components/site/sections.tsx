@@ -1,4 +1,4 @@
-﻿import { Link } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import {
   motion,
   useInView,
@@ -187,11 +187,34 @@ export function PageHeader({
  * HERO  (home)
  * ======================================================= */
 export function Hero() {
+  const [bookingNotification, setBookingNotification] = useState({
+    name: "Rajesh Kumar",
+    action: "booked Consultation",
+    tenant: "Aarogya Clinic",
+    city: "Delhi",
+    time: "Just now"
+  });
+
+  useEffect(() => {
+    const notifications = [
+      { name: "Priya Sharma", action: "booked Hair Spa", tenant: "Glam Room", city: "Bengaluru", time: "Just now" },
+      { name: "Rohan Mehta", action: "booked Personal Training", tenant: "FitLife Gym", city: "Mumbai", time: "Just now" },
+      { name: "Suresh Iyer", action: "booked Physics Batch", tenant: "Apex Academy", city: "Chennai", time: "Just now" },
+      { name: "Amit Verma", action: "booked Doctor Consultation", tenant: "Aarogya Clinic", city: "Delhi", time: "Just now" }
+    ];
+    let idx = 0;
+    const interval = setInterval(() => {
+      idx = (idx + 1) % notifications.length;
+      setBookingNotification(notifications[idx]);
+    }, 3500);
+    return () => clearInterval(interval);
+  }, []);
+
   const features = [
-    "Dedicated Booking Link", "Unique QR Code for Every Business",
-    "WhatsApp Appointment Notifications", "AI-Powered Customer Assistant",
-    "Customer & Staff Management", "Smart CRM Dashboard",
-    "Multi-Location Support", "Affordable Subscription Plans",
+    "Dedicated Tenant Booking Link", "Unique QR Code for Every Business",
+    "WhatsApp Booking Confirmations", "AI Booking Assistant Chatbot",
+    "Independent Tenant Administration", "Multi-Location & Multi-Staff Sync",
+    "Custom Business Branding", "Unified CRM & Analytics Dashboard"
   ];
 
   return (
@@ -204,7 +227,7 @@ export function Hero() {
       <div className="absolute top-[80px] left-[-60px] w-[360px] h-[360px] pointer-events-none z-0" style={{ background: "radial-gradient(circle, rgba(0,89,198,0.1) 0%, transparent 65%)" }} />
 
       {/* Rotating stamp */}
-      <div className="absolute right-[calc(5%+8px)] top-[135px] w-24 h-24 z-10 hidden md:block select-none pointer-events-none">
+      <div className="absolute right-[2%] top-[15px] w-24 h-24 z-10 hidden md:block select-none pointer-events-none">
         <motion.svg viewBox="0 0 96 96" className="w-24 h-24" animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 18, ease: "linear" }}>
           <defs><path id="bmt-sp" d="M 48,48 m -37,0 a 37,37 0 1,1 74,0 a 37,37 0 1,1 -74,0" fill="none" /></defs>
           <text fill="#0059C6" fontSize="9" fontWeight="600" letterSpacing="1.6" fontFamily="Inter, sans-serif">
@@ -213,7 +236,7 @@ export function Hero() {
         </motion.svg>
         <motion.div
           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center shadow-[0_4px_14px_rgba(0,89,198,0.4)]"
-          style={{ background: "linear-gradient(135deg, #0059C6, #00246D)" }}
+          style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
           animate={{ rotate: -360 }}
           transition={{ repeat: Infinity, duration: 18, ease: "linear" }}
         >
@@ -230,23 +253,21 @@ export function Hero() {
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/90 border border-[#0059C6]/20 text-xs font-semibold text-[#0059C6] mb-7 shadow-[0_2px_10px_rgba(0,89,198,0.08)] backdrop-blur-md"
             >
-              <Zap className="size-3 text-[#0059C6]" /> Trusted by Growing Businesses Across Multiple Industries
+              <Zap className="size-3 text-[#0059C6]" /> Trusted by 5,000+ Indian Businesses & Multi-Branch Groups
             </motion.div>
 
             <motion.h1
               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
               className="text-4xl md:text-5xl lg:text-[52px] font-semibold leading-[1.12] tracking-tight text-[#0F172A] mb-5"
             >
-              One Platform to Manage{" "}
-              <span className="text-gradient-brand">Bookings, Customers</span>{" "}
-              & Business Growth
+              The Multi-Tenant <span className="text-gradient-brand">AI Booking Platform</span> for Modern Indian Businesses
             </motion.h1>
 
             <motion.p
               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
               className="text-sm md:text-base text-[#64748B] leading-relaxed max-w-[540px] mb-6 font-normal"
             >
-              Automate bookings, manage customers, send WhatsApp reminders, and grow your business with AI-powered tools.
+              Automate bookings across all locations and staff. Launch your custom-branded booking portal, send automatic WhatsApp reminders, and track operations in real time.
             </motion.p>
 
             <motion.div
@@ -254,12 +275,12 @@ export function Hero() {
               className="flex flex-wrap items-center gap-3 mb-6"
             >
               <Link to="/signup" className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:-translate-y-[1px]"
-                style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)", boxShadow: "0 2px 12px rgba(0,89,198,0.35)" }}
+                style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
               >
                 <Sparkles className="size-4" /> Get Started Free
               </Link>
               <Link to="/demo" className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all hover:-translate-y-[1px] bg-white border hover:border-[#0059C6] hover:text-[#0059C6]"
-                style={{ borderColor: "rgba(0,89,198,0.2)", color: "#0F172A", boxShadow: "0 2px 10px rgba(0,89,198,0.08)" }}
+                style={{ borderColor: "rgba(0,89,198,0.2)", color: "#0F172A" }}
               >
                 <CalendarDays className="size-4" /> Book a Demo
               </Link>
@@ -274,84 +295,136 @@ export function Hero() {
             className="relative"
           >
             <motion.div
-              className="absolute -left-6 bottom-12 bg-white rounded-xl shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-3 border border-[#A7D3FF]/60 min-w-[155px] z-20 hidden md:block"
+              className="absolute -left-12 bottom-12 bg-white rounded-lg shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-2.5 border border-[#A7D3FF]/60 min-w-[130px] z-20 hidden md:block"
               animate={{ y: [0, -8, 0] }} transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
             >
               <div className="flex items-center gap-0.5 mb-1">
-                {[...Array(5)].map((_, i) => <Star key={i} className="size-[11px] fill-[#F59E0B] stroke-[#F59E0B]" />)}
-                <span className="text-[10px] font-bold text-[#0F172A] ml-1">4.9</span>
+                {[...Array(5)].map((_, i) => <Star key={i} className="size-[9px] fill-[#F59E0B] stroke-[#F59E0B]" />)}
+                <span className="text-[9px] font-bold text-[#0F172A] ml-1">4.9</span>
               </div>
-              <div className="text-[11px] font-bold text-[#0F172A] mb-1.5">from verified customers</div>
-              <div className="flex -space-x-1.5">
+              <div className="text-[9px] font-bold text-[#0F172A] mb-1.5">from verified reviews</div>
+              <div className="flex -space-x-1">
                 {["BS","RK","AP","SM"].map((init, i) => (
-                  <div key={i} className="w-5 h-5 rounded-full border border-white text-[7px] font-bold text-white flex items-center justify-center" style={{ background: ["#0059C6","#0D83FF","#00246D","#A7D3FF"][i], color: i === 3 ? "#00246D" : "white" }}>{init}</div>
+                  <div key={i} className="w-4 h-4 rounded-full border border-white text-[6px] font-bold text-white flex items-center justify-center" style={{ background: ["#0059C6","#0D83FF","#00246D","#A7D3FF"][i], color: i === 3 ? "#00246D" : "white" }}>{init}</div>
                 ))}
               </div>
             </motion.div>
 
             <motion.div
-              className="absolute -right-4 top-10 bg-white rounded-xl shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-3 border border-[#A7D3FF]/60 flex items-center gap-2.5 z-20 hidden md:flex"
+              className="absolute -right-12 top-10 bg-white rounded-lg shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-2.5 border border-[#A7D3FF]/60 flex items-center gap-2 z-20 hidden md:flex"
               animate={{ y: [0, -8, 0] }} transition={{ repeat: Infinity, duration: 4, ease: "easeInOut", delay: 1.5 }}
             >
-              <div className="w-[34px] h-[34px] rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, #0D83FF, #0059C6)" }}>
-                <Check className="size-[17px] text-white stroke-[3px]" />
+              <div className="w-[26px] h-[26px] rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, #0D83FF, #0059C6)" }}>
+                <Check className="size-[13px] text-white stroke-[3px]" />
               </div>
               <div>
-                <div className="text-[11px] font-bold text-[#0F172A] leading-tight">5,000+ Businesses</div>
-                <div className="text-[9px] text-[#64748B] mt-0.5">Across India</div>
+                <div className="text-[9px] font-bold text-[#0F172A] leading-tight">Unlimited</div>
+                <div className="text-[8px] text-[#64748B] mt-0.5">Booking Potential</div>
               </div>
             </motion.div>
 
             <div className="rounded-3xl border border-white bg-white/80 p-2 shadow-[0_-4px_60px_rgba(0,89,198,0.1),0_24px_80px_rgba(0,0,0,0.07)] backdrop-blur-xl ring-1 ring-[#0059C6]/10 overflow-hidden">
-              <div className="bg-white rounded-2xl overflow-hidden border border-zinc-100">
-                <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: "#00246D" }}>
-                  <div className="flex gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                    <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+              <div className="bg-slate-50 rounded-2xl flex overflow-hidden border border-zinc-200 h-[400px]">
+                {/* Sidebar */}
+                <div className="w-36 bg-white border-r border-zinc-200/80 p-3 flex flex-col gap-1 shrink-0 hidden sm:flex">
+                  <div className="flex items-center gap-2 mb-4 px-1 mt-1">
+                    <div className="w-6 h-6 rounded bg-[#0059C6] flex items-center justify-center">
+                      <LayoutDashboard className="w-3.5 h-3.5 text-white" />
+                    </div>
+                    <span className="text-[11px] font-bold text-zinc-900 tracking-tight">BookMyTime</span>
                   </div>
-                  <span className="text-[10px] text-[#A7D3FF] ml-2">BookMyTime — Smart Booking Dashboard</span>
+                  
+                  {[
+                    { icon: Home, label: "Overview", active: true },
+                    { icon: Calendar, label: "Calendar" },
+                    { icon: Users, label: "Customers" },
+                    { icon: MessageSquare, label: "Messages" },
+                    { icon: Settings, label: "Settings" }
+                  ].map((item, i) => {
+                    const Icon = item.icon;
+                    return (
+                      <div key={i} className={`flex items-center gap-2 px-2.5 py-2 rounded-lg ${item.active ? 'bg-[#0059C6]/10 text-[#0059C6]' : 'text-zinc-500'}`}>
+                        <Icon className="w-3.5 h-3.5" />
+                        <span className="text-[9px] font-bold">{item.label}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="p-4 space-y-3 bg-zinc-50">
-                  <div className="text-center pb-2 border-b border-zinc-100">
-                    <p className="text-[11px] font-bold text-zinc-800">Smart Booking Management for Every Business</p>
-                    <p className="text-[9px] text-zinc-400 mt-0.5">Manage appointments, customers, staff, payments, reminders, and communication from one powerful dashboard.</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { label: "Today's Bookings", value: "24", icon: Calendar, bg: "#EEF5FF", color: "#0059C6" },
-                      { label: "Active Customers", value: "1,248", icon: Users, bg: "#FEF3C7", color: "#D97706" },
-                      { label: "This Month", value: "₹84,200", icon: TrendingUp, bg: "#ECFDF5", color: "#059669" },
-                      { label: "Completion Rate", value: "96%", icon: Check, bg: "#EEF2FF", color: "#4F46E5" },
-                    ].map((s, i) => {
-                      const Icon = s.icon;
-                      return (
-                        <div key={i} className="bg-white rounded-xl border border-zinc-200 p-2.5 flex items-center gap-2">
-                          <div className="p-1.5 rounded-lg" style={{ background: s.bg }}>
-                            <Icon className="h-3 w-3" style={{ color: s.color }} />
-                          </div>
-                          <div>
-                            <p className="text-[9px] text-zinc-400">{s.label}</p>
-                            <p className="text-xs font-bold text-zinc-900">{s.value}</p>
-                          </div>
+
+                {/* Main Content Area */}
+                <div className="flex-1 flex flex-col min-w-0">
+                  {/* Top Bar */}
+                  <div className="h-12 bg-white border-b border-zinc-200/80 flex items-center justify-between px-4 shrink-0">
+                     <span className="text-[11px] font-bold text-zinc-800">Tenant Dashboard</span>
+                     <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-50 border border-emerald-100">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-[8px] font-bold text-emerald-700">Live Sync</span>
                         </div>
-                      );
-                    })}
+                        <div className="w-6 h-6 rounded-full bg-[#0059C6]/10 text-[9px] flex items-center justify-center font-bold text-[#0059C6]">SA</div>
+                     </div>
                   </div>
-                  <div className="bg-white rounded-xl border border-zinc-200 p-3">
-                    <p className="text-[9px] font-bold uppercase tracking-wider mb-2" style={{ color: "#0059C6" }}>Platform Features</p>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                      {features.map((f) => (
-                        <div key={f} className="flex items-center gap-1">
-                          <Check className="h-2.5 w-2.5 shrink-0" style={{ color: "#0059C6" }} />
-                          <span className="text-[8.5px] text-zinc-600 font-medium">{f}</span>
+
+                  <div className="p-4 space-y-3 overflow-y-auto">
+                    {/* Active branches selector */}
+                    <div className="flex items-center justify-between bg-white rounded-xl border border-zinc-200/80 px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                      <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Active Locations:</span>
+                      <div className="flex gap-1.5">
+                        <span className="text-[8px] bg-[#0059C6]/10 text-[#0059C6] font-bold px-2 py-0.5 rounded">HSR Layout (Blr)</span>
+                        <span className="text-[8px] bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded font-bold">Bandra (Mum)</span>
+                      </div>
+                    </div>
+
+                    {/* Real-time incoming bookings simulation */}
+                    <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/40 rounded-xl p-2.5 flex items-center justify-between shadow-[0_2px_8px_rgba(5,150,105,0.03)]">
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <div className="text-left leading-normal">
+                          <span className="text-[9px] font-extrabold text-zinc-800">{bookingNotification.name} </span>
+                          <span className="text-[8px] text-zinc-500">{bookingNotification.action} at </span>
+                          <span className="text-[9px] font-bold text-[#0059C6]">{bookingNotification.tenant} ({bookingNotification.city})</span>
                         </div>
-                      ))}
+                      </div>
+                      <span className="text-[8px] text-emerald-600 font-bold bg-emerald-100 px-1.5 py-0.5 rounded">{bookingNotification.time}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {[
+                        { label: "Today's Bookings", value: "84", icon: Calendar, bg: "#EEF5FF", color: "#0059C6" },
+                        { label: "Active Customers", value: "3,842", icon: Users, bg: "#FEF3C7", color: "#D97706" },
+                        { label: "This Month (INR)", value: "₹2,48,200", icon: TrendingUp, bg: "#ECFDF5", color: "#059669" },
+                        { label: "Completion Rate", value: "98.2%", icon: Check, bg: "#EEF2FF", color: "#4F46E5" },
+                      ].map((s, i) => {
+                        const Icon = s.icon;
+                        return (
+                          <div key={i} className="bg-white rounded-xl border border-zinc-200/80 p-2.5 flex items-center gap-2.5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] hover:border-[#0059C6]/30 transition-colors">
+                            <div className="p-1.5 rounded-lg" style={{ background: s.bg }}>
+                              <Icon className="h-3.5 w-3.5" style={{ color: s.color }} />
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-zinc-400 font-semibold mb-0.5">{s.label}</p>
+                              <p className="text-xs font-black text-zinc-900 leading-none">{s.value}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="bg-white rounded-xl border border-zinc-200/80 p-3 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                      <p className="text-[9px] font-bold uppercase tracking-wider mb-2" style={{ color: "#0059C6" }}>Core Features</p>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                        {features.map((f) => (
+                          <div key={f} className="flex items-center gap-1.5">
+                            <Check className="h-2.5 w-2.5 shrink-0" style={{ color: "#0059C6" }} />
+                            <span className="text-[8.5px] text-zinc-600 font-medium leading-none">{f}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <p className="text-center text-[9px] text-zinc-400 italic pb-1">
-                    Built for businesses that want enterprise-level booking automation without enterprise-level costs.
-                  </p>
                 </div>
               </div>
             </div>
@@ -410,10 +483,10 @@ export function LogosMarquee() {
  * ======================================================= */
 export function Stats() {
   const stats = [
-    { v: 85, suf: "%", label: "Reduction in Manual Booking Work", sub: "Average across all industries" },
-    { v: 25, suf: "h", label: "Saved Every Week", sub: "Through automation & reminders" },
-    { v: 5000, suf: "+", label: "Active Businesses", sub: "Using BookMyTime daily" },
-    { v: 1.8, suf: "M+", label: "Appointments Managed", sub: "Across multiple industries" },
+    { title: "24/7", label: "Accept Bookings Anytime" },
+    { title: "< 60 Sec", label: "Average Booking Experience" },
+    { title: "AI Powered", label: "Smart Scheduling Engine" },
+    { title: "Multi Industry", label: "Built For Any Business" },
   ];
   return (
     <section className="relative bg-gradient-to-b from-white to-zinc-50 py-20">
@@ -421,18 +494,17 @@ export function Stats() {
         <div className="grid grid-cols-2 gap-y-10 md:grid-cols-4">
           {stats.map((s, i) => (
             <motion.div
-              key={s.label}
+              key={s.title}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.08 }}
               className="text-center"
             >
-              <p className="text-4xl font-semibold tracking-tight text-gradient-brand md:text-5xl">
-                <Counter to={s.v} suffix={s.suf} />
+              <p className="text-4xl font-semibold tracking-tight text-gradient-brand md:text-5xl whitespace-nowrap">
+                {s.title}
               </p>
-              <p className="mt-2 text-sm font-medium text-zinc-900">{s.label}</p>
-              <p className="text-xs text-zinc-500">{s.sub}</p>
+              <p className="mt-3 text-sm font-semibold text-zinc-900">{s.label}</p>
             </motion.div>
           ))}
         </div>
@@ -447,23 +519,19 @@ export function Stats() {
 export function BenefitsSection() {
   const before = [
     "Missed calls turning into lost bookings",
-    "Manual appointment tracking in spreadsheets",
-    "Customers forgetting appointments",
-    "No dedicated booking system",
-    "Managing customers across multiple tools",
-    "No centralized CRM or customer history",
-    "Staff spending hours on repetitive tasks",
-    "No automation for reminders and follow-ups",
+    "Scattered customer data across diaries & Excel",
+    "No unique booking link for individual staff members",
+    "No automated WhatsApp reminders or notifications",
+    "Struggling to track multiple branch locations",
+    "High no-show rates causing revenue leakage",
   ];
   const after = [
-    "Dedicated booking page and QR code",
-    "Online appointment booking 24/7",
-    "Automated WhatsApp reminders & updates",
-    "Smart customer and staff management",
-    "AI-powered chatbot for instant responses",
-    "Centralized CRM for all customer interactions",
-    "Real-time booking and business insights",
-    "One platform, one dashboard, complete control",
+    "Custom booking URL (e.g. bookmytime.in/book/your-brand)",
+    "Unique QR code for table/desk/counter self-booking",
+    "Automated WhatsApp booking alerts & invoices in ₹",
+    "Independent staff logins & schedule configurations",
+    "Multi-location super admin sync & location reporting",
+    "AI Assistant answering customer booking requests 24/7",
   ];
   return (
     <section className="relative py-24">
@@ -480,18 +548,17 @@ export function BenefitsSection() {
                 style={{ top: "45%", transform: "translateY(-50%)" }}
               >
                 <motion.path
-                  d="M 0 18 L 120 2"
+                  d="M 0 2 L 120 18"
                   stroke="#ef4444"
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   fill="none"
                   initial={{ pathLength: 0, opacity: 0 }}
-                  whileInView={{ pathLength: 1, opacity: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
+                  animate={{ pathLength: 1, opacity: 1 }}
+                  transition={{ duration: 0.8, ease: "easeOut", repeat: Infinity, repeatDelay: 1 }}
                 />
               </motion.svg>
-            </span>.
+            </span>
             <br />
             Start growing your business <span className="text-gradient-brand">smarter</span>.
           </h2>
@@ -797,6 +864,14 @@ export function WhatsAppSection() {
       time: "Sun",
       color: "#EC4899",
     },
+    {
+      type: "out" as const,
+      icon: CreditCard,
+      label: "Payment Link",
+      text: "Please complete your payment of ₹500 to secure your booking. Link: bmt.in/pay",
+      time: "Now",
+      color: "#059669",
+    },
   ];
 
   const [active, setActive] = useState(0);
@@ -810,15 +885,15 @@ export function WhatsAppSection() {
     <section className="relative py-14 bg-white overflow-hidden">
       <div className="pointer-events-none absolute inset-0 bg-grid bg-radial-fade opacity-20" />
 
-      <div className="relative mx-auto max-w-6xl px-6">
-        <div className="grid lg:grid-cols-2 items-center">
+      <div className="relative mx-auto max-w-7xl px-6">
+        <div className="grid gap-12 lg:gap-16 lg:grid-cols-[auto_1fr] items-center">
 
           {/* ── Left: Phone mockup ── */}
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            className="flex justify-center lg:justify-end lg:pr-0"
+            className="flex justify-center lg:justify-start"
           >
             <div className="relative">
               <div className="absolute inset-0 rounded-[3rem] blur-3xl scale-90"
@@ -934,7 +1009,7 @@ export function WhatsAppSection() {
             </motion.p>
 
             {/* Feature list */}
-            <div className="space-y-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
               {messages.map((msg, i) => {
                 const Icon = msg.icon;
                 const isActive = i === active;
@@ -947,7 +1022,7 @@ export function WhatsAppSection() {
                     whileInView={{ opacity: 1, x: 0 }}
                     viewport={{ once: true }}
                     transition={{ delay: 0.08 + i * 0.06 }}
-                    className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all duration-200 cursor-pointer"
+                    className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left transition-all duration-200 cursor-pointer h-full"
                     style={{
                       background: isActive ? "rgba(0,89,198,0.06)" : "transparent",
                       border: isActive ? "1px solid rgba(0,89,198,0.2)" : "1px solid transparent",
@@ -959,13 +1034,8 @@ export function WhatsAppSection() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold text-zinc-900 leading-tight">{msg.label}</p>
-                      <p className="text-[10px] text-zinc-400 truncate mt-0.5">{msg.text}</p>
+                      <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">{msg.text}</p>
                     </div>
-                    <motion.div
-                      animate={{ scale: isActive ? 1 : 0 }}
-                      className="w-1.5 h-1.5 rounded-full shrink-0"
-                      style={{ background: "#0059C6" }}
-                    />
                   </motion.button>
                 );
               })}
@@ -983,93 +1053,95 @@ export function WhatsAppSection() {
  * ======================================================= */
 export function BeforeAfter() {
   const before = [
-    "Missed calls",
-    "Manual diary",
-    "No reminders",
-    "Lost customers",
-    "Scattered customer data",
+    "Overbooked slots & double bookings",
+    "Manual phone calls for confirmations",
+    "No client booking history database",
+    "Staff hours wasted on schedule changes",
+    "Zero booking analytics per location",
   ];
   const after = [
-    "Online booking",
-    "Automated reminders",
-    "Centralized CRM",
-    "Better customer retention",
-    "More bookings",
+    "Real-time automated slot verification",
+    "Instant WhatsApp alerts & invoices",
+    "Centralized CRM with tenant isolation",
+    "Self-service rescheduling & cancellations",
+    "Super-admin dashboard with site analytics",
   ];
 
   return (
-    <section className="relative py-20 bg-white overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 bg-grid bg-radial-fade opacity-20" />
+    <section className="relative py-24 bg-slate-50/50 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
+      <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[500px] bg-[#0059C6]/[0.03] blur-[100px] rounded-full" />
 
-      <div className="relative mx-auto max-w-5xl px-6">
+      <div className="relative mx-auto max-w-6xl px-6">
         {/* Header */}
-        <div className="text-center mb-12">
-          <motion.span
-            initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold tracking-widest mb-4"
-            style={{ background: "rgba(0,89,198,0.07)", color: "#0059C6", border: "1px solid rgba(0,89,198,0.15)" }}
-          >
-            BEFORE VS AFTER
-          </motion.span>
+        <div className="text-center mb-16">
+          <SectionEyebrow>BEFORE VS AFTER</SectionEyebrow>
           <motion.h2
             initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.05 }}
-            className="text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900"
+            className="mt-5 text-balance text-3xl md:text-5xl font-semibold tracking-tight text-zinc-900"
           >
             See the <span className="text-gradient-brand">difference BookMyTime makes</span>
           </motion.h2>
         </div>
 
-        {/* Cards */}
-        <div className="grid md:grid-cols-2 gap-5">
+        {/* Cards Container */}
+        <div className="relative grid md:grid-cols-2 gap-8 lg:gap-12 items-stretch">
+          
+          {/* VS Badge (Desktop) */}
+          <div className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 size-16 items-center justify-center rounded-full bg-white shadow-[0_8px_30px_rgba(0,0,0,0.08)] border border-zinc-100">
+            <span className="text-sm font-black text-zinc-400">VS</span>
+          </div>
 
-          {/* Before */}
+          {/* Before Card */}
           <motion.div
-            initial={{ opacity: 0, x: -24 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}
-            className="rounded-2xl border border-red-100 bg-red-50/40 p-6"
+            initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, ease: "easeOut" }}
+            className="relative flex flex-col rounded-3xl border border-zinc-200 bg-white p-8 md:p-10 shadow-sm"
           >
-            <div className="flex items-center gap-2 mb-5">
-              <div className="flex size-7 items-center justify-center rounded-lg bg-red-100">
-                <X className="size-3.5 text-red-500" />
+            <div className="flex items-center gap-4 mb-8">
+              <div className="flex size-12 items-center justify-center rounded-2xl bg-red-50 border border-red-100">
+                <X className="size-5 text-red-500" strokeWidth={2.5} />
               </div>
-              <h3 className="text-sm font-bold text-zinc-900">Before BookMyTime</h3>
+              <h3 className="text-xl font-bold text-zinc-900">Before</h3>
             </div>
-            <ul className="space-y-3">
+            <ul className="space-y-5 flex-1">
               {before.map((item, i) => (
                 <motion.li
                   key={item}
-                  initial={{ opacity: 0, x: -12 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.06 }}
-                  className="flex items-center gap-3 text-sm text-zinc-600"
+                  initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 + i * 0.1 }}
+                  className="flex items-start gap-4 text-[15px] text-zinc-500 font-medium"
                 >
-                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-500 text-[10px] font-bold">✕</span>
-                  {item}
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-400 text-xs font-black mt-0.5">✕</span>
+                  <span className="leading-relaxed">{item}</span>
                 </motion.li>
               ))}
             </ul>
           </motion.div>
 
-          {/* After */}
+          {/* After Card */}
           <motion.div
-            initial={{ opacity: 0, x: 24 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.1 }}
-            className="rounded-2xl p-6 relative overflow-hidden"
-            style={{ background: "linear-gradient(135deg, rgba(0,89,198,0.06) 0%, rgba(13,131,255,0.04) 100%)", border: "1px solid rgba(0,89,198,0.15)" }}
+            initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
+            className="relative flex flex-col rounded-3xl p-8 md:p-10 overflow-hidden shadow-[0_20px_60px_-15px_rgba(0,89,198,0.15)] group"
+            style={{ background: "linear-gradient(145deg, #ffffff 0%, #f4f9ff 100%)", border: "1px solid rgba(0,89,198,0.15)" }}
           >
-            <div className="pointer-events-none absolute -top-8 -right-8 w-32 h-32 rounded-full blur-2xl" style={{ background: "rgba(13,131,255,0.1)" }} />
-            <div className="flex items-center gap-2 mb-5">
-              <div className="flex size-7 items-center justify-center rounded-lg" style={{ background: "rgba(0,89,198,0.1)" }}>
-                <Check className="size-3.5" style={{ color: "#0059C6" }} />
+            {/* Animated Glow */}
+            <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-[#0D83FF]/10 blur-3xl transition-transform duration-700 group-hover:scale-150" />
+            
+            <div className="relative flex items-center gap-4 mb-8 z-10">
+              <div className="flex size-12 items-center justify-center rounded-2xl shadow-lg shadow-[#0059C6]/20 transition-transform duration-500 group-hover:scale-110" style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}>
+                <Check className="size-5 text-white" strokeWidth={3} />
               </div>
-              <h3 className="text-sm font-bold text-zinc-900">After BookMyTime</h3>
+              <h3 className="text-xl font-bold text-zinc-900">After BookMyTime</h3>
             </div>
-            <ul className="space-y-3">
+            <ul className="relative space-y-5 flex-1 z-10">
               {after.map((item, i) => (
                 <motion.li
                   key={item}
-                  initial={{ opacity: 0, x: 12 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 + i * 0.06 }}
-                  className="flex items-center gap-3 text-sm text-zinc-700"
+                  initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.3 + i * 0.1 }}
+                  className="flex items-start gap-4 text-[15px] text-zinc-800 font-semibold"
                 >
-                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full text-white text-[10px]"
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full text-white text-xs shadow-md mt-0.5"
                     style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}>✓</span>
-                  <span className="font-medium">{item}</span>
+                  <span className="leading-relaxed">{item}</span>
                 </motion.li>
               ))}
             </ul>
@@ -1077,17 +1149,20 @@ export function BeforeAfter() {
 
         </div>
 
-        {/* Bottom arrow connector */}
+        {/* Bottom connector */}
         <motion.div
-          initial={{ opacity: 0, scaleX: 0 }} whileInView={{ opacity: 1, scaleX: 1 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.3 }}
-          className="hidden md:flex items-center justify-center mt-6 gap-3"
+          initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.6 }}
+          className="mt-16 flex justify-center"
         >
-          <div className="h-px flex-1 max-w-[160px]" style={{ background: "linear-gradient(90deg, transparent, #ef4444)" }} />
-          <div className="flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold text-white"
-            style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}>
-            <ArrowRight className="size-3.5" /> Switch to BookMyTime
-          </div>
-          <div className="h-px flex-1 max-w-[160px]" style={{ background: "linear-gradient(90deg, #0059C6, transparent)" }} />
+          <a
+            href="/signup"
+            className="group relative inline-flex items-center gap-3 rounded-full px-8 py-4 text-sm font-bold text-white overflow-hidden transition-transform hover:-translate-y-1 shadow-[0_8px_24px_rgba(0,89,198,0.25)]"
+            style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
+          >
+            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
+            <span className="relative z-10">Transform Your Business Today</span>
+            <ArrowRight className="relative z-10 size-4 transition-transform group-hover:translate-x-1" />
+          </a>
         </motion.div>
       </div>
     </section>
@@ -1099,86 +1174,61 @@ export function BeforeAfter() {
  * ======================================================= */
 export function AIFlowSection() {
   const steps = [
-    { icon: Mic, label: "Patient calls", sub: "or books online" },
-    { icon: Brain, label: "AI triages intent", sub: "books + verifies eligibility" },
-    { icon: Stethoscope, label: "Doctor sees patient", sub: "ambient AI listens" },
-    { icon: FileText, label: "SOAP note drafted", sub: "in 2.3 seconds" },
-    { icon: CreditCard, label: "Auto-coded & billed", sub: "99.2% first pass" },
+    { icon: QrCode, label: "Scan / Access Link", sub: "Client opens custom tenant portal" },
+    { icon: Bot, label: "AI Booking Assistant", sub: "Conversational slot check & lock 24/7" },
+    { icon: Calendar, label: "Smart Calendar Sync", sub: "Updates provider schedules instantly" },
+    { icon: MessageSquare, label: "WhatsApp Confirmation", sub: "Auto-sends slot summary & payment link" },
+    { icon: Bell, label: "Smart Reminders", sub: "Timely alerts prevent missed appointments" },
   ];
   return (
-    <section className="relative overflow-hidden bg-gradient-to-b from-zinc-50 via-white to-zinc-50 py-24">
+    <section className="relative overflow-hidden bg-white py-24">
       <div className="pointer-events-none absolute inset-0 bg-grid bg-radial-fade" />
       <div className="relative mx-auto max-w-7xl px-6">
-        <div className="mx-auto mb-16 max-w-2xl text-center">
+        <div className="mx-auto max-w-2xl text-center">
           <SectionEyebrow>HOW IT WORKS</SectionEyebrow>
           <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
-            From phone ring to <span className="text-gradient-brand">paid claim</span> in one flow
+            From scan to checkout: <span className="text-gradient-brand">Automated booking lifecycle</span>
           </h2>
           <p className="mt-4 text-zinc-600">
-            The entire patient journey — automated, audited, and human-in-the-loop where it matters.
+            The complete customer journey — automated, personalized, and synced across all your devices.
           </p>
         </div>
 
-        <div className="relative">
-          <svg
-            className="absolute left-0 right-0 top-12 hidden h-2 w-full md:block"
-            preserveAspectRatio="none"
-            viewBox="0 0 1000 8"
-          >
-            <line
-              x1="0"
-              y1="4"
-              x2="1000"
-              y2="4"
-              stroke="#e4e4e7"
-              strokeWidth="2"
-              strokeDasharray="6 6"
-            />
-            <line
-              x1="0"
-              y1="4"
-              x2="1000"
-              y2="4"
-              stroke="url(#flowg)"
-              strokeWidth="2"
-              strokeDasharray="20 1000"
-              className="animate-dash"
-            />
-            <defs>
-              <linearGradient id="flowg" x1="0" x2="1" y1="0" y2="0">
-                <stop offset="0%" stopColor="#0f766e" stopOpacity="0" />
-                <stop offset="50%" stopColor="#14b8a6" />
-                <stop offset="100%" stopColor="#0f766e" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-          </svg>
-
-          <div className="relative grid grid-cols-1 gap-8 md:grid-cols-5">
+        <div className="relative mt-12">
+          <div className="relative grid grid-cols-1 gap-6 md:grid-cols-5 z-10">
             {steps.map((s, i) => (
               <motion.div
                 key={s.label}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
+                whileHover={{ y: -8, scale: 1.02 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.12 }}
-                className="relative flex flex-col items-center text-center"
+                transition={{ duration: 0.4, delay: i * 0.1 }}
+                className="relative flex flex-col items-start p-6 rounded-2xl bg-white border border-[#0059C6]/10 shadow-[0_8px_30px_rgba(0,89,198,0.06)] overflow-hidden group cursor-default"
               >
-                <div className="relative mb-4">
-                  <div
-                    className="absolute -inset-3 rounded-full bg-brand/10 blur-xl animate-pulse-soft"
-                    style={{ animationDelay: `${i * 0.4}s` }}
-                  />
-                  <div className="relative flex size-24 items-center justify-center rounded-full bg-white ring-1 ring-zinc-950/5">
-                    <div className="flex size-16 items-center justify-center rounded-full bg-gradient-to-br from-brand to-brand-dark text-white">
-                      <s.icon className="size-7" />
-                    </div>
-                  </div>
-                  <div className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full bg-zinc-900 text-[10px] font-bold text-white">
-                    {i + 1}
-                  </div>
+                {/* Background Accent */}
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-[#0059C6]/5 to-transparent rounded-bl-[4rem] -z-10 transition-all duration-500 group-hover:scale-150 group-hover:from-[#0D83FF]/10" />
+                
+                {/* Large Watermark Number */}
+                <div className="text-5xl font-black text-[#0F172A]/[0.03] absolute -top-1 right-2 select-none transition-colors duration-300 group-hover:text-[#0059C6]/5">
+                  0{i + 1}
                 </div>
-                <p className="text-sm font-semibold">{s.label}</p>
-                <p className="text-xs text-zinc-500">{s.sub}</p>
+                
+                {/* Icon Container */}
+                <div 
+                  className="mb-8 w-12 h-12 rounded-xl flex items-center justify-center shadow-[0_4px_12px_rgba(0,89,198,0.2)] transition-transform duration-500 group-hover:rotate-[10deg] group-hover:scale-110"
+                  style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
+                >
+                  <s.icon className="size-5 text-white" strokeWidth={2.5} />
+                </div>
+                
+                {/* Content */}
+                <h3 className="text-sm font-bold text-[#0F172A] leading-snug mb-2 transition-colors group-hover:text-[#0059C6]">
+                  {s.label}
+                </h3>
+                <p className="text-[11px] text-[#64748B] leading-relaxed font-medium">
+                  {s.sub}
+                </p>
               </motion.div>
             ))}
           </div>
@@ -1352,23 +1402,22 @@ export function AnalyticsSection() {
  * ======================================================= */
 export function SpecialtiesSection() {
   const specs = [
-    { icon: Stethoscope, label: "General Practice", color: "from-brand to-brand-light" },
-    { icon: Smile, label: "Dental", color: "from-cyan-500 to-sky-400" },
-    { icon: Sparkles, label: "Aesthetic", color: "from-pink-400 to-rose-400" },
-    { icon: Activity, label: "Diagnostics", color: "from-violet-500 to-fuchsia-400" },
-    { icon: HeartPulse, label: "Cardiology", color: "from-red-400 to-orange-400" },
-    { icon: Hospital, label: "Hospitals", color: "from-indigo-500 to-blue-400" },
+    { icon: Hospital, label: "Healthcare & Clinics", color: "from-brand to-brand-light" },
+    { icon: Scissors, label: "Salons & Spas", color: "from-pink-400 to-rose-400" },
+    { icon: Dumbbell, label: "Gyms & Fitness", color: "from-cyan-500 to-sky-400" },
+    { icon: GraduationCap, label: "Coaching & Education", color: "from-violet-500 to-fuchsia-400" },
+    { icon: Briefcase, label: "Professional Services", color: "from-indigo-500 to-blue-400" },
+    { icon: Handshake, label: "Consultants & CA Offices", color: "from-amber-500 to-orange-400" },
   ];
   return (
     <section className="relative bg-zinc-50 py-24">
       <div className="mx-auto max-w-7xl px-6">
         <div className="mx-auto mb-12 max-w-2xl text-center">
           <h2 className="text-balance text-3xl font-semibold tracking-tight md:text-5xl">
-            Built for <span className="text-gradient-brand">every specialty</span>
+            Built for <span className="text-gradient-brand">every industry</span>
           </h2>
           <p className="mt-4 text-zinc-600">
-            Configurable workflows, specialty-tuned AI models, and templates that match how your
-            team works.
+            Customized tenant portals, specialized booking flows, and templates that match how your specific business operates.
           </p>
         </div>
         <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)]">
@@ -1400,39 +1449,39 @@ export function Testimonials() {
   const ts = [
     {
       img: doc1,
-      name: "Dr. Elena Rojas",
-      role: "Family Medicine · Mercy Health Group",
+      name: "Dr. Ananya Sharma",
+      role: "Founder · Aarogya Health Clinic, Delhi",
       source: "via Google Reviews",
       quote:
-        "I haven't written a SOAP note in 4 months. BookMyTime's AI scribe captures everything during the visit. I see two more patients a day and I'm home for dinner with my family.",
-      stat: "+38% patient throughput",
+        "Managing scheduling for our 5-doctor clinic used to take hours. Now, BookMyTime's AI handles all booking via WhatsApp, reducing our no-show rate to under 3%. It acts as our 24/7 receptionist.",
+      stat: "-80% No-Show Rate",
     },
     {
       img: doc2,
-      name: "Dr. Arjun Patel",
-      role: "Internal Medicine · Apollo Clinics",
+      name: "Vikram Malhotra",
+      role: "Owner · FitLife Gym Group, Mumbai",
       source: "via Trustpilot",
       quote:
-        "The AI receptionist handles 71% of our inbound calls without any human intervention. Our front desk staff transitioned into revenue cycle specialists — we saved $184k in year one.",
-      stat: "$184k saved in year one",
+        "With 3 gym locations, BookMyTime's multi-tenant dashboard lets us manage all trainers' schedules and client bookings in one screen. Member check-ins are now fully automated via QR codes.",
+      stat: "+45% Trainer Bookings",
     },
     {
       img: doc3,
-      name: "Dr. Amara Okafor",
-      role: "Dental Director · BrightSmile Network",
+      name: "Priya Nair",
+      role: "Creative Director · The Glamour Room, Bengaluru",
       source: "via G2 Reviews",
       quote:
-        "We rolled out BookMyTime across 14 clinics in 9 days. No-shows dropped from 11% to 3.1% within the first month. The onboarding team was exceptional.",
-      stat: "-58% no-show rate",
+        "Our clients love booking directly through our custom-branded link. The automatic WhatsApp reminders mean we've virtually eliminated missed sessions. It runs itself beautifully.",
+      stat: "25+ Hours Saved Weekly",
     },
     {
       img: team,
-      name: "Dr. Marcus Webb",
-      role: "Chief Medical Officer · NovaCare Health",
+      name: "Prof. Suresh Iyer",
+      role: "Director · Apex Coaching Academy, Chennai",
       source: "via Google Reviews",
       quote:
-        "It feels like having an extra resident on the team — one who never sleeps. BookMyTime listens, drafts, codes and learns your style within weeks of going live.",
-      stat: "2× faster documentation",
+        "We schedule batch timings, doubt classes, and mock exams for 800+ students. BookMyTime made student and parent coordination seamless across all our centers. It is extremely reliable.",
+      stat: "100% Attendance Rates",
     },
   ];
 
@@ -1466,9 +1515,9 @@ export function Testimonials() {
           <div className="flex flex-col">
             {/* Heading — top-aligned with image */}
             <div className="mb-10">
-              <SectionEyebrow>LOVED BY PROVIDERS</SectionEyebrow>
+              <SectionEyebrow>LOVED BY BUSINESS OWNERS</SectionEyebrow>
               <h2 className="mt-4 text-balance text-2xl font-semibold tracking-tight md:text-4xl">
-                Real results from <span className="text-gradient-brand">real clinics</span>
+                Real results from <span className="text-gradient-brand">growing businesses</span>
               </h2>
             </div>
 
@@ -1520,7 +1569,7 @@ export function Testimonials() {
                 <button
                   onClick={() => go(active + 1)}
                   aria-label="Next testimonial"
-                  className="flex size-9 items-center justify-center rounded-full bg-brand text-white hover:bg-brand-dark transition-colors"
+                  className="flex size-9 items-center justify-center rounded-full bg-black text-white hover:bg-black-dark transition-colors"
                 >
                   <ChevronRight className="size-4" />
                 </button>
@@ -1578,53 +1627,48 @@ export function Testimonials() {
 export function Pricing() {
   const tiers = [
     {
-      name: "Solo",
+      name: "Basic",
       price: "₹999",
-      blurb: "1 doctor dashboard",
+      blurb: "Best for independent professionals.",
       features: [
-        "1 doctor dashboard",
-        "1 reception dashboard",
-        "500 monthly appointments",
-        "Upto 500 patients records",
-        "AI prescription",
-        "Standard support",
+        "1 dashboard",
+        "500 Bookings / Month",
+        "Up to 500 Customer Records",
+        "QR Code Booking",
+        "Standard AI assistant",
+        "Standard Support",
       ],
       cta: "Start free trial",
       variant: "default" as const,
     },
     {
-      name: "Clinic",
+      name: "Premium",
       price: "₹1,499",
-      blurb: "Growing multi-provider practices.",
+      blurb: "For growing businesses.",
       features: [
-        "Up to 5 doctors",
-        "1 reception dashboard",
-        "2,000 monthly appointments",
-        "Up to 5,000 patient records",
-        "WhatsApp alerts",
-        "AI prescription + SOAP dictation",
-        "Priority support + onboarding",
-        "Smart billing system",
+        "1 dashboard",
+        "2,000 appointments / mo",
+        "Up to 5,000 client records",
+        "WhatsApp alerts included",
+        "Advanced AI assistant",
+        "Priority Support",
       ],
       cta: "Start free trial",
       popular: true,
     },
     {
-      name: "Hospital",
+      name: "Enterprise",
       price: "Custom",
-      blurb: "Complete hospital management system.",
+      blurb: "For large-scale operations.",
       features: [
-        "Unlimited Doctors & Staff",
-        "Multi-Hospital Super Admin",
-        "All Pro Features",
-        "Sub-department Dashboards",
-        "Ambulance / Biomedical / Housekeeping",
-        "Role-based Access (all roles)",
-        "AI voice prescription",
-        "AI Chatbot (Clinical Support)",
-        "Blog & Content Management",
-        "Receptionist & Nursing Admin Roles",
-        "Priority SLA + 24/7 Phone Support",
+        "Unlimited dashboards & locations",
+        "Unlimited appointments / mo",
+        "Unlimited client records",
+        "Multi QR Code Booking",
+        "Meta Verified WhatsApp integration",
+        "Custom API & integrations",
+        "Dedicated AI fine-tuning",
+        "Priority Support & Dedicated CSM",
       ],
       cta: "Contact sales",
       variant: "dark" as const,
@@ -1641,7 +1685,7 @@ export function Pricing() {
             Predictable as your <span className="text-gradient-brand">network grows</span>
           </h2>
           <p className="mt-4 text-zinc-600">
-            No per-patient fees. 14-day free trial. Cancel anytime.
+            No hidden fees. 14-day free trial. Cancel anytime.
           </p>
         </div>
         <div className="grid gap-6 lg:grid-cols-3">
@@ -1696,6 +1740,27 @@ export function Pricing() {
                   </li>
                 ))}
               </ul>
+              {t.name === "Premium" && (
+                <div className="mt-5 p-3.5 rounded-xl border border-[#0D83FF]/30 bg-[#0D83FF]/10 text-xs text-left">
+                  <p className="font-bold text-[#0D83FF] flex items-center gap-1.5 mb-2.5 uppercase tracking-wider text-[10px]">
+                    <Stethoscope className="size-3.5" /> For Doctors
+                  </p>
+                  <ul className="space-y-2">
+                    <li className="flex items-start gap-2 text-zinc-300 font-medium leading-tight">
+                      <Check className="size-3.5 text-[#0D83FF] shrink-0 mt-0.5" />
+                      <span>Consultation tracking</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-zinc-300 font-medium leading-tight">
+                      <Check className="size-3.5 text-[#0D83FF] shrink-0 mt-0.5" />
+                      <span>AI-based Voice Rx</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-zinc-300 font-medium leading-tight">
+                      <Check className="size-3.5 text-[#0D83FF] shrink-0 mt-0.5" />
+                      <span>Multi-user dashboards (Reception & Doctors)</span>
+                    </li>
+                  </ul>
+                </div>
+              )}
               {t.price === "Custom" ? (
                 <Link
                   to="/contact"
@@ -1733,14 +1798,15 @@ export function Pricing() {
 }
 
 export function ROICalculator() {
-  const [providers, setProviders] = useState(8);
-  const [patients, setPatients] = useState(24);
-  const [hourlyCost, setHourlyCost] = useState(1500);
+  const [providers, setProviders] = useState(5);
+  const [patients, setPatients] = useState(15);
+  const [hourlyCost, setHourlyCost] = useState(800);
 
-  const hoursSaved = providers * 18; // 18h/week per doctor
-  const annualSavings = Math.round(hoursSaved * 52 * hourlyCost);
-  const extraVisits = providers * Math.round(patients * 0.15) * 52;
-  const extraRevenue = extraVisits * 500; // Average visit fee in Rupees
+  const hoursSaved = providers * 10;
+  const adminSavings = Math.round(hoursSaved * 52 * 250);
+  const extraVisits = providers * Math.round(patients * 0.12 * 300);
+  const extraRevenue = extraVisits * hourlyCost;
+  const totalROI = adminSavings + extraRevenue;
 
   return (
     <section className="relative overflow-hidden bg-zinc-950 py-24 text-white">
@@ -1750,22 +1816,22 @@ export function ROICalculator() {
         <div className="mb-12 text-center">
           <SectionEyebrow tone="dark">ROI CALCULATOR</SectionEyebrow>
           <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
-            Drag the sliders. <span className="text-gradient-brand">See the impact.</span>
+            Drag the sliders. <span className="text-gradient-brand">See the business impact.</span>
           </h2>
         </div>
 
         <div className="grid gap-8 rounded-3xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-sm md:grid-cols-2">
           <div className="space-y-7">
             <Slider
-              label="Number of providers"
+              label="Number of staff / locations"
               value={providers}
               min={1}
               max={50}
               onChange={setProviders}
-              suffix=" providers"
+              suffix=" staff"
             />
             <Slider
-              label="Avg. daily patients per provider"
+              label="Avg. daily bookings per staff"
               value={patients}
               min={5}
               max={60}
@@ -1773,40 +1839,39 @@ export function ROICalculator() {
               suffix=" / day"
             />
             <Slider
-              label="Provider hourly cost"
+              label="Average ticket size per booking"
               value={hourlyCost}
-              min={500}
+              min={100}
               max={5000}
-              step={100}
+              step={50}
               onChange={setHourlyCost}
               prefix="₹"
-              suffix="/hr"
             />
           </div>
 
           <div className="grid gap-4">
             <ROIMetric
               icon={Clock}
-              label="Hours reclaimed weekly"
-              value={`${hoursSaved.toLocaleString()}h`}
+              label="Hours saved weekly"
+              value={`${hoursSaved.toLocaleString('en-IN')} hrs`}
               tint="from-brand to-brand-light"
             />
             <ROIMetric
               icon={TrendingUp}
-              label="Extra annual visits possible"
-              value={extraVisits.toLocaleString()}
+              label="Extra annual bookings captured"
+              value={extraVisits.toLocaleString('en-IN')}
               tint="from-cyan-500 to-sky-400"
             />
             <ROIMetric
               icon={CreditCard}
               label="Estimated annual ROI"
-              value={`₹${(annualSavings + extraRevenue).toLocaleString()}`}
+              value={`₹${totalROI.toLocaleString('en-IN')}`}
               tint="from-emerald-500 to-teal-400"
               highlight
             />
             <Link
               to="/contact"
-              className="mt-2 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-br from-brand to-brand-light py-3 text-sm font-semibold text-white"
+              className="mt-2 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-br from-brand to-brand-light py-3 text-sm font-semibold text-white hover:scale-[1.01] transition-transform"
             >
               Lock in these savings <ArrowRight className="size-4" />
             </Link>
@@ -1990,11 +2055,10 @@ export function CTA() {
           viewport={{ once: true }}
           className="text-balance text-4xl font-semibold tracking-tight md:text-6xl"
         >
-          Give your clinic its <span className="text-gradient-brand">superpower</span> back.
+          Ready to Simplify Your <span className="text-gradient-brand">Booking Process?</span>
         </motion.h2>
         <p className="mt-6 text-lg text-zinc-300">
-          Join 4,200+ practices using BookMyTime to see more patients, write zero notes, and run
-          smarter operations.
+          Automate scheduling, reduce no-shows, and deliver a seamless booking experience with BookMyTime. Let AI handle the bookings while you focus on growing your business.
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
@@ -2011,9 +2075,7 @@ export function CTA() {
             Talk to sales
           </Link>
         </div>
-        <p className="mt-6 text-xs text-zinc-500">
-          No credit card · Cancel anytime · Setup in 12 minutes
-        </p>
+
       </div>
     </section>
   );
@@ -2152,3 +2214,98 @@ export function SolutionsGrid() {
     </section>
   );
 }
+
+/* =========================================================
+ * BUILT FOR SECTION (Modern Businesses of Every Kind)
+ * ======================================================= */
+export function BuiltForSection() {
+  const industries = [
+    {
+      title: "Beauty & Wellness Center",
+      icon: Scissors,
+      copy: "Manage stylist schedules, salon chairs, service packages, and auto-confirm reservations.",
+    },
+    {
+      title: "Healthcare Clinic",
+      icon: Stethoscope,
+      copy: "Coordinate doctors, consultation chambers, patient records, and WhatsApp prescriptions.",
+    },
+    {
+      title: "Fitness Studio or Gym",
+      icon: Dumbbell,
+      copy: "Set personal training sessions, group class schedules, and QR code member check-ins.",
+    },
+    {
+      title: "Law Firm or Consultancy",
+      icon: Scale,
+      copy: "Book client consultations, manage billable hours, and send automated invoice notifications.",
+    },
+    {
+      title: "Real Estate Agency",
+      icon: Building2,
+      copy: "Schedule property viewings, sync agent calendars, and follow up with hot buyer leads.",
+    },
+    {
+      title: "Educational Institute",
+      icon: GraduationCap,
+      copy: "Organize batch schedules, doubt-clearing sessions, and send WhatsApp alerts to parents.",
+    },
+    {
+      title: "CA or Financial Practice",
+      icon: Calculator,
+      copy: "Coordinate client tax filing meetings, document audits, and secure booking slots.",
+    },
+    {
+      title: "Coaching or Wellness Business",
+      icon: Leaf,
+      copy: "Manage direct booking portals for group classes, wellness packages, and feedback forms.",
+    },
+  ];
+
+  return (
+    <section className="relative overflow-hidden bg-[#030712] py-24 text-white">
+      {/* Ambient glowing background */}
+      <div className="pointer-events-none absolute inset-0 bg-grid-dark bg-radial-fade opacity-40" />
+      <div className="pointer-events-none absolute -top-40 left-[20%] size-[500px] rounded-full bg-[#0059C6]/20 blur-[120px]" />
+      <div className="pointer-events-none absolute top-[40%] right-[10%] size-[400px] rounded-full bg-[#0D83FF]/20 blur-[100px]" />
+      
+      <div className="relative mx-auto max-w-7xl px-6">
+        <div className="mb-20 text-center">
+          <SectionEyebrow tone="dark">BUILT FOR EVERY WORKFLOW</SectionEyebrow>
+          <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight md:text-5xl text-white">
+            Modern Businesses of Every Kind
+          </h2>
+          <p className="mx-auto mt-4 max-w-2xl text-sm text-zinc-400">
+            BookMyTime adapts to your workflow and helps you deliver a better customer experience.
+          </p>
+        </div>
+
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {industries.map((ind, i) => {
+            const Icon = ind.icon;
+            return (
+              <motion.div
+                key={ind.title}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.08, duration: 0.5 }}
+                className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-6 backdrop-blur-xl transition-all duration-500 hover:bg-white/[0.04] hover:border-white/10 hover:-translate-y-1.5 hover:shadow-[0_8px_40px_rgba(0,89,198,0.15)]"
+              >
+                {/* Decorative hover gradient inside card */}
+                <div className="absolute -right-20 -top-20 size-40 rounded-full bg-[#0D83FF]/10 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                
+                <div className="mb-6 flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#0059C6] to-[#0D83FF] text-white shadow-lg shadow-[#0059C6]/20 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-3">
+                  <Icon className="size-5" strokeWidth={2.5} />
+                </div>
+                <h3 className="text-base font-bold text-white mb-2 tracking-wide group-hover:text-[#A7D3FF] transition-colors duration-300">{ind.title}</h3>
+                <p className="text-[13px] text-zinc-400 leading-relaxed group-hover:text-zinc-300 transition-colors duration-300">{ind.copy}</p>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+

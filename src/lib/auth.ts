@@ -163,18 +163,18 @@ export const signupServerFn = createServerFn({ method: "POST" })
       tenantPrefix = "edu-";
     }
     const tenantId = tenantPrefix + Math.floor(100000 + Math.random() * 900000).toString();
-    const selectedPlan = data.plan || "Solo";
+    const selectedPlan = data.plan || "Basic";
 
     await execute(
-      `INSERT INTO User (id, tenantId, name, email, phone, clinicName, practiceSize, password, subscriptionPlan, subscriptionExpiresAt, createdAt, updatedAt, profession)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 14 DAY), NOW(), NOW(), ?)`,
+      `INSERT INTO User (id, tenantId, name, email, phone, clinicName, practiceSize, password, subscriptionStatus, subscriptionPlan, subscriptionExpiresAt, createdAt, updatedAt, profession)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, DATE_ADD(NOW(), INTERVAL 14 DAY), NOW(), NOW(), ?)`,
       [userId, tenantId, data.name, data.email, data.phone, data.clinicName, data.practiceSize, hashedPassword, selectedPlan, profession]
     );
 
-    // Log initial trialing subscription log
+    // Log initial Active subscription log
     await execute(
       `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
-       VALUES (?, ?, 'None', 'Trialing', 'None', ?, 0.00, 'monthly', NOW(), 'System')`,
+       VALUES (?, ?, 'None', 'Active', 'None', ?, 0.00, 'monthly', NOW(), 'System')`,
       [generateId(), userId, selectedPlan]
     );
 
@@ -204,12 +204,12 @@ export const loginServerFn = createServerFn({ method: "POST" })
       if (!passwordMatch) throw new Error("Incorrect password");
 
       if (user.subscriptionStatus === "Cancelled") {
-        throw new Error("Your clinic account is deactivated. Please contact BookMyTime support at infomedinex@gmail.com.");
+        throw new Error("Your clinic account is deactivated. Please contact BookMyTime support at bookmytime1355@gmail.com.");
       }
       if (user.subscriptionExpiresAt) {
         const expiry = new Date(user.subscriptionExpiresAt);
         if (expiry < new Date()) {
-          throw new Error("Your subscription or trial period has ended. Please contact support at infomedinex@gmail.com to renew.");
+          throw new Error("Your subscription or trial period has ended. Please contact support at bookmytime1355@gmail.com to renew.");
         }
       }
 
@@ -622,17 +622,17 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
     return data;
   })
   .handler(async ({ data }) => {
-    // Plan check: Solo limit is 500 monthly appointments
+    // Plan check: Basic/Solo limit is 500 monthly appointments
     const tenant = await queryOne<any>("SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1", [data.tenantId]);
-    const plan = tenant?.subscriptionPlan || "Solo";
-    if (plan === "Solo") {
+    const plan = tenant?.subscriptionPlan || "Basic";
+    if (plan === "Solo" || plan === "Basic") {
       const [monthCount] = await query<any>(
         "SELECT COUNT(*) as count FROM Appointment WHERE tenantId = ? AND dateTime >= DATE_FORMAT(NOW(), '%Y-%m-01')",
         [data.tenantId]
       );
       const count = monthCount?.count || monthCount?.COUNT || 0;
       if (Number(count) >= 500) {
-        throw new Error("This clinic has reached the monthly limit of 500 appointments under the Solo plan. Please contact the clinic administrator to upgrade.");
+        throw new Error("This business has reached the monthly limit of 500 appointments under the Basic plan. Please contact the administrator to upgrade.");
       }
     }
 
@@ -939,15 +939,15 @@ export const saveDoctorServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
-    // Plan check: Solo limit is 1 doctor profile in directory
+    // Plan check: Basic/Solo limit is 1 doctor profile in directory
     if (!data.id) {
       const tenant = await queryOne<any>("SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1", [user.tenantId]);
-      const plan = tenant?.subscriptionPlan || "Solo";
-      if (plan === "Solo") {
+      const plan = tenant?.subscriptionPlan || "Basic";
+      if (plan === "Solo" || plan === "Basic") {
         const [docsCount] = await query<any>("SELECT COUNT(*) as count FROM Doctor WHERE tenantId = ?", [user.tenantId]);
         const count = docsCount?.count || docsCount?.COUNT || 0;
         if (Number(count) >= 1) {
-          throw new Error("Your current plan (Solo) only allows 1 Doctor Profile. Please upgrade your plan to add more doctors to the directory.");
+          throw new Error("Your current plan (Basic) only allows 1 Doctor Profile. Please upgrade your plan to add more doctors to the directory.");
         }
       }
     }
@@ -1581,14 +1581,14 @@ export const createPatientServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
-    // Plan check: Solo limit is 500 patients
+    // Plan check: Basic/Solo limit is 500 patients
     const tenant = await queryOne<any>("SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1", [user.tenantId]);
-    const plan = tenant?.subscriptionPlan || "Solo";
-    if (plan === "Solo") {
+    const plan = tenant?.subscriptionPlan || "Basic";
+    if (plan === "Solo" || plan === "Basic") {
       const [patientCount] = await query<any>("SELECT COUNT(*) as total FROM Patient WHERE tenantId = ?", [user.tenantId]);
       const total = patientCount?.total || patientCount?.TOTAL || 0;
       if (Number(total) >= 500) {
-        throw new Error("You have reached the maximum limit of 500 patient records under the Solo plan. Please upgrade your plan to add more patients.");
+        throw new Error("You have reached the maximum limit of 500 patient records under the Basic plan. Please upgrade your plan to add more patients.");
       }
     }
 
@@ -2139,21 +2139,25 @@ export const createSubUserServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    // Plan check: Solo limit is 1 Doctor, 1 Receptionist
+    // Plan check for user limits
     const tenant = await queryOne<any>("SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1", [user.tenantId]);
-    const plan = tenant?.subscriptionPlan || "Solo";
-    if (plan === "Solo") {
+    const plan = tenant?.subscriptionPlan || "Trial";
+    
+    if (plan !== "Enterprise" && plan !== "Hospital") {
+      const isBasic = plan === "Trial" || plan === "Basic" || plan === "Solo";
+      
       if (data.role === "doctor") {
         const [docsCount] = await query<any>("SELECT COUNT(*) as count FROM SubUser WHERE tenantId = ? AND role = 'doctor'", [user.tenantId]);
         const count = docsCount?.count || docsCount?.COUNT || 0;
-        if (Number(count) >= 1) {
-          throw new Error("Your current plan (Solo) only allows 1 Doctor Dashboard. Please upgrade your plan to create more doctor sub-users.");
+        
+        if (isBasic && Number(count) >= 1) {
+          throw new Error("Your current plan (Basic) allows only 1 Professional Dashboard. Please upgrade your plan.");
+        } else if (!isBasic && Number(count) >= 5) {
+          throw new Error("Your current plan (Premium) allows a maximum of 5 Professional Dashboards. Upgrade to Enterprise for unlimited.");
         }
       } else if (data.role === "reception") {
-        const [recepsCount] = await query<any>("SELECT COUNT(*) as count FROM SubUser WHERE tenantId = ? AND role = 'reception'", [user.tenantId]);
-        const count = recepsCount?.count || recepsCount?.COUNT || 0;
-        if (Number(count) >= 1) {
-          throw new Error("Your current plan (Solo) only allows 1 Reception Dashboard. Please upgrade your plan to create more reception sub-users.");
+        if (isBasic) {
+          throw new Error("Receptionist dashboards are only available on the Premium plan. Please upgrade your plan.");
         }
       }
     }
@@ -2188,19 +2192,23 @@ export const updateSubUserServerFn = createServerFn({ method: "POST" })
       const existingSub = await queryOne<any>("SELECT role FROM SubUser WHERE id = ? AND tenantId = ? LIMIT 1", [data.id, user.tenantId]);
       if (existingSub && existingSub.role !== data.role) {
         const tenant = await queryOne<any>("SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1", [user.tenantId]);
-        const plan = tenant?.subscriptionPlan || "Solo";
-        if (plan === "Solo") {
+        const plan = tenant?.subscriptionPlan || "Trial";
+        
+        if (plan !== "Enterprise" && plan !== "Hospital") {
+          const isBasic = plan === "Trial" || plan === "Basic" || plan === "Solo";
+          
           if (data.role === "doctor") {
             const [docsCount] = await query<any>("SELECT COUNT(*) as count FROM SubUser WHERE tenantId = ? AND role = 'doctor'", [user.tenantId]);
             const count = docsCount?.count || docsCount?.COUNT || 0;
-            if (Number(count) >= 1) {
-              throw new Error("Your current plan (Solo) only allows 1 Doctor Dashboard. Please upgrade your plan to change role.");
+            
+            if (isBasic && Number(count) >= 1) {
+              throw new Error("Your current plan (Basic) allows only 1 Professional Dashboard. Please upgrade your plan.");
+            } else if (!isBasic && Number(count) >= 5) {
+              throw new Error("Your current plan (Premium) allows a maximum of 5 Professional Dashboards.");
             }
           } else if (data.role === "reception") {
-            const [recepsCount] = await query<any>("SELECT COUNT(*) as count FROM SubUser WHERE tenantId = ? AND role = 'reception'", [user.tenantId]);
-            const count = recepsCount?.count || recepsCount?.COUNT || 0;
-            if (Number(count) >= 1) {
-              throw new Error("Your current plan (Solo) only allows 1 Reception Dashboard. Please upgrade your plan to change role.");
+            if (isBasic) {
+              throw new Error("Receptionist dashboards are only available on the Premium plan. Please upgrade your plan.");
             }
           }
         }

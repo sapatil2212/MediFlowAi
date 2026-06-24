@@ -9,30 +9,30 @@ import {
   BenefitsSection,
   BeforeAfter,
   AIFlowSection,
-  SpecialtiesSection,
   Testimonials,
   CTA,
   QRShowcase,
   WhatsAppSection,
+  BuiltForSection,
 } from "@/components/site/sections";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "BookMyTime — The AI operating system for modern medicine" },
+      { title: "BookMyTime — Multi-Tenant AI Booking System & CRM for Indian Businesses" },
       {
         name: "description",
         content:
-          "Cut admin work by 73%. AI clinical notes, voice receptionist, omnichannel booking, billing and analytics for clinics, hospitals, dental and aesthetic centers.",
+          "Cut scheduling overhead by 85%. Automated multi-tenant booking portals, WhatsApp reminders, AI customer assistant, and smart CRM for clinics, salons, gyms, and coaching institutes across India.",
       },
       {
         property: "og:title",
-        content: "BookMyTime — Clinical intelligence for modern medicine",
+        content: "BookMyTime — Multi-Tenant AI Booking System & CRM",
       },
       {
         property: "og:description",
         content:
-          "Unified AI operating system for multi-tenant medical groups. Reduce admin load by 73%, see more patients, write zero notes.",
+          "Launch custom-branded booking portals in 5 minutes. Streamline calendars, send automated WhatsApp updates, and manage customers across multiple branches.",
       },
     ],
   }),
@@ -52,9 +52,11 @@ function LandingPage() {
       <QRShowcase />
       <WhatsAppSection />
       <AIFlowSection />
-      <SpecialtiesSection />
+      <BuiltForSection />
       <Testimonials />
       <CTA />
     </SiteShell>
   );
 }
+
+

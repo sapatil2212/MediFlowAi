@@ -97,7 +97,7 @@ function DemoPage() {
           <div className="flex items-center justify-between border-b border-white/5 px-5 py-3">
             <div className="flex items-center gap-2 text-xs text-zinc-400">
               <span className="flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-              Live · Inbound call from +1 (415) 555 0142
+              Live · Inbound call from +91 98765 43210
             </div>
             <button
               onClick={() => setPlaying((p) => !p)}

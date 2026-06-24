@@ -708,7 +708,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                       <button
                         onClick={() => handleStartCampaign(selectedCampaign.id)}
                         disabled={waStatus !== "CONNECTED"}
-                        className="rounded-full bg-brand text-white font-bold text-xs px-5 py-1.5 flex items-center gap-1.5 hover:bg-brand/90 disabled:opacity-50 cursor-pointer shadow-sm"
+                        className="rounded-full bg-black text-white font-bold text-xs px-5 py-1.5 flex items-center gap-1.5 hover:bg-black/90 disabled:opacity-50 cursor-pointer shadow-sm"
                       >
                         <Play className="h-3.5 w-3.5" /> Launch Campaign
                       </button>
@@ -725,7 +725,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                       <button
                         onClick={() => handleStartCampaign(selectedCampaign.id)}
                         disabled={waStatus !== "CONNECTED"}
-                        className="rounded-full bg-brand text-white font-bold text-xs px-5 py-1.5 flex items-center gap-1.5 hover:bg-brand/90 disabled:opacity-50 cursor-pointer shadow-sm"
+                        className="rounded-full bg-black text-white font-bold text-xs px-5 py-1.5 flex items-center gap-1.5 hover:bg-black/90 disabled:opacity-50 cursor-pointer shadow-sm"
                       >
                         <Play className="h-3.5 w-3.5" /> Resume Campaign
                       </button>

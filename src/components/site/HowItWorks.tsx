@@ -118,28 +118,6 @@ export function HowItWorks() {
           })}
         </div>
 
-        {/* Bottom CTA strip */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="mt-14 rounded-2xl p-6 text-center"
-          style={{ background: "linear-gradient(135deg, rgba(0,89,198,0.06) 0%, rgba(167,211,255,0.12) 100%)", border: "1px solid rgba(0,89,198,0.12)" }}
-        >
-          <p className="text-sm font-semibold text-zinc-700 mb-1">
-            Ready to get started?
-          </p>
-          <p className="text-xs text-zinc-500 mb-4">
-            Join 5,000+ businesses already automating their bookings with BookMyTime.
-          </p>
-          <a
-            href="/signup"
-            className="inline-flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-[1px]"
-            style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)", boxShadow: "0 2px 12px rgba(0,89,198,0.3)" }}
-          >
-            Get Started Free — It's Free
-          </a>
-        </motion.div>
       </div>
     </section>
   );

@@ -330,7 +330,7 @@ function DayScheduleCard({
       {/* Row 1: Day label + working hours + slot picker */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3">
         <div className="flex items-center gap-2 min-w-[80px]">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand text-white text-[9px] font-black">
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black text-white text-[9px] font-black">
             {dayName.slice(0,2)}
           </span>
           <span className="text-xs font-bold text-zinc-700">{dayName}</span>
@@ -432,7 +432,7 @@ function DayScheduleCard({
                             <button key={di} type="button"
                               onClick={() => setCopyTargets(prev => checked ? prev.filter(d => d !== di) : [...prev, di])}
                               className={`rounded-full px-2 py-0.5 text-[9px] font-bold border transition-all cursor-pointer ${
-                                checked ? "bg-brand text-white border-brand" : "bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-brand/40"
+                                checked ? "bg-black text-white border-zinc-800" : "bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-800/40"
                               }`}>
                               {dl}
                             </button>
@@ -447,7 +447,7 @@ function DayScheduleCard({
                         <button type="button"
                           disabled={copyTargets.length === 0}
                           onClick={() => { onCopyBreaks(idx, copyTargets); setShowCopyMenu(false); setCopyTargets([]); }}
-                          className="flex-1 rounded-full bg-brand text-white py-1 text-[9px] font-bold cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1">
+                          className="flex-1 rounded-full bg-black text-white py-1 text-[9px] font-bold cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1">
                           <Check className="h-2.5 w-2.5" /> Apply
                         </button>
                       </div>
@@ -2386,6 +2386,45 @@ function MedicalDashboardPage() {
     return matchByNameOrEmail ? matchByNameOrEmail.id : "";
   };
 
+  const handleViewProfileForApt = async (apt: any) => {
+    const pid = resolvePatientForApt(apt);
+    if (pid) {
+      const matched = patientsList.find(p => p.id === pid);
+      if (matched) {
+        setSelectedPatient(matched);
+        return;
+      }
+      setLoadingPatients(true);
+      try {
+        const res = await getPatientChartServerFn({ data: { patientId: pid } });
+        if (res && res.patient) {
+          setSelectedPatient(res.patient);
+          return;
+        }
+      } catch (e) {
+        console.error("Failed to load chart:", e);
+      } finally {
+        setLoadingPatients(false);
+      }
+    }
+    
+    // Fallback member profile object for gym
+    setSelectedPatient({
+      id: apt.patientId || apt.id,
+      name: apt.name,
+      email: apt.email || "",
+      phone: apt.phone || "",
+      age: apt.age || 35,
+      gender: apt.gender || "Female",
+      dob: "",
+      insurance: "Self-Pay / Online Booking",
+      lastVisit: apt.dateTime,
+      reason: apt.reason || "",
+      status: apt.status || "Pending",
+      notesHistory: []
+    });
+  };
+
   const matchDate = (dateTimeStr: string, dateStr: string) => {
     if (!dateTimeStr || !dateStr) return false;
     const aptDate = new Date(dateTimeStr);
@@ -3959,7 +3998,7 @@ function MedicalDashboardPage() {
                 <div className="flex justify-between items-center">
                   <span
                     className={`h-6 w-6 flex items-center justify-center font-bold text-[10px] rounded-full ${
-                      isDayToday ? "bg-brand text-white animate-pulse" : isCurrentMonth ? "text-zinc-800" : "text-zinc-400"
+                      isDayToday ? "bg-black text-white animate-pulse" : isCurrentMonth ? "text-zinc-800" : "text-zinc-400"
                     }`}
                   >
                     {day.getDate()}
@@ -4090,7 +4129,7 @@ function MedicalDashboardPage() {
                   ].filter(tab => {
                     if (user?.role !== "admin" && tab.id === "plans") return false;
                     if (user?.role === "reception" && (tab.id === "scribe" || tab.id === "analytics" || tab.id === "whatsapp")) return false;
-                    if (user?.subscriptionPlan === "Solo" && tab.id === "whatsapp") return false;
+                    if ((user?.subscriptionPlan === "Solo" || user?.subscriptionPlan === "Basic") && tab.id === "whatsapp") return false;
                     return true;
                   }).map((tab) => {
                     const Icon = tab.icon;
@@ -4187,7 +4226,7 @@ function MedicalDashboardPage() {
             ].filter(tab => {
               if (user?.role !== "admin" && tab.id === "plans") return false;
               if (user?.role === "reception" && (tab.id === "scribe" || tab.id === "analytics" || tab.id === "whatsapp")) return false;
-              if (user?.subscriptionPlan === "Solo" && tab.id === "whatsapp") return false;
+              if ((user?.subscriptionPlan === "Solo" || user?.subscriptionPlan === "Basic") && tab.id === "whatsapp") return false;
               return true;
             }).map((tab) => {
               const Icon = tab.icon;
@@ -4263,20 +4302,8 @@ function MedicalDashboardPage() {
             </button>
           </div>
 
-          {/* Right side — bell + profile */}
+          {/* Right side — profile */}
           <div className="flex items-center gap-2.5">
-            {/* Bell icon with badge */}
-            <button
-              type="button"
-              className="relative flex items-center justify-center h-9 w-9 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-500 hover:bg-zinc-100 transition-colors cursor-pointer"
-              aria-label="Notifications"
-            >
-              <Bell className="h-4 w-4" />
-              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-black text-white leading-none">
-                1
-              </span>
-            </button>
-
             {/* Profile pill */}
             <button
               type="button"
@@ -4453,7 +4480,7 @@ function MedicalDashboardPage() {
                           onClick={() => setPatientProfileTab(t.id as any)}
                           className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                             patientProfileTab === t.id
-                              ? "bg-brand text-white shadow-sm"
+                              ? "bg-black text-white shadow-sm"
                               : "text-zinc-500 hover:text-zinc-900"
                           }`}
                         >
@@ -4475,7 +4502,7 @@ function MedicalDashboardPage() {
                             <button
                               type="button"
                               onClick={() => setShowAddTrainingModal(!showAddTrainingModal)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-brand text-white text-[10px] font-bold hover:bg-brand/90 transition-all active:scale-[0.98] cursor-pointer shadow-sm"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-black text-white text-[10px] font-bold hover:bg-black/90 transition-all active:scale-[0.98] cursor-pointer shadow-sm"
                             >
                               <Plus className="h-3 w-3" />
                               Add Session Note
@@ -4544,7 +4571,7 @@ function MedicalDashboardPage() {
                                   type="button"
                                   onClick={handleSaveTrainingEntry}
                                   disabled={isSavingTraining}
-                                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-brand text-white text-[10px] font-bold hover:bg-brand/90 transition-all disabled:opacity-50 cursor-pointer"
+                                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-black text-white text-[10px] font-bold hover:bg-black/90 transition-all disabled:opacity-50 cursor-pointer"
                                 >
                                   {isSavingTraining ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
                                   {isSavingTraining ? "Saving..." : "Save Note"}
@@ -4850,7 +4877,7 @@ function MedicalDashboardPage() {
                   ) : (
                     [
                       { label: "Today's Schedule", value: `${dashboardStats?.todayCounts?.total || 0} Bookings`, info: `${dashboardStats?.todayCounts?.pending || 0} pending review`, icon: Calendar, color: "text-brand bg-brand/5 border-brand/10" },
-                      { label: "Total Active Patients", value: `${dashboardStats?.totalPatients || 0} Patients`, info: "Registered in directory", icon: Users, color: "text-amber-600 bg-amber-50 border-amber-100" },
+                      { label: "Total Active Members", value: `${dashboardStats?.totalPatients || 0} Members`, info: "Registered in directory", icon: Users, color: "text-amber-600 bg-amber-50 border-amber-100" },
                       { label: "All-Time Appointments", value: `${dashboardStats?.allTimeCounts?.total || 0} Bookings`, info: `${dashboardStats?.allTimeCounts?.confirmed || 0} confirmed, ${dashboardStats?.allTimeCounts?.completed || 0} completed`, icon: ClipboardList, color: "text-emerald-600 bg-emerald-50 border-emerald-100" },
                       { label: "Completion Rate", value: `${dashboardStats?.allTimeCounts?.total - dashboardStats?.allTimeCounts?.cancelled > 0 ? Math.round((dashboardStats?.allTimeCounts?.completed / (dashboardStats?.allTimeCounts?.total - dashboardStats?.allTimeCounts?.cancelled)) * 100) : 0}%`, info: "Completed vs cancelled", icon: TrendingUp, color: "text-indigo-600 bg-indigo-50 border-indigo-100" }
                     ].map((stat, idx) => {
@@ -5332,7 +5359,7 @@ function MedicalDashboardPage() {
                           <button
                             type="submit"
                             disabled={savingPatient}
-                            className="rounded-full bg-brand text-white text-xs font-semibold px-5 py-2.5 cursor-pointer shadow-md disabled:bg-zinc-150 disabled:text-zinc-400 flex items-center gap-1.5"
+                            className="rounded-full bg-black text-white text-xs font-semibold px-5 py-2.5 cursor-pointer shadow-md disabled:bg-zinc-150 disabled:text-zinc-400 flex items-center gap-1.5"
                           >
                             {savingPatient && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                             {editingPatient ? "Update Client Profile" : "Create Client Profile"}
@@ -5433,37 +5460,57 @@ function MedicalDashboardPage() {
 
                                   {/* Actions */}
                                   <td className="px-6 py-3.5 text-right">
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        const pid = resolvePatientForApt(apt);
-                                        if (pid) {
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        title="View Client Profile"
+                                        onClick={() => handleViewProfileForApt(apt)}
+                                        className="p-1.5 rounded-lg text-zinc-400 hover:text-brand hover:bg-brand/5 transition-colors cursor-pointer shrink-0"
+                                      >
+                                        <Eye className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Register / Edit Client File"
+                                        onClick={() => {
+                                          const pid = resolvePatientForApt(apt);
                                           const matched = patientsList.find(p => p.id === pid);
                                           if (matched) {
-                                            setSelectedPatient(matched);
+                                            setEditingPatient(matched);
+                                            setNewPatientName(matched.name);
+                                            setNewPatientAge(String(matched.age));
+                                            setNewPatientGender(matched.gender);
+                                            setNewPatientPhone(matched.phone || "");
+                                            setNewPatientEmail(matched.email || "");
+                                            setNewPatientAddress(matched.address || "");
+                                            setNewPatientReason(matched.chiefComplaint || matched.reason || "");
+                                            setNewPatientNotes(matched.notes || "");
                                           } else {
-                                            setLoadingPatients(true);
-                                            try {
-                                              const res = await getPatientChartServerFn({ data: { patientId: pid } });
-                                              if (res && res.patient) {
-                                                setSelectedPatient(res.patient);
-                                              }
-                                            } catch (e) {
-                                              console.error("Failed to load chart:", e);
-                                              showToast("error", "Failed to load client profile");
-                                            } finally {
-                                              setLoadingPatients(false);
-                                            }
+                                            setEditingPatient(null);
+                                            setNewPatientName(apt.name);
+                                            setNewPatientAge("35");
+                                            setNewPatientGender(apt.gender || "Female");
+                                            setNewPatientPhone(apt.phone || "");
+                                            setNewPatientEmail(apt.email || "");
+                                            setNewPatientAddress("");
+                                            setNewPatientReason(apt.reason || "");
+                                            setNewPatientNotes("");
                                           }
-                                        } else {
-                                          showToast("error", "No profile found for this booking.");
-                                        }
-                                      }}
-                                      className="inline-flex items-center gap-1 bg-brand text-white hover:opacity-90 transition-all font-bold px-3 py-1 rounded-full text-[10px] cursor-pointer shrink-0 shadow-none active:scale-[0.98]"
-                                    >
-                                      <User className="h-3 w-3" />
-                                      View Profile
-                                    </button>
+                                          setIsAddingPatient(true);
+                                        }}
+                                        className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-650 hover:bg-indigo-50 transition-colors cursor-pointer shrink-0"
+                                      >
+                                        <Edit3 className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Cancel / Delete Booking"
+                                        onClick={() => setAptToDelete(apt)}
+                                        className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer shrink-0"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               ))}
@@ -5520,33 +5567,50 @@ function MedicalDashboardPage() {
                               <div className="flex items-center justify-end gap-3 pt-1">
                                 <button
                                   type="button"
-                                  onClick={async () => {
-                                    const pid = resolvePatientForApt(apt);
-                                    if (pid) {
-                                      const matched = patientsList.find(p => p.id === pid);
-                                      if (matched) {
-                                        setSelectedPatient(matched);
-                                      } else {
-                                        setLoadingPatients(true);
-                                        try {
-                                          const res = await getPatientChartServerFn({ data: { patientId: pid } });
-                                          if (res && res.patient) {
-                                            setSelectedPatient(res.patient);
-                                          }
-                                        } catch (e) {
-                                          console.error("Failed to load chart:", e);
-                                          showToast("error", "Failed to load client profile");
-                                        } finally {
-                                          setLoadingPatients(false);
-                                        }
-                                      }
-                                    } else {
-                                      showToast("error", "No profile found.");
-                                    }
-                                  }}
+                                  onClick={() => handleViewProfileForApt(apt)}
                                   className="text-brand font-bold text-xs cursor-pointer mr-auto"
                                 >
                                   View Profile
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const pid = resolvePatientForApt(apt);
+                                    const matched = patientsList.find(p => p.id === pid);
+                                    if (matched) {
+                                      setEditingPatient(matched);
+                                      setNewPatientName(matched.name);
+                                      setNewPatientAge(String(matched.age));
+                                      setNewPatientGender(matched.gender);
+                                      setNewPatientPhone(matched.phone || "");
+                                      setNewPatientEmail(matched.email || "");
+                                      setNewPatientAddress(matched.address || "");
+                                      setNewPatientReason(matched.chiefComplaint || matched.reason || "");
+                                      setNewPatientNotes(matched.notes || "");
+                                    } else {
+                                      setEditingPatient(null);
+                                      setNewPatientName(apt.name);
+                                      setNewPatientAge("35");
+                                      setNewPatientGender(apt.gender || "Female");
+                                      setNewPatientPhone(apt.phone || "");
+                                      setNewPatientEmail(apt.email || "");
+                                      setNewPatientAddress("");
+                                      setNewPatientReason(apt.reason || "");
+                                      setNewPatientNotes("");
+                                    }
+                                    setIsAddingPatient(true);
+                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                  }}
+                                  className="text-zinc-500 hover:text-zinc-850 font-bold text-xs cursor-pointer"
+                                >
+                                  Register / Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setAptToDelete(apt)}
+                                  className="text-red-500 font-bold text-xs cursor-pointer"
+                                >
+                                  Cancel Booking
                                 </button>
                               </div>
                             </div>
@@ -6008,34 +6072,10 @@ function MedicalDashboardPage() {
                                         <button
                                           type="button"
                                           title="View Client Profile"
-                                          onClick={async () => {
-                                            const pid = resolvePatientForApt(apt);
-                                            if (pid) {
-                                              const matched = patientsList.find(p => p.id === pid);
-                                              if (matched) {
-                                                setSelectedPatient(matched);
-                                              } else {
-                                                setLoadingPatients(true);
-                                                try {
-                                                  const res = await getPatientChartServerFn({ data: { patientId: pid } });
-                                                  if (res && res.patient) {
-                                                    setSelectedPatient(res.patient);
-                                                  }
-                                                } catch (e) {
-                                                  console.error("Failed to load client chart:", e);
-                                                  showToast("error", "Failed to load client profile");
-                                                } finally {
-                                                  setLoadingPatients(false);
-                                                }
-                                              }
-                                            } else {
-                                              showToast("error", "No client profile found for this booking.");
-                                            }
-                                          }}
-                                          className="inline-flex items-center gap-1 bg-brand text-white hover:opacity-90 transition-all font-bold px-3 py-1 rounded-full text-[10px] cursor-pointer shrink-0 shadow-none active:scale-[0.98]"
+                                          onClick={() => handleViewProfileForApt(apt)}
+                                          className="p-1.5 rounded-lg text-zinc-400 hover:text-brand hover:bg-brand/5 transition-colors cursor-pointer shrink-0"
                                         >
-                                          <User className="h-3 w-3" />
-                                          View Profile
+                                          <Eye className="h-3.5 w-3.5" />
                                         </button>
 
                                         {/* Edit button */}
@@ -6124,30 +6164,7 @@ function MedicalDashboardPage() {
                                 <div className="flex items-center justify-end gap-3 pt-1">
                                   <button
                                     type="button"
-                                    onClick={async () => {
-                                      const pid = resolvePatientForApt(apt);
-                                      if (pid) {
-                                        const matched = patientsList.find(p => p.id === pid);
-                                        if (matched) {
-                                          setSelectedPatient(matched);
-                                        } else {
-                                          setLoadingPatients(true);
-                                          try {
-                                            const res = await getPatientChartServerFn({ data: { patientId: pid } });
-                                            if (res && res.patient) {
-                                              setSelectedPatient(res.patient);
-                                            }
-                                          } catch (e) {
-                                            console.error("Failed to load client chart:", e);
-                                            showToast("error", "Failed to load client profile");
-                                          } finally {
-                                            setLoadingPatients(false);
-                                          }
-                                        }
-                                      } else {
-                                        showToast("error", "No client profile found.");
-                                      }
-                                    }}
+                                    onClick={() => handleViewProfileForApt(apt)}
                                     className="text-brand font-bold text-xs cursor-pointer mr-auto"
                                   >
                                     View Profile
@@ -6285,7 +6302,7 @@ function MedicalDashboardPage() {
                     { id: "whatsapp", label: "WhatsApp Alerts", icon: Smartphone },
                   ].filter((sub) => {
                     if (user?.role !== "admin" && (sub.id === "whatsapp")) return false;
-                    if (user?.subscriptionPlan === "Solo" && sub.id === "whatsapp") return false;
+                    if ((user?.subscriptionPlan === "Solo" || user?.subscriptionPlan === "Basic") && sub.id === "whatsapp") return false;
                     return true;
                   });
                   const active = tabs.find(t => t.id === settingsSubTab) || tabs[0];
@@ -6690,7 +6707,7 @@ function MedicalDashboardPage() {
                                   type="button"
                                   onClick={handleVerifyEmailOtp}
                                   disabled={verifyingEmailOtp || !emailOtpCode}
-                                  className="rounded-full bg-brand hover:bg-brand/90 text-white text-xs font-semibold px-4 py-1.5 transition-colors cursor-pointer flex items-center gap-1 disabled:bg-zinc-100 disabled:text-zinc-400"
+                                  className="rounded-full bg-black hover:bg-black/90 text-white text-xs font-semibold px-4 py-1.5 transition-colors cursor-pointer flex items-center gap-1 disabled:bg-zinc-100 disabled:text-zinc-400"
                                 >
                                   {verifyingEmailOtp && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                                   Verify & Change Email
@@ -6973,7 +6990,7 @@ function MedicalDashboardPage() {
                           />
                           <button
                             type="submit"
-                            className="rounded-full bg-brand hover:bg-brand/90 px-5 py-2 text-xs font-semibold text-white transition-all cursor-pointer whitespace-nowrap"
+                            className="rounded-full bg-black hover:bg-black/90 px-5 py-2 text-xs font-semibold text-white transition-all cursor-pointer whitespace-nowrap"
                           >
                             Add Category
                           </button>
@@ -7120,7 +7137,7 @@ function MedicalDashboardPage() {
                                       const sl = parseInt(slotEl?.value || "30");
                                       setDocSchedules(prev => prev.map(s => s.enabled ? { ...s, startTime: st, endTime: en, slotDuration: sl } : s));
                                     }}
-                                    className="rounded-full bg-brand text-white text-[10px] font-bold px-3 py-1.5 hover:bg-brand/90 cursor-pointer flex items-center gap-1"
+                                    className="rounded-full bg-black text-white text-[10px] font-bold px-3 py-1.5 hover:bg-black/90 cursor-pointer flex items-center gap-1"
                                   >
                                     <Check className="h-3 w-3" /> Apply
                                   </button>
@@ -7147,7 +7164,7 @@ function MedicalDashboardPage() {
                                   >
                                     <span className={`text-[9px] font-black uppercase tracking-wider ${ sched.enabled ? "text-brand" : "text-zinc-400" }`}>{dayLabel}</span>
                                     <div className={`mt-1.5 h-7 w-7 rounded-full flex items-center justify-center ${
-                                      sched.enabled ? "bg-brand text-white" : "bg-zinc-100 text-zinc-350"
+                                      sched.enabled ? "bg-black text-white" : "bg-zinc-100 text-zinc-350"
                                     }`}>
                                       {sched.enabled ? <CheckCircle2 className="h-4 w-4" /> : <X className="h-3.5 w-3.5" />}
                                     </div>
@@ -7256,7 +7273,7 @@ function MedicalDashboardPage() {
                                     } catch(err: any) { console.error(err); }
                                     finally { setSavingDocSchedule(false); }
                                   }}
-                                  className="rounded-full bg-brand text-white px-5 py-2 text-xs font-bold hover:bg-brand/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                                  className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
                                 >
                                   {savingDocSchedule ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                                   Save Schedule
@@ -7407,7 +7424,7 @@ function MedicalDashboardPage() {
                               <button
                                 type="submit"
                                 disabled={savingDoc}
-                                className="rounded-full bg-brand text-white px-5 py-2 text-xs font-semibold hover:bg-brand/90 shadow-md flex items-center gap-1.5 cursor-pointer"
+                                className="rounded-full bg-black text-white px-5 py-2 text-xs font-semibold hover:bg-black/90 shadow-md flex items-center gap-1.5 cursor-pointer"
                               >
                                 {savingDoc && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                                 {editingDoc ? "Update Trainer" : "Register Trainer"}
@@ -7810,17 +7827,20 @@ function MedicalDashboardPage() {
                       </div>
                       <button type="button"
                         onClick={() => { setEditingSubUser(null); setSubUserForm({ name: "", email: "", phone: "", role: "reception", doctorId: "", password: "", confirmPassword: "" }); setSubUserError(""); setSubUserSuccess(""); setShowSubUserForm(v => !v); }}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-brand text-white px-4 py-2 text-[10px] font-bold hover:bg-brand/90 cursor-pointer transition-all">
+                        className="inline-flex items-center gap-1.5 rounded-full bg-black text-white px-4 py-2 text-[10px] font-bold hover:bg-black/90 cursor-pointer transition-all">
                         <Plus className="h-3 w-3" /> Add User
                       </button>
                     </div>
-                    {user && (
-                      <div className="flex items-center gap-2 text-[10px] font-semibold text-zinc-500">
-                        <Info className="h-3.5 w-3.5 text-brand/60 shrink-0" />
-                        Current plan: <span className="font-black text-brand">{user.subscriptionPlan || "Solo"}</span>
-                        {(user.subscriptionPlan === "Solo" || !user.subscriptionPlan) ? " — up to 1 receptionist account" : user.subscriptionPlan === "Clinic" ? " — up to 5 sub-user accounts" : " — unlimited"}
-                      </div>
-                    )}
+                    {user && (() => {
+                      const displayPlan = user.subscriptionPlan === "Solo" || !user.subscriptionPlan ? "Basic" : user.subscriptionPlan === "Clinic" ? "Premium" : user.subscriptionPlan;
+                      return (
+                        <div className="flex items-center gap-2 text-[10px] font-semibold text-zinc-500">
+                          <Info className="h-3.5 w-3.5 text-brand/60 shrink-0" />
+                          Current plan: <span className="font-black text-brand">{displayPlan}</span>
+                          {(user.subscriptionPlan === "Solo" || user.subscriptionPlan === "Basic" || !user.subscriptionPlan) ? " — up to 1 receptionist account" : (user.subscriptionPlan === "Clinic" || user.subscriptionPlan === "Premium") ? " — up to 5 sub-user accounts" : " — unlimited"}
+                        </div>
+                      );
+                    })()}
                     {showSubUserForm && (
                       <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 animate-in slide-in-from-top-2 duration-200">
                         <h5 className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
@@ -7927,7 +7947,7 @@ function MedicalDashboardPage() {
                               } catch (e: any) { setSubUserError(e.message || "Failed to save sub-user"); }
                               finally { setSavingSubUser(false); }
                             }}
-                            className="rounded-full bg-brand text-white px-5 py-2 text-xs font-bold hover:bg-brand/90 disabled:opacity-60 cursor-pointer flex items-center gap-1.5">
+                            className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 disabled:opacity-60 cursor-pointer flex items-center gap-1.5">
                             {savingSubUser ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                             {editingSubUser ? "Update User" : "Create User"}
                           </button>
@@ -7982,7 +8002,7 @@ function MedicalDashboardPage() {
                                 </td>
                                 <td className="px-4 py-3">
                                   <div className="flex items-center gap-2.5">
-                                    <div className={`h-7 w-7 rounded-full flex items-center justify-center text-white text-[9px] font-black shrink-0 ${su.role === "doctor" ? "bg-indigo-500" : "bg-brand"}`}>
+                                    <div className={`h-7 w-7 rounded-full flex items-center justify-center text-white text-[9px] font-black shrink-0 ${su.role === "doctor" ? "bg-indigo-500" : "bg-black"}`}>
                                       {su.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
                                     </div>
                                     <span className="font-semibold text-zinc-800 truncate max-w-[120px]">{su.name}</span>
@@ -8089,7 +8109,7 @@ function MedicalDashboardPage() {
                     <div className="px-6 py-5 space-y-5">
                       {/* Avatar + name */}
                       <div className="flex items-center gap-4">
-                        <div className={`h-14 w-14 rounded-full flex items-center justify-center text-white text-lg font-black shrink-0 ${viewingSubUser.role === "doctor" ? "bg-indigo-500" : "bg-brand"}`}>
+                        <div className={`h-14 w-14 rounded-full flex items-center justify-center text-white text-lg font-black shrink-0 ${viewingSubUser.role === "doctor" ? "bg-indigo-500" : "bg-black"}`}>
                           {viewingSubUser.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
                         </div>
                         <div>
@@ -8119,7 +8139,7 @@ function MedicalDashboardPage() {
                     {/* Footer */}
                     <div className="px-6 py-3 border-t border-zinc-100 flex justify-end gap-2">
                       <button type="button" onClick={() => setViewingSubUser(null)} className="rounded-full border border-zinc-200 px-5 py-2 text-xs font-bold text-zinc-500 hover:bg-zinc-50 cursor-pointer">Close</button>
-                      <button type="button" onClick={() => { setEditModalSubUser(viewingSubUser); setSubUserForm({ name: viewingSubUser.name, email: viewingSubUser.email, phone: viewingSubUser.phone || "", role: viewingSubUser.role, doctorId: viewingSubUser.doctorId || "", password: "", confirmPassword: "" }); setSubUserError(""); setSubUserSuccess(""); setViewingSubUser(null); }} className="rounded-full bg-brand text-white px-5 py-2 text-xs font-bold hover:bg-brand/90 cursor-pointer flex items-center gap-1.5">
+                      <button type="button" onClick={() => { setEditModalSubUser(viewingSubUser); setSubUserForm({ name: viewingSubUser.name, email: viewingSubUser.email, phone: viewingSubUser.phone || "", role: viewingSubUser.role, doctorId: viewingSubUser.doctorId || "", password: "", confirmPassword: "" }); setSubUserError(""); setSubUserSuccess(""); setViewingSubUser(null); }} className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 cursor-pointer flex items-center gap-1.5">
                         <Edit3 className="h-3 w-3" /> Edit
                       </button>
                     </div>
@@ -8232,7 +8252,7 @@ function MedicalDashboardPage() {
                           } catch (e: any) { setSubUserError(e.message || "Failed to update user"); }
                           finally { setSavingSubUser(false); }
                         }}
-                        className="rounded-full bg-brand text-white px-5 py-2 text-xs font-bold hover:bg-brand/90 disabled:opacity-60 cursor-pointer flex items-center gap-1.5"
+                        className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 disabled:opacity-60 cursor-pointer flex items-center gap-1.5"
                       >
                         {savingSubUser ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                         Update User
@@ -8247,7 +8267,7 @@ function MedicalDashboardPage() {
                 TAB: MANAGE PLANS & BILLING
                 ────────────────────────────────────────────── */}
             {activeTab === "plans" && (() => {
-              const planDisplayName = user?.subscriptionPlan === "Trial" || !user?.subscriptionPlan ? "Solo" : user.subscriptionPlan;
+              const planDisplayName = user?.subscriptionPlan === "Trial" || !user?.subscriptionPlan || user?.subscriptionPlan === "Solo" ? "Basic" : user?.subscriptionPlan === "Clinic" ? "Premium" : user.subscriptionPlan;
               const expiryTime = user?.subscriptionExpiresAt 
                 ? new Date(user.subscriptionExpiresAt).getTime()
                 : user?.createdAt
@@ -8291,7 +8311,7 @@ function MedicalDashboardPage() {
                             {planDisplayName} Plan
                           </p>
                           <p className="text-xs text-zinc-400 font-medium mt-1">
-                            {planDisplayName === "Clinic" 
+                            {planDisplayName === "Premium" 
                               ? "₹1,499 / month" 
                               : planDisplayName === "Hospital" 
                                 ? "Custom pricing" 
@@ -8344,83 +8364,121 @@ function MedicalDashboardPage() {
                   <div className="grid gap-6 md:grid-cols-3">
                     {[
                       {
-                        name: "Solo",
+                        name: "Basic",
                         price: "₹999",
-                        description: "Best for independent doctors.",
-                        features: ["1 trainer dashboard", "500 appointments / mo", "Up to 500 client records", "AI workout plans standard"],
-                        action: "Selected",
-                        active: user?.subscriptionPlan === "Solo" || !user?.subscriptionPlan || user?.subscriptionPlan === "Trial"
+                        description: "Best for independent practices.",
+                        features: [
+                          "1 professional dashboard",
+                          "multi QR Code Booking",
+                          "meta verified whatsapp intigration",
+                          "Priority Support",
+                          "unlimited appointments / mo",
+                          "unlimited client records",
+                          "AI action plans standard"
+                        ],
+                        popular: false,
+                        dark: false,
+                        active: user?.subscriptionPlan === "Basic" || user?.subscriptionPlan === "Solo" || !user?.subscriptionPlan || user?.subscriptionPlan === "Trial"
                       },
                       {
-                        name: "Clinic",
+                        name: "Premium",
                         price: "₹1,499",
-                        description: "For growing multi-doctor clinics.",
-                        features: ["Up to 5 trainers", "2,000 appointments / mo", "Up to 5,000 client records", "WhatsApp alerts included", "Receptionist dashboard"],
-                        action: "Upgrade",
-                        active: user?.subscriptionPlan === "Clinic"
+                        description: "For growing multi-professional clinics.",
+                        features: [
+                          "Up to 5 professionals",
+                          "multi QR Code Booking",
+                          "meta verified whatsapp intigration",
+                          "Priority Support",
+                          "unlimited appointments / mo",
+                          "unlimited client records",
+                          "WhatsApp alerts included",
+                          "Receptionist dashboard"
+                        ],
+                        popular: true,
+                        dark: false,
+                        active: user?.subscriptionPlan === "Premium" || user?.subscriptionPlan === "Clinic"
                       },
                       {
-                        name: "Hospital",
+                        name: "Enterprise",
                         price: "Custom",
                         description: "For complete healthcare systems.",
-                        features: ["Unlimited doctors & locations", "Custom EHR / HL7 / FHIR links", "Dedicated AI fine-tuning", "Dedicated CSM & support"],
-                        action: "Contact Sales",
-                        active: user?.subscriptionPlan === "Hospital"
+                        features: ["Unlimited professionals & locations", "Custom CRM & ERP integrations", "Dedicated AI fine-tuning", "Dedicated CSM & support"],
+                        popular: false,
+                        dark: true,
+                        active: user?.subscriptionPlan === "Hospital" || user?.subscriptionPlan === "Enterprise"
                       }
                     ].map((plan) => (
-                      <div 
-                        key={plan.name} 
-                        className={`rounded-2xl border p-5 flex flex-col justify-between transition-all ${
-                          plan.active 
-                            ? "border-brand bg-brand/5 ring-1 ring-brand/20" 
-                            : "border-zinc-200 bg-white hover:border-zinc-300"
+                      <div
+                        key={plan.name}
+                        className={`relative flex flex-col rounded-2xl p-6 transition-all ${
+                          plan.popular
+                            ? "bg-zinc-900 text-white ring-1 ring-brand/40 scale-[1.02]"
+                            : plan.dark
+                              ? "bg-zinc-900 text-white ring-1 ring-zinc-700/60"
+                              : plan.active
+                                ? "bg-white text-zinc-900 ring-2 ring-brand/40 border border-brand/20"
+                                : "bg-white text-zinc-900 ring-1 ring-zinc-950/5 hover:ring-brand/20"
                         }`}
                       >
-                        <div className="space-y-4">
-                          <div>
-                            <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                              plan.active 
-                                ? "bg-brand text-white" 
-                                : "bg-zinc-150 text-zinc-650"
-                            }`}>
-                              {plan.name}
+                        {plan.popular && !plan.active && (
+                          <>
+                            <div className="absolute -inset-px -z-10 rounded-2xl bg-gradient-to-br from-brand via-brand to-cyan-400 opacity-30 blur" />
+                            <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-brand to-cyan-400 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white whitespace-nowrap">
+                              Most Popular
                             </span>
-                            <div className="mt-3 flex items-baseline gap-1">
-                              <span className="text-2xl font-black text-zinc-900">{plan.price}</span>
-                              {plan.price !== "Custom" && <span className="text-xs text-zinc-400 font-medium">/mo</span>}
-                            </div>
-                            <p className="text-[10px] text-zinc-500 font-semibold mt-1">{plan.description}</p>
-                          </div>
+                          </>
+                        )}
+                        {plan.active && (
+                          <span className="absolute -top-3 left-4 rounded-full bg-black px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white whitespace-nowrap">
+                            Current Plan
+                          </span>
+                        )}
 
-                          <ul className="space-y-2 text-[10px] text-zinc-600 font-semibold pt-2 border-t border-zinc-100">
-                            {plan.features.map((feat) => (
-                              <li key={feat} className="flex items-start gap-1.5">
-                                <Check className="h-3.5 w-3.5 text-brand shrink-0 mt-0.5" />
-                                <span>{feat}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                        <p className={`text-xs font-bold uppercase tracking-wider ${plan.popular || plan.dark ? "text-brand-light" : "text-brand"}`}>
+                          {plan.name}
+                        </p>
+                        <p className="mt-4 flex items-baseline gap-1">
+                          <span className="text-3xl font-black tracking-tight">{plan.price}</span>
+                          {plan.price !== "Custom" && (
+                            <span className={`text-sm ${plan.popular || plan.dark ? "text-zinc-400" : "text-zinc-500"}`}>/mo</span>
+                          )}
+                        </p>
+                        <p className={`mt-2 text-xs font-medium ${plan.popular || plan.dark ? "text-zinc-300" : "text-zinc-600"}`}>
+                          {plan.description}
+                        </p>
+
+                        <ul className="mt-5 flex-1 space-y-2.5 border-t border-white/10 pt-5">
+                          {plan.features.map((feat) => (
+                            <li key={feat} className="flex items-start gap-2 text-xs">
+                              <Check className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${plan.popular || plan.dark ? "text-cyan-400" : "text-brand"}`} />
+                              <span className={plan.popular || plan.dark ? "text-zinc-200" : "text-zinc-700"}>{feat}</span>
+                            </li>
+                          ))}
+                        </ul>
 
                         <button
                           type="button"
-                          disabled={plan.active || plan.name === "Hospital"}
-                          className={`w-full rounded-full py-2 text-xs font-bold transition-all mt-6 cursor-pointer ${
-                            plan.active 
-                              ? "bg-brand/10 text-brand border border-brand/25 cursor-default" 
-                              : plan.name === "Hospital" 
-                                ? "bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-300"
-                                : "bg-zinc-950 hover:bg-zinc-800 text-white"
+                          disabled={plan.active || plan.name === "Enterprise"}
+                          className={`mt-6 w-full rounded-lg py-2.5 text-xs font-bold transition-all cursor-pointer ${
+                            plan.active
+                              ? plan.popular || plan.dark
+                                ? "bg-white/10 text-white border border-white/20 cursor-default"
+                                : "bg-black/10 text-brand border border-zinc-800/25 cursor-default"
+                              : plan.name === "Enterprise"
+                                ? "bg-white/10 text-zinc-200 hover:bg-white/20"
+                                : plan.popular
+                                  ? "bg-white text-zinc-900 hover:bg-zinc-100"
+                                  : "bg-zinc-900 text-white hover:bg-zinc-800"
                           }`}
                           onClick={() => {
-                            if (plan.name !== "Hospital") {
+                            if (plan.name !== "Enterprise") {
                               showToast("info", `Upgrading to ${plan.name} plan is requested. Support team will connect with you.`);
                             } else {
                               setActiveTab("settings");
                             }
                           }}
                         >
-                          {plan.active ? "Current Plan" : plan.name === "Hospital" ? "Contact Support" : `Upgrade to ${plan.name}`}
+                          {plan.active ? "Current Plan" : plan.name === "Enterprise" ? "Contact Support" : `Upgrade to ${plan.name}`}
                         </button>
                       </div>
                     ))}
@@ -8547,9 +8605,9 @@ function MedicalDashboardPage() {
                           }}
                           className={`h-7 w-7 rounded-full flex items-center justify-center border font-bold text-xs transition-all cursor-pointer ${
                             isActive 
-                              ? "bg-brand border-brand text-white shadow-md shadow-brand/20 scale-110" 
+                              ? "bg-black border-zinc-800 text-white shadow-md shadow-brand/20 scale-110" 
                               : isCompleted
-                              ? "bg-white border-brand text-brand"
+                              ? "bg-white border-zinc-800 text-brand"
                               : "bg-white border-zinc-200 text-zinc-400"
                           }`}
                         >
@@ -8624,8 +8682,8 @@ function MedicalDashboardPage() {
                               onClick={() => setAptGender(g)}
                               className={`rounded-full py-1.5 px-3 text-xs font-semibold border transition-all ${
                                 aptGender === g
-                                  ? "bg-brand border-brand text-white shadow-sm font-bold animate-pulse-once"
-                                  : "bg-white border-zinc-200 text-zinc-600 hover:border-brand/40"
+                                  ? "bg-black border-zinc-800 text-white shadow-sm font-bold animate-pulse-once"
+                                  : "bg-white border-zinc-200 text-zinc-600 hover:border-zinc-800/40"
                               }`}
                             >
                               {g}
@@ -9025,7 +9083,7 @@ function MedicalDashboardPage() {
                                           disabled={past}
                                           className={`h-7 w-7 text-[10px] font-bold rounded-lg flex items-center justify-center transition-all ${
                                             isSelected
-                                              ? "bg-brand text-white font-black"
+                                              ? "bg-black text-white font-black"
                                               : past
                                               ? "text-zinc-200 cursor-not-allowed"
                                               : "text-zinc-700 hover:bg-zinc-100"
@@ -9188,7 +9246,7 @@ function MedicalDashboardPage() {
                         }
                       }}
                       disabled={savingApt}
-                      className="rounded-full bg-brand text-white px-5 py-2 text-xs font-semibold hover:bg-brand/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:bg-zinc-150 disabled:text-zinc-400"
+                      className="rounded-full bg-black text-white px-5 py-2 text-xs font-semibold hover:bg-black/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:bg-zinc-150 disabled:text-zinc-400"
                     >
                       {savingApt && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                       Next
@@ -9197,7 +9255,7 @@ function MedicalDashboardPage() {
                     <button
                       type="submit"
                       disabled={savingApt}
-                      className="rounded-full bg-brand text-white px-5 py-2 text-xs font-semibold hover:bg-brand/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:bg-zinc-150 disabled:text-zinc-400"
+                      className="rounded-full bg-black text-white px-5 py-2 text-xs font-semibold hover:bg-black/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:bg-zinc-150 disabled:text-zinc-400"
                     >
                       {savingApt && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                       {editingApt ? "Update Session" : "Schedule Session"}

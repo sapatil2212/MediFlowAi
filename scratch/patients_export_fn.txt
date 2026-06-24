@@ -1,0 +1,164 @@
+  const handleExportPatients = (format: "pdf" | "word" | "excel") => {
+    try {
+      const filteredList = patientsList.filter((p) => {
+        const query = searchQuery.trim().toLowerCase();
+        return (
+          !query ||
+          (p.name && p.name.toLowerCase().includes(query)) ||
+          (p.patientNo && p.patientNo.toLowerCase().includes(query)) ||
+          (p.phone && p.phone.includes(query)) ||
+          (p.email && p.email.toLowerCase().includes(query)) ||
+          (p.chiefComplaint && p.chiefComplaint.toLowerCase().includes(query)) ||
+          (p.reason && p.reason.toLowerCase().includes(query))
+        );
+      });
+
+      const listToExport = selectedPatientIds.length > 0
+        ? filteredList.filter(p => selectedPatientIds.includes(p.id))
+        : filteredList;
+
+      if (listToExport.length === 0) {
+        showToast("info", "No patients to export.");
+        return;
+      }
+
+      if (format === "excel") {
+        const headers = ["Patient Name", "Patient ID", "Age", "Gender", "Phone", "Email", "Address", "Chief Complaint", "Notes"];
+        const rows = listToExport.map(p => [
+          p.name || "",
+          p.patientNo || "",
+          p.age || "",
+          p.gender || "",
+          p.phone || "",
+          p.email || "",
+          p.address || "",
+          p.chiefComplaint || p.reason || "",
+          p.notes || ""
+        ]);
+        const csvContent = [headers.join(","), ...rows.map(r => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", url);
+        downloadAnchor.setAttribute("download", `patients_export_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+        showToast("success", `Exported ${listToExport.length} patients to Excel (CSV)`);
+      } else if (format === "word") {
+        const htmlContent = `
+          <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+          <head>
+            <meta charset="utf-8">
+            <title>Patients Registry Export</title>
+            <style>
+              body { font-family: 'Segoe UI', Arial, sans-serif; color: #333; line-height: 1.5; }
+              h2 { color: #0c7272; border-bottom: 2px solid #0c7272; padding-bottom: 8px; }
+              table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+              th { background-color: #f3f4f6; color: #1f2937; font-weight: bold; border: 1px solid #d1d5db; padding: 10px; text-align: left; }
+              td { border: 1px solid #e5e7eb; padding: 10px; text-align: left; }
+            </style>
+          </head>
+          <body>
+            <h2>Patients Registry Export - ${new Date().toLocaleDateString()}</h2>
+            <p>Total Records: ${listToExport.length}</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Patient Name</th>
+                  <th>Patient ID</th>
+                  <th>Age/Gender</th>
+                  <th>Contact Details</th>
+                  <th>Residential Address</th>
+                  <th>Chief Complaint</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${listToExport.map(p => `
+                  <tr>
+                    <td><strong>${p.name || ""}</strong></td>
+                    <td><code>${p.patientNo || ""}</code></td>
+                    <td>${p.age ? `${p.age} Yrs` : ""} ${p.gender || ""}</td>
+                    <td>${p.phone || ""}<br/>${p.email || ""}</td>
+                    <td>${p.address || ""}</td>
+                    <td>${p.chiefComplaint || p.reason || "General visit"}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </body>
+          </html>
+        `;
+        const blob = new Blob(['\ufeff' + htmlContent], { type: "application/msword" });
+        const url = URL.createObjectURL(blob);
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", url);
+        downloadAnchor.setAttribute("download", `patients_export_${new Date().toISOString().split('T')[0]}.doc`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+        showToast("success", `Exported ${listToExport.length} patients to Word`);
+      } else if (format === "pdf") {
+        const doc = new jsPDF();
+        
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(20);
+        doc.setTextColor(12, 114, 114);
+        doc.text("MediFlow AI Clinic", 14, 20);
+        
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(11);
+        doc.setTextColor(74, 85, 104);
+        doc.text("Patients Registry Summary", 14, 26);
+        
+        doc.setFontSize(9);
+        doc.setTextColor(113, 128, 150);
+        doc.text(`Exported: ${new Date().toLocaleString()}`, 196, 20, { align: "right" });
+        doc.text(`Records: ${listToExport.length}`, 196, 26, { align: "right" });
+        
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.5);
+        doc.line(14, 32, 196, 32);
+        
+        const tableHeaders = [["Patient Info", "Patient ID", "Chief Complaint", "Registered"]];
+        const tableRows = listToExport.map(p => {
+          const patientInfoStr = `${p.name || ""}\n${p.age ? `${p.age} Yrs` : ""} ${p.gender ? `· ${p.gender}` : ""} ${p.phone ? `· ${p.phone}` : ""}`;
+          return [
+            patientInfoStr,
+            p.patientNo || "",
+            p.chiefComplaint || p.reason || "General visit",
+            new Date(p.createdAt).toLocaleDateString()
+          ];
+        });
+        
+        (doc as any).autoTable({
+          startY: 38,
+          head: tableHeaders,
+          body: tableRows,
+          theme: "striped",
+          headStyles: {
+            fillColor: [12, 114, 114],
+            textColor: [255, 255, 255],
+            fontSize: 10,
+            fontStyle: "bold"
+          },
+          bodyStyles: {
+            fontSize: 9,
+            textColor: [45, 55, 72]
+          },
+          columnStyles: {
+            0: { cellWidth: 70 },
+            1: { cellWidth: 35 },
+            2: { cellWidth: 50 },
+            3: { cellWidth: 27 }
+          },
+          margin: { top: 38, left: 14, right: 14 }
+        });
+        
+        doc.save(`patients_export_${new Date().toISOString().split('T')[0]}.pdf`);
+        showToast("success", `Exported ${listToExport.length} patients to PDF`);
+      }
+    } catch (e) {
+      showToast("error", "Export failed");
+    }
+  };

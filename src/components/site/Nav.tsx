@@ -7,7 +7,6 @@ const links = [
   { to: "/", label: "Home" },
   { to: "/about", label: "About" },
   { to: "/pricing", label: "Pricing" },
-  { to: "/solutions", label: "Solutions" },
   { to: "/contact", label: "Contact" },
 ] as const;
 
@@ -33,11 +32,11 @@ export function Nav() {
             : "border-b border-zinc-950/5 bg-transparent"
         }`}
       >
-        <div className={`mx-auto flex items-center justify-between px-6 transition-all duration-300 ${scrolled ? "h-14 max-w-full" : "h-16 max-w-7xl"}`}>
+        <div className={`mx-auto flex items-center justify-between px-6 transition-all duration-300 ${scrolled ? "h-16 max-w-full" : "h-20 max-w-7xl"}`}>
         {/* Left side: Logo */}
         <div className="flex flex-1 justify-start">
           <Link to="/" className="group flex items-center gap-2">
-            <img src={bmtLogo} alt="BMT Logo" className="h-12 w-auto object-contain" />
+            <img src={bmtLogo} alt="BMT Logo" className="h-16 w-auto object-contain" />
           </Link>
         </div>
 
@@ -67,7 +66,7 @@ export function Nav() {
           <Link
             to="/signup"
             className="group relative inline-flex items-center gap-1 overflow-hidden rounded-md px-2.5 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm font-semibold text-white transition-transform hover:scale-[1.03] whitespace-nowrap"
-            style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)", boxShadow: "0 2px 12px rgba(0,89,198,0.35)" }}
+            style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
           >
             <span className="relative z-10 flex items-center gap-1 sm:gap-1.5">
               14 Days Free Trial

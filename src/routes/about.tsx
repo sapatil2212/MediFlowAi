@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { Nav } from "@/components/site/Nav";
 import { SiteShell } from "@/components/site/Footer";
-import { CTA } from "@/components/site/sections";
+import { CTA, BuiltForSection } from "@/components/site/sections";
 import {
   Sparkles,
   Globe2,
@@ -75,6 +75,11 @@ const values = [
     title: "Transparency",
     desc: "Clear pricing, honest communication, and customer-focused decisions — always.",
   },
+  {
+    icon: Target,
+    title: "Results-Driven",
+    desc: "We focus on tangible outcomes — helping your business book more, grow faster, and operate smoothly.",
+  },
 ];
 
 const whyChoose = [
@@ -124,6 +129,7 @@ const features = [
   { icon: Users, text: "Organize customer information with a smart CRM" },
   { icon: BarChart3, text: "Track performance through business analytics" },
   { icon: Bot, text: "Use AI-powered assistants to improve customer engagement" },
+  { icon: ShieldCheck, text: "Ensure data privacy with enterprise-grade security" },
 ];
 
 const stats = [
@@ -143,7 +149,7 @@ function AboutPage() {
         <div className="absolute inset-0 bg-grid opacity-30" />
         <div className="absolute inset-0 bg-radial-fade" />
         <div className="pointer-events-none absolute -top-32 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full blur-3xl" style={{ background: "radial-gradient(ellipse, rgba(0,89,198,0.12) 0%, transparent 70%)" }} />
-        <div className="relative mx-auto max-w-4xl px-6 py-24 text-center">
+        <div className="relative mx-auto max-w-4xl px-6 pt-24 pb-8 text-center">
           <motion.div
             initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
             className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold mb-5"
@@ -167,24 +173,9 @@ function AboutPage() {
         </div>
       </section>
 
-      {/* Stats strip */}
-      <section className="mx-auto max-w-5xl px-6 -mt-4 pb-16">
-        <div className="grid grid-cols-2 gap-4 rounded-3xl border border-zinc-200 bg-white p-6 sm:grid-cols-4 shadow-sm">
-          {stats.map((s, i) => (
-            <motion.div
-              key={s.label}
-              initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.05 }}
-              className="text-center"
-            >
-              <div className="text-3xl font-bold tracking-tight text-gradient-brand">{s.value}</div>
-              <div className="mt-1 text-xs font-medium uppercase tracking-wide text-zinc-500">{s.label}</div>
-            </motion.div>
-          ))}
-        </div>
-      </section>
 
       {/* Mission */}
-      <section className="mx-auto max-w-5xl px-6 py-16">
+      <section className="mx-auto max-w-5xl px-6 pt-8 pb-16">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}>
             <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "#0059C6" }}>Our Story</p>
@@ -207,88 +198,49 @@ function AboutPage() {
       </section>
 
       {/* What We Do */}
-      <section className="relative py-16" style={{ background: "linear-gradient(135deg, rgba(0,89,198,0.04), rgba(255,255,255,1))" }}>
-        <div className="mx-auto max-w-5xl px-6">
-          <div className="text-center mb-10">
-            <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "#0059C6" }}>What We Do</p>
-            <h2 className="text-3xl font-bold tracking-tight text-zinc-900">
-              All from one simple and <span className="text-gradient-brand">powerful dashboard</span>
+      <section className="relative py-24 overflow-hidden bg-slate-50">
+        {/* Background Accents */}
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
+        <div className="absolute top-0 right-0 -mr-40 -mt-40 w-96 h-96 rounded-full bg-[#0059C6]/5 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 -ml-40 -mb-40 w-96 h-96 rounded-full bg-[#0D83FF]/5 blur-3xl pointer-events-none" />
+
+        <div className="relative mx-auto max-w-5xl px-6">
+          <div className="text-center mb-16">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }}
+              className="inline-flex items-center justify-center rounded-full px-4 py-1.5 mb-6 shadow-sm border border-[#0059C6]/20 bg-white"
+            >
+              <p className="text-[11px] font-black uppercase tracking-widest text-[#0059C6]">What We Do</p>
+            </motion.div>
+            <h2 className="text-3xl md:text-5xl font-bold tracking-tight text-zinc-900">
+              All from one simple and <br className="hidden md:block" />
+              <span className="text-gradient-brand">powerful dashboard</span>
             </h2>
           </div>
-          <div className="grid sm:grid-cols-2 gap-3">
+          
+          <div className="grid md:grid-cols-2 gap-3 lg:gap-4">
             {features.map((f, i) => {
               const Icon = f.icon;
               return (
                 <motion.div
                   key={f.text}
-                  initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.05 }}
-                  className="flex items-center gap-3 rounded-xl bg-white border border-zinc-200 px-4 py-3 shadow-sm"
+                  initial={{ opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.05, ease: "easeOut" }}
+                  className="group relative flex items-center gap-4 rounded-2xl bg-white border border-zinc-100 px-5 py-4 transition-colors duration-300 hover:border-zinc-200 hover:bg-zinc-50/50"
                 >
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ background: "rgba(0,89,198,0.08)" }}>
-                    <Icon className="size-4" style={{ color: "#0059C6" }} />
+                  <div className="relative z-10 flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-50 border border-zinc-100 transition-colors duration-300 group-hover:bg-[#0059C6]/10 group-hover:border-[#0059C6]/20">
+                    <Icon className="size-4 text-zinc-500 transition-colors duration-300 group-hover:text-[#0059C6]" strokeWidth={2} />
                   </div>
-                  <span className="text-sm font-medium text-zinc-700">{f.text}</span>
+                  <span className="relative z-10 text-sm font-medium text-zinc-700 transition-colors duration-300 group-hover:text-zinc-900">{f.text}</span>
                 </motion.div>
               );
             })}
           </div>
         </div>
       </section>
+      {/* Premium Built For Section */}
+      <BuiltForSection />
 
-      {/* Built for Modern Businesses */}
-      <section className="mx-auto max-w-5xl px-6 py-16">
-        <div className="text-center mb-10">
-          <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "#0059C6" }}>Built For</p>
-          <h2 className="text-3xl font-bold tracking-tight text-zinc-900">Modern Businesses of Every Kind</h2>
-          <p className="mt-3 text-sm text-zinc-500 max-w-xl mx-auto">BookMyTime adapts to your workflow and helps you deliver a better customer experience.</p>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {industries.map((ind, i) => {
-            const Icon = ind.icon;
-            return (
-              <motion.div
-                key={ind.label}
-                initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.05 }}
-                className="flex flex-col items-center gap-2 rounded-2xl border border-zinc-200 bg-white p-4 text-center hover:border-[#A7D3FF] hover:shadow-sm transition-all"
-              >
-                <div className="flex size-9 items-center justify-center rounded-xl" style={{ background: "rgba(0,89,198,0.08)" }}>
-                  <Icon className="size-4" style={{ color: "#0059C6" }} />
-                </div>
-                <span className="text-xs font-medium text-zinc-700 leading-tight">{ind.label}</span>
-              </motion.div>
-            );
-          })}
-        </div>
-      </section>
 
-      {/* Why Choose Us */}
-      <section className="py-16 bg-zinc-950">
-        <div className="mx-auto max-w-5xl px-6">
-          <div className="text-center mb-10">
-            <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: "#A7D3FF" }}>Why BookMyTime</p>
-            <h2 className="text-3xl font-bold tracking-tight text-white">Why Businesses <span className="text-gradient-brand">Choose BookMyTime</span></h2>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {whyChoose.map((w, i) => {
-              const Icon = w.icon;
-              return (
-                <motion.div
-                  key={w.title}
-                  initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.07 }}
-                  className="rounded-2xl p-5 border"
-                  style={{ background: "rgba(255,255,255,0.04)", borderColor: "rgba(0,89,198,0.25)" }}
-                >
-                  <div className="flex size-9 items-center justify-center rounded-xl mb-3" style={{ background: "rgba(0,89,198,0.2)" }}>
-                    <Icon className="size-4" style={{ color: "#A7D3FF" }} />
-                  </div>
-                  <h3 className="text-sm font-bold text-white mb-1">{w.title}</h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed">{w.desc}</p>
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
 
       {/* Core Values */}
       <section className="mx-auto max-w-5xl px-6 py-16">
@@ -317,23 +269,6 @@ function AboutPage() {
         </div>
       </section>
 
-      {/* Future vision */}
-      <section className="mx-auto max-w-5xl px-6 py-16">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-          className="rounded-3xl p-10 text-center"
-          style={{ background: "linear-gradient(135deg, #0059C6 0%, #0D83FF 100%)", boxShadow: "0 20px 60px rgba(0,89,198,0.25)" }}
-        >
-          <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "rgba(167,211,255,0.8)" }}>The Future</p>
-          <h2 className="text-3xl font-bold text-white mb-4">The Future of Business Management</h2>
-          <p className="text-sm text-white/80 leading-relaxed max-w-2xl mx-auto mb-6">
-            We're building more than a booking platform. Our goal is to create a complete ecosystem that helps businesses automate operations, strengthen customer relationships, and unlock new opportunities for growth through technology and AI.
-          </p>
-          <p className="text-sm text-white/70 leading-relaxed max-w-xl mx-auto">
-            As businesses continue to evolve, BookMyTime will continue to innovate — providing smarter tools, deeper insights, and better ways to connect with customers.
-          </p>
-        </motion.div>
-      </section>
 
       {/* CTA Bottom */}
       <section className="mx-auto max-w-5xl px-6 pb-16">

@@ -1,9 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { HeartPulse, X, Check, Loader2, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { HeartPulse, Home, X, Check, Loader2, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { loginServerFn, sendOtpServerFn, verifyOtpServerFn, resetPasswordServerFn } from "../lib/auth";
+import bmtLogo from "../assets/bmt-logo.png";
+
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -210,15 +212,13 @@ function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-8 md:px-6">
-      {/* Back button/Logo at top left */}
+      {/* Back button/Logo at top left with Home icon */}
       <div className="absolute top-6 left-6">
-        <Link to="/" className="group flex items-center gap-1.5">
-          <div className="relative flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-brand-light ring-1 ring-brand/30">
-            <HeartPulse className="size-3.5 text-white" />
-          </div>
-          <span className="text-xs font-semibold tracking-tight text-zinc-800">
-            BookMyTime
-          </span>
+        <Link to="/" className="group flex items-center gap-1.5 text-zinc-600 hover:text-zinc-950 transition-colors">
+          <img src={bmtLogo} alt="Book MyTime Logo" className="h-12 w-auto object-contain" />
+          <span className="mx-1.5 text-zinc-300">|</span>
+          <Home className="size-3.5 text-zinc-400 group-hover:text-zinc-600 transition-colors" />
+          <span className="text-[10px] font-medium">Home</span>
         </Link>
       </div>
 
@@ -245,7 +245,18 @@ function LoginPage() {
                     <AlertCircle className="size-4 shrink-0 text-red-655" />
                     Access Blocked
                   </div>
-                  <p className="text-[11px] leading-relaxed text-red-700">{errorMsg}</p>
+                  <p className="text-[11px] leading-relaxed text-red-700">
+                    {errorMsg.split("bookmytime1355@gmail.com").map((part, index, arr) => (
+                      <span key={index}>
+                        {part}
+                        {index < arr.length - 1 && (
+                          <a href="mailto:bookmytime1355@gmail.com" className="font-bold underline hover:text-red-900 transition-colors">
+                            bookmytime1355@gmail.com
+                          </a>
+                        )}
+                      </span>
+                    ))}
+                  </p>
                 </div>
               )}
               <div>

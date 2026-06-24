@@ -183,17 +183,7 @@ function AdminLoginPage() {
               </motion.div>
             )}
 
-            {/* Configured Credentials Info Notice */}
-            <div className="flex gap-2.5 rounded-xl bg-zinc-50 border border-zinc-200 p-4 text-[10px] text-zinc-650 font-semibold leading-relaxed shadow-sm">
-              <ShieldAlert className="size-4 text-zinc-500 shrink-0 mt-0.5" />
-              <div>
-                <span>Seeded Console Owner:</span>
-                <span className="block font-extrabold mt-0.5 text-zinc-900 select-text">{config.adminEmail}</span>
-                {config.hasSecurityKey && (
-                  <span className="block text-[9px] text-zinc-400 font-normal mt-1">Requires the administrative security key configured in your settings.</span>
-                )}
-              </div>
-            </div>
+
 
             {/* Login Action Button */}
             <button

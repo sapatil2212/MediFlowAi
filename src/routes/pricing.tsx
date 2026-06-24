@@ -3,7 +3,6 @@ import { Nav } from "@/components/site/Nav";
 import { SiteShell } from "@/components/site/Footer";
 import {
   Pricing,
-  ROICalculator,
   FAQ,
   CTA,
 } from "@/components/site/sections";
@@ -20,7 +19,7 @@ export const Route = createFileRoute("/pricing")({
       { property: "og:title", content: "BookMyTime — Pricing" },
       {
         property: "og:description",
-        content: "From $149/mo. Use our ROI calculator to see your real impact.",
+        content: "Predictable as your network grows",
       },
     ],
   }),
@@ -32,7 +31,6 @@ function PricingPage() {
     <SiteShell>
       <Nav />
       <Pricing />
-      <ROICalculator />
       <FAQ />
       <CTA />
     </SiteShell>

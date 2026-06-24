@@ -1,0 +1,3 @@
+  const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
+  const [selectedPatientIds, setSelectedPatientIds] = useState<string[]>([]);
+  const [showPatientExportDropdown, setShowPatientExportDropdown] = useState(false);

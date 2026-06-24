@@ -346,12 +346,12 @@ export const createTenantAdminServerFn = createServerFn({ method: "POST" })
     const plainPassword = data.password || "clinic123";
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
-    // Insert new tenant as a default trialing user
+    // Insert new tenant as an active user by default
     await execute(
       `INSERT INTO User (id, tenantId, name, email, phone, clinicName, practiceSize, password, 
                          subscriptionStatus, subscriptionPlan, subscriptionExpiresAt, paymentMethod, paymentAmount, billingInterval,
                          createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Trialing', 'Trial', DATE_ADD(NOW(), INTERVAL 30 DAY), 'None', 0.00, 'monthly', NOW(), NOW())`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', 'Trial', DATE_ADD(NOW(), INTERVAL 30 DAY), 'None', 0.00, 'monthly', NOW(), NOW())`,
       [
         userId,
         tenantId,
@@ -364,14 +364,91 @@ export const createTenantAdminServerFn = createServerFn({ method: "POST" })
       ]
     );
 
-    // Log initial trialing subscription log
+    // Log initial active subscription log
     await execute(
       `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
-       VALUES (?, ?, 'None', 'Trialing', 'None', 'Trial', 0.00, 'monthly', NOW(), 'System')`,
+       VALUES (?, ?, 'None', 'Active', 'None', 'Trial', 0.00, 'monthly', NOW(), 'System')`,
       [generateId(), userId]
     );
 
     return { success: true, tenantId, clinicName: data.clinicName, email: data.email, tempPassword: plainPassword };
+  });
+
+// ──────────────────────────────────────────────
+// Toggle Tenant Status Server Function
+// ──────────────────────────────────────────────
+// ──────────────────────────────────────────────
+// Delete Tenant Server Function
+// ──────────────────────────────────────────────
+export const deleteTenantServerFn = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => {
+    if (!data.id) throw new Error("Tenant ID is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const user = await queryOne<any>("SELECT tenantId FROM User WHERE id = ? LIMIT 1", [data.id]);
+    if (!user) throw new Error("Tenant not found");
+
+    const tId = user.tenantId;
+    if (tId) {
+      // Clean up primary relational data
+      await execute("DELETE FROM ClinicProfile WHERE tenantId = ?", [tId]);
+      await execute("DELETE FROM SubUser WHERE tenantId = ?", [tId]);
+      await execute("DELETE FROM Appointment WHERE tenantId = ?", [tId]);
+      await execute("DELETE FROM Patient WHERE tenantId = ?", [tId]);
+      await execute("DELETE FROM SoapNote WHERE tenantId = ?", [tId]);
+      await execute("DELETE FROM WhatsAppConfig WHERE tenantId = ?", [tId]);
+      await execute("DELETE FROM Doctor WHERE tenantId = ?", [tId]);
+    }
+
+    // Clean up base user and sessions
+    await execute("DELETE FROM Session WHERE userId = ?", [data.id]);
+    await execute("DELETE FROM SubscriptionHistory WHERE userId = ?", [data.id]);
+    await execute("DELETE FROM User WHERE id = ?", [data.id]);
+
+    return { success: true };
+  });
+
+export const toggleTenantStatusServerFn = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => {
+    if (!data.id) throw new Error("Tenant ID is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const prev = await queryOne<any>(
+      "SELECT subscriptionStatus, subscriptionPlan FROM User WHERE id = ? LIMIT 1",
+      [data.id]
+    );
+
+    if (!prev) throw new Error("Tenant not found");
+
+    const newStatus = prev.subscriptionStatus === 'Active' ? 'Cancelled' : 'Active';
+
+    await execute(
+      "UPDATE User SET subscriptionStatus = ?, updatedAt = NOW() WHERE id = ?",
+      [newStatus, data.id]
+    );
+
+    await execute(
+      `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
+       VALUES (?, ?, ?, ?, ?, ?, 0, 'monthly', NOW(), 'SuperAdmin')`,
+      [
+        generateId(),
+        data.id,
+        prev.subscriptionStatus,
+        newStatus,
+        prev.subscriptionPlan,
+        prev.subscriptionPlan,
+      ]
+    );
+
+    return { success: true, newStatus };
   });
 
 // ──────────────────────────────────────────────
@@ -393,4 +470,73 @@ export const getSubscriptionHistoryServerFn = createServerFn({ method: "GET" })
        ORDER BY changedAt DESC`,
       [userId]
     );
+  });
+
+// ──────────────────────────────────────────────
+// Fetch Full Tenant Profile Server Function
+// ──────────────────────────────────────────────
+export const getTenantFullProfileServerFn = createServerFn({ method: "GET" })
+  .validator((userId: string) => {
+    if (!userId) throw new Error("User ID is required");
+    return userId;
+  })
+  .handler(async ({ data: userId }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    // 1. Fetch base User record
+    const user = await queryOne<any>(
+      "SELECT * FROM User WHERE id = ? LIMIT 1",
+      [userId]
+    );
+    
+    if (!user) throw new Error("Tenant not found");
+
+    const tId = user.tenantId;
+
+    // 2. Fetch ClinicProfile
+    let profile = null;
+    if (tId) {
+      profile = await queryOne<any>(
+        "SELECT * FROM ClinicProfile WHERE tenantId = ? LIMIT 1",
+        [tId]
+      );
+    }
+
+    // 3. Aggregate metrics
+    let docCount: any = { count: 0 }, patientCount: any = { count: 0 }, apptCount: any = { count: 0 }, soapCount: any = { count: 0 };
+    if (tId) {
+      const docRes = await query<any>("SELECT COUNT(*) as count FROM Doctor WHERE tenantId = ?", [tId]);
+      if (docRes.length > 0) docCount = docRes[0];
+
+      const patRes = await query<any>("SELECT COUNT(*) as count FROM Patient WHERE tenantId = ?", [tId]);
+      if (patRes.length > 0) patientCount = patRes[0];
+
+      const appRes = await query<any>("SELECT COUNT(*) as count FROM Appointment WHERE tenantId = ?", [tId]);
+      if (appRes.length > 0) apptCount = appRes[0];
+
+      const soapRes = await query<any>("SELECT COUNT(*) as count FROM SoapNote WHERE tenantId = ?", [tId]);
+      if (soapRes.length > 0) soapCount = soapRes[0];
+    }
+
+    // 4. Fetch subscription history
+    const history = await query<any>(
+      `SELECT id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy
+       FROM SubscriptionHistory 
+       WHERE userId = ? 
+       ORDER BY changedAt DESC`,
+      [user.id]
+    );
+
+    return {
+      user,
+      profile: profile || null,
+      metrics: {
+        doctors: docCount?.count || docCount?.COUNT || 0,
+        patients: patientCount?.count || patientCount?.COUNT || 0,
+        appointments: apptCount?.count || apptCount?.COUNT || 0,
+        soapNotes: soapCount?.count || soapCount?.COUNT || 0,
+      },
+      history
+    };
   });

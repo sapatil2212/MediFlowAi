@@ -137,6 +137,36 @@ if (typeof window === "undefined") {
           console.warn("[DB] ⚠️ Could not verify/create Appointment table:", err.message);
         }
 
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS DemoAppointment (
+              id VARCHAR(255) PRIMARY KEY,
+              referenceId VARCHAR(100) NOT NULL UNIQUE,
+              name VARCHAR(255) NOT NULL,
+              email VARCHAR(255) NOT NULL,
+              phone VARCHAR(50) NOT NULL,
+              organization VARCHAR(255) NOT NULL,
+              city VARCHAR(120) NOT NULL,
+              businessType VARCHAR(120) NOT NULL,
+              teamSize VARCHAR(120) NOT NULL,
+              preferredDate DATE NOT NULL,
+              preferredTime VARCHAR(40) NOT NULL,
+              preferredMode VARCHAR(60) NOT NULL,
+              message TEXT NULL,
+              status VARCHAR(50) DEFAULT 'New',
+              adminNotes TEXT NULL,
+              source VARCHAR(100) DEFAULT 'contact-page',
+              lastContactedAt TIMESTAMP NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              INDEX idx_demo_status (status),
+              INDEX idx_demo_created (createdAt)
+            )
+          `);
+        } catch (err: any) {
+          console.warn("[DB] Could not verify/create DemoAppointment table:", err.message);
+        }
+
         // Collation normalization will be run at the end of initialization after all tables are created
 
         try {
@@ -694,7 +724,7 @@ if (typeof window === "undefined") {
             console.log("[DB] ✅ Added billingInterval column to User table");
           }
           if (!userColNames.includes("virtualPhoneNumber")) {
-            await conn.query("ALTER TABLE User ADD COLUMN virtualPhoneNumber VARCHAR(50) DEFAULT '+1 (415) 555-0100'");
+            await conn.query("ALTER TABLE User ADD COLUMN virtualPhoneNumber VARCHAR(50) DEFAULT '+91 98765 43210'");
             console.log("[DB] ✅ Added virtualPhoneNumber column to User table");
           }
           if (!userColNames.includes("callLimit")) {
@@ -759,7 +789,7 @@ if (typeof window === "undefined") {
 
         // Normalize characters and collations across all tables to avoid mixed collation JOIN / comparison errors
         const tablesToNormalize = [
-          "User", "Session", "OtpCode", "Appointment", "ClinicHours", "Department",
+          "User", "Session", "OtpCode", "Appointment", "DemoAppointment", "ClinicHours", "Department",
           "Doctor", "ClinicProfile", "WhatsAppConfig", "DoctorSchedule", "DoctorLeave",
           "Patient", "SoapNote", "Prescription", "SuperAdmin", "SuperAdminSession",
           "SubscriptionHistory", "SubUser", "SubUserSession", "WATemplate", "WACampaign",

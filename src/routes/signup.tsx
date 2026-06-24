@@ -37,12 +37,12 @@ const carouselImages = [
 ];
 
 function getInitialPlan(param: string | undefined): string {
-  if (!param) return "Solo";
+  if (!param) return "Basic";
   const p = param.toLowerCase().trim();
-  if (p.includes("999") || p.includes("solo")) return "Solo";
-  if (p.includes("1499") || p.includes("1,499") || p.includes("clinic")) return "Clinic";
+  if (p.includes("999") || p.includes("solo") || p.includes("basic")) return "Basic";
+  if (p.includes("1499") || p.includes("1,499") || p.includes("clinic") || p.includes("premium")) return "Premium";
   if (p.includes("hospital") || p.includes("custom") || p.includes("enterprise")) return "Hospital";
-  return "Solo";
+  return "Basic";
 }
 
 function getBusinessNameLabel(profession: string): string {
@@ -73,7 +73,7 @@ function SignupPage() {
   const [email, setEmail] = useState("");
   const [clinicName, setClinicName] = useState("");
   const [practiceSize, setPracticeSize] = useState(
-    initialPlan === "Clinic"
+    initialPlan === "Premium"
       ? "Small Group (2-5 providers)"
       : initialPlan === "Hospital"
         ? "Large Clinic (16-50 providers)"
@@ -89,6 +89,7 @@ function SignupPage() {
 
   // OTP Verification states
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
+  const [pendingSignup, setPendingSignup] = useState(false);
   const [otpValues, setOtpValues] = useState(["", "", "", ""]);
   const [isVerified, setIsVerified] = useState(false);
   const [verificationSuccess, setVerificationSuccess] = useState(false);
@@ -124,7 +125,7 @@ function SignupPage() {
   // Resend Timer Countdown Effect
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (isOtpModalOpen && resendTimer > 0) {
+    if (resendTimer > 0) {
       interval = setInterval(() => {
         setResendTimer((prev) => prev - 1);
       }, 1000);
@@ -132,10 +133,14 @@ function SignupPage() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isOtpModalOpen, resendTimer]);
+  }, [resendTimer]);
 
   // Handle Send OTP
   const handleSendOtp = async () => {
+    if (resendTimer > 0) {
+      setEmailError(`OTP sent already. Please wait ${resendTimer} seconds.`);
+      return;
+    }
     if (!navigator.onLine) {
       setEmailError("No internet connection detected. Please check your network and try again.");
       return;
@@ -155,8 +160,9 @@ function SignupPage() {
       }
 
       await sendOtpServerFn({ data: email });
+      setPendingSignup(false); // Explicitly requested OTP, don't auto-submit yet
       setIsOtpModalOpen(true);
-      setResendTimer(60);
+      setResendTimer(30);
     } catch (err: any) {
       if (err.message?.includes("already registered")) {
         setEmailError("Email already registered");
@@ -164,6 +170,40 @@ function SignupPage() {
         setEmailError(err.message || "Failed to send verification code");
       }
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const performSignup = async () => {
+    setLoading(true);
+    setFormError("");
+    try {
+      await signupServerFn({
+        data: {
+          name,
+          phone,
+          email,
+          clinicName,
+          practiceSize,
+          password,
+          plan: selectedPlan,
+          profession,
+        },
+      });
+      setIsSignupSuccess(true);
+      setTimeout(() => {
+        navigate({ to: "/login" });
+      }, 1500);
+    } catch (err: any) {
+      if (err.message === "Email already registered") {
+        setEmailError("Email already registered");
+      } else if (err.message === "Phone number already registered") {
+        setPhoneError("Phone number already registered");
+      } else if (err.message?.includes("already registered") || err.message?.includes("already exists")) {
+        setEmailError("Email or phone number already registered");
+      } else {
+        setFormError(err.message || "Registration failed");
+      }
       setLoading(false);
     }
   };
@@ -194,6 +234,10 @@ function SignupPage() {
           setIsOtpModalOpen(false);
           setVerificationSuccess(false);
           setOtpValues(["", "", "", ""]);
+          
+          if (pendingSignup) {
+            performSignup();
+          }
         }, 1800);
       } catch (err: any) {
         setOtpError(err.message || "Invalid or expired verification code");
@@ -236,40 +280,28 @@ function SignupPage() {
 
       // If not verified, trigger OTP and open modal
       if (!isVerified) {
+        if (resendTimer > 0) {
+          setIsOtpModalOpen(true);
+          setPendingSignup(true);
+          setLoading(false);
+          return;
+        }
         await sendOtpServerFn({ data: email });
+        setPendingSignup(true); // Flag to auto-submit after verification
         setIsOtpModalOpen(true);
-        setResendTimer(60);
+        setResendTimer(30);
         setLoading(false);
         return;
       }
 
-      await signupServerFn({
-        data: {
-          name,
-          phone,
-          email,
-          clinicName,
-          practiceSize,
-          password,
-          plan: selectedPlan,
-          profession,
-        },
-      });
-      setIsSignupSuccess(true);
-      setTimeout(() => {
-        navigate({ to: "/login" });
-      }, 1500);
+      // If already verified, submit directly
+      performSignup();
     } catch (err: any) {
       if (err.message === "Email already registered") {
         setEmailError("Email already registered");
-      } else if (err.message === "Phone number already registered") {
-        setPhoneError("Phone number already registered");
-      } else if (err.message?.includes("already registered") || err.message?.includes("already exists")) {
-        setEmailError("Email or phone number already registered");
       } else {
-        setFormError(err.message || "Registration failed");
+        setFormError(err.message || "Something went wrong.");
       }
-    } finally {
       setLoading(false);
     }
   };
@@ -279,7 +311,7 @@ function SignupPage() {
       {/* Back button/Logo at top left with Home icon */}
       <div className="absolute top-6 left-6">
         <Link to="/" className="group flex items-center gap-1.5 text-zinc-600 hover:text-zinc-950 transition-colors">
-          <img src={bmtLogo} alt="Book MyTime Logo" className="h-8 w-auto object-contain" />
+          <img src={bmtLogo} alt="Book MyTime Logo" className="h-12 w-auto object-contain" />
           <span className="mx-1.5 text-zinc-300">|</span>
           <Home className="size-3.5 text-zinc-400 group-hover:text-zinc-600 transition-colors" />
           <span className="text-[10px] font-medium">Home</span>
@@ -454,19 +486,18 @@ function SignupPage() {
               {/* Plan Selection Button Group */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider pl-1">Selected Plan</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {[
-                    { id: "Solo", label: "Solo (₹999)" },
-                    { id: "Clinic", label: "Clinic (₹1,499)" },
-                    { id: "Hospital", label: "Hospital (Custom)" },
+                    { id: "Basic", label: "Basic (₹999)" },
+                    { id: "Premium", label: "Premium (₹1,499)" },
                   ].map((p) => (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => {
                         setSelectedPlan(p.id);
-                        if (p.id === "Solo") setPracticeSize("Solo Practice (1 provider)");
-                        else if (p.id === "Clinic") setPracticeSize("Small Group (2-5 providers)");
+                        if (p.id === "Basic") setPracticeSize("Solo Practice (1 provider)");
+                        else if (p.id === "Premium") setPracticeSize("Small Group (2-5 providers)");
                         else if (p.id === "Hospital") setPracticeSize("Large Clinic (16-50 providers)");
                       }}
                       className={`rounded-full py-2 text-[10px] sm:text-xs font-semibold border transition-all cursor-pointer ${

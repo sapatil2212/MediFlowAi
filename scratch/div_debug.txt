@@ -1,0 +1,360 @@
+[492] PUSH <div> (self_closing=False): '<div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 text-zinc-800 font-sans">'
+[493] PUSH <div> (self_closing=False): '<div className="relative flex items-center justify-center mb-6">'
+[494] PUSH <div> (self_closing=True): '<div className="absolute h-14 w-14 animate-ping rounded-full bg-zinc-100" />'
+[495] PUSH <div> (self_closing=False): '<div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 shadow-md">'
+[497] POP </div>: '</div>' Current stack: [('div', 492), ('div', 493), ('div', 495)]
+[498] POP </div>: '</div>' Current stack: [('div', 492), ('div', 493)]
+[502] POP </div>: '</div>' Current stack: [('div', 492)]
+[507] PUSH <div> (self_closing=False): '<div className="flex h-screen w-full overflow-hidden bg-zinc-50 font-sans text-zinc-900 relative">'
+[511] PUSH <div> (self_closing=False): '<div className="space-y-6">'
+[513] PUSH <div> (self_closing=False): '<div className="flex items-center gap-2.5 px-2 pt-1">'
+[514] PUSH <div> (self_closing=False): '<div className="flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-950 text-white shadow-sm">'
+[516] POP </div>: '</div>' Current stack: [('div', 507), ('div', 511), ('div', 513), ('div', 514)]
+[517] PUSH <div> (self_closing=False): '<div>'
+[520] POP </div>: '</div>' Current stack: [('div', 507), ('div', 511), ('div', 513), ('div', 517)]
+[521] POP </div>: '</div>' Current stack: [('div', 507), ('div', 511), ('div', 513)]
+[553] POP </div>: '</div>' Current stack: [('div', 507), ('div', 511)]
+[556] PUSH <div> (self_closing=False): '<div className="space-y-3">'
+[557] PUSH <div> (self_closing=False): '<div className="w-full rounded-2xl bg-zinc-50 border border-zinc-200/60 p-3 flex items-center gap-3">'
+[558] PUSH <div> (self_closing=False): '<div className="h-9 w-9 rounded-full bg-zinc-200 border border-zinc-300 flex items-center justify-center text-zinc-700 font-bold text-xs shrink-0">'
+[560] POP </div>: '</div>' Current stack: [('div', 507), ('div', 556), ('div', 557), ('div', 558)]
+[561] PUSH <div> (self_closing=False): '<div className="overflow-hidden flex-1 min-w-0">'
+[564] POP </div>: '</div>' Current stack: [('div', 507), ('div', 556), ('div', 557), ('div', 561)]
+[565] POP </div>: '</div>' Current stack: [('div', 507), ('div', 556), ('div', 557)]
+[573] POP </div>: '</div>' Current stack: [('div', 507), ('div', 556)]
+[577] PUSH <main> (self_closing=False): '<main className="flex-1 flex flex-col h-full overflow-hidden">'
+[580] PUSH <div> (self_closing=False): '<div className="flex items-center gap-3">'
+[582] PUSH <div> (self_closing=False): '<div className="flex">'
+[590] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 580), ('div', 582)]
+[591] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 580)]
+[594] PUSH <div> (self_closing=False): '<div className="flex items-center gap-2.5">'
+[610] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 594)]
+[614] PUSH <div> (self_closing=False): '<div className="flex-1 overflow-y-auto">'
+[615] PUSH <div> (self_closing=False): '<div className="px-4 sm:px-6 py-6 space-y-6">'
+[618] PUSH <div> (self_closing=False): '<div className="flex items-end justify-between gap-3">'
+[619] PUSH <div> (self_closing=False): '<div>'
+[634] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 618), ('div', 619)]
+[639] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 618)]
+[643] PUSH <div> (self_closing=False): '<div className="space-y-6">'
+[644] PUSH <div> (self_closing=False): '<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">'
+[645] PUSH <div> (self_closing=False): '<div className="rounded-2xl border border-zinc-200/80 bg-white p-5 relative overflow-hidden group hover:shadow-sm transition-all">'
+[646] PUSH <div> (self_closing=False): '<div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.06] pointer-events-none">'
+[648] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644), ('div', 645), ('div', 646)]
+[655] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644), ('div', 645)]
+[656] PUSH <div> (self_closing=False): '<div className="rounded-2xl border border-zinc-200/80 bg-white p-5 relative overflow-hidden group hover:shadow-sm transition-all">'
+[657] PUSH <div> (self_closing=False): '<div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.06] pointer-events-none">'
+[659] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644), ('div', 656), ('div', 657)]
+[662] PUSH <div> (self_closing=False): '<div className="flex gap-2 text-[9px] font-bold mt-1.5">'
+[665] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644), ('div', 656), ('div', 662)]
+[666] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644), ('div', 656)]
+[667] PUSH <div> (self_closing=False): '<div className="rounded-2xl border border-zinc-200/80 bg-white p-5 relative overflow-hidden group hover:shadow-sm transition-all">'
+[668] PUSH <div> (self_closing=False): '<div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.06] pointer-events-none">'
+[670] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644), ('div', 667), ('div', 668)]
+[674] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644), ('div', 667)]
+[675] PUSH <div> (self_closing=False): '<div className="rounded-2xl border border-zinc-200/80 bg-white p-5 relative overflow-hidden group hover:shadow-sm transition-all">'
+[676] PUSH <div> (self_closing=False): '<div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.06] pointer-events-none">'
+[678] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644), ('div', 675), ('div', 676)]
+[680] PUSH <div> (self_closing=False): '<div className="flex items-baseline gap-1 mt-2">'
+[683] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644), ('div', 675), ('div', 680)]
+[684] PUSH <div> (self_closing=False): '<div className="flex gap-2 text-[9px] text-zinc-500 font-bold mt-1.5 flex-wrap">'
+[688] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644), ('div', 675), ('div', 684)]
+[689] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644), ('div', 675)]
+[690] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 644)]
+[692] PUSH <div> (self_closing=False): '<div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-4">'
+[693] PUSH <div> (self_closing=False): '<div className="flex items-center justify-between border-b border-zinc-100 pb-3">'
+[694] PUSH <div> (self_closing=False): '<div>'
+[700] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 692), ('div', 693), ('div', 694)]
+[704] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 692), ('div', 693)]
+[705] PUSH <div> (self_closing=False): '<div className="relative h-44 w-full bg-slate-50/50 rounded-2xl border border-zinc-150 overflow-hidden">'
+[729] PUSH <div> (self_closing=False): '<div className="absolute bottom-2.5 left-0 right-0 px-5 flex justify-between text-[8px] text-zinc-400 font-extrabold tracking-widest uppercase">'
+[736] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 692), ('div', 705), ('div', 729)]
+[737] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 692), ('div', 705)]
+[738] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643), ('div', 692)]
+[739] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 643)]
+[744] PUSH <div> (self_closing=False): '<div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">'
+[745] PUSH <div> (self_closing=False): '<div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">'
+[746] PUSH <div> (self_closing=False): '<div>'
+[749] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 745), ('div', 746)]
+[750] PUSH <div> (self_closing=False): '<div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">'
+[751] PUSH <div> (self_closing=False): '<div className="relative w-full sm:w-60">'
+[760] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 745), ('div', 750), ('div', 751)]
+[761] PUSH <div> (self_closing=False): '<div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">'
+[769] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 745), ('div', 750), ('div', 761)]
+[770] PUSH <div> (self_closing=False): '<div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">'
+[779] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 745), ('div', 750), ('div', 770)]
+[780] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 745), ('div', 750)]
+[781] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 745)]
+[784] PUSH <div> (self_closing=False): '<div className="flex flex-col items-center justify-center py-24 gap-3">'
+[787] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 784)]
+[789] PUSH <div> (self_closing=False): '<div className="text-center py-20 space-y-3">'
+[790] PUSH <div> (self_closing=False): '<div className="flex size-12 items-center justify-center rounded-full bg-zinc-50 border border-zinc-150 mx-auto">'
+[792] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 789), ('div', 790)]
+[793] PUSH <div> (self_closing=False): '<div>'
+[796] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 789), ('div', 793)]
+[797] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 789)]
+[822] PUSH <div> (self_closing=False): '<div className="flex items-center gap-3">'
+[823] PUSH <div> (self_closing=False): '<div className={`flex size-9 items-center justify-center rounded-xl border text-xs font-black shrink-0 ${clinicColor}`}>'
+[825] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 822), ('div', 823)]
+[826] PUSH <div> (self_closing=False): '<div className="space-y-1">'
+[830] PUSH <div> (self_closing=False): '<div className="flex items-center gap-2 text-[10px] text-zinc-400 font-medium">'
+[834] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 822), ('div', 826), ('div', 830)]
+[835] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 822), ('div', 826)]
+[836] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 822)]
+[847] PUSH <div> (self_closing=False): '<div className="flex items-center gap-2">'
+[857] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 847)]
+[858] PUSH <div> (self_closing=False): '<div className="text-[10px] text-zinc-400 font-semibold flex gap-1.5 items-center">'
+[866] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 858)]
+[871] PUSH <div> (self_closing=False): '<div className="flex items-center gap-1.5 text-[10px] text-zinc-650 font-bold">'
+[874] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 871)]
+[875] PUSH <div> (self_closing=False): '<div className="flex items-center gap-2 text-[10px] text-zinc-400 font-semibold">'
+[879] PUSH <div> (self_closing=False): '<div className="w-20 bg-zinc-150 rounded-full h-1.5 overflow-hidden border border-zinc-200/50 relative">'
+[880] PUSH <div> (self_closing=True): '<div
+                                  className={`h-full rounded-full transition-all duration-300 ${
+                                    isLimitDanger ? 'bg-red-500' :
+                                    isLimitWarning ? 'bg-amber-500' :
+                                    'bg-zinc-800'
+                                  }`}
+                                  style={{ width: `${usagePercent}%` }}
+                                />'
+[888] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 875), ('div', 879)]
+[889] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744), ('div', 875)]
+[908] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 744)]
+[913] PUSH <div> (self_closing=False): '<div className="space-y-6">'
+[914] PUSH <div> (self_closing=False): '<div className="grid grid-cols-2 gap-4 lg:grid-cols-4">'
+[921] PUSH <div> (self_closing=False): '<div key={card.label} className="rounded-3xl border border-zinc-200/80 bg-white p-5">'
+[929] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 914), ('div', 921)]
+[931] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 914)]
+[933] PUSH <div> (self_closing=False): '<div className="rounded-3xl border border-zinc-200/80 bg-white p-6 space-y-6">'
+[934] PUSH <div> (self_closing=False): '<div className="flex flex-col gap-4 border-b border-zinc-150 pb-5 lg:flex-row lg:items-center lg:justify-between">'
+[935] PUSH <div> (self_closing=False): '<div>'
+[940] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 934), ('div', 935)]
+[942] PUSH <div> (self_closing=False): '<div className="flex flex-wrap gap-2">'
+[943] PUSH <div> (self_closing=False): '<div className="relative w-full sm:w-72">'
+[952] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 934), ('div', 942), ('div', 943)]
+[954] PUSH <div> (self_closing=False): '<div className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2">'
+[968] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 934), ('div', 942), ('div', 954)]
+[969] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 934), ('div', 942)]
+[970] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 934)]
+[972] PUSH <div> (self_closing=False): '<div className="overflow-x-auto">'
+[974] PUSH <div> (self_closing=False): '<div className="flex flex-col items-center justify-center gap-3 py-20">'
+[977] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 972), ('div', 974)]
+[979] PUSH <div> (self_closing=False): '<div className="py-20 text-center">'
+[980] PUSH <div> (self_closing=False): '<div className="mx-auto flex size-12 items-center justify-center rounded-full border border-zinc-150 bg-zinc-50">'
+[982] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 972), ('div', 979), ('div', 980)]
+[987] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 972), ('div', 979)]
+[1005] PUSH <div> (self_closing=False): '<div className="space-y-1">'
+[1006] PUSH <div> (self_closing=False): '<div className="flex items-center gap-2">'
+[1011] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 972), ('div', 1005), ('div', 1006)]
+[1012] PUSH <div> (self_closing=False): '<div className="text-[10px] font-semibold text-zinc-400">'
+[1016] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 972), ('div', 1005), ('div', 1012)]
+[1017] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 972), ('div', 1005)]
+[1021] PUSH <div> (self_closing=False): '<div className="space-y-1">'
+[1026] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 972), ('div', 1021)]
+[1030] PUSH <div> (self_closing=False): '<div className="space-y-1">'
+[1040] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 972), ('div', 1030)]
+[1056] PUSH <div> (self_closing=False): '<div className="space-y-2">'
+[1077] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 972), ('div', 1056)]
+[1081] PUSH <div> (self_closing=False): '<div className="flex items-center justify-end gap-2">'
+[1109] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 972), ('div', 1081)]
+[1116] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933), ('div', 972)]
+[1117] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913), ('div', 933)]
+[1118] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 913)]
+[1123] PUSH <div> (self_closing=False): '<div className="rounded-3xl border border-zinc-200/80 bg-white p-6 space-y-6">'
+[1124] PUSH <div> (self_closing=False): '<div>'
+[1127] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1124)]
+[1129] PUSH <div> (self_closing=False): '<div className="grid grid-cols-1 md:grid-cols-2 gap-4">'
+[1137] PUSH <div> (self_closing=False): '<div key={t.id} className="border border-zinc-200 rounded-3xl p-5 bg-zinc-50/20 flex flex-col justify-between space-y-4 hover:border-zinc-300 transition-colors">'
+[1138] PUSH <div> (self_closing=False): '<div className="flex items-center gap-3">'
+[1139] PUSH <div> (self_closing=False): '<div className={`flex size-9 items-center justify-center rounded-xl border text-xs font-black shrink-0 ${clinicColor}`}>'
+[1141] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129), ('div', 1137), ('div', 1138), ('div', 1139)]
+[1142] PUSH <div> (self_closing=False): '<div>'
+[1145] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129), ('div', 1137), ('div', 1138), ('div', 1142)]
+[1146] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129), ('div', 1137), ('div', 1138)]
+[1148] PUSH <div> (self_closing=False): '<div className="space-y-2 bg-white rounded-2xl p-4 border border-zinc-150/60 shadow-inner">'
+[1149] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1155] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129), ('div', 1137), ('div', 1148), ('div', 1149)]
+[1156] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1159] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129), ('div', 1137), ('div', 1148), ('div', 1156)]
+[1160] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1165] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129), ('div', 1137), ('div', 1148), ('div', 1160)]
+[1167] PUSH <div> (self_closing=False): '<div className="space-y-1 pt-1.5">'
+[1168] PUSH <div> (self_closing=False): '<div className="flex justify-between text-[8px] text-zinc-400 font-bold uppercase">'
+[1171] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129), ('div', 1137), ('div', 1148), ('div', 1167), ('div', 1168)]
+[1172] PUSH <div> (self_closing=False): '<div className="w-full bg-zinc-100 rounded-full h-2 overflow-hidden border border-zinc-200 relative">'
+[1173] PUSH <div> (self_closing=True): '<div
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              isLimitDanger ? 'bg-red-500' :
+                              isLimitWarning ? 'bg-amber-500' :
+                              'bg-zinc-800'
+                            }`}
+                            style={{ width: `${usagePercent}%` }}
+                          />'
+[1181] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129), ('div', 1137), ('div', 1148), ('div', 1167), ('div', 1172)]
+[1182] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129), ('div', 1137), ('div', 1148), ('div', 1167)]
+[1183] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129), ('div', 1137), ('div', 1148)]
+[1192] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129), ('div', 1137)]
+[1195] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123), ('div', 1129)]
+[1196] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1123)]
+[1201] PUSH <div> (self_closing=False): '<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">'
+[1203] PUSH <div> (self_closing=False): '<div className="rounded-3xl border border-zinc-200/80 bg-white p-6 space-y-4 flex flex-col justify-between">'
+[1204] PUSH <div> (self_closing=False): '<div className="space-y-4">'
+[1205] PUSH <div> (self_closing=False): '<div className="flex items-center justify-between border-b border-zinc-150 pb-3">'
+[1206] PUSH <div> (self_closing=False): '<div>'
+[1212] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1203), ('div', 1204), ('div', 1205), ('div', 1206)]
+[1216] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1203), ('div', 1204), ('div', 1205)]
+[1218] PUSH <div> (self_closing=False): '<div className="rounded-2xl border border-zinc-150 bg-zinc-50/50 p-4 space-y-2">'
+[1219] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1222] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1203), ('div', 1204), ('div', 1218), ('div', 1219)]
+[1223] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1226] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1203), ('div', 1204), ('div', 1218), ('div', 1223)]
+[1227] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1230] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1203), ('div', 1204), ('div', 1218), ('div', 1227)]
+[1231] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1203), ('div', 1204), ('div', 1218)]
+[1232] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1203), ('div', 1204)]
+[1233] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1203)]
+[1236] PUSH <div> (self_closing=False): '<div className="rounded-3xl border border-zinc-200/80 bg-white p-6 space-y-4 flex flex-col justify-between">'
+[1237] PUSH <div> (self_closing=False): '<div className="space-y-4">'
+[1238] PUSH <div> (self_closing=False): '<div className="flex items-center justify-between border-b border-zinc-150 pb-3">'
+[1239] PUSH <div> (self_closing=False): '<div>'
+[1245] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1236), ('div', 1237), ('div', 1238), ('div', 1239)]
+[1249] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1236), ('div', 1237), ('div', 1238)]
+[1251] PUSH <div> (self_closing=False): '<div className="rounded-2xl border border-zinc-150 bg-zinc-50/50 p-4 space-y-2">'
+[1252] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1255] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1236), ('div', 1237), ('div', 1251), ('div', 1252)]
+[1256] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1259] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1236), ('div', 1237), ('div', 1251), ('div', 1256)]
+[1260] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1263] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1236), ('div', 1237), ('div', 1251), ('div', 1260)]
+[1264] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1236), ('div', 1237), ('div', 1251)]
+[1265] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1236), ('div', 1237)]
+[1266] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1236)]
+[1269] PUSH <div> (self_closing=False): '<div className="rounded-3xl border border-zinc-200/80 bg-white p-6 space-y-4 flex flex-col justify-between">'
+[1270] PUSH <div> (self_closing=False): '<div className="space-y-4">'
+[1271] PUSH <div> (self_closing=False): '<div className="flex items-center justify-between border-b border-zinc-150 pb-3">'
+[1272] PUSH <div> (self_closing=False): '<div>'
+[1278] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1269), ('div', 1270), ('div', 1271), ('div', 1272)]
+[1287] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1269), ('div', 1270), ('div', 1271)]
+[1289] PUSH <div> (self_closing=False): '<div className="border border-zinc-100 rounded-2xl p-3 bg-zinc-50/50 space-y-3">'
+[1290] PUSH <div> (self_closing=False): '<div className="flex items-center justify-between">'
+[1291] PUSH <div> (self_closing=False): '<div>'
+[1296] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1269), ('div', 1270), ('div', 1289), ('div', 1290), ('div', 1291)]
+[1297] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1269), ('div', 1270), ('div', 1289), ('div', 1290)]
+[1317] PUSH <div> (self_closing=False): '<div className="flex gap-2 pt-1 border-t border-zinc-200/60">'
+[1337] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1269), ('div', 1270), ('div', 1289), ('div', 1317)]
+[1338] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1269), ('div', 1270), ('div', 1289)]
+[1339] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1269), ('div', 1270)]
+[1340] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201), ('div', 1269)]
+[1341] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615), ('div', 1201)]
+[1343] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614), ('div', 615)]
+[1344] POP </div>: '</div>' Current stack: [('div', 507), ('main', 577), ('div', 614)]
+[1345] POP </main>: '</main>' Current stack: [('div', 507), ('main', 577)]
+[1350] PUSH <div> (self_closing=False): '<div className="fixed inset-0 z-50 flex justify-end bg-zinc-950/20 backdrop-blur-sm">'
+[1352] PUSH <div> (self_closing=False): '<div className="absolute inset-0" onClick={() =>'
+[1362] PUSH <div> (self_closing=False): '<div className="space-y-6">'
+[1364] PUSH <div> (self_closing=False): '<div className="flex items-center justify-between border-b border-zinc-150 pb-5">'
+[1365] PUSH <div> (self_closing=False): '<div>'
+[1368] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1364), ('div', 1365)]
+[1376] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1364)]
+[1381] PUSH <div> (self_closing=False): '<div className="space-y-4">'
+[1384] PUSH <div> (self_closing=False): '<div className="grid grid-cols-2 gap-3.5">'
+[1385] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1397] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1381), ('div', 1384), ('div', 1385)]
+[1399] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1410] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1381), ('div', 1384), ('div', 1399)]
+[1411] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1381), ('div', 1384)]
+[1413] PUSH <div> (self_closing=False): '<div className="grid grid-cols-2 gap-3.5">'
+[1414] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1423] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1381), ('div', 1413), ('div', 1414)]
+[1425] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1435] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1381), ('div', 1413), ('div', 1425)]
+[1436] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1381), ('div', 1413)]
+[1438] PUSH <div> (self_closing=False): '<div className="grid grid-cols-2 gap-3.5">'
+[1439] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1447] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1381), ('div', 1438), ('div', 1439)]
+[1449] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1461] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1381), ('div', 1438), ('div', 1449)]
+[1462] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1381), ('div', 1438)]
+[1463] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1381)]
+[1465] PUSH <div> (self_closing=True): '<div className="h-[1px] bg-zinc-150" />'
+[1468] PUSH <div> (self_closing=False): '<div className="space-y-4">'
+[1471] PUSH <div> (self_closing=False): '<div className="grid grid-cols-2 gap-3.5">'
+[1472] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1480] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1468), ('div', 1471), ('div', 1472)]
+[1482] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1490] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1468), ('div', 1471), ('div', 1482)]
+[1491] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1468), ('div', 1471)]
+[1493] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1501] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1468), ('div', 1493)]
+[1502] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1468)]
+[1505] PUSH <div> (self_closing=True): '<div className="h-[1px] bg-zinc-150" />'
+[1508] PUSH <div> (self_closing=False): '<div className="space-y-3.5 pb-2">'
+[1512] PUSH <div> (self_closing=False): '<div className="flex items-center justify-center py-6 text-zinc-455 text-xs gap-1.5 pl-1">'
+[1515] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1508), ('div', 1512)]
+[1519] PUSH <div> (self_closing=False): '<div className="space-y-4 pl-1 max-h-[220px] overflow-y-auto pr-1">'
+[1521] PUSH <div> (self_closing=False): '<div key={item.id || idx} className="relative pl-4 border-l border-zinc-200 text-[10px] space-y-1">'
+[1523] PUSH <div> (self_closing=True): '<div className="absolute -left-[4.5px] top-1.5 size-2 rounded-full bg-zinc-400 ring-4 ring-white" />'
+[1525] PUSH <div> (self_closing=False): '<div className="flex items-center justify-between font-bold text-zinc-500">'
+[1537] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1508), ('div', 1519), ('div', 1521), ('div', 1525)]
+[1539] PUSH <div> (self_closing=False): '<div className="text-zinc-800">'
+[1544] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1508), ('div', 1519), ('div', 1521), ('div', 1539)]
+[1546] PUSH <div> (self_closing=False): '<div className="text-zinc-800">'
+[1552] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1508), ('div', 1519), ('div', 1521), ('div', 1546)]
+[1553] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1508), ('div', 1519), ('div', 1521)]
+[1555] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1508), ('div', 1519)]
+[1557] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362), ('div', 1508)]
+[1558] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1362)]
+[1561] PUSH <div> (self_closing=False): '<div className="flex gap-2.5 pt-6 border-t border-zinc-150">'
+[1579] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352), ('div', 1561)]
+[1581] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1352)]
+[1588] PUSH <div> (self_closing=False): '<div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 backdrop-blur-sm">'
+[1596] PUSH <div> (self_closing=False): '<div className="flex items-center justify-between border-b border-zinc-150 p-6">'
+[1597] PUSH <div> (self_closing=False): '<div>'
+[1600] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1596), ('div', 1597)]
+[1608] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1596)]
+[1611] PUSH <div> (self_closing=False): '<div className="p-6">'
+[1613] PUSH <div> (self_closing=False): '<div className="space-y-4">'
+[1614] PUSH <div> (self_closing=False): '<div className="flex flex-col items-center gap-2 py-4 text-center">'
+[1615] PUSH <div> (self_closing=False): '<div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 border border-emerald-100">'
+[1617] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1613), ('div', 1614), ('div', 1615)]
+[1620] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1613), ('div', 1614)]
+[1622] PUSH <div> (self_closing=False): '<div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 space-y-3.5 shadow-inner">'
+[1625] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1627] PUSH <div> (self_closing=False): '<div className="flex items-center gap-2">'
+[1638] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1613), ('div', 1622), ('div', 1625), ('div', 1627)]
+[1639] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1613), ('div', 1622), ('div', 1625)]
+[1642] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1644] PUSH <div> (self_closing=False): '<div className="flex items-center gap-2">'
+[1653] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1613), ('div', 1622), ('div', 1642), ('div', 1644)]
+[1654] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1613), ('div', 1622), ('div', 1642)]
+[1657] PUSH <div> (self_closing=False): '<div className="flex justify-between items-center text-xs">'
+[1659] PUSH <div> (self_closing=False): '<div className="flex items-center gap-2">'
+[1670] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1613), ('div', 1622), ('div', 1657), ('div', 1659)]
+[1671] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1613), ('div', 1622), ('div', 1657)]
+[1672] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1613), ('div', 1622)]
+[1680] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1613)]
+[1683] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1685] PUSH <div> (self_closing=False): '<div className="relative">'
+[1696] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1683), ('div', 1685)]
+[1697] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1683)]
+[1699] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1711] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1699)]
+[1713] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1715] PUSH <div> (self_closing=False): '<div className="relative">'
+[1726] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1713), ('div', 1715)]
+[1727] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1713)]
+[1729] PUSH <div> (self_closing=False): '<div className="grid grid-cols-2 gap-3.5">'
+[1730] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1741] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1729), ('div', 1730)]
+[1743] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1754] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1729), ('div', 1743)]
+[1755] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1729)]
+[1757] PUSH <div> (self_closing=False): '<div className="space-y-1.5">'
+[1766] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1757)]
+[1769] PUSH <div> (self_closing=False): '<div className="flex gap-2.5 pt-4">'
+[1786] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611), ('div', 1769)]
+[1789] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588), ('div', 1611)]
+[1791] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350), ('div', 1588)]
+[1794] POP </div>: '</div>' Current stack: [('div', 507), ('div', 1350)]
+
+--- Remaining Stack at End of File ---
+Unclosed <div> opened on line 507

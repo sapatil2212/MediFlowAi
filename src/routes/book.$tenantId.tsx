@@ -879,7 +879,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                                   disabled={past}
                                   className={`h-7 w-7 text-[10px] font-bold rounded-lg flex items-center justify-center transition-all ${
                                     isSelected
-                                      ? "bg-brand text-white font-black"
+                                      ? "bg-black text-white font-black"
                                       : past
                                       ? "text-zinc-200 cursor-not-allowed"
                                       : "text-zinc-700 hover:bg-zinc-100"
@@ -958,8 +958,8 @@ export const Route = createFileRoute("/book/$tenantId")({
                                       }}
                                       className={`rounded-xl py-2 px-1 text-[10px] font-bold border transition-all cursor-pointer text-center ${
                                         isSelected
-                                          ? "bg-brand border-brand text-white font-black scale-[1.02]"
-                                          : "bg-white border-zinc-200 text-zinc-650 hover:border-brand/40"
+                                          ? "bg-black border-zinc-800 text-white font-black scale-[1.02]"
+                                          : "bg-white border-zinc-200 text-zinc-650 hover:border-zinc-800/40"
                                       }`}
                                     >
                                       {slot}

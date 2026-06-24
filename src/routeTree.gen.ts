@@ -9,10 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SolutionsRouteImport } from './routes/solutions'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SecurityRouteImport } from './routes/security'
 import { Route as ResourcesRouteImport } from './routes/resources'
+import { Route as RefundRouteImport } from './routes/refund'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IntegrationsRouteImport } from './routes/integrations'
@@ -32,6 +35,11 @@ import { Route as BookTenantIdRouteImport } from './routes/book.$tenantId'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SolutionsRoute = SolutionsRouteImport.update({
   id: '/solutions',
   path: '/solutions',
@@ -50,6 +58,16 @@ const SecurityRoute = SecurityRouteImport.update({
 const ResourcesRoute = ResourcesRouteImport.update({
   id: '/resources',
   path: '/resources',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RefundRoute = RefundRouteImport.update({
+  id: '/refund',
+  path: '/refund',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PricingRoute = PricingRouteImport.update({
@@ -154,10 +172,13 @@ export interface FileRoutesByFullPath {
   '/integrations': typeof IntegrationsRoute
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
+  '/refund': typeof RefundRoute
   '/resources': typeof ResourcesRoute
   '/security': typeof SecurityRoute
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
+  '/terms': typeof TermsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
@@ -178,10 +199,13 @@ export interface FileRoutesByTo {
   '/integrations': typeof IntegrationsRoute
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
+  '/refund': typeof RefundRoute
   '/resources': typeof ResourcesRoute
   '/security': typeof SecurityRoute
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
+  '/terms': typeof TermsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
@@ -203,10 +227,13 @@ export interface FileRoutesById {
   '/integrations': typeof IntegrationsRoute
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
+  '/privacy': typeof PrivacyRoute
+  '/refund': typeof RefundRoute
   '/resources': typeof ResourcesRoute
   '/security': typeof SecurityRoute
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
+  '/terms': typeof TermsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
@@ -229,10 +256,13 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/login'
     | '/pricing'
+    | '/privacy'
+    | '/refund'
     | '/resources'
     | '/security'
     | '/signup'
     | '/solutions'
+    | '/terms'
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
@@ -253,10 +283,13 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/login'
     | '/pricing'
+    | '/privacy'
+    | '/refund'
     | '/resources'
     | '/security'
     | '/signup'
     | '/solutions'
+    | '/terms'
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
@@ -277,10 +310,13 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/login'
     | '/pricing'
+    | '/privacy'
+    | '/refund'
     | '/resources'
     | '/security'
     | '/signup'
     | '/solutions'
+    | '/terms'
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
@@ -302,10 +338,13 @@ export interface RootRouteChildren {
   IntegrationsRoute: typeof IntegrationsRoute
   LoginRoute: typeof LoginRoute
   PricingRoute: typeof PricingRoute
+  PrivacyRoute: typeof PrivacyRoute
+  RefundRoute: typeof RefundRoute
   ResourcesRoute: typeof ResourcesRoute
   SecurityRoute: typeof SecurityRoute
   SignupRoute: typeof SignupRoute
   SolutionsRoute: typeof SolutionsRoute
+  TermsRoute: typeof TermsRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminLoginRoute: typeof AdminLoginRoute
   BookTenantIdRoute: typeof BookTenantIdRoute
@@ -318,6 +357,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/solutions': {
       id: '/solutions'
       path: '/solutions'
@@ -344,6 +390,20 @@ declare module '@tanstack/react-router' {
       path: '/resources'
       fullPath: '/resources'
       preLoaderRoute: typeof ResourcesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/refund': {
+      id: '/refund'
+      path: '/refund'
+      fullPath: '/refund'
+      preLoaderRoute: typeof RefundRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pricing': {
@@ -486,10 +546,13 @@ const rootRouteChildren: RootRouteChildren = {
   IntegrationsRoute: IntegrationsRoute,
   LoginRoute: LoginRoute,
   PricingRoute: PricingRoute,
+  PrivacyRoute: PrivacyRoute,
+  RefundRoute: RefundRoute,
   ResourcesRoute: ResourcesRoute,
   SecurityRoute: SecurityRoute,
   SignupRoute: SignupRoute,
   SolutionsRoute: SolutionsRoute,
+  TermsRoute: TermsRoute,
   AdminDashboardRoute: AdminDashboardRoute,
   AdminLoginRoute: AdminLoginRoute,
   BookTenantIdRoute: BookTenantIdRoute,
