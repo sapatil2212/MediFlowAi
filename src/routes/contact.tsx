@@ -92,6 +92,12 @@ function ContactPage() {
               sub="Fastest way to coordinate your preferred demo slot"
             />
             <InfoCard
+              icon={MapPin}
+              title="Address"
+              line="Pune, Maharashtra, India"
+              sub="Our headquarters"
+            />
+            <InfoCard
               icon={CalendarClock}
               title="Demo format"
               line="Live walkthrough in 20-30 minutes"
@@ -222,7 +228,7 @@ function ContactForm() {
                 label="Mobile number"
                 value={form.phone}
                 onChange={(v) => setForm({ ...form, phone: v })}
-                placeholder="+91 98765 43210"
+                placeholder="+91 9168 08 1355"
                 required
               />
               <Field

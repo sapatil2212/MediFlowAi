@@ -77,7 +77,13 @@ export function Footer() {
                 <li>
                   <p className="text-xs text-zinc-600 leading-relaxed">
                     <span className="block font-semibold text-zinc-900">Phone:</span>
-                    +91 98765 43210
+                    +91 9168 08 1355
+                  </p>
+                </li>
+                <li>
+                  <p className="text-xs text-zinc-600 leading-relaxed">
+                    <span className="block font-semibold text-zinc-900">Address:</span>
+                    Pune, Maharashtra, India
                   </p>
                 </li>
               </ul>
