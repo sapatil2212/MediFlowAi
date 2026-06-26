@@ -202,15 +202,11 @@ export const Route = createFileRoute("/book/$tenantId")({
     const newErrors: Record<string, string> = {};
     if (!name.trim()) newErrors.name = (isGym || isBeauty || isProfessional) ? "Client Name is required" : isEducation ? "Student Name is required" : "Patient Name is required";
     
-    if (!email.trim()) {
-      newErrors.email = "Email Address is required";
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
+    if (email.trim() && !/\S+@\S+\.\S+/.test(email)) {
       newErrors.email = "Please enter a valid email address";
     }
     
-    if (!phone.trim()) {
-      newErrors.phone = "Phone Number is required";
-    } else if (!/^\+?[\d\s-]{10,15}$/.test(phone)) {
+    if (phone.trim() && !/^\+?[\d\s-]{10,15}$/.test(phone)) {
       newErrors.phone = "Please enter a valid contact number (10-15 digits)";
     }
     
@@ -487,7 +483,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                   {/* WhatsApp No (optional) */}
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1 flex items-center gap-1">
-                      WhatsApp No <span className="text-[9px] text-zinc-300 font-normal lowercase">(optional)</span>
+                      WhatsApp No
                     </label>
                     <div className="relative">
                       <Phone className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />

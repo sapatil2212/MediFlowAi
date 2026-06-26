@@ -164,8 +164,8 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
   .validator((data: {
     tenantId: string;
     name: string;
-    email: string;
-    phone: string;
+    email?: string;
+    phone?: string;
     dateTime: string;
     reason: string;
     doctorId?: string;
@@ -173,7 +173,7 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     whatsapp?: string;
     appointmentType?: string;
   }) => {
-    if (!data.tenantId || !data.name || !data.email || !data.phone || !data.dateTime || !data.reason) {
+    if (!data.tenantId || !data.name || !data.dateTime || !data.reason) {
       throw new Error("Required booking fields missing");
     }
     return data;
@@ -194,7 +194,7 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     await execute(
       `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, createdAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, NOW())`,
-      [id, data.tenantId, data.name, data.email, data.phone, dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, tokenNo]
+      [id, data.tenantId, data.name, data.email || "", data.phone || "", dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, tokenNo]
     );
 
     // Queue WhatsApp notification if WA microservice is connected
