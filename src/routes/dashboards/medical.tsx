@@ -42,6 +42,7 @@ import {
   WifiOff,
   RefreshCw,
   Smartphone,
+  MapPin,
   Trash2,
   Edit3,
   Download,
@@ -133,6 +134,11 @@ import {
   saveSoapNoteServerFn,
   deleteAppointmentServerFn,
   getAppointmentsPagedServerFn,
+  getSubLocationBookingsServerFn,
+  getLocationsServerFn,
+  createSubLocationBookingServerFn,
+  updateSubLocationBookingServerFn,
+  deleteSubLocationBookingServerFn,
   getSubUsersServerFn,
   createSubUserServerFn,
   updateSubUserServerFn,
@@ -145,6 +151,7 @@ import {
   uploadProfilePhotoServerFn,
 } from "../../lib/auth";
 import WhatsAppHub from "../../components/WhatsAppHub";
+import MultiLocationSettings from "../../components/settings/MultiLocationSettings";
 
 
 export const Route = createFileRoute("/dashboards/medical")({
@@ -710,7 +717,7 @@ function LeavesCalendarPanel({
 
 function MedicalDashboardPage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"overview" | "scribe" | "calendar" | "patients" | "analytics" | "settings" | "appointments" | "plans" | "whatsapp">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "scribe" | "calendar" | "patients" | "analytics" | "settings" | "appointments" | "plans" | "whatsapp" | "subLocationBookings">("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [calendarView, setCalendarView] = useState<"month" | "week" | "day">("week");
@@ -737,7 +744,9 @@ function MedicalDashboardPage() {
     paymentMethod?: string;
     createdAt?: string;
     profilePhoto?: string | null;
-    role?: "admin" | "reception" | "doctor";
+    role?: "admin" | "reception" | "doctor" | "location";
+    locationId?: string;
+    locationName?: string;
   } | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
@@ -887,7 +896,28 @@ function MedicalDashboardPage() {
 
 
   // Settings Sub-tab and Clinic Management States
-  const [settingsSubTab, setSettingsSubTab] = useState<"profile" | "hours" | "departments" | "doctors" | "whatsapp" | "users">("profile");
+  const [settingsSubTab, setSettingsSubTab] = useState<"profile" | "hours" | "departments" | "doctors" | "whatsapp" | "users" | "locations">("profile");
+
+  // Multi-Location (Sub Dep. Bookings) States
+  const [subLocations, setSubLocations] = useState<any[]>([]);
+  const [subLocationBookings, setSubLocationBookings] = useState<any[]>([]);
+  const [loadingSubLocBookings, setLoadingSubLocBookings] = useState(false);
+  const [isSubLocationUser, setIsSubLocationUser] = useState(false);
+  const [subLocFilter, setSubLocFilter] = useState<string>("all");
+  const [subLocSearch, setSubLocSearch] = useState("");
+  const [subLocStatusFilter, setSubLocStatusFilter] = useState<string>("all");
+  // Sub-location booking CRUD modal states
+  const [subLocViewing, setSubLocViewing] = useState<any | null>(null);
+  const [subLocFormOpen, setSubLocFormOpen] = useState(false);
+  const [subLocEditing, setSubLocEditing] = useState<any | null>(null);
+  const [subLocToDelete, setSubLocToDelete] = useState<any | null>(null);
+  const [subLocSaving, setSubLocSaving] = useState(false);
+  const [subLocDeleting, setSubLocDeleting] = useState(false);
+  const [subLocFormError, setSubLocFormError] = useState("");
+  const [subLocForm, setSubLocForm] = useState({
+    name: "", phone: "", email: "", locationId: "", doctorId: "",
+    dateTime: "", timeSlot: "", reason: "", appointmentType: "", status: "Pending",
+  });
   const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
 
   // Sub-Users State
@@ -1457,6 +1487,119 @@ function MedicalDashboardPage() {
     }
   };
 
+  const fetchSubLocationBookings = async () => {
+    setLoadingSubLocBookings(true);
+    try {
+      const res = await getSubLocationBookingsServerFn();
+      setSubLocationBookings(res.bookings || []);
+      setSubLocations(res.locations || []);
+      setIsSubLocationUser(!!res.isLocationUser);
+    } catch (err) {
+      console.error("Failed to fetch sub-location bookings:", err);
+    } finally {
+      setLoadingSubLocBookings(false);
+    }
+  };
+
+  const openSubLocCreate = () => {
+    setSubLocEditing(null);
+    setSubLocFormError("");
+    const now = new Date();
+    const tzoffset = now.getTimezoneOffset() * 60000;
+    const localISO = new Date(now.getTime() - tzoffset).toISOString().slice(0, 16);
+    setSubLocForm({
+      name: "", phone: "", email: "",
+      locationId: subLocations[0]?.id || "",
+      doctorId: "", dateTime: localISO, timeSlot: "", reason: "", appointmentType: "", status: "Pending",
+    });
+    if (doctors.length === 0) getDoctorsServerFn().then(setDoctors).catch(console.error);
+    setSubLocFormOpen(true);
+  };
+
+  const openSubLocEdit = (b: any) => {
+    setSubLocEditing(b);
+    setSubLocFormError("");
+    const dt = new Date(b.dateTime);
+    const tzoffset = dt.getTimezoneOffset() * 60000;
+    const localISO = new Date(dt.getTime() - tzoffset).toISOString().slice(0, 16);
+    setSubLocForm({
+      name: b.name || "", phone: b.phone || "", email: b.email || "",
+      locationId: b.locationId || "", doctorId: b.doctorId || "",
+      dateTime: localISO, timeSlot: b.timeSlot || "", reason: b.reason || "",
+      appointmentType: b.appointmentType || "", status: b.status || "Pending",
+    });
+    if (doctors.length === 0) getDoctorsServerFn().then(setDoctors).catch(console.error);
+    setSubLocViewing(null);
+    setSubLocFormOpen(true);
+  };
+
+  const handleSubLocSave = async () => {
+    setSubLocFormError("");
+    if (!subLocForm.name.trim()) { setSubLocFormError("Patient name is required"); return; }
+    if (!subLocForm.locationId) { setSubLocFormError("Please select a location"); return; }
+    if (!subLocForm.dateTime) { setSubLocFormError("Please select a date & time"); return; }
+    if (!subLocForm.reason.trim()) { setSubLocFormError("Reason is required"); return; }
+    setSubLocSaving(true);
+    try {
+      if (subLocEditing) {
+        await updateSubLocationBookingServerFn({
+          data: {
+            id: subLocEditing.id,
+            name: subLocForm.name,
+            phone: subLocForm.phone,
+            email: subLocForm.email,
+            locationId: subLocForm.locationId,
+            doctorId: subLocForm.doctorId || undefined,
+            dateTime: subLocForm.dateTime,
+            timeSlot: subLocForm.timeSlot || undefined,
+            reason: subLocForm.reason,
+            appointmentType: subLocForm.appointmentType || undefined,
+            status: subLocForm.status,
+          },
+        });
+        showToast("success", "Booking updated successfully");
+      } else {
+        await createSubLocationBookingServerFn({
+          data: {
+            name: subLocForm.name,
+            phone: subLocForm.phone,
+            email: subLocForm.email,
+            locationId: subLocForm.locationId,
+            doctorId: subLocForm.doctorId || undefined,
+            dateTime: subLocForm.dateTime,
+            timeSlot: subLocForm.timeSlot || undefined,
+            reason: subLocForm.reason,
+            appointmentType: subLocForm.appointmentType || undefined,
+            status: subLocForm.status,
+          },
+        });
+        showToast("success", "Booking created successfully");
+      }
+      setSubLocFormOpen(false);
+      setSubLocEditing(null);
+      await fetchSubLocationBookings();
+    } catch (e: any) {
+      setSubLocFormError(e.message || "Failed to save booking");
+    } finally {
+      setSubLocSaving(false);
+    }
+  };
+
+  const handleSubLocDelete = async () => {
+    if (!subLocToDelete) return;
+    setSubLocDeleting(true);
+    try {
+      await deleteSubLocationBookingServerFn({ data: subLocToDelete.id });
+      showToast("success", "Booking deleted");
+      setSubLocToDelete(null);
+      await fetchSubLocationBookings();
+    } catch (e: any) {
+      showToast("error", e.message || "Failed to delete booking");
+    } finally {
+      setSubLocDeleting(false);
+    }
+  };
+
   const fetchPatients = async () => {
     setLoadingPatients(true);
     try {
@@ -1727,6 +1870,27 @@ function MedicalDashboardPage() {
       fetchAppointments();
     }
   }, [user, searchAptQuery, filterAptStatus, filterAptDate, appointmentsPage]);
+
+  // Load sub-locations once to decide whether to show the "Sub Dep. Bookings" menu.
+  useEffect(() => {
+    if (!user) return;
+    if (user.role === "location") {
+      setIsSubLocationUser(true);
+      return;
+    }
+    if (user.role === "admin") {
+      getLocationsServerFn()
+        .then((res) => setSubLocations(res || []))
+        .catch((e) => console.error("Failed to load locations:", e));
+    }
+  }, [user]);
+
+  // Fetch the bookings list whenever the Sub Dep. Bookings tab becomes active
+  useEffect(() => {
+    if (user && activeTab === "subLocationBookings") {
+      fetchSubLocationBookings();
+    }
+  }, [user, activeTab]);
 
   useEffect(() => {
     if (user) {
@@ -3948,6 +4112,7 @@ function MedicalDashboardPage() {
                     { id: "scribe", label: "Consultation", icon: ClipboardCheck },
                     { id: "calendar", label: "Calendar", icon: Calendar },
                     { id: "appointments", label: "Appointments List", icon: ClipboardList },
+                    { id: "subLocationBookings", label: "Sub Dep. Bookings", icon: MapPin },
                     { id: "patients", label: "Patient Records", icon: Users },
                     { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
                     { id: "settings", label: "Settings", icon: Settings },
@@ -3956,6 +4121,7 @@ function MedicalDashboardPage() {
                     if (user?.role !== "admin" && tab.id === "plans") return false;
                     if (user?.role === "reception" && (tab.id === "scribe" || tab.id === "analytics" || tab.id === "whatsapp")) return false;
                     if ((user?.subscriptionPlan === "Solo" || user?.subscriptionPlan === "Basic") && tab.id === "whatsapp") return false;
+                    if (tab.id === "subLocationBookings" && !(user?.role === "admin" && subLocations.length > 0)) return false;
                     return true;
                   }).map((tab) => {
                     const Icon = tab.icon;
@@ -4045,6 +4211,7 @@ function MedicalDashboardPage() {
               { id: "scribe", label: "Consultation", icon: ClipboardCheck },
               { id: "calendar", label: "Calendar", icon: Calendar },
               { id: "appointments", label: "Appointments List", icon: ClipboardList },
+              { id: "subLocationBookings", label: "Sub Dep. Bookings", icon: MapPin },
               { id: "patients", label: "Patient Records", icon: Users },
               { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
               { id: "settings", label: "Settings", icon: Settings },
@@ -4053,6 +4220,7 @@ function MedicalDashboardPage() {
               if (user?.role !== "admin" && tab.id === "plans") return false;
               if (user?.role === "reception" && (tab.id === "scribe" || tab.id === "analytics" || tab.id === "whatsapp")) return false;
               if ((user?.subscriptionPlan === "Solo" || user?.subscriptionPlan === "Basic") && tab.id === "whatsapp") return false;
+              if (tab.id === "subLocationBookings" && !(user?.role === "admin" && subLocations.length > 0)) return false;
               return true;
             }).map((tab) => {
               const Icon = tab.icon;
@@ -4696,7 +4864,8 @@ function MedicalDashboardPage() {
                               const match = analyticsData.statusBreakdown?.find(
                                 (s: any) => s.status === item.label
                               );
-                              const count = match ? match.count : (item.label === "Completed" ? 35 : item.label === "Confirmed" ? 40 : item.label === "Pending" ? 15 : 10);
+                              const hasData = analyticsData.statusBreakdown && analyticsData.statusBreakdown.length > 0;
+                              const count = match ? match.count : (hasData ? 0 : (item.label === "Completed" ? 35 : item.label === "Confirmed" ? 40 : item.label === "Pending" ? 15 : 10));
                               return (
                                 <div key={item.label} className="flex items-center gap-2">
                                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
@@ -6997,6 +7166,372 @@ function MedicalDashboardPage() {
             )}
 
             {/* ──────────────────────────────────────────────
+                TAB: SUB DEP. BOOKINGS (Multi-Location)
+                ────────────────────────────────────────────── */}
+            {activeTab === "subLocationBookings" && (() => {
+              const norm = (s: string) => (s || "").toLowerCase();
+              const filtered = subLocationBookings.filter((b) => {
+                if (!isSubLocationUser && subLocFilter !== "all" && b.locationId !== subLocFilter) return false;
+                if (subLocStatusFilter !== "all" && norm(b.status) !== norm(subLocStatusFilter)) return false;
+                if (subLocSearch.trim()) {
+                  const q = subLocSearch.toLowerCase();
+                  const hay = [b.name, b.phone, b.email, b.doctorName, b.locationName, b.reason]
+                    .filter(Boolean)
+                    .some((s: string) => s.toLowerCase().includes(q));
+                  if (!hay) return false;
+                }
+                return true;
+              });
+              const counts: Record<string, number> = {};
+              subLocationBookings.forEach((b) => { counts[b.locationId] = (counts[b.locationId] || 0) + 1; });
+
+              return (
+                <motion.div
+                  key="subLocationBookings"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="space-y-6"
+                >
+                  {/* Header */}
+                  <div className="rounded-[1.75rem] border border-zinc-200 bg-white p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-5 w-5 text-brand" />
+                        <h3 className="text-base font-bold text-zinc-900">Sub Dep. Bookings</h3>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 font-semibold leading-relaxed">
+                        {isSubLocationUser
+                          ? "Appointments booked for your location."
+                          : "All appointments booked across your sub-locations. Use the filters below to view a specific branch."}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openSubLocCreate}
+                      disabled={subLocations.length === 0}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-black text-white px-4 py-2 text-[11px] font-bold hover:bg-black/90 cursor-pointer transition-all disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed shrink-0"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add Booking
+                    </button>
+                  </div>
+
+                  {/* Location filter chips (admin only) */}
+                  {!isSubLocationUser && subLocations.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSubLocFilter("all")}
+                        className={`rounded-full px-4 py-2 text-[11px] font-bold border transition-all cursor-pointer ${
+                          subLocFilter === "all" ? "bg-zinc-950 text-white border-zinc-950" : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50"
+                        }`}
+                      >
+                        All Locations ({subLocationBookings.length})
+                      </button>
+                      {subLocations.map((loc) => (
+                        <button
+                          key={loc.id}
+                          type="button"
+                          onClick={() => setSubLocFilter(loc.id)}
+                          className={`rounded-full px-4 py-2 text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                            subLocFilter === loc.id ? "bg-zinc-950 text-white border-zinc-950" : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50"
+                          }`}
+                        >
+                          <MapPin className="h-3 w-3" />
+                          {loc.name}{loc.city ? ` — ${loc.city}` : ""} ({counts[loc.id] || 0})
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Search + status filter */}
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+                      <input
+                        type="text"
+                        placeholder="Search by patient, phone, doctor, location..."
+                        value={subLocSearch}
+                        onChange={(e) => setSubLocSearch(e.target.value)}
+                        className="w-full rounded-full border border-zinc-200 bg-white pl-10 pr-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
+                      />
+                    </div>
+                    <select
+                      value={subLocStatusFilter}
+                      onChange={(e) => setSubLocStatusFilter(e.target.value)}
+                      className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 focus:border-brand focus:outline-none transition-all cursor-pointer"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Confirmed">Confirmed</option>
+                      <option value="Completed">Completed</option>
+                      <option value="Cancelled">Cancelled</option>
+                    </select>
+                  </div>
+
+                  {/* Bookings list */}
+                  {loadingSubLocBookings ? (
+                    <div className="flex items-center justify-center py-16 gap-2 text-zinc-400">
+                      <Loader2 className="h-5 w-5 animate-spin" /> Loading bookings...
+                    </div>
+                  ) : filtered.length === 0 ? (
+                    <div className="rounded-2xl border border-zinc-200 bg-white p-12 text-center space-y-2">
+                      <MapPin className="h-9 w-9 text-zinc-200 mx-auto" />
+                      <p className="text-sm font-bold text-zinc-400">No sub-location bookings found</p>
+                      <p className="text-[11px] text-zinc-300">
+                        {subLocSearch || subLocFilter !== "all" || subLocStatusFilter !== "all"
+                          ? "Try adjusting your filters."
+                          : "Bookings made for your sub-locations will appear here."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden overflow-x-auto">
+                      <table className="w-full text-xs min-w-[760px]">
+                        <thead>
+                          <tr className="border-b border-zinc-100 bg-zinc-50">
+                            <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Token</th>
+                            <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Patient</th>
+                            <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Location</th>
+                            <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider hidden md:table-cell">Doctor</th>
+                            <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider hidden lg:table-cell">Date &amp; Time</th>
+                            <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Status</th>
+                            <th className="px-4 py-3 text-center text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100">
+                          {filtered.map((b) => {
+                            const dt = new Date(b.dateTime);
+                            const statusColor =
+                              norm(b.status) === "confirmed" ? "bg-emerald-50 text-emerald-600"
+                              : norm(b.status) === "completed" ? "bg-blue-50 text-blue-600"
+                              : norm(b.status) === "cancelled" ? "bg-red-50 text-red-500"
+                              : "bg-amber-50 text-amber-600";
+                            return (
+                              <tr key={b.id} className="hover:bg-zinc-50 transition-colors">
+                                <td className="px-4 py-3"><span className="font-mono font-bold text-zinc-800">#{b.tokenNo ?? "—"}</span></td>
+                                <td className="px-4 py-3">
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="font-semibold text-zinc-800 truncate max-w-[160px]">{b.name}</span>
+                                    {b.phone && <span className="text-[10px] text-zinc-400">{b.phone}</span>}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold bg-brand/5 border border-brand/15 text-brand">
+                                    <MapPin className="h-2.5 w-2.5" />
+                                    {b.locationName || "—"}{b.locationCity ? `, ${b.locationCity}` : ""}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 hidden md:table-cell">
+                                  <span className="text-zinc-600">{b.doctorName || "—"}</span>
+                                  {b.departmentName && <span className="block text-[10px] text-zinc-400">{b.departmentName}</span>}
+                                </td>
+                                <td className="px-4 py-3 hidden lg:table-cell">
+                                  <span className="text-zinc-600">{dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                                  <span className="block text-[10px] text-zinc-400">{b.timeSlot || dt.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold ${statusColor}`}>{b.status}</span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button type="button" onClick={() => setSubLocViewing(b)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-brand transition-colors cursor-pointer" title="View"><Eye className="h-3.5 w-3.5" /></button>
+                                    <button type="button" onClick={() => openSubLocEdit(b)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-indigo-600 transition-colors cursor-pointer" title="Edit"><Edit3 className="h-3.5 w-3.5" /></button>
+                                    <button type="button" onClick={() => setSubLocToDelete(b)} className="p-1.5 rounded-lg hover:bg-red-50 text-zinc-400 hover:text-red-600 transition-colors cursor-pointer" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Create / Edit Modal */}
+                  <AnimatePresence>
+                    {subLocFormOpen && (
+                      <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm"
+                        onClick={() => setSubLocFormOpen(false)}
+                      >
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 16 }}
+                          transition={{ duration: 0.2, ease: "easeOut" }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-zinc-200 overflow-hidden max-h-[90vh] overflow-y-auto"
+                        >
+                          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 sticky top-0 bg-white z-10">
+                            <div className="flex items-center gap-2">
+                              {subLocEditing ? <Edit3 className="h-4 w-4 text-indigo-600" /> : <Plus className="h-4 w-4 text-brand" />}
+                              <h3 className="text-sm font-bold text-zinc-900">{subLocEditing ? "Edit Booking" : "New Sub-Location Booking"}</h3>
+                            </div>
+                            <button type="button" onClick={() => setSubLocFormOpen(false)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 transition-colors cursor-pointer"><X className="h-4 w-4" /></button>
+                          </div>
+                          <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <label className="block sm:col-span-2">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Location *</span>
+                              <select value={subLocForm.locationId} onChange={(e) => setSubLocForm(f => ({ ...f, locationId: e.target.value }))} disabled={isSubLocationUser}
+                                className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all cursor-pointer disabled:opacity-60">
+                                <option value="">Select location</option>
+                                {subLocations.map((l) => <option key={l.id} value={l.id}>{l.name}{l.city ? ` — ${l.city}` : ""}</option>)}
+                              </select>
+                            </label>
+                            <label className="block">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Patient Name *</span>
+                              <input type="text" value={subLocForm.name} placeholder="Full name" onChange={(e) => setSubLocForm(f => ({ ...f, name: e.target.value }))}
+                                className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all" />
+                            </label>
+                            <label className="block">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Phone / WhatsApp</span>
+                              <input type="text" value={subLocForm.phone} placeholder="+91 9876543210" onChange={(e) => setSubLocForm(f => ({ ...f, phone: e.target.value }))}
+                                className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all" />
+                            </label>
+                            <label className="block">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Email</span>
+                              <input type="email" value={subLocForm.email} placeholder="patient@email.com" onChange={(e) => setSubLocForm(f => ({ ...f, email: e.target.value }))}
+                                className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all" />
+                            </label>
+                            <label className="block">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Doctor</span>
+                              <select value={subLocForm.doctorId} onChange={(e) => setSubLocForm(f => ({ ...f, doctorId: e.target.value }))}
+                                className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all cursor-pointer">
+                                <option value="">Select doctor</option>
+                                {doctors.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                              </select>
+                            </label>
+                            <label className="block">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Date &amp; Time *</span>
+                              <input type="datetime-local" value={subLocForm.dateTime} onChange={(e) => setSubLocForm(f => ({ ...f, dateTime: e.target.value }))}
+                                className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all" />
+                            </label>
+                            <label className="block">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Time Slot Label</span>
+                              <input type="text" value={subLocForm.timeSlot} placeholder="e.g. 09:00 AM" onChange={(e) => setSubLocForm(f => ({ ...f, timeSlot: e.target.value }))}
+                                className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all" />
+                            </label>
+                            <label className="block">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Status</span>
+                              <select value={subLocForm.status} onChange={(e) => setSubLocForm(f => ({ ...f, status: e.target.value }))}
+                                className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all cursor-pointer">
+                                <option value="Pending">Pending</option>
+                                <option value="Confirmed">Confirmed</option>
+                                <option value="Completed">Completed</option>
+                                <option value="Cancelled">Cancelled</option>
+                              </select>
+                            </label>
+                            <label className="block sm:col-span-2">
+                              <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Reason *</span>
+                              <input type="text" value={subLocForm.reason} placeholder="Reason for visit" onChange={(e) => setSubLocForm(f => ({ ...f, reason: e.target.value }))}
+                                className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all" />
+                            </label>
+                            {subLocFormError && (
+                              <div className="sm:col-span-2 rounded-xl bg-red-50 border border-red-100 p-3 text-[11px] font-bold text-red-600 flex items-center gap-1.5">
+                                <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {subLocFormError}
+                              </div>
+                            )}
+                          </div>
+                          <div className="px-6 py-3 border-t border-zinc-100 flex justify-end gap-2 sticky bottom-0 bg-white">
+                            <button type="button" onClick={() => setSubLocFormOpen(false)} className="rounded-full border border-zinc-200 px-5 py-2 text-xs font-bold text-zinc-500 hover:bg-zinc-50 cursor-pointer">Cancel</button>
+                            <button type="button" disabled={subLocSaving} onClick={handleSubLocSave} className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 disabled:opacity-60 cursor-pointer flex items-center gap-1.5">
+                              {subLocSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                              {subLocEditing ? "Update Booking" : "Create Booking"}
+                            </button>
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* View Modal */}
+                  <AnimatePresence>
+                    {subLocViewing && (
+                      <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm"
+                        onClick={() => setSubLocViewing(null)}
+                      >
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 16 }}
+                          transition={{ duration: 0.2, ease: "easeOut" }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-zinc-200 overflow-hidden"
+                        >
+                          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
+                            <div className="flex items-center gap-2"><Eye className="h-4 w-4 text-brand" /><h3 className="text-sm font-bold text-zinc-900">Booking Details</h3></div>
+                            <button type="button" onClick={() => setSubLocViewing(null)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 transition-colors cursor-pointer"><X className="h-4 w-4" /></button>
+                          </div>
+                          <div className="px-6 py-5 space-y-4">
+                            <div className="flex items-center gap-3">
+                              <div className="h-12 w-12 rounded-full bg-zinc-900 text-white flex items-center justify-center font-black text-sm shrink-0">#{subLocViewing.tokenNo ?? "—"}</div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-zinc-900 truncate">{subLocViewing.name}</p>
+                                <p className="text-[11px] text-zinc-400">{subLocViewing.phone || "No phone"}</p>
+                              </div>
+                            </div>
+                            <div className="rounded-xl bg-zinc-50 border border-zinc-100 divide-y divide-zinc-100">
+                              {[
+                                { label: "Location", value: `${subLocViewing.locationName || "—"}${subLocViewing.locationCity ? `, ${subLocViewing.locationCity}` : ""}` },
+                                { label: "Doctor", value: subLocViewing.doctorName || "—" },
+                                { label: "Date", value: new Date(subLocViewing.dateTime).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) },
+                                { label: "Slot", value: subLocViewing.timeSlot || "—" },
+                                { label: "Type", value: subLocViewing.appointmentType || "—" },
+                                { label: "Status", value: subLocViewing.status },
+                                { label: "Reason", value: subLocViewing.reason || "—" },
+                                { label: "Email", value: subLocViewing.email || "—" },
+                              ].map(({ label, value }) => (
+                                <div key={label} className="flex items-start gap-3 px-4 py-2.5">
+                                  <span className="text-[10px] font-bold text-zinc-400 w-20 shrink-0 pt-px uppercase">{label}</span>
+                                  <span className="text-xs font-semibold text-zinc-700 break-words">{value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="px-6 py-3 border-t border-zinc-100 flex justify-end gap-2">
+                            <button type="button" onClick={() => setSubLocViewing(null)} className="rounded-full border border-zinc-200 px-5 py-2 text-xs font-bold text-zinc-500 hover:bg-zinc-50 cursor-pointer">Close</button>
+                            <button type="button" onClick={() => openSubLocEdit(subLocViewing)} className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 cursor-pointer flex items-center gap-1.5"><Edit3 className="h-3 w-3" /> Edit</button>
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Delete Confirmation */}
+                  <AnimatePresence>
+                    {subLocToDelete && (
+                      <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm"
+                        onClick={() => !subLocDeleting && setSubLocToDelete(null)}
+                      >
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 16 }}
+                          transition={{ duration: 0.2, ease: "easeOut" }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-zinc-200 overflow-hidden"
+                        >
+                          <div className="px-6 py-5 space-y-4 text-center">
+                            <div className="h-12 w-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center mx-auto text-red-600"><Trash2 className="h-5 w-5" /></div>
+                            <div>
+                              <h3 className="text-sm font-bold text-zinc-900">Delete Booking?</h3>
+                              <p className="mt-1 text-xs text-zinc-500">This will permanently remove the booking for <strong className="text-zinc-800">{subLocToDelete.name}</strong>. This cannot be undone.</p>
+                            </div>
+                          </div>
+                          <div className="px-6 py-3 border-t border-zinc-100 flex justify-end gap-2">
+                            <button type="button" onClick={() => setSubLocToDelete(null)} disabled={subLocDeleting} className="rounded-full border border-zinc-200 px-5 py-2 text-xs font-bold text-zinc-500 hover:bg-zinc-50 cursor-pointer disabled:opacity-50">Cancel</button>
+                            <button type="button" onClick={handleSubLocDelete} disabled={subLocDeleting} className="rounded-full bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-xs font-bold cursor-pointer disabled:opacity-60 flex items-center gap-1.5">
+                              {subLocDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Delete
+                            </button>
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              );
+            })()}
+
+            {/* ──────────────────────────────────────────────
                 TAB: APPOINTMENTS
                 ────────────────────────────────────────────── */}
             {activeTab === "appointments" && (
@@ -7584,8 +8119,9 @@ function MedicalDashboardPage() {
                     { id: "doctors", label: "Doctors Directory", icon: Stethoscope },
                     { id: "whatsapp", label: "WhatsApp Alerts", icon: Smartphone },
                     { id: "users", label: "Manage Users", icon: Users },
+                    { id: "locations", label: "Multi Location", icon: MapPin },
                   ].filter((sub) => {
-                    if (user?.role !== "admin" && (sub.id === "whatsapp" || sub.id === "users")) return false;
+                    if (user?.role !== "admin" && (sub.id === "whatsapp" || sub.id === "users" || sub.id === "locations")) return false;
                     if ((user?.subscriptionPlan === "Solo" || user?.subscriptionPlan === "Basic") && sub.id === "whatsapp") return false;
                     return true;
                   });
@@ -9095,6 +9631,19 @@ function MedicalDashboardPage() {
                   </div>
                 )}
 
+                {/* Multi Location Tab */}
+                {settingsSubTab === "locations" && (
+                  <MultiLocationSettings
+                    user={user}
+                    onSwitchToPlans={() => setActiveTab("plans")}
+                    professionLabels={{
+                      sectionTitle: "Multi-Location Clinics",
+                      sectionDescription: "Create login credentials for each clinic branch. Each location can log in with its own email and password to manage its bookings via the workspace dashboard.",
+                      singular: "Clinic Location",
+                    }}
+                  />
+                )}
+
                 {/* Manage Users Tab */}
                 {settingsSubTab === "users" && (
                   <div className="space-y-5 animate-in fade-in duration-300">
@@ -9654,7 +10203,7 @@ function MedicalDashboardPage() {
                         name: "Premium",
                         price: "₹1,499",
                         description: "For growing operations.",
-                        features: ["Advanced AI assistant", "2,000 appointments / mo", "Up to 5,000 client records", "WhatsApp alerts included", "Priority Support", "Multi-user dashboards (Reception & Doctors)", "Consultation tracking & Voice Rx"],
+                        features: ["1 sub location", "Advanced AI assistant", "2,000 appointments / mo", "Up to 5,000 client records", "WhatsApp alerts included", "Priority Support", "Multi-user dashboards (Reception & Doctors)", "Consultation tracking & Voice Rx"],
                         popular: true,
                         dark: false,
                         active: user?.subscriptionPlan === "Premium" || user?.subscriptionPlan === "Clinic"
@@ -9663,9 +10212,9 @@ function MedicalDashboardPage() {
                         name: "Enterprise",
                         price: "Custom",
                         description: "For large-scale operations.",
-                        features: ["Unlimited appointments / mo", "Unlimited client records", "Multi QR Code Booking", "Meta Verified WhatsApp integration", "Custom API & integrations", "Dedicated AI fine-tuning", "Priority Support & Dedicated CSM"],
+                        features: ["Unlimited sub locations", "Unlimited appointments / mo", "Unlimited client records", "Multi QR Code Booking", "Meta Verified WhatsApp integration", "Custom API & integrations", "Dedicated AI fine-tuning", "Priority Support & Dedicated CSM"],
                         popular: false,
-                        dark: true,
+                        dark: false,
                         active: user?.subscriptionPlan === "Enterprise" || user?.subscriptionPlan === "Hospital"
                       }
                     ].map((plan) => (
@@ -9673,7 +10222,7 @@ function MedicalDashboardPage() {
                         key={plan.name}
                         className={`relative flex flex-col rounded-2xl p-6 transition-all ${
                           plan.popular
-                            ? "bg-zinc-900 text-white ring-1 ring-brand/40 scale-[1.02]"
+                            ? "bg-brand/[0.03] text-zinc-900 ring-2 ring-brand/35 scale-[1.02]"
                             : plan.dark
                               ? "bg-zinc-900 text-white ring-1 ring-zinc-700/60"
                               : plan.active
@@ -9695,24 +10244,24 @@ function MedicalDashboardPage() {
                           </span>
                         )}
 
-                        <p className={`text-xs font-bold uppercase tracking-wider ${plan.popular || plan.dark ? "text-brand-light" : "text-brand"}`}>
+                        <p className={`text-xs font-bold uppercase tracking-wider ${plan.dark ? "text-brand-light" : "text-brand"}`}>
                           {plan.name}
                         </p>
                         <p className="mt-4 flex items-baseline gap-1">
                           <span className="text-3xl font-black tracking-tight">{plan.price}</span>
                           {plan.price !== "Custom" && (
-                            <span className={`text-sm ${plan.popular || plan.dark ? "text-zinc-400" : "text-zinc-500"}`}>/mo</span>
+                            <span className={`text-sm ${plan.dark ? "text-zinc-400" : "text-zinc-500"}`}>/mo</span>
                           )}
                         </p>
-                        <p className={`mt-2 text-xs font-medium ${plan.popular || plan.dark ? "text-zinc-300" : "text-zinc-600"}`}>
+                        <p className={`mt-2 text-xs font-medium ${plan.dark ? "text-zinc-300" : "text-zinc-600"}`}>
                           {plan.description}
                         </p>
 
-                        <ul className="mt-5 flex-1 space-y-2.5 border-t border-white/10 pt-5">
+                        <ul className={`mt-5 flex-1 space-y-2.5 border-t ${plan.dark ? "border-white/10" : "border-zinc-200"} pt-5`}>
                           {plan.features.map((feat) => (
                             <li key={feat} className="flex items-start gap-2 text-xs">
-                              <Check className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${plan.popular || plan.dark ? "text-cyan-400" : "text-brand"}`} />
-                              <span className={plan.popular || plan.dark ? "text-zinc-200" : "text-zinc-700"}>{feat}</span>
+                              <Check className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${plan.dark ? "text-cyan-400" : "text-brand"}`} />
+                              <span className={plan.dark ? "text-zinc-200" : "text-zinc-700"}>{feat}</span>
                             </li>
                           ))}
                         </ul>
@@ -9722,13 +10271,13 @@ function MedicalDashboardPage() {
                           disabled={plan.active || plan.name === "Enterprise" || plan.name === "Hospital"}
                           className={`mt-6 w-full rounded-lg py-2.5 text-xs font-bold transition-all cursor-pointer ${
                             plan.active
-                              ? plan.popular || plan.dark
+                              ? plan.dark
                                 ? "bg-white/10 text-white border border-white/20 cursor-default"
                                 : "bg-black/10 text-brand border border-zinc-800/25 cursor-default"
                               : plan.name === "Enterprise" || plan.name === "Hospital"
-                                ? "bg-white/10 text-zinc-200 hover:bg-white/20"
+                                ? "bg-zinc-900 text-white hover:bg-zinc-800"
                                 : plan.popular
-                                  ? "bg-white text-zinc-900 hover:bg-zinc-100"
+                                  ? "bg-brand text-white hover:bg-brand/90"
                                   : "bg-zinc-900 text-white hover:bg-zinc-800"
                           }`}
                           onClick={() => {

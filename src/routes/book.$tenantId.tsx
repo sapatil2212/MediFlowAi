@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { HeartPulse, Calendar, Clock, User, Mail, Phone, FileText, CheckCircle2, AlertCircle, Loader2, ChevronDown, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { HeartPulse, Calendar, Clock, User, Mail, Phone, FileText, CheckCircle2, AlertCircle, Loader2, ChevronDown, Check, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
 import { getClinicInfoAndSlotsServerFn, createAppointmentPublicServerFn as createAppointmentServerFn } from "../lib/booking";
 
 export const Route = createFileRoute("/book/$tenantId")({
@@ -15,7 +15,12 @@ export const Route = createFileRoute("/book/$tenantId")({
     ],
   }),
   component: PatientBookingPage,
-});function PatientBookingPage() {
+});
+
+// Sentinel id representing the main workspace (head office) location option
+const MAIN_LOCATION_ID = "__main__";
+
+function PatientBookingPage() {
   const { tenantId } = Route.useParams();
   
   // Clinic states
@@ -31,10 +36,12 @@ export const Route = createFileRoute("/book/$tenantId")({
   // Lists from backend
   const [departments, setDepartments] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
+  const [locations, setLocations] = useState<Array<{ id: string; name: string; city: string | null; address: string | null }>>([]);
 
   // Selection states
   const [selectedDeptId, setSelectedDeptId] = useState("");
   const [selectedDoctorId, setSelectedDoctorId] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [selectedSlot, setSelectedSlot] = useState("");
@@ -44,7 +51,7 @@ export const Route = createFileRoute("/book/$tenantId")({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
+  const whatsapp = phone; // Use same value for both phone and whatsapp
   const [appointmentType, setAppointmentType] = useState("");
   const [dateTime, setDateTime] = useState("");
   const [reason, setReason] = useState("");
@@ -56,6 +63,7 @@ export const Route = createFileRoute("/book/$tenantId")({
   const [typeOpen, setTypeOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [clockOpen, setClockOpen] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
 
   // Calendar month/year navigation states
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
@@ -107,6 +115,14 @@ export const Route = createFileRoute("/book/$tenantId")({
         setProfession(resolvedProfession);
         setDepartments(res.departments || []);
         setDoctors(res.doctors || []);
+        const locs = (res as any).locations || [];
+        setLocations(locs);
+
+        // The main workspace counts as the head-office location. Default to it
+        // so the patient explicitly confirms which branch they are booking at.
+        if (locs.length > 0) {
+          setSelectedLocationId(MAIN_LOCATION_ID);
+        }
 
         const isGymTenant = resolvedProfession === "Fitness Gym etc" || tenantId.startsWith("gym-");
         const isEduTenant = resolvedProfession === "Education institutions" || tenantId.startsWith("edu-");
@@ -209,7 +225,12 @@ export const Route = createFileRoute("/book/$tenantId")({
     if (phone.trim() && !/^\+?[\d\s-]{10,15}$/.test(phone)) {
       newErrors.phone = "Please enter a valid contact number (10-15 digits)";
     }
-    
+
+    // Require location selection when the business has branch locations
+    if (locations.length >= 1 && !selectedLocationId) {
+      newErrors.location = "Please select a location";
+    }
+
     if (!isGym && !isEducation) {
       if (!selectedDeptId) newErrors.department = "Department is required";
       if (!selectedDoctorId) newErrors.doctor = "Doctor is required";
@@ -253,7 +274,8 @@ export const Route = createFileRoute("/book/$tenantId")({
           doctorId: selectedDoctorId,
           timeSlot: isEducation ? undefined : selectedSlot,
           whatsapp,
-          appointmentType: isEducation ? undefined : appointmentType
+          appointmentType: isEducation ? undefined : appointmentType,
+          locationId: selectedLocationId && selectedLocationId !== MAIN_LOCATION_ID ? selectedLocationId : undefined,
         },
       });
 
@@ -318,8 +340,8 @@ export const Route = createFileRoute("/book/$tenantId")({
   const selectedDoctor = doctors.find((d) => d.id === selectedDoctorId);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-50 px-4 py-8">
-      <div className="w-full max-w-lg rounded-[1.75rem] border border-zinc-200/60 bg-white p-6 sm:p-8">
+    <div className="min-h-screen flex items-center justify-center bg-zinc-50 px-3 sm:px-4 py-6 sm:py-8">
+      <div className="w-full max-w-lg rounded-2xl sm:rounded-[1.75rem] border border-zinc-200/60 bg-white p-4 sm:p-6 md:p-8">
         
         {/* Success Screen */}
         <AnimatePresence mode="wait">
@@ -379,6 +401,20 @@ export const Route = createFileRoute("/book/$tenantId")({
                     <span className="font-semibold text-zinc-750">{appointmentType}</span>
                   </div>
                 )}
+                {selectedLocationId && (() => {
+                  const loc = selectedLocationId === MAIN_LOCATION_ID
+                    ? { name: clinicName ? `${clinicName} (Main Branch)` : "Main Branch", city: null as string | null }
+                    : locations.find((l) => l.id === selectedLocationId);
+                  if (!loc) return null;
+                  return (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400 font-bold uppercase text-[9px]">Location</span>
+                      <span className="font-semibold text-zinc-750 text-right">
+                        {loc.name}{loc.city ? `, ${loc.city}` : ""}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               <p className="text-[10px] text-zinc-400 px-6">
@@ -389,27 +425,22 @@ export const Route = createFileRoute("/book/$tenantId")({
             <motion.div key="form" className="space-y-6">
               {/* Header */}
               <div className="text-center space-y-2">
-                {!isGym && !isEducation && !isBeauty && !isProfessional && (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-brand-light mx-auto">
-                    <HeartPulse className="h-5 w-5 text-white" />
-                  </div>
-                )}
                 <div>
-                  <h1 className="text-lg font-bold text-zinc-900">{isGym ? "Book Session" : isEducation ? "Book Session" : isBeauty ? "Book Service" : isProfessional ? "Book Consultation" : "Book Appointment"}</h1>
-                  <p className="text-xs text-zinc-400">
+                  <h1 className="text-base sm:text-lg font-bold text-zinc-900">{isGym ? "Book Session" : isEducation ? "Book Session" : isBeauty ? "Book Service" : isProfessional ? "Book Consultation" : "Book Appointment"}</h1>
+                  <p className="text-[10px] sm:text-xs text-zinc-400">
                     {isGym ? "Booking portal for " : isEducation ? "Academy scheduling portal for " : isBeauty ? "Salon booking portal for " : isProfessional ? "Firm consultation portal for " : "Scheduling online portal for "}<strong className="text-brand">{clinicName}</strong>
                   </p>
                 </div>
               </div>
 
               {/* Form */}
-              <form onSubmit={handleBookingSubmit} className="space-y-4" noValidate>
+              <form onSubmit={handleBookingSubmit} className="space-y-3 sm:space-y-4" noValidate>
                 
                 {/* Patient Name */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Full Name" : isEducation ? "Student / Visitor Full Name" : (isBeauty || isProfessional) ? "Client Full Name" : "Patient Full Name"}</label>
+                  <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Full Name" : isEducation ? "Student / Visitor Full Name" : (isBeauty || isProfessional) ? "Client Full Name" : "Patient Full Name"}</label>
                   <div className="relative">
-                    <User className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
+                    <User className="absolute left-3 sm:left-3.5 top-2 sm:top-2.5 h-3.5 sm:h-4 w-3.5 sm:w-4 text-zinc-400" />
                     <input
                       type="text"
                       placeholder="Enter your name"
@@ -418,23 +449,23 @@ export const Route = createFileRoute("/book/$tenantId")({
                         setName(e.target.value);
                         if (errors.name) setErrors(prev => ({ ...prev, name: "" }));
                       }}
-                      className={`w-full rounded-full border bg-white pl-10 pr-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all ${
+                      className={`w-full rounded-full border bg-white pl-9 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 text-[11px] sm:text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all ${
                         errors.name ? "border-red-500" : "border-zinc-200"
                       }`}
                       disabled={loading}
                     />
                   </div>
                   {errors.name && (
-                    <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.name}</p>
+                    <p className="text-[9px] sm:text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.name}</p>
                   )}
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
                   {/* Email */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Email Address</label>
+                    <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1">Email Address</label>
                     <div className="relative">
-                      <Mail className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
+                      <Mail className="absolute left-3 sm:left-3.5 top-2 sm:top-2.5 h-3.5 sm:h-4 w-3.5 sm:w-4 text-zinc-400" />
                       <input
                         type="text"
                         placeholder="youremail@gmail.com"
@@ -443,22 +474,22 @@ export const Route = createFileRoute("/book/$tenantId")({
                           setEmail(e.target.value);
                           if (errors.email) setErrors(prev => ({ ...prev, email: "" }));
                         }}
-                        className={`w-full rounded-full border bg-white pl-10 pr-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all ${
+                        className={`w-full rounded-full border bg-white pl-9 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 text-[11px] sm:text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all ${
                           errors.email ? "border-red-500" : "border-zinc-200"
                         }`}
                         disabled={loading}
                       />
                     </div>
                     {errors.email && (
-                      <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.email}</p>
+                      <p className="text-[9px] sm:text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.email}</p>
                     )}
                   </div>
 
-                  {/* Phone */}
+                  {/* Phone / WhatsApp No */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Phone Number</label>
+                    <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1">Phone / WhatsApp No</label>
                     <div className="relative">
-                      <Phone className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
+                      <Phone className="absolute left-3 sm:left-3.5 top-2 sm:top-2.5 h-3.5 sm:h-4 w-3.5 sm:w-4 text-zinc-400" />
                       <input
                         type="text"
                         placeholder="+91 1234567890"
@@ -467,41 +498,23 @@ export const Route = createFileRoute("/book/$tenantId")({
                           setPhone(e.target.value);
                           if (errors.phone) setErrors(prev => ({ ...prev, phone: "" }));
                         }}
-                        className={`w-full rounded-full border bg-white pl-10 pr-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all ${
+                        className={`w-full rounded-full border bg-white pl-9 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 text-[11px] sm:text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all ${
                           errors.phone ? "border-red-500" : "border-zinc-200"
                         }`}
                         disabled={loading}
                       />
                     </div>
                     {errors.phone && (
-                      <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.phone}</p>
+                      <p className="text-[9px] sm:text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.phone}</p>
                     )}
                   </div>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {/* WhatsApp No (optional) */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1 flex items-center gap-1">
-                      WhatsApp No
-                    </label>
-                    <div className="relative">
-                      <Phone className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
-                      <input
-                        type="text"
-                        placeholder="+91 1234567890"
-                        value={whatsapp}
-                        onChange={(e) => setWhatsapp(e.target.value)}
-                        className="w-full rounded-full border border-zinc-200 bg-white pl-10 pr-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
-                        disabled={loading}
-                      />
-                    </div>
-                  </div>
-
+                <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
                   {/* Appointment Type Custom Dropdown — hidden for education */}
                   {!isEducation && (
                   <div className={`space-y-1 relative ${typeOpen ? "z-40" : "z-10"}`}>
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Session Type" : isBeauty ? "Service Type" : isProfessional ? "Consultation Type" : "Appointment Type"}</label>
+                    <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Session Type" : isBeauty ? "Service Type" : isProfessional ? "Consultation Type" : "Appointment Type"}</label>
                     <div className="relative">
                       <button
                         type="button"
@@ -511,8 +524,9 @@ export const Route = createFileRoute("/book/$tenantId")({
                           setDocOpen(false);
                           setCalendarOpen(false);
                           setClockOpen(false);
+                          setLocationOpen(false);
                         }}
-                        className={`w-full rounded-full border bg-white px-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
+                        className={`w-full rounded-full border bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-left text-[11px] sm:text-xs focus:outline-none transition-all flex justify-between items-center ${
                           errors.appointmentType ? "border-red-500" : "border-zinc-200"
                         }`}
                         disabled={loading}
@@ -520,7 +534,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                         <span className={appointmentType ? "font-semibold text-zinc-800" : "text-zinc-400"}>
                           {appointmentType ? appointmentType : (isGym ? "Select Session Type" : isBeauty ? "Select Service Type" : isProfessional ? "Select Consultation Type" : "Select Type")}
                         </span>
-                        <ChevronDown className={`h-4 w-4 text-zinc-400 transition-transform ${typeOpen ? "rotate-180" : ""}`} />
+                        <ChevronDown className={`h-3.5 sm:h-4 w-3.5 sm:w-4 text-zinc-400 transition-transform ${typeOpen ? "rotate-180" : ""}`} />
                       </button>
 
                       <AnimatePresence>
@@ -553,10 +567,89 @@ export const Route = createFileRoute("/book/$tenantId")({
                       </AnimatePresence>
                     </div>
                     {errors.appointmentType && (
-                      <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.appointmentType}</p>
+                      <p className="text-[9px] sm:text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.appointmentType}</p>
                     )}
                   </div>
                   )}
+
+                {/* Multi-Location: shown when business has at least one branch.
+                    The main workspace is included as the head-office option. */}
+                {locations.length >= 1 && (() => {
+                  const locationOptions = [
+                    { id: MAIN_LOCATION_ID, name: clinicName ? `${clinicName} (Main Branch)` : "Main Branch", city: null as string | null, address: null as string | null },
+                    ...locations,
+                  ];
+                  const selectedLoc = locationOptions.find((l) => l.id === selectedLocationId);
+                  return (
+                    <div className={`space-y-1 relative ${locationOpen ? "z-40" : "z-10"}`}>
+                      <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Location</label>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLocationOpen(!locationOpen);
+                            setDeptOpen(false);
+                            setDocOpen(false);
+                            setTypeOpen(false);
+                            setCalendarOpen(false);
+                            setClockOpen(false);
+                          }}
+                          className={`w-full rounded-full border bg-white pl-9 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 text-left text-[11px] sm:text-xs focus:outline-none transition-all flex justify-between items-center ${
+                            errors.location ? "border-red-500" : "border-zinc-200"
+                          }`}
+                          disabled={loading}
+                        >
+                          <MapPin className="absolute left-3 sm:left-3.5 top-2 sm:top-2.5 h-3.5 sm:h-4 w-3.5 sm:w-4 text-zinc-400" />
+                          <span className={selectedLoc ? "font-semibold text-zinc-800" : "text-zinc-400"}>
+                            {selectedLoc
+                              ? selectedLoc.name + (selectedLoc.city ? ` — ${selectedLoc.city}` : "")
+                              : "Select Location"}
+                          </span>
+                          <ChevronDown className={`h-3.5 sm:h-4 w-3.5 sm:w-4 text-zinc-400 transition-transform ${locationOpen ? "rotate-180" : ""}`} />
+                        </button>
+
+                        <AnimatePresence>
+                          {locationOpen && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
+                            >
+                              {locationOptions.map((loc) => (
+                                <button
+                                  key={loc.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedLocationId(loc.id);
+                                    setLocationOpen(false);
+                                    if (errors.location) setErrors((prev) => ({ ...prev, location: "" }));
+                                  }}
+                                  className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                    selectedLocationId === loc.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
+                                  }`}
+                                >
+                                  <div className="flex flex-col min-w-0 pr-2">
+                                    <span className="font-semibold truncate">{loc.name}</span>
+                                    {(loc.city || loc.address) && (
+                                      <span className="text-[9px] text-zinc-400 font-normal truncate">
+                                        {[loc.city, loc.address].filter(Boolean).join(" • ")}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {selectedLocationId === loc.id && <Check className="h-3.5 w-3.5 text-brand shrink-0" />}
+                                </button>
+                              ))}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                      {errors.location && (
+                        <p className="text-[9px] sm:text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.location}</p>
+                      )}
+                    </div>
+                  );
+                })()}
                 </div>
 
                 {isEducation && (
@@ -565,7 +658,7 @@ export const Route = createFileRoute("/book/$tenantId")({
 
                     {/* Education: Select Subject (full width) */}
                     <div className={`space-y-1 relative ${deptOpen ? "z-40" : "z-10"}`}>
-                      <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Subject</label>
+                      <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Subject</label>
                       <div className="relative">
                         <button
                           type="button"
@@ -575,8 +668,9 @@ export const Route = createFileRoute("/book/$tenantId")({
                             setTypeOpen(false);
                             setCalendarOpen(false);
                             setClockOpen(false);
+                            setLocationOpen(false);
                           }}
-                          className={`w-full rounded-full border bg-white px-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
+                          className={`w-full rounded-full border bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-left text-[11px] sm:text-xs focus:outline-none transition-all flex justify-between items-center ${
                             errors.department ? "border-red-500" : "border-zinc-200"
                           }`}
                           disabled={loading}
@@ -628,9 +722,9 @@ export const Route = createFileRoute("/book/$tenantId")({
                     <hr className="border-zinc-100 my-2" />
 
                     {/* Step 1: Select Department Custom Dropdown */}
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
                       <div className={`space-y-1 relative ${deptOpen ? "z-40" : "z-10"}`}>
-                        <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isBeauty ? "Select Service Category" : isProfessional ? "Select Practice Area" : "Select Department"}</label>
+                        <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1">{isBeauty ? "Select Service Category" : isProfessional ? "Select Practice Area" : "Select Department"}</label>
                         <div className="relative">
                           <button
                             type="button"
@@ -640,8 +734,9 @@ export const Route = createFileRoute("/book/$tenantId")({
                               setTypeOpen(false);
                               setCalendarOpen(false);
                               setClockOpen(false);
+                              setLocationOpen(false);
                             }}
-                            className={`w-full rounded-full border bg-white px-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
+                            className={`w-full rounded-full border bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-left text-[11px] sm:text-xs focus:outline-none transition-all flex justify-between items-center ${
                               errors.department ? "border-red-500" : "border-zinc-200"
                             }`}
                             disabled={loading}
@@ -691,7 +786,7 @@ export const Route = createFileRoute("/book/$tenantId")({
 
                       {/* Step 2: Select Doctor Custom Dropdown */}
                       <div className={`space-y-1 relative ${docOpen ? "z-40" : "z-10"}`}>
-                        <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isBeauty ? "Select Stylist / Therapist" : isProfessional ? "Select Advisor / Consultant" : "Select Doctor"}</label>
+                        <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1">{isBeauty ? "Select Stylist / Therapist" : isProfessional ? "Select Advisor / Consultant" : "Select Doctor"}</label>
                         <div className="relative">
                           <button
                             type="button"
@@ -701,8 +796,9 @@ export const Route = createFileRoute("/book/$tenantId")({
                               setTypeOpen(false);
                               setCalendarOpen(false);
                               setClockOpen(false);
+                              setLocationOpen(false);
                             }}
-                            className={`w-full rounded-full border bg-white px-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
+                            className={`w-full rounded-full border bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-left text-[11px] sm:text-xs focus:outline-none transition-all flex justify-between items-center ${
                               errors.doctor ? "border-red-500" : "border-zinc-200"
                             }`}
                             disabled={loading}
@@ -769,7 +865,7 @@ export const Route = createFileRoute("/book/$tenantId")({
 
                 {/* Step 3: Custom Popover Calendar Date Picker */}
                 <div className={`space-y-1 relative ${calendarOpen ? "z-40" : "z-10"}`}>
-                  <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Select Session Date" : isEducation ? "Select Date" : isBeauty ? "Select Service Date" : isProfessional ? "Select Consultation Date" : "Select Date"}</label>
+                  <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Select Session Date" : isEducation ? "Select Date" : isBeauty ? "Select Service Date" : isProfessional ? "Select Consultation Date" : "Select Date"}</label>
                   <div className="relative">
                     <button
                       type="button"
@@ -783,13 +879,14 @@ export const Route = createFileRoute("/book/$tenantId")({
                         setDocOpen(false);
                         setTypeOpen(false);
                         setClockOpen(false);
+                        setLocationOpen(false);
                       }}
-                      className={`w-full rounded-full border bg-white pl-10 pr-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
+                      className={`w-full rounded-full border bg-white pl-9 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 text-left text-[11px] sm:text-xs focus:outline-none transition-all flex justify-between items-center ${
                         errors.date ? "border-red-500" : "border-zinc-200"
                       }`}
                       disabled={loading || (!isGym && !isEducation && !selectedDoctorId)}
                     >
-                      <Calendar className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
+                      <Calendar className="absolute left-3 sm:left-3.5 top-2 sm:top-2.5 h-3.5 sm:h-4 w-3.5 sm:w-4 text-zinc-400" />
                       <span className={selectedDate ? "font-semibold text-zinc-800" : "text-zinc-400"}>
                         {selectedDate
                           ? new Date(selectedDate).toLocaleDateString("en-US", {
@@ -898,7 +995,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                 {/* Step 4: Custom Popover Time Slot Picker — hidden for education/gym */}
                 {!isEducation && !isGym && selectedDoctorId && selectedDate && (
                   <div className={`space-y-1 relative ${clockOpen ? "z-40" : "z-10"}`}>
-                    <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1 font-semibold flex items-center gap-1.5">
+                    <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1 font-semibold flex items-center gap-1.5">
                       Select Available Time Slot
                     </label>
                     <div className="relative">
@@ -910,13 +1007,14 @@ export const Route = createFileRoute("/book/$tenantId")({
                           setDocOpen(false);
                           setTypeOpen(false);
                           setCalendarOpen(false);
+                          setLocationOpen(false);
                         }}
-                        className={`w-full rounded-full border bg-white pl-10 pr-4 py-2 text-left text-xs focus:outline-none transition-all flex justify-between items-center ${
+                        className={`w-full rounded-full border bg-white pl-9 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 text-left text-[11px] sm:text-xs focus:outline-none transition-all flex justify-between items-center ${
                           errors.timeSlot ? "border-red-500" : "border-zinc-200"
                         }`}
                         disabled={loading}
                       >
-                        <Clock className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
+                        <Clock className="absolute left-3 sm:left-3.5 top-2 sm:top-2.5 h-3.5 sm:h-4 w-3.5 sm:w-4 text-zinc-400" />
                         <span className={selectedSlot ? "font-semibold text-zinc-800" : "text-zinc-400"}>
                           {selectedSlot ? selectedSlot : (isBeauty ? "Select Service Time" : isProfessional ? "Select Consultation Time" : "Select Time Slot")}
                         </span>
@@ -980,9 +1078,9 @@ export const Route = createFileRoute("/book/$tenantId")({
 
                 {/* Symptoms / Reason */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Training Goals / Focus Area" : isEducation ? "Purpose of Visit" : isBeauty ? "Service Requests / Style Goals" : isProfessional ? "Consultation Objectives" : "Reason for Visit / Chief Complaint"}</label>
+                  <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1">{isGym ? "Training Goals / Focus Area" : isEducation ? "Purpose of Visit" : isBeauty ? "Service Requests / Style Goals" : isProfessional ? "Consultation Objectives" : "Reason for Visit / Chief Complaint"}</label>
                   <div className="relative">
-                    <FileText className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
+                    <FileText className="absolute left-3 sm:left-3.5 top-2 sm:top-2.5 h-3.5 sm:h-4 w-3.5 sm:w-4 text-zinc-400" />
                     <input
                       type="text"
                       placeholder={isGym ? "e.g. weight loss, build muscle, stamina" : isEducation ? "e.g. academic counselling, exam inquiry, subject query" : isBeauty ? "e.g. haircut, facial, hair coloring, massage" : isProfessional ? "e.g. tax advisory, business coaching, contract review" : "Brief details of your symptoms"}
@@ -991,14 +1089,14 @@ export const Route = createFileRoute("/book/$tenantId")({
                         setReason(e.target.value);
                         if (errors.reason) setErrors(prev => ({ ...prev, reason: "" }));
                       }}
-                      className={`w-full rounded-full border bg-white pl-10 pr-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all ${
+                      className={`w-full rounded-full border bg-white pl-9 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 text-[11px] sm:text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all ${
                         errors.reason ? "border-red-500" : "border-zinc-200"
                       }`}
                       disabled={loading}
                     />
                   </div>
                   {errors.reason && (
-                    <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.reason}</p>
+                    <p className="text-[9px] sm:text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.reason}</p>
                   )}
                 </div>
 
@@ -1015,7 +1113,7 @@ export const Route = createFileRoute("/book/$tenantId")({
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full rounded-full bg-zinc-950 hover:bg-zinc-850 py-2.5 text-xs font-semibold text-white transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer mt-2 disabled:bg-zinc-150 disabled:text-zinc-400"
+                  className="w-full rounded-full bg-zinc-950 hover:bg-zinc-850 py-2 sm:py-2.5 text-[11px] sm:text-xs font-semibold text-white transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer mt-2 disabled:bg-zinc-150 disabled:text-zinc-400"
                 >
                   {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   {isGym ? "Schedule Session" : isEducation ? "Book Appointment" : isBeauty ? "Book Service" : isProfessional ? "Schedule Consultation" : "Schedule Appointment"}

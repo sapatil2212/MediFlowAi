@@ -42,6 +42,7 @@ import {
   WifiOff,
   RefreshCw,
   Smartphone,
+  MapPin,
   Trash2,
   Edit3,
   Download,
@@ -145,6 +146,7 @@ import {
   uploadProfilePhotoServerFn,
 } from "../../lib/auth";
 import WhatsAppHub from "../../components/WhatsAppHub";
+import MultiLocationSettings from "../../components/settings/MultiLocationSettings";
 
 
 export const Route = createFileRoute("/dashboards/education")({
@@ -737,7 +739,9 @@ function EducationDashboardPage() {
     paymentMethod?: string;
     createdAt?: string;
     profilePhoto?: string | null;
-    role?: "admin" | "reception" | "doctor";
+    role?: "admin" | "reception" | "doctor" | "location";
+    locationId?: string;
+    locationName?: string;
   } | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
@@ -905,7 +909,7 @@ function EducationDashboardPage() {
 
 
   // Settings Sub-tab and Clinic Management States
-  const [settingsSubTab, setSettingsSubTab] = useState<"profile" | "hours" | "departments" | "doctors" | "whatsapp" | "users">("profile");
+  const [settingsSubTab, setSettingsSubTab] = useState<"profile" | "hours" | "departments" | "doctors" | "whatsapp" | "users" | "locations">("profile");
   const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
 
   // Sub-Users State
@@ -4034,15 +4038,12 @@ function EducationDashboardPage() {
   if (checkingAuth) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4">
-        <div className="relative flex items-center justify-center mb-6">
-          <div className="absolute h-14 w-14 animate-ping rounded-full bg-brand/10" />
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-brand-light shadow-md">
-            <HeartPulse className="h-5 w-5 text-white" />
-          </div>
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-zinc-200 border-t-brand" />
+          <h2 className="text-sm font-semibold tracking-tight text-zinc-900">
+            Verifying clinician session...
+          </h2>
         </div>
-        <h2 className="text-sm font-semibold tracking-tight text-zinc-900 animate-pulse">
-          Verifying clinician session...
-        </h2>
       </div>
     );
   }
@@ -5049,7 +5050,8 @@ function EducationDashboardPage() {
                               const match = analyticsData.statusBreakdown?.find(
                                 (s: any) => s.status === item.label
                               );
-                              const count = match ? match.count : (item.label === "Completed" ? 35 : item.label === "Confirmed" ? 40 : item.label === "Pending" ? 15 : 10);
+                              const hasData = analyticsData.statusBreakdown && analyticsData.statusBreakdown.length > 0;
+                              const count = match ? match.count : (hasData ? 0 : (item.label === "Completed" ? 35 : item.label === "Confirmed" ? 40 : item.label === "Pending" ? 15 : 10));
                               return (
                                 <div key={item.label} className="flex items-center gap-2">
                                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
@@ -6269,8 +6271,9 @@ function EducationDashboardPage() {
                     { id: "departments", label: "Subject Categories", icon: LayoutDashboard },
                     { id: "doctors", label: "Teachers & Instructors", icon: Stethoscope },
                     { id: "whatsapp", label: "WhatsApp Alerts", icon: Smartphone },
+                    { id: "locations", label: "Multi Location", icon: MapPin },
                   ].filter((sub) => {
-                    if (user?.role !== "admin" && sub.id === "whatsapp") return false;
+                    if (user?.role !== "admin" && (sub.id === "whatsapp" || sub.id === "locations")) return false;
                     if ((user?.subscriptionPlan === "Solo" || user?.subscriptionPlan === "Basic") && sub.id === "whatsapp") return false;
                     return true;
                   });
@@ -7839,6 +7842,19 @@ function EducationDashboardPage() {
                   </div>
                 )}
 
+                {/* Multi Location Tab */}
+                {settingsSubTab === "locations" && (
+                  <MultiLocationSettings
+                    user={user}
+                    onSwitchToPlans={() => setActiveTab("plans")}
+                    professionLabels={{
+                      sectionTitle: "Multi-Location Academies",
+                      sectionDescription: "Create login credentials for each academy branch. Each location can log in with its own email and password to manage its bookings via the workspace dashboard.",
+                      singular: "Academy Location",
+                    }}
+                  />
+                )}
+
                 {/* Manage Users Tab */}
                 {settingsSubTab === "users" && (
                   <div className="space-y-5 animate-in fade-in duration-300">
@@ -8407,6 +8423,7 @@ function EducationDashboardPage() {
                         price: "₹1,499",
                         description: "For growing multi-professional clinics.",
                         features: [
+                          "1 sub location",
                           "Up to 5 professionals",
                           "multi QR Code Booking",
                           "meta verified whatsapp intigration",
@@ -8424,9 +8441,9 @@ function EducationDashboardPage() {
                         name: "Enterprise",
                         price: "Custom",
                         description: "For complete healthcare systems.",
-                        features: ["Unlimited professionals & locations", "Custom CRM & ERP integrations", "Dedicated AI fine-tuning", "Dedicated CSM & support"],
+                        features: ["Unlimited sub locations", "Unlimited professionals & locations", "Custom CRM & ERP integrations", "Dedicated AI fine-tuning", "Dedicated CSM & support"],
                         popular: false,
-                        dark: true,
+                        dark: false,
                         active: user?.subscriptionPlan === "Hospital" || user?.subscriptionPlan === "Enterprise"
                       }
                     ].map((plan) => (
@@ -8434,7 +8451,7 @@ function EducationDashboardPage() {
                         key={plan.name}
                         className={`relative flex flex-col rounded-2xl p-6 transition-all ${
                           plan.popular
-                            ? "bg-zinc-900 text-white ring-1 ring-brand/40 scale-[1.02]"
+                            ? "bg-brand/[0.03] text-zinc-900 ring-2 ring-brand/35 scale-[1.02]"
                             : plan.dark
                               ? "bg-zinc-900 text-white ring-1 ring-zinc-700/60"
                               : plan.active
@@ -8456,24 +8473,24 @@ function EducationDashboardPage() {
                           </span>
                         )}
 
-                        <p className={`text-xs font-bold uppercase tracking-wider ${plan.popular || plan.dark ? "text-brand-light" : "text-brand"}`}>
+                        <p className={`text-xs font-bold uppercase tracking-wider ${plan.dark ? "text-brand-light" : "text-brand"}`}>
                           {plan.name}
                         </p>
                         <p className="mt-4 flex items-baseline gap-1">
                           <span className="text-3xl font-black tracking-tight">{plan.price}</span>
                           {plan.price !== "Custom" && (
-                            <span className={`text-sm ${plan.popular || plan.dark ? "text-zinc-400" : "text-zinc-500"}`}>/mo</span>
+                            <span className={`text-sm ${plan.dark ? "text-zinc-400" : "text-zinc-500"}`}>/mo</span>
                           )}
                         </p>
-                        <p className={`mt-2 text-xs font-medium ${plan.popular || plan.dark ? "text-zinc-300" : "text-zinc-600"}`}>
+                        <p className={`mt-2 text-xs font-medium ${plan.dark ? "text-zinc-300" : "text-zinc-600"}`}>
                           {plan.description}
                         </p>
 
-                        <ul className="mt-5 flex-1 space-y-2.5 border-t border-white/10 pt-5">
+                        <ul className={`mt-5 flex-1 space-y-2.5 border-t ${plan.dark ? "border-white/10" : "border-zinc-200"} pt-5`}>
                           {plan.features.map((feat) => (
                             <li key={feat} className="flex items-start gap-2 text-xs">
-                              <Check className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${plan.popular || plan.dark ? "text-cyan-400" : "text-brand"}`} />
-                              <span className={plan.popular || plan.dark ? "text-zinc-200" : "text-zinc-700"}>{feat}</span>
+                              <Check className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${plan.dark ? "text-cyan-400" : "text-brand"}`} />
+                              <span className={plan.dark ? "text-zinc-200" : "text-zinc-700"}>{feat}</span>
                             </li>
                           ))}
                         </ul>
@@ -8483,13 +8500,13 @@ function EducationDashboardPage() {
                           disabled={plan.active || plan.name === "Enterprise"}
                           className={`mt-6 w-full rounded-lg py-2.5 text-xs font-bold transition-all cursor-pointer ${
                             plan.active
-                              ? plan.popular || plan.dark
+                              ? plan.dark
                                 ? "bg-white/10 text-white border border-white/20 cursor-default"
                                 : "bg-black/10 text-brand border border-zinc-800/25 cursor-default"
                               : plan.name === "Enterprise"
-                                ? "bg-white/10 text-zinc-200 hover:bg-white/20"
+                                ? "bg-zinc-900 text-white hover:bg-zinc-800"
                                 : plan.popular
-                                  ? "bg-white text-zinc-900 hover:bg-zinc-100"
+                                  ? "bg-brand text-white hover:bg-brand/90"
                                   : "bg-zinc-900 text-white hover:bg-zinc-800"
                           }`}
                           onClick={() => {

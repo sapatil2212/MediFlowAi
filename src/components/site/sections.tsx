@@ -1647,6 +1647,7 @@ export function Pricing() {
       blurb: "For growing businesses.",
       features: [
         "1 dashboard",
+        "1 sub location",
         "2,000 appointments / mo",
         "Up to 5,000 client records",
         "WhatsApp alerts included",
@@ -1662,6 +1663,7 @@ export function Pricing() {
       blurb: "For large-scale operations.",
       features: [
         "Unlimited dashboards & locations",
+        "Unlimited sub locations",
         "Unlimited appointments / mo",
         "Unlimited client records",
         "Multi QR Code Booking",
@@ -1685,7 +1687,7 @@ export function Pricing() {
             Predictable as your <span className="text-gradient-brand">network grows</span>
           </h2>
           <p className="mt-4 text-zinc-600">
-            No hidden fees. 14-day free trial. Cancel anytime.
+            No hidden fees. 7-day free trial. Cancel anytime.
           </p>
         </div>
         <div className="grid gap-6 lg:grid-cols-3">
@@ -2066,7 +2068,7 @@ export function CTA() {
             className="group relative overflow-hidden rounded-lg bg-gradient-to-br from-brand to-brand-light px-7 py-3.5 text-sm font-semibold text-white ring-1 ring-brand/40 transition-transform hover:scale-105"
           >
             <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-            Start your 14-day free trial
+            Start your 7-day free trial
           </Link>
           <Link
             to="/contact"

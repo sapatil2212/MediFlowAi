@@ -14,7 +14,7 @@ export const Route = createFileRoute("/pricing")({
       {
         name: "description",
         content:
-          "Transparent pricing for solo practices, multi-location clinics, and hospital networks. 14-day free trial, no credit card.",
+          "Transparent pricing for solo practices, multi-location clinics, and hospital networks. 7-day free trial, no credit card.",
       },
       { property: "og:title", content: "BookMyTime — Pricing" },
       {

@@ -281,7 +281,57 @@ export const loginServerFn = createServerFn({ method: "POST" })
       };
     }
 
-    // ── 3. Nothing found ──
+    // ── 3. Try location login (Location table) ──
+    const location = await queryOne<any>(
+      `SELECT l.*, u.subscriptionStatus, u.subscriptionExpiresAt
+       FROM Location l
+       JOIN User u ON l.tenantId COLLATE utf8mb4_unicode_ci = u.tenantId COLLATE utf8mb4_unicode_ci
+       WHERE l.email COLLATE utf8mb4_unicode_ci = ?
+          OR l.phone COLLATE utf8mb4_unicode_ci = ?
+       LIMIT 1`,
+      [data.username, data.username]
+    );
+
+    if (location) {
+      if (!location.isActive) {
+        throw new Error("This location account has been deactivated. Please contact your workspace administrator.");
+      }
+      const passwordMatch = await bcrypt.compare(rawPassword, location.password);
+      if (!passwordMatch) throw new Error("Incorrect password");
+
+      // Check parent workspace subscription
+      if (location.subscriptionStatus === "Cancelled") {
+        throw new Error("Your workspace account is deactivated. Please contact your workspace admin.");
+      }
+      if (location.subscriptionExpiresAt) {
+        const expiry = new Date(location.subscriptionExpiresAt);
+        if (expiry < new Date()) {
+          throw new Error("Your workspace subscription has expired. Please contact your workspace admin.");
+        }
+      }
+
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + (data.rememberMe ? 30 * 24 * 60 * 60 * 1000 : 8 * 60 * 60 * 1000));
+      await execute(
+        "INSERT INTO LocationSession (id, locationId, token, expiresAt) VALUES (?, ?, ?, ?)",
+        [crypto.randomUUID(), location.id, token, expiresAt]
+      );
+      setCookie("location_session_token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: data.rememberMe ? 30 * 24 * 60 * 60 : 8 * 60 * 60,
+      });
+      return {
+        success: true,
+        role: "location" as const,
+        redirectTo: "/dashboard",
+        user: { id: location.id, name: location.name, email: location.email, clinicName: location.name },
+      };
+    }
+
+    // ── 4. Nothing found ──
     throw new Error("No account found with this email or phone number");
   });
 
@@ -294,6 +344,7 @@ export const logoutServerFn = createServerFn({ method: "POST" })
     const { getCookie, deleteCookie } = await import("@tanstack/react-start/server");
     const token = getCookie("session_token");
     const subToken = getCookie("sub_session_token");
+    const locToken = getCookie("location_session_token");
 
     if (token) {
       await execute("DELETE FROM Session WHERE token = ?", [token]);
@@ -305,6 +356,13 @@ export const logoutServerFn = createServerFn({ method: "POST" })
     if (subToken) {
       await execute("DELETE FROM SubUserSession WHERE token = ?", [subToken]);
       deleteCookie("sub_session_token", {
+        path: "/",
+      });
+    }
+
+    if (locToken) {
+      await execute("DELETE FROM LocationSession WHERE token = ?", [locToken]);
+      deleteCookie("location_session_token", {
         path: "/",
       });
     }
@@ -349,8 +407,9 @@ export const getCurrentUserServerFn = createServerFn({ method: "GET" })
     const { getCookie, deleteCookie } = await import("@tanstack/react-start/server");
     const token = getCookie("session_token");
     const subToken = getCookie("sub_session_token");
+    const locToken = getCookie("location_session_token");
 
-    if (!token && !subToken) return null;
+    if (!token && !subToken && !locToken) return null;
 
     const user = await verifySession();
     if (!user) {
@@ -361,6 +420,11 @@ export const getCurrentUserServerFn = createServerFn({ method: "GET" })
       }
       if (subToken) {
         deleteCookie("sub_session_token", {
+          path: "/",
+        });
+      }
+      if (locToken) {
+        deleteCookie("location_session_token", {
           path: "/",
         });
       }
@@ -723,6 +787,223 @@ export const getAppointmentsServerFn = createServerFn({ method: "GET" })
       tokenNo: apt.tokenNo || null,
       createdAt: apt.createdAt instanceof Date ? apt.createdAt.toISOString() : new Date(apt.createdAt).toISOString()
     }));
+  });
+
+// ──────────────────────────────────────────────
+// Sub-Location (Multi-Location) Bookings
+// Returns bookings made for sub-locations.
+//  • Admin: every booking tied to any sub-location (grouped/filterable by location)
+//  • Location user: only bookings tied to their own location
+// ──────────────────────────────────────────────
+export const getSubLocationBookingsServerFn = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    if (user.role !== "admin" && user.role !== "location") throw new Error("Unauthorized");
+
+    // Resolve the tenant's locations (for grouping / filter chips + name mapping)
+    let locations: any[] = [];
+    try {
+      locations = await query<any>(
+        "SELECT id, name, city, address, isActive FROM Location WHERE tenantId = ? ORDER BY name ASC",
+        [user.tenantId]
+      );
+    } catch {
+      locations = [];
+    }
+    const locMap = new Map<string, any>();
+    locations.forEach((l) => locMap.set(l.id, l));
+
+    // Avoid joining the Location table directly (its collation can differ and break the join);
+    // location names are mapped in JS from the list fetched above.
+    let sql = `SELECT apt.*, d.name as doctorName, dept.name as departmentName
+               FROM Appointment apt
+               LEFT JOIN Doctor d ON apt.doctorId = d.id
+               LEFT JOIN Department dept ON d.departmentId = dept.id
+               WHERE apt.tenantId = ? AND apt.locationId IS NOT NULL AND apt.locationId != ''`;
+    const params: any[] = [user.tenantId];
+
+    // Location-scoped users only see their own location's bookings
+    if (user.role === "location" && user.locationId) {
+      sql += ` AND apt.locationId = ?`;
+      params.push(user.locationId);
+    }
+    sql += ` ORDER BY apt.dateTime DESC`;
+
+    let rows: any[] = [];
+    try {
+      rows = await query<any>(sql, params);
+    } catch (e: any) {
+      console.error("[DB] getSubLocationBookings failed:", e.message);
+      rows = [];
+    }
+
+    const bookings = rows.map((apt) => {
+      const loc = locMap.get(apt.locationId);
+      return {
+        id: apt.id,
+        name: apt.name,
+        email: apt.email,
+        phone: apt.phone,
+        dateTime: apt.dateTime instanceof Date ? apt.dateTime.toISOString() : new Date(apt.dateTime).toISOString(),
+        reason: apt.reason,
+        status: apt.status,
+        doctorId: apt.doctorId,
+        doctorName: apt.doctorName || "",
+        departmentName: apt.departmentName || "",
+        timeSlot: apt.timeSlot,
+        whatsapp: apt.whatsapp || "",
+        appointmentType: apt.appointmentType || "",
+        tokenNo: apt.tokenNo || null,
+        locationId: apt.locationId,
+        locationName: loc ? loc.name : "",
+        locationCity: loc ? (loc.city || "") : "",
+        createdAt: apt.createdAt instanceof Date ? apt.createdAt.toISOString() : new Date(apt.createdAt).toISOString()
+      };
+    });
+
+    return {
+      bookings,
+      locations,
+      isLocationUser: user.role === "location",
+      currentLocationId: (user as any).locationId || null,
+    };
+  });
+
+// Create a booking tied to a sub-location (admin or location-scoped user)
+export const createSubLocationBookingServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    name: string;
+    phone?: string;
+    email?: string;
+    locationId: string;
+    doctorId?: string;
+    dateTime: string;
+    timeSlot?: string;
+    reason: string;
+    appointmentType?: string;
+    status?: string;
+  }) => {
+    if (!data.name || !data.dateTime || !data.reason || !data.locationId) {
+      throw new Error("Patient name, location, date and reason are required");
+    }
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    if (user.role !== "admin" && user.role !== "location") throw new Error("Unauthorized");
+
+    // Location-scoped users can only create bookings for their own location
+    const locationId = user.role === "location" && user.locationId ? user.locationId : data.locationId;
+
+    // Verify the location belongs to this tenant
+    const loc = await queryOne<any>(
+      "SELECT id FROM Location WHERE id = ? AND tenantId = ? LIMIT 1",
+      [locationId, user.tenantId]
+    );
+    if (!loc) throw new Error("Invalid location");
+
+    const id = crypto.randomUUID();
+    const dateVal = new Date(data.dateTime);
+    const tokenRow = await queryOne<any>(
+      "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?)",
+      [user.tenantId, dateVal]
+    );
+    const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
+    const status = data.status || "Pending";
+
+    await execute(
+      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, locationId, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [id, user.tenantId, data.name, data.email || "", data.phone || "", dateVal, data.reason, status, data.doctorId || null, data.timeSlot || null, data.phone || null, data.appointmentType || null, tokenNo, locationId]
+    );
+    return { success: true, id, tokenNo };
+  });
+
+// Update a sub-location booking (lenient on email; preserves/updates locationId)
+export const updateSubLocationBookingServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    id: string;
+    name?: string;
+    phone?: string;
+    email?: string;
+    locationId?: string;
+    doctorId?: string;
+    dateTime?: string;
+    timeSlot?: string;
+    reason?: string;
+    appointmentType?: string;
+    status?: string;
+  }) => {
+    if (!data.id) throw new Error("Booking ID is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    if (user.role !== "admin" && user.role !== "location") throw new Error("Unauthorized");
+
+    // Ensure the booking belongs to this tenant (and to the location, for location users)
+    let checkSql = "SELECT id, locationId FROM Appointment WHERE id = ? AND tenantId = ?";
+    const checkParams: any[] = [data.id, user.tenantId];
+    if (user.role === "location" && user.locationId) {
+      checkSql += " AND locationId = ?";
+      checkParams.push(user.locationId);
+    }
+    checkSql += " LIMIT 1";
+    const existing = await queryOne<any>(checkSql, checkParams);
+    if (!existing) throw new Error("Booking not found or unauthorized");
+
+    const fields: string[] = [];
+    const params: any[] = [];
+    if (data.name !== undefined) { fields.push("name = ?"); params.push(data.name); }
+    if (data.email !== undefined) { fields.push("email = ?"); params.push(data.email || ""); }
+    if (data.phone !== undefined) { fields.push("phone = ?"); params.push(data.phone || ""); }
+    if (data.reason !== undefined) { fields.push("reason = ?"); params.push(data.reason); }
+    if (data.status !== undefined) { fields.push("status = ?"); params.push(data.status); }
+    if (data.doctorId !== undefined) { fields.push("doctorId = ?"); params.push(data.doctorId || null); }
+    if (data.timeSlot !== undefined) { fields.push("timeSlot = ?"); params.push(data.timeSlot || null); }
+    if (data.appointmentType !== undefined) { fields.push("appointmentType = ?"); params.push(data.appointmentType || null); }
+    if (data.dateTime !== undefined) { fields.push("dateTime = ?"); params.push(new Date(data.dateTime)); }
+    // Only an admin may move a booking to a different location
+    if (data.locationId !== undefined && user.role === "admin") {
+      const loc = await queryOne<any>("SELECT id FROM Location WHERE id = ? AND tenantId = ? LIMIT 1", [data.locationId, user.tenantId]);
+      if (loc) { fields.push("locationId = ?"); params.push(data.locationId); }
+    }
+
+    if (fields.length === 0) return { success: true };
+    params.push(data.id, user.tenantId);
+    await execute(
+      `UPDATE Appointment SET ${fields.join(", ")} WHERE id = ? AND tenantId = ?`,
+      params
+    );
+    return { success: true };
+  });
+
+// Delete a sub-location booking
+export const deleteSubLocationBookingServerFn = createServerFn({ method: "POST" })
+  .validator((id: string) => {
+    if (!id) throw new Error("Booking ID is required");
+    return id;
+  })
+  .handler(async ({ data: id }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    if (user.role !== "admin" && user.role !== "location") throw new Error("Unauthorized");
+
+    let sql = "SELECT id FROM Appointment WHERE id = ? AND tenantId = ?";
+    const params: any[] = [id, user.tenantId];
+    if (user.role === "location" && user.locationId) {
+      sql += " AND locationId = ?";
+      params.push(user.locationId);
+    }
+    sql += " LIMIT 1";
+    const apt = await queryOne<any>(sql, params);
+    if (!apt) throw new Error("Booking not found or unauthorized");
+
+    await execute("DELETE FROM Appointment WHERE id = ?", [id]);
+    return { success: true };
   });
 
 export const updateAppointmentServerFn = createServerFn({ method: "POST" })
@@ -2287,6 +2568,191 @@ export const subUserLoginServerFn = createServerFn({ method: "POST" })
       success: true,
       user: { id: subUser.id, name: subUser.name, email: subUser.email, role: subUser.role, tenantId: subUser.tenantId },
     };
+  });
+
+// ──────────────────────────────────────────────
+// Multi-Location Server Functions
+// ──────────────────────────────────────────────
+
+// Helper: derive normalized plan tier for location gating
+function getLocationPlanTier(plan: string | null | undefined): "basic" | "premium" | "enterprise" {
+  const p = (plan || "Trial").toString();
+  if (p === "Enterprise" || p === "Hospital" || p === "Custom") return "enterprise";
+  if (p === "Premium" || p === "Clinic") return "premium";
+  return "basic";
+}
+
+export const getLocationsServerFn = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const rows = await query<any>(
+      `SELECT id, name, address, city, state, pincode, phone, email, managerName, isActive, createdAt
+       FROM Location WHERE tenantId = ? ORDER BY createdAt DESC`,
+      [user.tenantId]
+    );
+    return rows;
+  });
+
+export const getLocationLimitsServerFn = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const tenant = await queryOne<any>(
+      "SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
+      [user.tenantId]
+    );
+    const plan = tenant?.subscriptionPlan || "Trial";
+    const tier = getLocationPlanTier(plan);
+    const [countRow] = await query<any>(
+      "SELECT COUNT(*) as count FROM Location WHERE tenantId = ?",
+      [user.tenantId]
+    );
+    const count = Number(countRow?.count || countRow?.COUNT || 0);
+    let max: number | null;
+    if (tier === "enterprise") max = null; // unlimited
+    else if (tier === "premium") max = 1;
+    else max = 0;
+    return { plan, tier, count, max };
+  });
+
+export const createLocationServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    name: string;
+    email: string;
+    password: string;
+    phone?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    managerName?: string;
+  }) => {
+    if (!data.name || !data.email || !data.password) {
+      throw new Error("Location name, login email, and password are required");
+    }
+    if (!/\S+@\S+\.\S+/.test(data.email)) throw new Error("Please enter a valid email address");
+    if (data.password.length < 8) throw new Error("Password must be at least 8 characters long");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    if (user.role !== "admin") throw new Error("Only the workspace admin can create locations");
+
+    // Plan gating
+    const tenant = await queryOne<any>(
+      "SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
+      [user.tenantId]
+    );
+    const plan = tenant?.subscriptionPlan || "Trial";
+    const tier = getLocationPlanTier(plan);
+
+    if (tier === "basic") {
+      throw new Error("Multi-Location is not available on the Basic plan. Please upgrade to Premium or Enterprise.");
+    }
+
+    const [countRow] = await query<any>(
+      "SELECT COUNT(*) as count FROM Location WHERE tenantId = ?",
+      [user.tenantId]
+    );
+    const count = Number(countRow?.count || countRow?.COUNT || 0);
+
+    if (tier === "premium" && count >= 1) {
+      throw new Error("Your current plan (Premium) allows only 1 sub-location. Please upgrade to Enterprise to add more.");
+    }
+
+    // Email must be globally unique across User and SubUser too, so login routing is unambiguous
+    const existingUser = await queryOne<any>("SELECT id FROM User WHERE email = ? LIMIT 1", [data.email]);
+    if (existingUser) throw new Error("This email is already in use by another account");
+    const existingSub = await queryOne<any>("SELECT id FROM SubUser WHERE email = ? LIMIT 1", [data.email]);
+    if (existingSub) throw new Error("This email is already in use by another sub-user");
+    const existingLoc = await queryOne<any>(
+      "SELECT id FROM Location WHERE tenantId = ? AND email = ? LIMIT 1",
+      [user.tenantId, data.email]
+    );
+    if (existingLoc) throw new Error("A location with this login email already exists");
+
+    const hashed = await bcrypt.hash(data.password, 10);
+    const id = crypto.randomUUID();
+    await execute(
+      `INSERT INTO Location (id, tenantId, name, address, city, state, pincode, phone, email, password, managerName, isActive)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        id,
+        user.tenantId,
+        data.name,
+        data.address || null,
+        data.city || null,
+        data.state || null,
+        data.pincode || null,
+        data.phone || null,
+        data.email,
+        hashed,
+        data.managerName || null,
+      ]
+    );
+    return { success: true, id };
+  });
+
+export const updateLocationServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    id: string;
+    name?: string;
+    phone?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    managerName?: string;
+    password?: string;
+    isActive?: number;
+  }) => {
+    if (!data.id) throw new Error("Location ID is required");
+    if (data.password && data.password.length < 8) throw new Error("Password must be at least 8 characters long");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    if (user.role !== "admin") throw new Error("Only the workspace admin can update locations");
+
+    const fields: string[] = [];
+    const params: any[] = [];
+    if (data.name !== undefined) { fields.push("name = ?"); params.push(data.name); }
+    if (data.phone !== undefined) { fields.push("phone = ?"); params.push(data.phone || null); }
+    if (data.address !== undefined) { fields.push("address = ?"); params.push(data.address || null); }
+    if (data.city !== undefined) { fields.push("city = ?"); params.push(data.city || null); }
+    if (data.state !== undefined) { fields.push("state = ?"); params.push(data.state || null); }
+    if (data.pincode !== undefined) { fields.push("pincode = ?"); params.push(data.pincode || null); }
+    if (data.managerName !== undefined) { fields.push("managerName = ?"); params.push(data.managerName || null); }
+    if (data.isActive !== undefined) { fields.push("isActive = ?"); params.push(data.isActive); }
+    if (data.password) {
+      const hashed = await bcrypt.hash(data.password, 10);
+      fields.push("password = ?");
+      params.push(hashed);
+    }
+    if (fields.length === 0) return { success: true };
+    params.push(data.id, user.tenantId);
+    await execute(
+      `UPDATE Location SET ${fields.join(", ")} WHERE id = ? AND tenantId = ?`,
+      params
+    );
+    return { success: true };
+  });
+
+export const deleteLocationServerFn = createServerFn({ method: "POST" })
+  .validator((id: string) => {
+    if (!id) throw new Error("Location ID is required");
+    return id;
+  })
+  .handler(async ({ data: id }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    if (user.role !== "admin") throw new Error("Only the workspace admin can delete locations");
+    await execute("DELETE FROM LocationSession WHERE locationId = ?", [id]);
+    await execute("DELETE FROM Location WHERE id = ? AND tenantId = ?", [id, user.tenantId]);
+    return { success: true };
   });
 
 // ──────────────────────────────────────────────

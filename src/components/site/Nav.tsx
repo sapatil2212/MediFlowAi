@@ -69,7 +69,7 @@ export function Nav() {
             style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
           >
             <span className="relative z-10 flex items-center gap-1 sm:gap-1.5">
-              14 Days Free Trial
+              7 Days Free Trial
               <ArrowRight className="size-3 sm:size-3.5 transition-transform group-hover:translate-x-0.5" />
             </span>
             <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
@@ -109,7 +109,7 @@ export function Nav() {
               className="mt-2 rounded-md px-3 py-2 text-sm font-semibold text-white text-center"
               style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
             >
-              14 Days Free Trial
+              7 Days Free Trial
             </Link>
           </div>
         </div>

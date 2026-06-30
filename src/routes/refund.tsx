@@ -19,7 +19,7 @@ function RefundPage() {
           <p className="text-sm text-zinc-500 mb-8">Last Updated: June 2026</p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">Free Trial</h2>
-          <p className="mb-6">All new users receive a 14-day free trial to evaluate the platform before purchasing.</p>
+          <p className="mb-6">All new users receive a 7-day free trial to evaluate the platform before purchasing.</p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">Subscription Payments</h2>
           <p className="mb-6">Monthly and annual subscription payments are generally non-refundable once processed.</p>

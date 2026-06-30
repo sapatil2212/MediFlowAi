@@ -78,5 +78,46 @@ export async function verifySession() {
     }
   }
 
+  // ── 3. Check location session (multi-location sub-accounts) ──
+  const locToken = getCookie("location_session_token");
+  if (locToken) {
+    const locSession = await queryOne<any>(
+      `SELECT ls.id as sessionId, ls.locationId, ls.token, ls.expiresAt,
+              l.id as lid, l.name as locName, l.email as locEmail, l.phone as locPhone, l.tenantId, l.isActive,
+              l.address, l.city, l.state, l.pincode, l.managerName,
+              u.clinicName, u.practiceSize, u.profession,
+              u.subscriptionStatus, u.subscriptionPlan, u.subscriptionExpiresAt,
+              u.paymentAmount, u.billingInterval, u.paymentMethod, u.createdAt as uCreatedAt
+       FROM LocationSession ls
+       JOIN Location l ON ls.locationId = l.id
+       JOIN User u ON l.tenantId COLLATE utf8mb4_unicode_ci = u.tenantId COLLATE utf8mb4_unicode_ci
+       WHERE ls.token = ? AND ls.expiresAt > ?
+       LIMIT 1`,
+      [locToken, new Date()]
+    );
+    if (locSession && locSession.isActive) {
+      return {
+        id: locSession.lid,
+        name: locSession.locName,
+        email: locSession.locEmail,
+        phone: locSession.locPhone,
+        clinicName: locSession.clinicName,
+        practiceSize: locSession.practiceSize,
+        tenantId: locSession.tenantId,
+        subscriptionStatus: locSession.subscriptionStatus,
+        subscriptionPlan: locSession.subscriptionPlan,
+        subscriptionExpiresAt: locSession.subscriptionExpiresAt instanceof Date ? locSession.subscriptionExpiresAt.toISOString() : locSession.subscriptionExpiresAt,
+        paymentAmount: locSession.paymentAmount,
+        billingInterval: locSession.billingInterval,
+        paymentMethod: locSession.paymentMethod,
+        createdAt: locSession.uCreatedAt instanceof Date ? locSession.uCreatedAt.toISOString() : locSession.uCreatedAt,
+        role: "location" as const,
+        locationId: locSession.lid,
+        locationName: locSession.locName,
+        profession: locSession.profession || "Healthcare and medical",
+      };
+    }
+  }
+
   return null;
 }

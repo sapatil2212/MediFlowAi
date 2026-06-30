@@ -402,6 +402,10 @@ if (typeof window === "undefined") {
             await conn.query("ALTER TABLE Appointment ADD COLUMN tokenNo INT NULL");
             console.log("[DB] ✅ Added tokenNo column to Appointment table");
           }
+          if (!colNames.includes("locationId")) {
+            await conn.query("ALTER TABLE Appointment ADD COLUMN locationId VARCHAR(255) NULL");
+            console.log("[DB] ✅ Added locationId column to Appointment table");
+          }
         } catch (err: any) {
           console.warn("[DB] ⚠️ Could not verify/alter Appointment columns:", err.message);
         }
@@ -578,6 +582,48 @@ if (typeof window === "undefined") {
           `);
         } catch (err: any) {
           console.error("[DB] ❌ Failed to create SubUserSession table:", err.message);
+        }
+
+        // Create Location Table (multi-branch / multi-location sub-accounts per tenant)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS Location (
+              id VARCHAR(255) PRIMARY KEY,
+              tenantId VARCHAR(255) NOT NULL,
+              name VARCHAR(255) NOT NULL,
+              address TEXT NULL,
+              city VARCHAR(120) NULL,
+              state VARCHAR(120) NULL,
+              pincode VARCHAR(20) NULL,
+              phone VARCHAR(50) NULL,
+              email VARCHAR(255) NOT NULL,
+              password VARCHAR(255) NOT NULL,
+              managerName VARCHAR(255) NULL,
+              isActive TINYINT(1) DEFAULT 1,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY location_email (tenantId, email),
+              INDEX idx_location_tenant (tenantId)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create Location table:", err.message);
+        }
+
+        // Create LocationSession Table (auth tokens for location logins)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS LocationSession (
+              id VARCHAR(255) PRIMARY KEY,
+              locationId VARCHAR(255) NOT NULL,
+              token VARCHAR(255) UNIQUE NOT NULL,
+              expiresAt TIMESTAMP NOT NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              INDEX idx_location_session (locationId)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create LocationSession table:", err.message);
         }
 
         // Create WATemplate Table

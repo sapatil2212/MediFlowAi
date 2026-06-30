@@ -319,22 +319,22 @@ function SignupPage() {
       </div>
 
       {/* Main card container */}
-      <div className="grid w-full max-w-4xl overflow-hidden rounded-[1.75rem] border border-zinc-200/60 bg-white p-4 lg:grid-cols-2 lg:gap-6 min-h-[500px]">
+      <div className="grid w-full max-w-3xl overflow-hidden rounded-2xl border border-zinc-200/60 bg-white p-3 lg:grid-cols-[1fr_0.85fr] lg:gap-4 min-h-[460px]">
         {/* Left Side: Form */}
-        <div className="flex flex-col justify-between py-4 px-3 sm:px-6 lg:px-8">
-          <div className="my-auto space-y-4">
+        <div className="flex flex-col justify-between py-3 px-3 sm:px-5 lg:px-6">
+          <div className="my-auto space-y-3">
             {/* Header */}
             <div className="text-center">
-              <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
+              <h1 className="text-xl font-bold tracking-tight text-zinc-900">
                 Create Account
               </h1>
-              <p className="mt-1 text-xs text-zinc-400">
+              <p className="mt-0.5 text-[11px] text-zinc-400">
                 Sign up to start sync'ing your healthcare workspace.
               </p>
             </div>
 
             {/* Form */}
-            <form className="space-y-3" onSubmit={handleSignupSubmit}>
+            <form className="space-y-2.5" onSubmit={handleSignupSubmit}>
               {/* 1. Name */}
               <div>
                 <input
@@ -345,7 +345,7 @@ function SignupPage() {
                     setName(e.target.value);
                     if (formError) setFormError("");
                   }}
-                  className="w-full rounded-full border border-zinc-200/80 bg-white px-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
+                  className="w-full rounded-full border border-zinc-200/80 bg-white px-3.5 py-1.5 text-[11px] text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
                   required
                   disabled={loading}
                 />
@@ -362,7 +362,7 @@ function SignupPage() {
                     if (phoneError) setPhoneError("");
                     if (formError) setFormError("");
                   }}
-                  className={`w-full rounded-full border bg-white px-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none transition-all ${
+                  className={`w-full rounded-full border bg-white px-3.5 py-1.5 text-[11px] text-zinc-800 placeholder:text-zinc-400 focus:outline-none transition-all ${
                     phoneError
                       ? "border-red-500 focus:border-red-500"
                       : "border-zinc-200/80 focus:border-brand"
@@ -371,7 +371,7 @@ function SignupPage() {
                   disabled={loading}
                 />
                 {phoneError && (
-                  <p className="mt-1 text-[10px] text-red-500 pl-4">{phoneError}</p>
+                  <p className="mt-0.5 text-[10px] text-red-500 pl-3.5">{phoneError}</p>
                 )}
               </div>
 
@@ -387,7 +387,7 @@ function SignupPage() {
                       if (emailError) setEmailError("");
                     }}
                     disabled={isVerified || loading}
-                    className={`w-full rounded-full border bg-white pl-4 pr-24 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none transition-all ${
+                    className={`w-full rounded-full border bg-white pl-3.5 pr-20 py-1.5 text-[11px] text-zinc-800 placeholder:text-zinc-400 focus:outline-none transition-all ${
                       emailError
                         ? "border-red-500 focus:border-red-500"
                         : isVerified
@@ -398,7 +398,7 @@ function SignupPage() {
                   />
                   <div className="absolute right-1">
                     {isVerified ? (
-                      <span className="flex items-center gap-0.5 text-[9px] font-bold text-emerald-600 px-2.5 py-0.5 bg-emerald-50 rounded-full border border-emerald-100">
+                      <span className="flex items-center gap-0.5 text-[9px] font-bold text-emerald-600 px-2 py-0.5 bg-emerald-50 rounded-full border border-emerald-100">
                         <Check className="h-2.5 w-2.5" /> Verified
                       </span>
                     ) : (
@@ -406,7 +406,7 @@ function SignupPage() {
                         type="button"
                         onClick={handleSendOtp}
                         disabled={!email || loading}
-                        className="rounded-full bg-brand/10 hover:bg-brand/20 disabled:bg-zinc-50 disabled:text-zinc-400 text-brand text-[10px] font-bold px-3 py-1 transition-all cursor-pointer flex items-center gap-1"
+                        className="rounded-full bg-brand/10 hover:bg-brand/20 disabled:bg-zinc-50 disabled:text-zinc-400 text-brand text-[10px] font-bold px-2.5 py-0.5 transition-all cursor-pointer flex items-center gap-1"
                       >
                         {loading && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
                         Send OTP
@@ -415,7 +415,7 @@ function SignupPage() {
                   </div>
                 </div>
                 {emailError && (
-                  <p className="mt-1 text-[10px] text-red-500 pl-4">{emailError}</p>
+                  <p className="mt-0.5 text-[10px] text-red-500 pl-3.5">{emailError}</p>
                 )}
               </div>
 
@@ -430,7 +430,7 @@ function SignupPage() {
                       setPassword(e.target.value);
                       if (formError) setFormError("");
                     }}
-                    className="w-full rounded-full border border-zinc-200/80 bg-white px-4 py-2 pr-10 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
+                    className="w-full rounded-full border border-zinc-200/80 bg-white px-3.5 py-1.5 pr-9 text-[11px] text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
                     required
                     disabled={loading}
                     minLength={6}
@@ -442,19 +442,19 @@ function SignupPage() {
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 transition-colors"
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    {showPassword ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                   </button>
                 </div>
               </div>
 
               {/* Profession Selection */}
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider pl-1">Business Profession / Industry</label>
                 <select
                   value={profession}
                   onChange={(e) => setProfession(e.target.value)}
                   disabled={loading}
-                  className="w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all cursor-pointer"
+                  className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-[11px] text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all cursor-pointer"
                 >
                   <option value="Healthcare and medical">Healthcare & Medical</option>
                   <option value="Beauty and wellness">Beauty & Wellness</option>
@@ -465,7 +465,7 @@ function SignupPage() {
               </div>
 
               {/* 5. Business Name (Clinic / Hospital / Salon, etc. depending on Business Profession) */}
-              <div className="space-y-1 animate-fade-in">
+              <div className="space-y-0.5 animate-fade-in">
                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider pl-1">
                   {getBusinessNameLabel(profession)}
                 </label>
@@ -477,7 +477,7 @@ function SignupPage() {
                     setClinicName(e.target.value);
                     if (formError) setFormError("");
                   }}
-                  className="w-full rounded-full border border-zinc-200/80 bg-white px-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
+                  className="w-full rounded-full border border-zinc-200/80 bg-white px-3.5 py-1.5 text-[11px] text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
                   required
                   disabled={loading}
                 />

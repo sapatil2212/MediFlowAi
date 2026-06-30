@@ -39,6 +39,20 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
       [data.tenantId]
     );
 
+    // 3b. Resolve active multi-location branches (publicly visible only when isActive)
+    let locations: Array<{ id: string; name: string; city: string | null; address: string | null }> = [];
+    try {
+      locations = await query<any>(
+        `SELECT id, name, city, address FROM Location
+         WHERE tenantId = ? AND isActive = 1
+         ORDER BY name ASC`,
+        [data.tenantId]
+      );
+    } catch {
+      // Location table may not exist on older deployments — silently treat as no locations
+      locations = [];
+    }
+
     // 4. If date and doctorId are selected, compute dynamic available slots
     let slots: string[] = [];
     const isEducation = profession === "Education institutions";
@@ -153,6 +167,7 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
       profession: profession,
       departments,
       doctors,
+      locations,
       slots
     };
   });
@@ -172,6 +187,7 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     timeSlot?: string;
     whatsapp?: string;
     appointmentType?: string;
+    locationId?: string;
   }) => {
     if (!data.tenantId || !data.name || !data.dateTime || !data.reason) {
       throw new Error("Required booking fields missing");
@@ -184,6 +200,21 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     const docId = data.doctorId || null;
     const tSlot = data.timeSlot || null;
 
+    // Validate locationId if provided — must belong to this tenant and be active
+    let locId: string | null = null;
+    if (data.locationId) {
+      try {
+        const loc = await queryOne<any>(
+          "SELECT id FROM Location WHERE id = ? AND tenantId = ? AND isActive = 1 LIMIT 1",
+          [data.locationId, data.tenantId]
+        );
+        if (loc) locId = loc.id;
+      } catch {
+        // Location table may not exist on older deployments — ignore silently
+        locId = null;
+      }
+    }
+
     // Auto-assign sequential token number per tenant + date
     const tokenRow = await queryOne<any>(
       "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?)",
@@ -192,9 +223,9 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
 
     await execute(
-      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, NOW())`,
-      [id, data.tenantId, data.name, data.email || "", data.phone || "", dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, tokenNo]
+      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, locationId, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, NOW())`,
+      [id, data.tenantId, data.name, data.email || "", data.phone || "", dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, tokenNo, locId]
     );
 
     // Queue WhatsApp notification if WA microservice is connected
@@ -213,11 +244,20 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
               if (doc) docName = doc.name;
             }
 
+            let locName = "";
+            if (locId) {
+              try {
+                const loc = await queryOne<any>("SELECT name FROM Location WHERE id = ? LIMIT 1", [locId]);
+                if (loc) locName = loc.name;
+              } catch {}
+            }
+
             const dateStr = dateVal.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
             const timeStr = tSlot || dateVal.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
             const docText = docName ? ` with *${docName}*` : "";
+            const locText = locName ? `\n📍 *Location:* ${locName}` : "";
 
-            const waMessage = `Hello *${data.name}*,\n\nYour appointment at *${clinicName}*${docText} is confirmed for *${dateStr}* at *${timeStr}*.\n\n🎫 *Your Token No: #${tokenNo}*\n\nThank you for choosing HealthSync AI!\n\n_This is an automated notification message._`;
+            const waMessage = `Hello *${data.name}*,\n\nYour appointment at *${clinicName}*${docText} is confirmed for *${dateStr}* at *${timeStr}*.${locText}\n\n🎫 *Your Token No: #${tokenNo}*\n\nThank you for choosing HealthSync AI!\n\n_This is an automated notification message._`;
             await enqueueWA(data.tenantId, data.phone, waMessage);
           }
         }
