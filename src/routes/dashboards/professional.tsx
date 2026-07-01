@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import bmtLogo from "../../assets/bmt-logo.png";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   HeartPulse,
@@ -147,6 +147,7 @@ import {
 } from "../../lib/auth";
 import WhatsAppHub from "../../components/WhatsAppHub";
 import MultiLocationSettings from "../../components/settings/MultiLocationSettings";
+import { resolveFeatureAccess, type FeatureId } from "../../lib/feature-access";
 
 
 export const Route = createFileRoute("/dashboards/professional")({
@@ -744,6 +745,15 @@ function DashboardPage() {
     locationName?: string;
   } | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+
+  // Single source of truth for plan-gated feature access (availability + role permission).
+  const featureAccess = useMemo(() => resolveFeatureAccess({
+    role: (user?.role ?? "admin") as any,
+    subscriptionPlan: user?.subscriptionPlan,
+    subscriptionStatus: user?.subscriptionStatus,
+    subscriptionExpiresAt: user?.subscriptionExpiresAt,
+    isActive: true,
+  }), [user]);
 
   // Advisor Scribe States
   const [scribeSpecialty, setScribeSpecialty] = useState<"Family Medicine" | "Cardiology" | "Pediatrics" | "Psychiatry">("Family Medicine");
@@ -4087,9 +4097,8 @@ function DashboardPage() {
                     { id: "settings", label: "Settings", icon: Settings },
                     { id: "plans", label: "Manage Plans", icon: CreditCard },
                   ].filter(tab => {
-                    if (user?.role !== "admin" && tab.id === "plans") return false;
-                    if (user?.role === "reception" && (tab.id === "scribe" || tab.id === "analytics" || tab.id === "whatsapp")) return false;
-                    if ((user?.subscriptionPlan === "Solo" || user?.subscriptionPlan === "Basic") && tab.id === "whatsapp") return false;
+                    const fa = featureAccess[tab.id as FeatureId];
+                    if (fa && !fa.visible) return false;
                     return true;
                   }).map((tab) => {
                     const Icon = tab.icon;
@@ -4184,9 +4193,8 @@ function DashboardPage() {
               { id: "settings", label: "Settings", icon: Settings },
               { id: "plans", label: "Manage Plans", icon: CreditCard },
             ].filter(tab => {
-              if (user?.role !== "admin" && tab.id === "plans") return false;
-              if (user?.role === "reception" && (tab.id === "scribe" || tab.id === "analytics" || tab.id === "whatsapp")) return false;
-              if ((user?.subscriptionPlan === "Solo" || user?.subscriptionPlan === "Basic") && tab.id === "whatsapp") return false;
+              const fa = featureAccess[tab.id as FeatureId];
+              if (fa && !fa.visible) return false;
               return true;
             }).map((tab) => {
               const Icon = tab.icon;
@@ -6268,8 +6276,8 @@ function DashboardPage() {
                     { id: "users", label: "Manage Users", icon: Users },
                     { id: "locations", label: "Multi Location", icon: MapPin },
                   ].filter((sub) => {
-                    if (user?.role !== "admin" && (sub.id === "whatsapp" || sub.id === "users" || sub.id === "locations")) return false;
-                    if ((user?.subscriptionPlan === "Solo" || user?.subscriptionPlan === "Basic") && sub.id === "whatsapp") return false;
+                    const fa = featureAccess[sub.id as FeatureId];
+                    if (fa && !fa.visible) return false;
                     return true;
                   });
                   const active = tabs.find(t => t.id === settingsSubTab) || tabs[0];

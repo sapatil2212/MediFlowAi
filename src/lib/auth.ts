@@ -7,7 +7,21 @@ import { sendOtpEmail } from "./email";
 
 // WhatsApp HTTP client — pure ESM, safe to import (no Puppeteer/CJS globals)
 import { enqueueWA, getWAStatus, disconnectWA, initializeWA, enqueueWABulk, sendWAMedia, pauseWACampaign } from "./whatsapp";
+import { canUseFeature, canOperateFeature, type AccountContext, type AccountRole } from "./feature-access";
 
+
+// Builds the AccountContext consumed by the pure feature-access resolver from a
+// verifySession result. Child sessions only exist while active (verifySession
+// gates on isActive), so isActive is always true here.
+function buildAccountContext(user: any): AccountContext {
+  return {
+    role: (user.role ?? "admin") as AccountRole,
+    subscriptionPlan: user.subscriptionPlan,
+    subscriptionStatus: user.subscriptionStatus,
+    subscriptionExpiresAt: user.subscriptionExpiresAt,
+    isActive: true,
+  };
+}
 
 // Helper to generate a 4-digit OTP
 function generateOtp(): string {
@@ -1403,6 +1417,9 @@ export const getWhatsAppStatusServerFn = createServerFn({ method: "GET" })
   .handler(async () => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    if (!canUseFeature(buildAccountContext(user), "whatsapp")) {
+      throw new Error("Your plan does not include WhatsApp alerts.");
+    }
     
     let status = await getWAStatus(user.tenantId);
     // If the session is fully disconnected (and not currently initializing or paired),
@@ -1419,6 +1436,13 @@ export const disconnectWhatsAppServerFn = createServerFn({ method: "POST" })
   .handler(async () => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const ctx = buildAccountContext(user);
+    if (!canUseFeature(ctx, "whatsapp")) {
+      throw new Error("Your plan does not include WhatsApp alerts.");
+    }
+    if (!canOperateFeature(ctx, "whatsapp")) {
+      throw new Error("You do not have permission to perform this action.");
+    }
     await disconnectWA(user.tenantId);
     return { success: true };
   });
@@ -1431,6 +1455,13 @@ export const sendTestWaServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const ctx = buildAccountContext(user);
+    if (!canUseFeature(ctx, "whatsapp")) {
+      throw new Error("Your plan does not include WhatsApp alerts.");
+    }
+    if (!canOperateFeature(ctx, "whatsapp")) {
+      throw new Error("You do not have permission to perform this action.");
+    }
     const status = await getWAStatus(user.tenantId);
     if (status.state !== "CONNECTED") {
       throw new Error("WhatsApp is not connected. Please scan the QR code first.");
@@ -1443,6 +1474,9 @@ export const getWhatsAppConfigServerFn = createServerFn({ method: "GET" })
   .handler(async () => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    if (!canUseFeature(buildAccountContext(user), "whatsapp")) {
+      throw new Error("Your plan does not include WhatsApp alerts.");
+    }
 
     const config = await queryOne<any>(
       "SELECT * FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1",
@@ -1459,6 +1493,13 @@ export const saveWhatsAppConfigServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const ctx = buildAccountContext(user);
+    if (!canUseFeature(ctx, "whatsapp")) {
+      throw new Error("Your plan does not include WhatsApp alerts.");
+    }
+    if (!canOperateFeature(ctx, "whatsapp")) {
+      throw new Error("You do not have permission to perform this action.");
+    }
 
     await execute(
       `INSERT INTO WhatsAppConfig (id, tenantId, phoneNumber, isEnabled)
