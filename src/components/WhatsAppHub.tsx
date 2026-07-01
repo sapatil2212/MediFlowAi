@@ -63,9 +63,10 @@ interface WhatsAppHubProps {
   user: any;
   showToast: (type: "success" | "error" | "info", message: string) => void;
   setConfirmDialog: (dialog: { open: boolean; title: string; message: string; onConfirm: () => void } | null) => void;
+  canOperate?: boolean; // whether the account role has operate permission (vs view_only)
 }
 
-export default function WhatsAppHub({ user, showToast, setConfirmDialog }: WhatsAppHubProps) {
+export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOperate = true }: WhatsAppHubProps) {
   const [activeSubTab, setActiveSubTab] = useState<"dashboard" | "templates" | "campaigns" | "auto-reply" | "connection">("dashboard");
 
   // Connection & polling states
@@ -527,7 +528,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                 </div>
                 <button
                   type="submit"
-                  disabled={sendingQuick || waStatus !== "CONNECTED"}
+                  disabled={sendingQuick || waStatus !== "CONNECTED" || !canOperate}
                   className="w-full rounded-full bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-bold py-2 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1.5"
                 >
                   {sendingQuick ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3 w-3" />}
@@ -555,6 +556,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                 setEditingTemplate={setEditingTemplate}
                 loadTemplates={loadTemplates}
                 showToast={showToast}
+                canOperate={canOperate}
               />
             ) : (
               <div className="bg-white border border-zinc-200 rounded-3xl p-5 space-y-4">
@@ -645,6 +647,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                 setCreatingCampaign={setCreatingCampaign}
                 loadCampaigns={loadCampaigns}
                 showToast={showToast}
+                canOperate={canOperate}
               />
             ) : selectedCampaign ? (
               <div className="bg-white border border-zinc-200 rounded-3xl p-5 space-y-5">
@@ -707,7 +710,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                     {selectedCampaign.status === "draft" && (
                       <button
                         onClick={() => handleStartCampaign(selectedCampaign.id)}
-                        disabled={waStatus !== "CONNECTED"}
+                        disabled={waStatus !== "CONNECTED" || !canOperate}
                         className="rounded-full bg-black text-white font-bold text-xs px-5 py-1.5 flex items-center gap-1.5 hover:bg-black/90 disabled:opacity-50 cursor-pointer shadow-sm"
                       >
                         <Play className="h-3.5 w-3.5" /> Launch Campaign
@@ -716,7 +719,8 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                     {selectedCampaign.status === "sending" && (
                       <button
                         onClick={() => handlePauseCampaign(selectedCampaign.id)}
-                        className="rounded-full bg-amber-500 text-white font-bold text-xs px-5 py-1.5 flex items-center gap-1.5 hover:bg-amber-600 cursor-pointer shadow-sm"
+                        disabled={!canOperate}
+                        className="rounded-full bg-amber-500 text-white font-bold text-xs px-5 py-1.5 flex items-center gap-1.5 hover:bg-amber-600 cursor-pointer shadow-sm disabled:opacity-50"
                       >
                         <Pause className="h-3.5 w-3.5" /> Pause
                       </button>
@@ -724,7 +728,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                     {selectedCampaign.status === "paused" && (
                       <button
                         onClick={() => handleStartCampaign(selectedCampaign.id)}
-                        disabled={waStatus !== "CONNECTED"}
+                        disabled={waStatus !== "CONNECTED" || !canOperate}
                         className="rounded-full bg-black text-white font-bold text-xs px-5 py-1.5 flex items-center gap-1.5 hover:bg-black/90 disabled:opacity-50 cursor-pointer shadow-sm"
                       >
                         <Play className="h-3.5 w-3.5" /> Resume Campaign
@@ -732,7 +736,8 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                     )}
                     <button
                       onClick={() => handleDeleteCampaign(selectedCampaign.id)}
-                      className="rounded-full border border-red-200 hover:bg-red-50 text-red-500 font-bold text-xs px-4 py-1.5 flex items-center gap-1 cursor-pointer"
+                      disabled={!canOperate}
+                      className="rounded-full border border-red-200 hover:bg-red-50 text-red-500 font-bold text-xs px-4 py-1.5 flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Trash2 className="h-3.5 w-3.5" /> Delete Campaign
                     </button>
@@ -910,7 +915,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                 {/* Toggle Switch */}
                 <button
                   onClick={() => handleToggleAI(!aiEnabled)}
-                  disabled={loadingAIToggle}
+                  disabled={loadingAIToggle || !canOperate}
                   className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-50 ${
                     aiEnabled ? "bg-gradient-to-r from-violet-500 to-emerald-500" : "bg-zinc-200"
                   }`}
@@ -1208,7 +1213,8 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                                   </button>
                                   <button
                                     onClick={() => handleDeleteAutoReply(rule.id)}
-                                    className="rounded-full bg-red-50 hover:bg-red-100 text-red-500 text-[10px] font-bold px-3 py-1 cursor-pointer"
+                                    disabled={!canOperate}
+                                    className="rounded-full bg-red-50 hover:bg-red-100 text-red-500 text-[10px] font-bold px-3 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
                                     Delete
                                   </button>
@@ -1273,7 +1279,8 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog }: Whats
                         }
                       });
                     }}
-                    className="rounded-full bg-red-50 hover:bg-red-100 text-red-500 text-[10px] font-bold px-5 py-2 cursor-pointer transition-all border border-red-150 inline-block"
+                    disabled={!canOperate}
+                    className="rounded-full bg-red-50 hover:bg-red-100 text-red-500 text-[10px] font-bold px-5 py-2 cursor-pointer transition-all border border-red-150 inline-block disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Disconnect Device Link
                   </button>
@@ -1360,9 +1367,10 @@ interface TemplateBuilderProps {
   setEditingTemplate: (val: any) => void;
   loadTemplates: () => void;
   showToast: (type: "success" | "error" | "info", message: string) => void;
+  canOperate?: boolean;
 }
 
-const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToast }: TemplateBuilderProps) => {
+const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToast, canOperate = true }: TemplateBuilderProps) => {
   const [name, setName] = useState(template.name || "");
   const [category, setCategory] = useState(template.category || "marketing");
   const [headerType, setHeaderType] = useState(template.headerType || "none");
@@ -1513,7 +1521,7 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
             <button
               type="button"
               onClick={handleAIGenerate}
-              disabled={generatingAI}
+              disabled={generatingAI || !canOperate}
               className="rounded-full bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs px-4 py-2 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-md transition-all shrink-0"
             >
               {generatingAI ? (
@@ -1735,7 +1743,7 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !canOperate}
             className="flex-1 rounded-xl bg-violet-600 hover:bg-violet-750 text-white font-bold text-xs py-3 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-md hover:shadow-lg transition-all"
           >
             {saving ? (
@@ -1818,9 +1826,10 @@ interface CampaignWizardProps {
   setCreatingCampaign: (val: boolean) => void;
   loadCampaigns: () => void;
   showToast: (type: "success" | "error" | "info", message: string) => void;
+  canOperate?: boolean;
 }
 
-const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToast }: CampaignWizardProps) => {
+const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToast, canOperate = true }: CampaignWizardProps) => {
   const [wizardStep, setWizardStep] = useState(1);
   const [campaignName, setCampaignName] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
@@ -1985,7 +1994,7 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
           <div className="flex justify-end pt-4">
             <button
               onClick={() => setWizardStep(2)}
-              disabled={!campaignName.trim()}
+              disabled={!campaignName.trim() || !canOperate}
               className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-6 py-2 cursor-pointer disabled:opacity-40"
             >
               Next Step
@@ -2142,7 +2151,8 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
             </button>
             <button
               onClick={handleCreateCampaign}
-              className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-8 py-2.5 cursor-pointer flex items-center gap-1.5 shadow-md"
+              disabled={!canOperate}
+              className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-8 py-2.5 cursor-pointer flex items-center gap-1.5 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Check className="h-4 w-4" /> Create Broadcast Campaign
             </button>

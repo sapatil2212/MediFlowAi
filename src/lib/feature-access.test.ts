@@ -1,438 +1,512 @@
-import { describe, it, expect } from "vitest";
-import fc from "fast-check";
+/**
+ * Property-based and example-based tests for feature-access.ts
+ *
+ * These tests validate the 9 correctness properties from the design document.
+ */
 
+import { describe, it, expect, test } from "vitest";
+import * as fc from "fast-check";
 import {
   normalizePlan,
   isSubscriptionActive,
   planIncludesFeature,
+  rolePermission,
   resolveFeatureAccess,
   canUseFeature,
   canOperateFeature,
+  PLAN_FEATURES,
+  ROLE_PERMISSIONS,
   FEATURE_IDS,
   PLAN_TIERS,
-  type AccountRole,
-  type AccountContext,
-  type FeatureId,
   type PlanTier,
+  type AccountRole,
+  type FeatureId,
+  type AccountContext,
 } from "./feature-access";
 
-// ---------------------------------------------------------------------------
-// Shared test fixtures / arbitraries
-// ---------------------------------------------------------------------------
+// ───────────────────────────────────────────────────────────────────────────
+// Fast-check arbitraries for generating AccountContext inputs
+// ───────────────────────────────────────────────────────────────────────────
 
-/** Deterministic clock so any expiry comparison is reproducible. */
-const NOW = new Date("2025-06-15T00:00:00.000Z");
+const arbRole = fc.constantFrom<AccountRole>("admin", "reception", "doctor", "location");
 
-const ROLES: AccountRole[] = ["admin", "reception", "doctor", "location"];
-const CHILD_ROLES: AccountRole[] = ["reception", "doctor", "location"];
+const arbPlanTier = fc.constantFrom<PlanTier>("Basic", "Premium", "Enterprise");
 
-const roleArb = fc.constantFrom<AccountRole>(...ROLES);
-const featureArb = fc.constantFrom<FeatureId>(...FEATURE_IDS);
-
-/**
- * Raw plan strings: canonical tiers, legacy aliases, free-form values found in
- * the codebase, plus arbitrary junk. normalizePlan must cope with all of them.
- */
-const knownPlanArb = fc.constantFrom(
-  "Basic",
-  "Premium",
-  "Enterprise",
-  "Solo",
-  "Clinic",
-  "Hospital",
-  "Custom",
-  "Pro",
-  "Trial",
-  "₹1,499",
-);
-const planArb: fc.Arbitrary<string> = fc.oneof(
-  { weight: 4, arbitrary: knownPlanArb },
-  { weight: 1, arbitrary: fc.string() },
-);
-
-/** Active status in assorted casings. */
-const activeStatusArb = fc.constantFrom("active", "Active", "ACTIVE", "AcTiVe");
-
-/** A future or absent expiry (i.e. "not expired"). */
-const futureOrEmptyExpiryArb: fc.Arbitrary<string | null> = fc.oneof(
-  fc.constant<string | null>(null),
-  fc.constant(""),
-  fc
-    .date({ min: new Date(NOW.getTime() + 1000), max: new Date("2100-01-01T00:00:00.000Z") })
-    .map((d) => d.toISOString()),
-);
-
-/** An expiry strictly in the past. */
-const pastExpiryArb: fc.Arbitrary<string> = fc
-  .date({ min: new Date("2000-01-01T00:00:00.000Z"), max: new Date(NOW.getTime() - 1000) })
-  .map((d) => d.toISOString());
-
-/** A context with an active subscription (status active, not expired). */
-const activeContextArb: fc.Arbitrary<AccountContext> = fc.record({
-  role: roleArb,
-  subscriptionPlan: planArb,
-  subscriptionStatus: activeStatusArb,
-  subscriptionExpiresAt: futureOrEmptyExpiryArb,
-  isActive: fc.constant<boolean>(true),
-  now: fc.constant(NOW),
-});
-
-/** A status that is NOT active (case-insensitive). */
-const nonActiveStatusArb: fc.Arbitrary<string | null> = fc.oneof(
-  fc.constantFrom("Cancelled", "cancelled", "expired", "Expired", "Trialing", "past_due", "", "inactive"),
-  fc.constant<string | null>(null),
-  fc.string().filter((s) => s.toLowerCase() !== "active"),
-);
-
-/** Fully random context (any role/plan/status/expiry/isActive). */
-const anyContextArb: fc.Arbitrary<AccountContext> = fc.record({
-  role: roleArb,
-  subscriptionPlan: fc.oneof(planArb, fc.constant<string | null>(null)),
-  subscriptionStatus: fc.oneof(activeStatusArb, nonActiveStatusArb),
-  subscriptionExpiresAt: fc.oneof(
-    futureOrEmptyExpiryArb,
-    pastExpiryArb,
-    fc.string(),
-    fc.constant<string | null>(null),
+// Raw plan strings including legacy aliases and unknown values
+const arbRawPlan = fc.oneof(
+  fc.constantFrom(
+    "Basic",
+    "Premium",
+    "Enterprise",
+    "Solo",
+    "Clinic",
+    "Hospital",
+    "Custom",
+    "Pro",
+    "Trial",
+    "999",
+    "1499",
+    "₹999",
+    "₹1,499",
+    "unknown",
+    "",
   ),
-  isActive: fc.oneof(fc.boolean(), fc.constant<boolean | undefined>(undefined)),
-  now: fc.constant(NOW),
+  fc.constant(null),
+  fc.constant(undefined),
+);
+
+const arbStatus = fc.oneof(
+  fc.constantFrom("Active", "active", "ACTIVE", "Cancelled", "Inactive", "Expired"),
+  fc.constant(null),
+  fc.constant(undefined),
+);
+
+const arbExpiresAt = fc.oneof(
+  fc.date().map((d) => d.toISOString()),
+  fc.constant(null),
+  fc.constant(undefined),
+  fc.constant(""), // invalid
+);
+
+const arbIsActive = fc.option(fc.boolean(), { nil: undefined });
+
+// Constrain date generation to avoid arithmetic overflow (JS Date range ±100,000,000 days from epoch)
+const arbNow = fc.date({ min: new Date("1970-01-01"), max: new Date("2100-12-31") });
+
+const arbAccountContext: fc.Arbitrary<AccountContext> = fc.record({
+  role: arbRole,
+  subscriptionPlan: arbRawPlan,
+  subscriptionStatus: arbStatus,
+  subscriptionExpiresAt: arbExpiresAt,
+  isActive: arbIsActive,
+  now: fc.option(arbNow, { nil: undefined }),
 });
 
-// ---------------------------------------------------------------------------
-// Property-based tests
-// ---------------------------------------------------------------------------
+// ───────────────────────────────────────────────────────────────────────────
+// Property 1: Availability is role-independent
+// ───────────────────────────────────────────────────────────────────────────
 
-describe("feature-access (property-based)", () => {
-  // Property 1 — availability is role-independent.
-  // Validates: Requirements 1.3, 3.1, 3.5
-  it("Property 1: availability is identical across all roles for a fixed plan/status/expiry/isActive", () => {
-    fc.assert(
-      fc.property(
-        planArb,
-        fc.oneof(activeStatusArb, nonActiveStatusArb),
-        fc.oneof(futureOrEmptyExpiryArb, pastExpiryArb),
-        fc.boolean(),
-        (plan, status, expiry, isActive) => {
-          const base = {
-            subscriptionPlan: plan,
-            subscriptionStatus: status,
-            subscriptionExpiresAt: expiry,
-            isActive,
-            now: NOW,
-          };
-          const resolved = ROLES.map((role) => resolveFeatureAccess({ ...base, role }));
-          for (const f of FEATURE_IDS) {
-            const first = resolved[0][f].available;
-            for (const r of resolved) {
-              expect(r[f].available).toBe(first);
-            }
-          }
-        },
-      ),
-    );
-  });
+test("Property 1: availability is role-independent for fixed plan/status/expiry/active", () => {
+  fc.assert(
+    fc.property(
+      arbRawPlan,
+      arbStatus,
+      arbExpiresAt,
+      arbIsActive,
+      arbNow,
+      arbRole,
+      arbRole,
+      (plan, status, expiresAt, isActive, now, role1, role2) => {
+        const ctx1: AccountContext = {
+          role: role1,
+          subscriptionPlan: plan,
+          subscriptionStatus: status,
+          subscriptionExpiresAt: expiresAt,
+          isActive,
+          now,
+        };
+        const ctx2: AccountContext = { ...ctx1, role: role2 };
 
-  // Property 2 — child accounts inherit the parent (admin) entitlement.
-  // Validates: Requirements 1.1, 1.2
-  it("Property 2: child role availability equals admin availability for an active subscription", () => {
-    fc.assert(
-      fc.property(activeContextArb, (ctx) => {
-        const adminAccess = resolveFeatureAccess({ ...ctx, role: "admin" });
-        for (const role of CHILD_ROLES) {
-          const childAccess = resolveFeatureAccess({ ...ctx, role });
-          for (const f of FEATURE_IDS) {
-            expect(childAccess[f].available).toBe(adminAccess[f].available);
-          }
+        const access1 = resolveFeatureAccess(ctx1);
+        const access2 = resolveFeatureAccess(ctx2);
+
+        for (const feature of FEATURE_IDS) {
+          expect(access1[feature].available).toBe(access2[feature].available);
         }
-      }),
-    );
-  });
+      },
+    ),
+    { numRuns: 100 },
+  );
+});
 
-  // Property 3 — legacy aliases resolve to canonical tiers, and resolution via
-  // an alias equals resolution via its canonical tier.
-  // Validates: Requirements 1.4
-  it("Property 3: legacy aliases normalize and resolve identically to their canonical tier", () => {
-    // Static alias guarantees from the design table.
-    expect(normalizePlan("Solo")).toBe(normalizePlan("Basic"));
-    expect(normalizePlan("Clinic")).toBe(normalizePlan("Premium"));
-    expect(normalizePlan("Hospital")).toBe(normalizePlan("Enterprise"));
-    expect(normalizePlan("Custom")).toBe(normalizePlan("Enterprise"));
+// ───────────────────────────────────────────────────────────────────────────
+// Property 2: Child inherits parent entitlement
+// ───────────────────────────────────────────────────────────────────────────
 
-    const aliasPairs: Array<[string, PlanTier]> = [
-      ["Solo", "Basic"],
-      ["Clinic", "Premium"],
-      ["Hospital", "Enterprise"],
-      ["Custom", "Enterprise"],
-    ];
+test("Property 2: child availability equals admin availability (active sub)", () => {
+  fc.assert(
+    fc.property(
+      arbRawPlan,
+      arbNow,
+      fc.constantFrom<AccountRole>("reception", "doctor", "location"),
+      (plan, now, childRole) => {
+        // Active subscription with future or no expiry
+        const futureExpiry = new Date(now.getTime() + 86400000).toISOString(); // +1 day
 
-    fc.assert(
-      fc.property(
-        roleArb,
-        fc.constantFrom(...aliasPairs),
-        futureOrEmptyExpiryArb,
-        (role, [alias, canonical], expiry) => {
-          expect(normalizePlan(alias)).toBe(canonical);
-
-          const common = {
-            role,
-            subscriptionStatus: "active",
-            subscriptionExpiresAt: expiry,
-            isActive: true,
-            now: NOW,
-          };
-          const viaAlias = resolveFeatureAccess({ ...common, subscriptionPlan: alias });
-          const viaCanonical = resolveFeatureAccess({ ...common, subscriptionPlan: canonical });
-          for (const f of FEATURE_IDS) {
-            expect(viaAlias[f].available).toBe(viaCanonical[f].available);
-          }
-        },
-      ),
-    );
-  });
-
-  // Property 4 — permission/visibility imply availability.
-  // Validates: Requirements 3.2, 8.1
-  it("Property 4: permission !== none implies available, and visible implies available", () => {
-    fc.assert(
-      fc.property(anyContextArb, (ctx) => {
-        const resolved = resolveFeatureAccess(ctx);
-        for (const f of FEATURE_IDS) {
-          const fa = resolved[f];
-          if (fa.permission !== "none") {
-            expect(fa.available).toBe(true);
-          }
-          if (fa.visible) {
-            expect(fa.available).toBe(true);
-          }
-        }
-      }),
-    );
-  });
-
-  // Property 5 — an inactive or expired subscription disables every feature.
-  // Validates: Requirements 5.1, 5.2
-  it("Property 5: non-active status OR past expiry disables all features for every role", () => {
-    const inactiveContextArb: fc.Arbitrary<AccountContext> = fc.oneof(
-      // Branch A: status is not active (any expiry).
-      fc.record({
-        role: roleArb,
-        subscriptionPlan: planArb,
-        subscriptionStatus: nonActiveStatusArb,
-        subscriptionExpiresAt: fc.oneof(futureOrEmptyExpiryArb, pastExpiryArb),
-        isActive: fc.constant<boolean>(true),
-        now: fc.constant(NOW),
-      }),
-      // Branch B: active status but expiry strictly in the past.
-      fc.record({
-        role: roleArb,
-        subscriptionPlan: planArb,
-        subscriptionStatus: activeStatusArb,
-        subscriptionExpiresAt: pastExpiryArb,
-        isActive: fc.constant<boolean>(true),
-        now: fc.constant(NOW),
-      }),
-    );
-
-    fc.assert(
-      fc.property(inactiveContextArb, (ctx) => {
-        for (const role of ROLES) {
-          const resolved = resolveFeatureAccess({ ...ctx, role });
-          for (const f of FEATURE_IDS) {
-            expect(resolved[f].available).toBe(false);
-          }
-        }
-      }),
-    );
-  });
-
-  // Property 6 — a deactivated child account loses all access.
-  // Validates: Requirements 7.1, 7.2
-  it("Property 6: isActive=false disables all features for any plan/role/status", () => {
-    fc.assert(
-      fc.property(
-        roleArb,
-        planArb,
-        fc.oneof(activeStatusArb, nonActiveStatusArb),
-        fc.oneof(futureOrEmptyExpiryArb, pastExpiryArb),
-        (role, plan, status, expiry) => {
-          const resolved = resolveFeatureAccess({
-            role,
-            subscriptionPlan: plan,
-            subscriptionStatus: status,
-            subscriptionExpiresAt: expiry,
-            isActive: false,
-            now: NOW,
-          });
-          for (const f of FEATURE_IDS) {
-            expect(resolved[f].available).toBe(false);
-          }
-        },
-      ),
-    );
-  });
-
-  // Property 7 — WhatsApp availability follows the plan tier rule.
-  // Validates: Requirements 2.1, 2.2, 2.3, 2.4
-  it("Property 7: with active sub, whatsapp.available iff plan is Premium or Enterprise (every role)", () => {
-    fc.assert(
-      fc.property(roleArb, planArb, futureOrEmptyExpiryArb, (role, plan, expiry) => {
-        const resolved = resolveFeatureAccess({
-          role,
+        const adminCtx: AccountContext = {
+          role: "admin",
           subscriptionPlan: plan,
           subscriptionStatus: "active",
-          subscriptionExpiresAt: expiry,
+          subscriptionExpiresAt: futureExpiry,
           isActive: true,
-          now: NOW,
-        });
-        const tier = normalizePlan(plan);
-        const expected = tier === "Premium" || tier === "Enterprise";
-        expect(resolved.whatsapp.available).toBe(expected);
-      }),
-    );
-  });
-
-  // Property 8 — entitlements are monotonic across tiers.
-  // Validates: Requirements 6.2, 6.3
-  it("Property 8: planIncludesFeature is non-decreasing Basic -> Premium -> Enterprise", () => {
-    fc.assert(
-      fc.property(featureArb, (f) => {
-        const basic = planIncludesFeature("Basic", f);
-        const premium = planIncludesFeature("Premium", f);
-        const enterprise = planIncludesFeature("Enterprise", f);
-        // non-decreasing: basic => premium => enterprise
-        if (basic) expect(premium).toBe(true);
-        if (premium) expect(enterprise).toBe(true);
-      }),
-    );
-  });
-
-  // Property 8 (equivalent) — availability is non-decreasing across tiers under
-  // an active subscription, for every role and feature.
-  // Validates: Requirements 6.2, 6.3
-  it("Property 8 (availability form): availability is non-decreasing across tiers for every role/feature", () => {
-    fc.assert(
-      fc.property(roleArb, futureOrEmptyExpiryArb, (role, expiry) => {
-        const common = {
-          role,
-          subscriptionStatus: "active",
-          subscriptionExpiresAt: expiry,
-          isActive: true,
-          now: NOW,
+          now,
         };
-        const byTier: Record<PlanTier, ReturnType<typeof resolveFeatureAccess>> = {
-          Basic: resolveFeatureAccess({ ...common, subscriptionPlan: "Basic" }),
-          Premium: resolveFeatureAccess({ ...common, subscriptionPlan: "Premium" }),
-          Enterprise: resolveFeatureAccess({ ...common, subscriptionPlan: "Enterprise" }),
-        };
-        for (const f of FEATURE_IDS) {
-          if (byTier.Basic[f].available) expect(byTier.Premium[f].available).toBe(true);
-          if (byTier.Premium[f].available) expect(byTier.Enterprise[f].available).toBe(true);
+        const childCtx: AccountContext = { ...adminCtx, role: childRole };
+
+        const adminAccess = resolveFeatureAccess(adminCtx);
+        const childAccess = resolveFeatureAccess(childCtx);
+
+        for (const feature of FEATURE_IDS) {
+          expect(childAccess[feature].available).toBe(adminAccess[feature].available);
         }
-        // Sanity: PLAN_TIERS is ordered least->most entitled as relied upon above.
-        expect(PLAN_TIERS).toEqual(["Basic", "Premium", "Enterprise"]);
-      }),
-    );
-  });
+      },
+    ),
+    { numRuns: 100 },
+  );
 });
 
-// ---------------------------------------------------------------------------
-// Example-based unit tests
-// ---------------------------------------------------------------------------
+// ───────────────────────────────────────────────────────────────────────────
+// Property 3: Legacy aliases are canonical
+// ───────────────────────────────────────────────────────────────────────────
 
-describe("feature-access (example-based)", () => {
-  const premiumActive = (role: AccountRole): AccountContext => ({
-    role,
-    subscriptionPlan: "Premium",
-    subscriptionStatus: "active",
-    subscriptionExpiresAt: null,
-    isActive: true,
-    now: NOW,
-  });
+test("Property 3: legacy alias resolution equals canonical tier", () => {
+  const aliasPairs: Array<[string, PlanTier]> = [
+    ["Solo", "Basic"],
+    ["999", "Basic"],
+    ["Trial", "Basic"],
+    ["Clinic", "Premium"],
+    ["Pro", "Premium"],
+    ["1499", "Premium"],
+    ["Hospital", "Enterprise"],
+    ["Custom", "Enterprise"],
+  ];
 
-  const basicActive = (role: AccountRole): AccountContext => ({
-    role,
-    subscriptionPlan: "Basic",
-    subscriptionStatus: "active",
-    subscriptionExpiresAt: null,
-    isActive: true,
-    now: NOW,
-  });
+  fc.assert(
+    fc.property(
+      fc.constantFrom(...aliasPairs),
+      arbRole,
+      arbStatus,
+      arbExpiresAt,
+      arbIsActive,
+      arbNow,
+      ([alias, canonical], role, status, expiresAt, isActive, now) => {
+        const ctxAlias: AccountContext = {
+          role,
+          subscriptionPlan: alias,
+          subscriptionStatus: status,
+          subscriptionExpiresAt: expiresAt,
+          isActive,
+          now,
+        };
+        const ctxCanonical: AccountContext = {
+          ...ctxAlias,
+          subscriptionPlan: canonical,
+        };
 
-  it("Premium + active: whatsapp visible+operate for admin, doctor, location", () => {
-    for (const role of ["admin", "doctor", "location"] as AccountRole[]) {
-      const wa = resolveFeatureAccess(premiumActive(role)).whatsapp;
-      expect(wa.available).toBe(true);
-      expect(wa.permission).toBe("operate");
-      expect(wa.visible).toBe(true);
-    }
-  });
+        const accessAlias = resolveFeatureAccess(ctxAlias);
+        const accessCanonical = resolveFeatureAccess(ctxCanonical);
 
-  it("Premium + active: whatsapp visible+view_only for reception", () => {
-    const wa = resolveFeatureAccess(premiumActive("reception")).whatsapp;
-    expect(wa.available).toBe(true);
-    expect(wa.permission).toBe("view_only");
-    expect(wa.visible).toBe(true);
-  });
+        for (const feature of FEATURE_IDS) {
+          expect(accessAlias[feature].available).toBe(accessCanonical[feature].available);
+        }
+      },
+    ),
+    { numRuns: 100 },
+  );
+});
 
-  it("Basic + active: whatsapp unavailable and hidden for ALL roles", () => {
-    for (const role of ROLES) {
-      const wa = resolveFeatureAccess(basicActive(role)).whatsapp;
-      expect(wa.available).toBe(false);
-      expect(wa.visible).toBe(false);
-    }
-  });
+// ───────────────────────────────────────────────────────────────────────────
+// Property 4: Permission implies availability
+// ───────────────────────────────────────────────────────────────────────────
 
-  it("canUseFeature / canOperateFeature: Premium active reception can view but not operate whatsapp", () => {
-    expect(canUseFeature(premiumActive("reception"), "whatsapp")).toBe(true);
-    expect(canOperateFeature(premiumActive("reception"), "whatsapp")).toBe(false);
-  });
+test("Property 4: permission !== none implies available; visible implies available", () => {
+  fc.assert(
+    fc.property(arbAccountContext, (ctx) => {
+      const access = resolveFeatureAccess(ctx);
 
-  it("canOperateFeature: Premium active doctor can operate whatsapp", () => {
-    expect(canOperateFeature(premiumActive("doctor"), "whatsapp")).toBe(true);
-  });
+      for (const feature of FEATURE_IDS) {
+        const fa = access[feature];
+        if (fa.permission !== "none") {
+          expect(fa.available).toBe(true);
+        }
+        if (fa.visible) {
+          expect(fa.available).toBe(true);
+        }
+      }
+    }),
+    { numRuns: 100 },
+  );
+});
 
-  it("isSubscriptionActive: Active + future expiry => true", () => {
-    expect(
-      isSubscriptionActive({
-        role: "admin",
-        subscriptionStatus: "Active",
-        subscriptionExpiresAt: new Date(NOW.getTime() + 86_400_000).toISOString(),
-        now: NOW,
-      }),
-    ).toBe(true);
-  });
+// ───────────────────────────────────────────────────────────────────────────
+// Property 5: Inactive or expired subscription disables everything
+// ───────────────────────────────────────────────────────────────────────────
 
-  it("isSubscriptionActive: Active + past expiry => false", () => {
-    expect(
-      isSubscriptionActive({
-        role: "admin",
-        subscriptionStatus: "Active",
-        subscriptionExpiresAt: new Date(NOW.getTime() - 86_400_000).toISOString(),
-        now: NOW,
-      }),
-    ).toBe(false);
-  });
+test("Property 5: inactive/expired subscription => all features unavailable", () => {
+  fc.assert(
+    fc.property(
+      arbRawPlan,
+      arbRole,
+      arbIsActive,
+      arbNow,
+      fc.oneof(
+        // Either non-active status
+        fc.constantFrom("Cancelled", "Inactive", "Expired", ""),
+        // Or active status with past expiry
+        fc.constant("active"),
+      ),
+      (plan, role, isActive, now, status) => {
+        // Skip invalid dates to avoid arithmetic errors
+        if (Number.isNaN(now.getTime())) return true;
 
-  it("isSubscriptionActive: Cancelled => false", () => {
-    expect(
-      isSubscriptionActive({
-        role: "admin",
-        subscriptionStatus: "Cancelled",
-        subscriptionExpiresAt: null,
-        now: NOW,
-      }),
-    ).toBe(false);
-  });
+        let expiresAt: string | null = null;
+        if (status === "active") {
+          // Force past expiry
+          expiresAt = new Date(now.getTime() - 86400000).toISOString(); // -1 day
+        }
 
-  it("isSubscriptionActive: active + null expiry => true", () => {
-    expect(
-      isSubscriptionActive({
-        role: "admin",
+        const ctx: AccountContext = {
+          role,
+          subscriptionPlan: plan,
+          subscriptionStatus: status,
+          subscriptionExpiresAt: expiresAt,
+          isActive,
+          now,
+        };
+
+        const access = resolveFeatureAccess(ctx);
+
+        for (const feature of FEATURE_IDS) {
+          expect(access[feature].available).toBe(false);
+        }
+      },
+    ),
+    { numRuns: 100 },
+  );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Property 6: Deactivated child loses all access
+// ───────────────────────────────────────────────────────────────────────────
+
+test("Property 6: isActive=false => all features unavailable", () => {
+  fc.assert(
+    fc.property(
+      arbRawPlan,
+      arbRole,
+      arbStatus,
+      arbExpiresAt,
+      arbNow,
+      (plan, role, status, expiresAt, now) => {
+        const ctx: AccountContext = {
+          role,
+          subscriptionPlan: plan,
+          subscriptionStatus: status,
+          subscriptionExpiresAt: expiresAt,
+          isActive: false,
+          now,
+        };
+
+        const access = resolveFeatureAccess(ctx);
+
+        for (const feature of FEATURE_IDS) {
+          expect(access[feature].available).toBe(false);
+        }
+      },
+    ),
+    { numRuns: 100 },
+  );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Property 7: WhatsApp tier rule
+// ───────────────────────────────────────────────────────────────────────────
+
+test("Property 7: whatsapp available iff normalized plan ∈ {Premium, Enterprise} with active sub", () => {
+  fc.assert(
+    fc.property(arbRawPlan, arbRole, arbNow, (plan, role, now) => {
+      // Skip invalid dates to avoid RangeError in arithmetic
+      if (Number.isNaN(now.getTime())) return true;
+
+      const futureExpiry = new Date(now.getTime() + 86400000).toISOString();
+
+      const ctx: AccountContext = {
+        role,
+        subscriptionPlan: plan,
         subscriptionStatus: "active",
-        subscriptionExpiresAt: null,
-        now: NOW,
-      }),
-    ).toBe(true);
+        subscriptionExpiresAt: futureExpiry,
+        isActive: true,
+        now,
+      };
+
+      const access = resolveFeatureAccess(ctx);
+      const normalized = normalizePlan(plan);
+
+      if (normalized === "Premium" || normalized === "Enterprise") {
+        expect(access.whatsapp.available).toBe(true);
+      } else {
+        // Basic
+        expect(access.whatsapp.available).toBe(false);
+      }
+    }),
+    { numRuns: 100 },
+  );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Property 8: Monotonic entitlements (Basic → Premium → Enterprise)
+// ───────────────────────────────────────────────────────────────────────────
+
+test("Property 8: upgrading tier never removes a feature (monotonic entitlements)", () => {
+  fc.assert(
+    fc.property(arbRole, arbNow, (role, now) => {
+      const futureExpiry = new Date(now.getTime() + 86400000).toISOString();
+
+      const buildCtx = (tier: PlanTier): AccountContext => ({
+        role,
+        subscriptionPlan: tier,
+        subscriptionStatus: "active",
+        subscriptionExpiresAt: futureExpiry,
+        isActive: true,
+        now,
+      });
+
+      const accessBasic = resolveFeatureAccess(buildCtx("Basic"));
+      const accessPremium = resolveFeatureAccess(buildCtx("Premium"));
+      const accessEnterprise = resolveFeatureAccess(buildCtx("Enterprise"));
+
+      for (const feature of FEATURE_IDS) {
+        // Basic → Premium: if available at Basic, must be available at Premium
+        if (accessBasic[feature].available) {
+          expect(accessPremium[feature].available).toBe(true);
+        }
+        // Premium → Enterprise: if available at Premium, must be available at Enterprise
+        if (accessPremium[feature].available) {
+          expect(accessEnterprise[feature].available).toBe(true);
+        }
+      }
+    }),
+    { numRuns: 100 },
+  );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Example-based unit tests
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("Example-based tests", () => {
+  const now = new Date("2025-01-01T00:00:00Z");
+  const futureExpiry = "2025-12-31T23:59:59Z";
+
+  describe("WhatsApp visibility matrix at Premium", () => {
+    it("admin: visible + operate", () => {
+      const ctx: AccountContext = {
+        role: "admin",
+        subscriptionPlan: "Premium",
+        subscriptionStatus: "active",
+        subscriptionExpiresAt: futureExpiry,
+        isActive: true,
+        now,
+      };
+      const access = resolveFeatureAccess(ctx);
+      expect(access.whatsapp.available).toBe(true);
+      expect(access.whatsapp.permission).toBe("operate");
+      expect(access.whatsapp.visible).toBe(true);
+    });
+
+    it("doctor: visible + operate", () => {
+      const ctx: AccountContext = {
+        role: "doctor",
+        subscriptionPlan: "Premium",
+        subscriptionStatus: "active",
+        subscriptionExpiresAt: futureExpiry,
+        isActive: true,
+        now,
+      };
+      const access = resolveFeatureAccess(ctx);
+      expect(access.whatsapp.available).toBe(true);
+      expect(access.whatsapp.permission).toBe("operate");
+      expect(access.whatsapp.visible).toBe(true);
+    });
+
+    it("location: visible + operate", () => {
+      const ctx: AccountContext = {
+        role: "location",
+        subscriptionPlan: "Premium",
+        subscriptionStatus: "active",
+        subscriptionExpiresAt: futureExpiry,
+        isActive: true,
+        now,
+      };
+      const access = resolveFeatureAccess(ctx);
+      expect(access.whatsapp.available).toBe(true);
+      expect(access.whatsapp.permission).toBe("operate");
+      expect(access.whatsapp.visible).toBe(true);
+    });
+
+    it("reception: visible + view_only", () => {
+      const ctx: AccountContext = {
+        role: "reception",
+        subscriptionPlan: "Premium",
+        subscriptionStatus: "active",
+        subscriptionExpiresAt: futureExpiry,
+        isActive: true,
+        now,
+      };
+      const access = resolveFeatureAccess(ctx);
+      expect(access.whatsapp.available).toBe(true);
+      expect(access.whatsapp.permission).toBe("view_only");
+      expect(access.whatsapp.visible).toBe(true);
+    });
+  });
+
+  describe("WhatsApp hidden at Basic for all roles", () => {
+    const roles: AccountRole[] = ["admin", "doctor", "reception", "location"];
+
+    roles.forEach((role) => {
+      it(`${role}: not available at Basic`, () => {
+        const ctx: AccountContext = {
+          role,
+          subscriptionPlan: "Basic",
+          subscriptionStatus: "active",
+          subscriptionExpiresAt: futureExpiry,
+          isActive: true,
+          now,
+        };
+        const access = resolveFeatureAccess(ctx);
+        expect(access.whatsapp.available).toBe(false);
+        expect(access.whatsapp.visible).toBe(false);
+      });
+    });
+  });
+
+  describe("Server guard helpers", () => {
+    it("canUseFeature returns false when plan excludes the feature", () => {
+      const ctx: AccountContext = {
+        role: "admin",
+        subscriptionPlan: "Basic",
+        subscriptionStatus: "active",
+        subscriptionExpiresAt: futureExpiry,
+        isActive: true,
+        now,
+      };
+      expect(canUseFeature(ctx, "whatsapp")).toBe(false);
+    });
+
+    it("canOperateFeature returns false when permission is view_only", () => {
+      const ctx: AccountContext = {
+        role: "reception",
+        subscriptionPlan: "Premium",
+        subscriptionStatus: "active",
+        subscriptionExpiresAt: futureExpiry,
+        isActive: true,
+        now,
+      };
+      expect(canOperateFeature(ctx, "whatsapp")).toBe(false);
+      expect(canUseFeature(ctx, "whatsapp")).toBe(true); // can view, but not operate
+    });
+
+    it("canOperateFeature returns true when permission is operate", () => {
+      const ctx: AccountContext = {
+        role: "doctor",
+        subscriptionPlan: "Premium",
+        subscriptionStatus: "active",
+        subscriptionExpiresAt: futureExpiry,
+        isActive: true,
+        now,
+      };
+      expect(canOperateFeature(ctx, "whatsapp")).toBe(true);
+      expect(canUseFeature(ctx, "whatsapp")).toBe(true);
+    });
   });
 });

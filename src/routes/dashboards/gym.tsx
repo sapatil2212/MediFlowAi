@@ -8526,6 +8526,7 @@ function MedicalDashboardPage() {
                   user={user}
                   showToast={showToast}
                   setConfirmDialog={setConfirmDialog}
+                  canOperate={featureAccess.whatsapp.permission === "operate"}
                 />
               </motion.div>
             )}

@@ -90,11 +90,7 @@ export function normalizePlan(plan?: string | null): PlanTier {
   const raw = (plan ?? "").toLowerCase();
 
   // Enterprise aliases.
-  if (
-    raw.includes("enterprise") ||
-    raw.includes("hospital") ||
-    raw.includes("custom")
-  ) {
+  if (raw.includes("enterprise") || raw.includes("hospital") || raw.includes("custom")) {
     return "Enterprise";
   }
 
@@ -254,9 +250,7 @@ export function resolveFeatureAccess(ctx: AccountContext): ResolvedAccess {
 
   for (const feature of FEATURE_IDS) {
     const available = active && childOk && planIncludesFeature(plan, feature);
-    const permission: Permission = available
-      ? rolePermission(ctx.role, feature)
-      : "none";
+    const permission: Permission = available ? rolePermission(ctx.role, feature) : "none";
     const visible = available && permission !== "none";
 
     result[feature] = { available, permission, visible };
