@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SolutionsRouteImport } from './routes/solutions'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as ShippingRouteImport } from './routes/shipping'
 import { Route as SecurityRouteImport } from './routes/security'
 import { Route as ResourcesRouteImport } from './routes/resources'
 import { Route as RefundRouteImport } from './routes/refund'
@@ -23,6 +24,7 @@ import { Route as FeaturesRouteImport } from './routes/features'
 import { Route as DemoRouteImport } from './routes/demo'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CustomersRouteImport } from './routes/customers'
+import { Route as CookiesRouteImport } from './routes/cookies'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
@@ -48,6 +50,11 @@ const SolutionsRoute = SolutionsRouteImport.update({
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShippingRoute = ShippingRouteImport.update({
+  id: '/shipping',
+  path: '/shipping',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SecurityRoute = SecurityRouteImport.update({
@@ -103,6 +110,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const CustomersRoute = CustomersRouteImport.update({
   id: '/customers',
   path: '/customers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CookiesRoute = CookiesRouteImport.update({
+  id: '/cookies',
+  path: '/cookies',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContactRoute = ContactRouteImport.update({
@@ -165,6 +177,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/contact': typeof ContactRoute
+  '/cookies': typeof CookiesRoute
   '/customers': typeof CustomersRoute
   '/dashboard': typeof DashboardRoute
   '/demo': typeof DemoRoute
@@ -176,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/refund': typeof RefundRoute
   '/resources': typeof ResourcesRoute
   '/security': typeof SecurityRoute
+  '/shipping': typeof ShippingRoute
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
   '/terms': typeof TermsRoute
@@ -192,6 +206,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/contact': typeof ContactRoute
+  '/cookies': typeof CookiesRoute
   '/customers': typeof CustomersRoute
   '/dashboard': typeof DashboardRoute
   '/demo': typeof DemoRoute
@@ -203,6 +218,7 @@ export interface FileRoutesByTo {
   '/refund': typeof RefundRoute
   '/resources': typeof ResourcesRoute
   '/security': typeof SecurityRoute
+  '/shipping': typeof ShippingRoute
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
   '/terms': typeof TermsRoute
@@ -220,6 +236,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/contact': typeof ContactRoute
+  '/cookies': typeof CookiesRoute
   '/customers': typeof CustomersRoute
   '/dashboard': typeof DashboardRoute
   '/demo': typeof DemoRoute
@@ -231,6 +248,7 @@ export interface FileRoutesById {
   '/refund': typeof RefundRoute
   '/resources': typeof ResourcesRoute
   '/security': typeof SecurityRoute
+  '/shipping': typeof ShippingRoute
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
   '/terms': typeof TermsRoute
@@ -249,6 +267,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/contact'
+    | '/cookies'
     | '/customers'
     | '/dashboard'
     | '/demo'
@@ -260,6 +279,7 @@ export interface FileRouteTypes {
     | '/refund'
     | '/resources'
     | '/security'
+    | '/shipping'
     | '/signup'
     | '/solutions'
     | '/terms'
@@ -276,6 +296,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/contact'
+    | '/cookies'
     | '/customers'
     | '/dashboard'
     | '/demo'
@@ -287,6 +308,7 @@ export interface FileRouteTypes {
     | '/refund'
     | '/resources'
     | '/security'
+    | '/shipping'
     | '/signup'
     | '/solutions'
     | '/terms'
@@ -303,6 +325,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/contact'
+    | '/cookies'
     | '/customers'
     | '/dashboard'
     | '/demo'
@@ -314,6 +337,7 @@ export interface FileRouteTypes {
     | '/refund'
     | '/resources'
     | '/security'
+    | '/shipping'
     | '/signup'
     | '/solutions'
     | '/terms'
@@ -331,6 +355,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   ContactRoute: typeof ContactRoute
+  CookiesRoute: typeof CookiesRoute
   CustomersRoute: typeof CustomersRoute
   DashboardRoute: typeof DashboardRoute
   DemoRoute: typeof DemoRoute
@@ -342,6 +367,7 @@ export interface RootRouteChildren {
   RefundRoute: typeof RefundRoute
   ResourcesRoute: typeof ResourcesRoute
   SecurityRoute: typeof SecurityRoute
+  ShippingRoute: typeof ShippingRoute
   SignupRoute: typeof SignupRoute
   SolutionsRoute: typeof SolutionsRoute
   TermsRoute: typeof TermsRoute
@@ -376,6 +402,13 @@ declare module '@tanstack/react-router' {
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shipping': {
+      id: '/shipping'
+      path: '/shipping'
+      fullPath: '/shipping'
+      preLoaderRoute: typeof ShippingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/security': {
@@ -453,6 +486,13 @@ declare module '@tanstack/react-router' {
       path: '/customers'
       fullPath: '/customers'
       preLoaderRoute: typeof CustomersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cookies': {
+      id: '/cookies'
+      path: '/cookies'
+      fullPath: '/cookies'
+      preLoaderRoute: typeof CookiesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contact': {
@@ -539,6 +579,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   ContactRoute: ContactRoute,
+  CookiesRoute: CookiesRoute,
   CustomersRoute: CustomersRoute,
   DashboardRoute: DashboardRoute,
   DemoRoute: DemoRoute,
@@ -550,6 +591,7 @@ const rootRouteChildren: RootRouteChildren = {
   RefundRoute: RefundRoute,
   ResourcesRoute: ResourcesRoute,
   SecurityRoute: SecurityRoute,
+  ShippingRoute: ShippingRoute,
   SignupRoute: SignupRoute,
   SolutionsRoute: SolutionsRoute,
   TermsRoute: TermsRoute,

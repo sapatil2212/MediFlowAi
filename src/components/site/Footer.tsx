@@ -18,11 +18,14 @@ const cols = [
   {
     title: "Company",
     links: [
+      { label: "About Us", to: "/about" as const },
       { label: "Pricing", to: "/pricing" as const },
       { label: "Contact", to: "/contact" as const },
       { label: "Privacy Policy", to: "/privacy" as const },
-      { label: "Terms", to: "/terms" as const },
+      { label: "Terms & Conditions", to: "/terms" as const },
       { label: "Refund Policy", to: "/refund" as const },
+      { label: "Shipping & Delivery", to: "/shipping" as const },
+      { label: "Cookie Policy", to: "/cookies" as const },
     ],
   },
 ];
@@ -92,7 +95,7 @@ export function Footer() {
         </div>
         <div className="mt-12 border-t border-zinc-950/5 pt-8 text-center">
           <p className="text-[11px] text-zinc-500">
-            © 2026 BookMyTime Systems Inc. All rights reserved.
+            Copyright © 2026 BookMyTime All rights reserved.
             <span className="hidden sm:inline"> | </span>
             <br className="sm:hidden" />
             A product of Brightwave Digital Products

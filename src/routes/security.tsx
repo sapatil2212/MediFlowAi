@@ -1,302 +1,255 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { motion } from "motion/react";
+import { createFileRoute } from "@tanstack/react-router";
 import { Nav } from "@/components/site/Nav";
 import { SiteShell } from "@/components/site/Footer";
-import { CTA } from "@/components/site/sections";
-import {
-  ShieldCheck,
-  Lock,
-  KeyRound,
-  ServerCog,
-  FileCheck2,
-  Eye,
-  Globe2,
-  AlertTriangle,
-  CheckCircle2,
-  Activity,
-} from "lucide-react";
 
 export const Route = createFileRoute("/security")({
   head: () => ({
-    meta: [
-      { title: "Security & Trust — BookMyTime" },
-      {
-        name: "description",
-        content:
-          "HIPAA, SOC 2 Type II, ISO 27001, GDPR. End-to-end encryption, regional residency, and zero PHI in model training.",
-      },
-      { property: "og:title", content: "Security & Trust — BookMyTime" },
-      {
-        property: "og:description",
-        content:
-          "How BookMyTime protects patient data: certifications, architecture, and operational controls.",
-      },
-    ],
+    meta: [{ title: "Security Policy — BookMyTime" }],
   }),
   component: SecurityPage,
 });
-
-const badges = [
-  { label: "HIPAA", sub: "Business Associate Agreement" },
-  { label: "SOC 2", sub: "Type II audited" },
-  { label: "ISO 27001", sub: "Certified" },
-  { label: "GDPR", sub: "EU + UK compliant" },
-  { label: "HITRUST", sub: "r2 in progress" },
-  { label: "PCI DSS", sub: "Level 1" },
-];
-
-const pillars = [
-  {
-    icon: Lock,
-    title: "Encryption everywhere",
-    desc: "TLS 1.3 in transit. AES-256 at rest. Per-tenant envelope keys rotated quarterly.",
-  },
-  {
-    icon: KeyRound,
-    title: "Granular access control",
-    desc: "Role + attribute based access. Break-glass workflows logged immutably for audit.",
-  },
-  {
-    icon: ServerCog,
-    title: "Regional data residency",
-    desc: "US, EU, UAE, India, Singapore. Your data never leaves the region you pick.",
-  },
-  {
-    icon: Eye,
-    title: "Zero PHI in model training",
-    desc: "Foundation models receive only synthetic or de-identified data. Verifiable in the audit log.",
-  },
-  {
-    icon: FileCheck2,
-    title: "Continuous compliance",
-    desc: "Drata-monitored controls, quarterly pen tests, weekly dependency scanning.",
-  },
-  {
-    icon: Activity,
-    title: "99.99% uptime",
-    desc: "Multi-region active-active. Live status, transparent post-mortems within 48 hours.",
-  },
-];
-
-const controls = [
-  "SAML 2.0 / OIDC SSO",
-  "SCIM 2.0 provisioning",
-  "MFA enforced for all admins",
-  "Field-level PHI redaction",
-  "Immutable audit log (7yr retention)",
-  "Customer-managed keys (BYOK)",
-  "Quarterly penetration tests",
-  "Bug bounty program",
-  "Vendor security review (SIG Lite)",
-];
 
 function SecurityPage() {
   return (
     <SiteShell>
       <Nav />
-      {/* Hero */}
-      <section className="relative overflow-hidden border-b border-zinc-200">
-        <div className="absolute inset-0 bg-grid opacity-40" />
-        <div className="absolute inset-0 bg-radial-fade" />
-        <div className="relative mx-auto max-w-6xl px-6 py-20 text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/5 px-3 py-1 text-xs font-medium text-teal-700">
-            <ShieldCheck className="h-3.5 w-3.5" /> Trust center
-          </div>
-          <h1 className="mx-auto mt-5 max-w-3xl text-5xl font-bold tracking-tight text-zinc-900 sm:text-6xl">
-            Security isn't a feature.{" "}
-            <span className="text-gradient-brand">It's the foundation.</span>
-          </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-lg text-zinc-600">
-            Every byte of patient data is encrypted, audited, and isolated.
-            Every model interaction is logged. Every workflow is HIPAA-eligible
-            by default.
+      <div className="mx-auto max-w-3xl px-6 py-24">
+        <h1 className="text-4xl font-bold tracking-tight text-zinc-900 mb-8">Security Policy</h1>
+        <div className="prose prose-zinc prose-sm sm:prose-base text-zinc-600">
+          <p className="text-sm text-zinc-500 mb-2">Effective Date: July 1, 2026</p>
+          <p className="text-sm text-zinc-500 mb-8">Last Updated: July 1, 2026</p>
+
+          <p className="mb-4">
+            At BookMyTime, protecting the confidentiality, integrity, and availability of customer
+            information is a core priority. We continuously implement technical, administrative, and
+            operational safeguards designed to protect our platform and the data entrusted to us.
           </p>
-          <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Link
-              to="/contact"
-              className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-700"
-            >
-              Request SOC 2 report
-            </Link>
+          <p className="mb-6">
+            This Security Policy explains the measures we take to help secure our systems, infrastructure,
+            and customer data.
+          </p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">1. Our Commitment</h2>
+          <p>BookMyTime is committed to maintaining a secure platform by:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-6">
+            <li>Protecting customer information from unauthorized access.</li>
+            <li>Safeguarding business and appointment data.</li>
+            <li>Maintaining reliable and secure services.</li>
+            <li>Continuously improving our security practices.</li>
+            <li>Responding promptly to security incidents.</li>
+          </ul>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">2. Secure Infrastructure</h2>
+          <p>BookMyTime operates on secure cloud infrastructure designed to provide:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-2">
+            <li>High availability</li>
+            <li>Reliable uptime</li>
+            <li>Secure networking</li>
+            <li>Infrastructure monitoring</li>
+            <li>Regular software updates</li>
+          </ul>
+          <p className="mb-6">
+            Our hosting environment includes multiple layers of protection against common threats.
+          </p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">3. Secure Communication</h2>
+          <p className="mb-2">
+            All communication between users and the BookMyTime platform is encrypted using HTTPS
+            (SSL/TLS).
+          </p>
+          <p className="mb-6">
+            This helps protect information exchanged between your device and our servers from interception
+            or unauthorized access.
+          </p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">4. Account Security</h2>
+          <p>We use multiple measures to help protect user accounts, including:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-2">
+            <li>Secure authentication</li>
+            <li>Encrypted password storage</li>
+            <li>Session management</li>
+            <li>Login verification</li>
+            <li>Role-based access controls</li>
+            <li>Automatic session expiration where applicable</li>
+          </ul>
+          <p className="mb-6">Users are responsible for keeping their login credentials confidential.</p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">5. Password Protection</h2>
+          <p className="mb-2">Passwords are never stored in plain text.</p>
+          <p className="mb-2">Instead, passwords are securely hashed before being stored in our systems.</p>
+          <p>We recommend users:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-6">
+            <li>Use strong, unique passwords.</li>
+            <li>Avoid sharing passwords with others.</li>
+            <li>Change passwords periodically.</li>
+            <li>Report suspected unauthorized access immediately.</li>
+          </ul>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">6. Data Protection</h2>
+          <p>BookMyTime employs reasonable safeguards to protect customer information, including:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-2">
+            <li>Access controls</li>
+            <li>Database security</li>
+            <li>Encrypted communications</li>
+            <li>Application-level security</li>
+            <li>Regular system maintenance</li>
+          </ul>
+          <p className="mb-6">
+            Only authorized personnel have access to systems necessary for providing and maintaining our
+            services.
+          </p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">7. Payment Security</h2>
+          <p>BookMyTime does not store:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-2">
+            <li>Credit Card Numbers</li>
+            <li>Debit Card Numbers</li>
+            <li>CVV</li>
+            <li>UPI PIN</li>
+            <li>Internet Banking Credentials</li>
+          </ul>
+          <p className="mb-6">
+            Payments are processed securely through trusted third-party payment gateways that are
+            responsible for handling payment information according to their own security standards.
+          </p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">8. User Responsibilities</h2>
+          <p>Security is a shared responsibility. Users are encouraged to:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-6">
+            <li>Keep passwords confidential.</li>
+            <li>Enable additional security features where available.</li>
+            <li>Log out from shared or public devices.</li>
+            <li>Maintain updated browsers and operating systems.</li>
+            <li>Avoid sharing account credentials.</li>
+            <li>Notify us immediately if suspicious activity is detected.</li>
+          </ul>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">9. Access Control</h2>
+          <p className="mb-2">
+            Access to customer information is limited based on operational requirements.
+          </p>
+          <p className="mb-6">
+            Our platform supports role-based permissions to help ensure users only access information
+            relevant to their responsibilities.
+          </p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">10. Monitoring &amp; Maintenance</h2>
+          <p>We regularly monitor our systems to help:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-2">
+            <li>Detect unusual activity.</li>
+            <li>Identify performance issues.</li>
+            <li>Improve platform reliability.</li>
+            <li>Maintain service availability.</li>
+            <li>Support incident response.</li>
+          </ul>
+          <p className="mb-6">
+            System updates and maintenance are performed periodically to enhance security and stability.
+          </p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">11. Data Backup &amp; Recovery</h2>
+          <p className="mb-2">
+            We perform regular data backup procedures designed to support service continuity and recovery
+            in the event of unexpected incidents.
+          </p>
+          <p className="mb-6">
+            Recovery processes are periodically reviewed to help maintain operational reliability.
+          </p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">12. Third-Party Services</h2>
+          <p>BookMyTime integrates with trusted third-party providers for services such as:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-2">
+            <li>Payment Processing</li>
+            <li>Cloud Hosting</li>
+            <li>Email Delivery</li>
+            <li>SMS Notifications</li>
+            <li>Analytics</li>
+          </ul>
+          <p className="mb-6">Each third-party provider maintains its own security practices and policies.</p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">13. Security Incidents</h2>
+          <p>If we become aware of a security incident affecting our systems, we will:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-6">
+            <li>Investigate the issue promptly.</li>
+            <li>Take appropriate measures to contain and resolve the incident.</li>
+            <li>Notify affected users when required by applicable law.</li>
+            <li>Implement corrective actions to reduce the likelihood of recurrence.</li>
+          </ul>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">14. Platform Availability</h2>
+          <p>While we strive to maintain continuous availability, temporary interruptions may occur due to:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-2">
+            <li>Scheduled maintenance</li>
+            <li>Infrastructure upgrades</li>
+            <li>Emergency maintenance</li>
+            <li>Network failures</li>
+            <li>Events beyond our reasonable control</li>
+          </ul>
+          <p className="mb-6">We work to minimize downtime and restore services as quickly as possible.</p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">15. Reporting Security Issues</h2>
+          <p className="mb-2">
+            If you believe you have discovered a security vulnerability or suspicious activity related to
+            BookMyTime, please notify us immediately.
+          </p>
+          <p>Please include:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-2">
+            <li>Description of the issue</li>
+            <li>Steps to reproduce (if applicable)</li>
+            <li>Screenshots or supporting information</li>
+            <li>Contact details for follow-up</li>
+          </ul>
+          <p className="mb-6">
+            We appreciate responsible disclosure and will review reported issues promptly.
+          </p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">16. Policy Updates</h2>
+          <p className="mb-2">
+            BookMyTime may update this Security Policy from time to time to reflect improvements in our
+            security practices or changes in legal or operational requirements.
+          </p>
+          <p className="mb-6">
+            Updated versions will be published on this page with the revised effective date.
+          </p>
+
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">17. Contact Us</h2>
+          <p className="mb-2">
+            For security-related questions or to report a potential security issue, please contact:
+          </p>
+          <p className="mb-6">
+            <strong className="text-zinc-900">BookMyTime Security Team</strong>
+            <br />
+            Email:{" "}
             <a
-              href="#controls"
-              className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 py-3 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+              href="mailto:bookmytime1355@gmail.com"
+              className="text-brand hover:underline font-medium"
+              style={{ color: "#0059C6" }}
             >
-              View controls
+              bookmytime1355@gmail.com
             </a>
-          </div>
-        </div>
-      </section>
-
-      {/* Compliance badges */}
-      <section className="mx-auto max-w-6xl px-6 py-14">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {badges.map((b, i) => (
-            <motion.div
-              key={b.label}
-              initial={{ opacity: 0, y: 10 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.05 }}
-              className="rounded-2xl border border-zinc-200 bg-white p-5 text-center"
+            <br />
+            Website:{" "}
+            <a
+              href="https://bookmytime.tech"
+              className="text-brand hover:underline font-medium"
+              style={{ color: "#0059C6" }}
             >
-              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-teal-100 to-emerald-100 text-teal-700">
-                <ShieldCheck className="h-5 w-5" />
-              </div>
-              <div className="mt-3 font-bold tracking-tight text-zinc-900">
-                {b.label}
-              </div>
-              <div className="mt-0.5 text-xs text-zinc-500">{b.sub}</div>
-            </motion.div>
-          ))}
-        </div>
-      </section>
+              https://bookmytime.tech
+            </a>
+            <br />
+            Business Hours: Monday – Saturday, 9:00 AM – 6:00 PM (IST)
+          </p>
 
-      {/* Pillars */}
-      <section className="mx-auto max-w-6xl px-6 py-12">
-        <h2 className="text-center text-3xl font-bold tracking-tight text-zinc-900">
-          Six pillars of trust
-        </h2>
-        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {pillars.map((p, i) => (
-            <motion.div
-              key={p.title}
-              initial={{ opacity: 0, y: 12 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.06 }}
-              className="group rounded-2xl border border-zinc-200 bg-white p-6 transition-all hover:-translate-y-0.5 hover:border-teal-300"
-            >
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700 transition-colors group-hover:bg-teal-600 group-hover:text-white">
-                <p.icon className="h-5 w-5" />
-              </div>
-              <h3 className="mt-4 text-lg font-semibold text-zinc-900">
-                {p.title}
-              </h3>
-              <p className="mt-2 text-sm text-zinc-600">{p.desc}</p>
-            </motion.div>
-          ))}
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">Our Security Principles</h2>
+          <p>At BookMyTime, we are committed to:</p>
+          <ul className="list-disc pl-5 space-y-1 mb-6">
+            <li>Protecting customer data.</li>
+            <li>Maintaining platform reliability.</li>
+            <li>Following secure development practices.</li>
+            <li>Continuously improving our security posture.</li>
+            <li>Responding responsibly to security concerns.</li>
+          </ul>
         </div>
-      </section>
-
-      {/* Architecture diagram */}
-      <section className="mx-auto max-w-6xl px-6 py-16">
-        <div className="rounded-3xl border border-zinc-200 bg-white p-8">
-          <div className="text-xs font-medium uppercase tracking-wide text-teal-600">
-            Tenant isolation
-          </div>
-          <h2 className="mt-2 text-3xl font-bold tracking-tight text-zinc-900">
-            Logical + physical isolation per tenant
-          </h2>
-          <div className="mt-8">
-            <svg viewBox="0 0 800 240" className="w-full">
-              <defs>
-                <linearGradient id="secGrad" x1="0" x2="1" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#14b8a6" />
-                  <stop offset="100%" stopColor="#0b5a54" />
-                </linearGradient>
-              </defs>
-              {/* Patient -> Edge */}
-              <g>
-                <rect x="20" y="100" width="120" height="40" rx="8" fill="white" stroke="#0f766e" />
-                <text x="80" y="125" textAnchor="middle" fontSize="12" fill="#0f766e" fontWeight="600">Patient</text>
-              </g>
-              <g>
-                <rect x="200" y="100" width="140" height="40" rx="8" fill="url(#secGrad)" />
-                <text x="270" y="125" textAnchor="middle" fontSize="12" fill="white" fontWeight="600">TLS 1.3 Edge</text>
-              </g>
-              <g>
-                <rect x="400" y="60" width="160" height="40" rx="8" fill="url(#secGrad)" />
-                <text x="480" y="85" textAnchor="middle" fontSize="12" fill="white" fontWeight="600">Tenant A — DB</text>
-              </g>
-              <g>
-                <rect x="400" y="140" width="160" height="40" rx="8" fill="url(#secGrad)" opacity="0.85" />
-                <text x="480" y="165" textAnchor="middle" fontSize="12" fill="white" fontWeight="600">Tenant B — DB</text>
-              </g>
-              <g>
-                <rect x="620" y="100" width="160" height="40" rx="8" fill="white" stroke="#0f766e" />
-                <text x="700" y="118" textAnchor="middle" fontSize="11" fill="#0f766e" fontWeight="600">Audit log</text>
-                <text x="700" y="132" textAnchor="middle" fontSize="10" fill="#0f766e">immutable · 7yr</text>
-              </g>
-              {/* Arrows */}
-              <g stroke="#0f766e" strokeWidth="1.6" fill="none" strokeDasharray="4 4">
-                <path d="M140 120 H200" />
-                <path d="M340 120 Q370 80 400 80" />
-                <path d="M340 120 Q370 160 400 160" />
-                <path d="M560 80 Q590 100 620 120" />
-                <path d="M560 160 Q590 140 620 120" />
-              </g>
-              <text x="270" y="210" textAnchor="middle" fontSize="11" fill="#52525b">
-                Every request is signed, logged, and scoped to a single tenant's encryption envelope.
-              </text>
-            </svg>
-          </div>
-        </div>
-      </section>
-
-      {/* Controls */}
-      <section id="controls" className="mx-auto max-w-6xl px-6 py-16">
-        <div className="grid gap-10 lg:grid-cols-2">
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight text-zinc-900">
-              Operational controls
-            </h2>
-            <p className="mt-3 text-zinc-600">
-              The boring stuff that matters. Every control below is reviewed
-              quarterly and visible in your Trust Center dashboard.
-            </p>
-            <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {controls.map((c) => (
-                <div
-                  key={c}
-                  className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700"
-                >
-                  <CheckCircle2 className="h-4 w-4 text-teal-600" />
-                  {c}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-3xl border border-zinc-200 bg-gradient-to-br from-zinc-950 to-zinc-900 p-8 text-zinc-200">
-            <div className="flex items-center gap-2 text-sm font-semibold text-emerald-400">
-              <Activity className="h-4 w-4" /> Live status
-            </div>
-            <div className="mt-4 space-y-3">
-              {[
-                { name: "API", up: 99.998 },
-                { name: "AI Scribe", up: 99.992 },
-                { name: "Voice Agent", up: 99.97 },
-                { name: "Webhooks", up: 100 },
-              ].map((s) => (
-                <div key={s.name}>
-                  <div className="flex items-center justify-between text-xs text-zinc-400">
-                    <span>{s.name}</span>
-                    <span>{s.up.toFixed(2)}%</span>
-                  </div>
-                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-800">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-400"
-                      style={{ width: `${s.up}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-6 flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              Voice Agent — degraded latency in ap-south-1 (resolved 14 min ago).
-            </div>
-            <div className="mt-6 flex items-center gap-2 text-xs text-zinc-500">
-              <Globe2 className="h-3.5 w-3.5" /> Updated every 30s ·{" "}
-              <Link to="/contact" className="text-emerald-400 underline">
-                full status →
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <CTA />
+      </div>
     </SiteShell>
   );
 }
