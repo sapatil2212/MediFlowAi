@@ -288,6 +288,9 @@ function AboutPage() {
           >
             <Check className="size-4" /> Get Started Free
           </a>
+          <p className="mt-8 text-xs font-medium uppercase tracking-widest text-zinc-400">
+            BookMyTime is a product of Brightwave Digital Products LLP.
+          </p>
         </motion.div>
       </section>
 

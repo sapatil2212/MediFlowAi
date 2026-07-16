@@ -17,7 +17,10 @@ function TermsPage() {
         <h1 className="text-4xl font-bold tracking-tight text-zinc-900 mb-8">Terms &amp; Conditions</h1>
         <div className="prose prose-zinc prose-sm sm:prose-base text-zinc-600">
           <p className="text-sm text-zinc-500 mb-2">Effective Date: July 1, 2026</p>
-          <p className="text-sm text-zinc-500 mb-8">Last Updated: July 1, 2026</p>
+          <p className="text-sm text-zinc-500 mb-2">Last Updated: July 1, 2026</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-8">
+            A product of Brightwave Digital Products LLP.
+          </p>
 
           <p className="mb-4">
             Welcome to BookMyTime ("BookMyTime", "Company", "we", "our", or "us"). These Terms &amp;

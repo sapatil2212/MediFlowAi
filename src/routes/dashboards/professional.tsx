@@ -4893,23 +4893,13 @@ function DashboardPage() {
 
                     <div className="h-[240px] w-full">
                       {isClient && !loadingAnalytics && analyticsData ? (
+                        analyticsData.monthlyTrend && analyticsData.monthlyTrend.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart
-                            data={
-                              analyticsData.monthlyTrend && analyticsData.monthlyTrend.length > 0
-                                ? analyticsData.monthlyTrend.map((t: any) => ({
-                                    name: formatMonth(t.month),
-                                    "Appointments": t.count,
-                                  }))
-                                : [
-                                    { name: "Jan", Appointments: 40 },
-                                    { name: "Feb", Appointments: 30 },
-                                    { name: "Mar", Appointments: 45 },
-                                    { name: "Apr", Appointments: 50 },
-                                    { name: "May", Appointments: 75 },
-                                    { name: "Jun", Appointments: 90 },
-                                  ]
-                            }
+                            data={analyticsData.monthlyTrend.map((t: any) => ({
+                              name: formatMonth(t.month),
+                              "Appointments": t.count,
+                            }))}
                             margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                           >
                             <defs>
@@ -4953,6 +4943,13 @@ function DashboardPage() {
                             />
                           </AreaChart>
                         </ResponsiveContainer>
+                        ) : (
+                          <div className="h-full w-full bg-zinc-50/60 rounded-xl flex flex-col items-center justify-center text-center px-4">
+                            <BarChart3 className="h-7 w-7 text-zinc-300 mb-2" />
+                            <p className="text-xs font-semibold text-zinc-500">No appointment data yet</p>
+                            <p className="text-[10px] text-zinc-400 mt-0.5">Trends will appear here once you start receiving bookings.</p>
+                          </div>
+                        )
                       ) : (
                         <div className="h-full w-full bg-zinc-50 rounded-xl flex items-center justify-center animate-pulse">
                           <Loader2 className="h-6 w-6 text-zinc-300 animate-spin" />
@@ -4977,24 +4974,16 @@ function DashboardPage() {
 
                     <div className="h-[240px] w-full flex items-center justify-center relative">
                       {isClient && !loadingAnalytics && analyticsData ? (
+                        analyticsData.statusBreakdown && analyticsData.statusBreakdown.length > 0 ? (
                         <div className="w-full h-full flex flex-col sm:flex-row items-center justify-center gap-4">
                           <div className="relative w-[160px] h-[160px] shrink-0">
                             <ResponsiveContainer width="100%" height="100%">
                               <PieChart>
                                 <Pie
-                                  data={
-                                    analyticsData.statusBreakdown && analyticsData.statusBreakdown.length > 0
-                                      ? analyticsData.statusBreakdown.map((s: any) => ({
-                                          name: s.status === "Pending" ? "Pending Review" : s.status,
-                                          value: s.count,
-                                        }))
-                                      : [
-                                          { name: "Completed", value: 35 },
-                                          { name: "Confirmed", value: 40 },
-                                          { name: "Pending Review", value: 15 },
-                                          { name: "Cancelled", value: 10 },
-                                        ]
-                                  }
+                                  data={analyticsData.statusBreakdown.map((s: any) => ({
+                                    name: s.status === "Pending" ? "Pending Review" : s.status,
+                                    value: s.count,
+                                  }))}
                                   cx="50%"
                                   cy="50%"
                                   innerRadius={50}
@@ -5003,15 +4992,7 @@ function DashboardPage() {
                                   dataKey="value"
                                   animationDuration={1200}
                                 >
-                                  {(analyticsData.statusBreakdown && analyticsData.statusBreakdown.length > 0
-                                    ? analyticsData.statusBreakdown
-                                    : [
-                                        { status: "Completed" },
-                                        { status: "Confirmed" },
-                                        { status: "Pending" },
-                                        { status: "Cancelled" },
-                                      ]
-                                  ).map((entry: any, index: number) => {
+                                  {analyticsData.statusBreakdown.map((entry: any, index: number) => {
                                     const colors: Record<string, string> = {
                                       Completed: "#10b981",
                                       Confirmed: "#0f766e",
@@ -5036,7 +5017,7 @@ function DashboardPage() {
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                               <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">Total</span>
                               <span className="text-xl font-extrabold text-zinc-800">
-                                {analyticsData.scorecard?.totalAppointments || 100}
+                                {analyticsData.scorecard?.totalAppointments || 0}
                               </span>
                             </div>
                           </div>
@@ -5052,8 +5033,7 @@ function DashboardPage() {
                               const match = analyticsData.statusBreakdown?.find(
                                 (s: any) => s.status === item.label
                               );
-                              const hasData = analyticsData.statusBreakdown && analyticsData.statusBreakdown.length > 0;
-                              const count = match ? match.count : (hasData ? 0 : (item.label === "Completed" ? 35 : item.label === "Confirmed" ? 40 : item.label === "Pending" ? 15 : 10));
+                              const count = match ? match.count : 0;
                               return (
                                 <div key={item.label} className="flex items-center gap-2">
                                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
@@ -5064,6 +5044,13 @@ function DashboardPage() {
                             })}
                           </div>
                         </div>
+                        ) : (
+                          <div className="h-full w-full bg-zinc-50/60 rounded-xl flex flex-col items-center justify-center text-center px-4">
+                            <BarChart3 className="h-7 w-7 text-zinc-300 mb-2" />
+                            <p className="text-xs font-semibold text-zinc-500">No appointment data yet</p>
+                            <p className="text-[10px] text-zinc-400 mt-0.5">Status breakdown will appear once appointments are recorded.</p>
+                          </div>
+                        )
                       ) : (
                         <div className="h-full w-full bg-zinc-50 rounded-xl flex items-center justify-center animate-pulse">
                           <Loader2 className="h-6 w-6 text-zinc-300 animate-spin" />

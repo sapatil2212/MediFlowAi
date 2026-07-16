@@ -98,7 +98,7 @@ export function Footer() {
             Copyright © 2026 BookMyTime All rights reserved.
             <span className="hidden sm:inline"> | </span>
             <br className="sm:hidden" />
-            A product of Brightwave Digital Products
+            A product of Brightwave Digital Products LLP.
           </p>
         </div>
       </div>
