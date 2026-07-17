@@ -534,9 +534,59 @@ export const syncAllPaymentsFromCashfreeServerFn = createServerFn({ method: "POS
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
+    // ── Step 1: Backfill ──
+    // Some accounts are Active + paid (money collected by Cashfree) but have no
+    // corresponding row in the PaymentHistory ledger — e.g. the payment was
+    // completed but the return-trip verification never ran, the webhook was not
+    // configured, or the activation predates ledger logging. For every such
+    // account we synthesise a SUCCESS ledger entry from the stored account
+    // payment fields so the collected revenue is always visible to the admin.
+    // Idempotent: keyed on a deterministic backfill order id.
+    let backfilled = 0;
+    try {
+      const paidUsers = await query<any>(
+        `SELECT u.id, u.tenantId, u.name, u.email, u.phone, u.clinicName,
+                u.subscriptionPlan, u.paymentAmount, u.paymentMethod, u.subscriptionExpiresAt, u.updatedAt
+         FROM User u
+         WHERE u.subscriptionStatus = 'Active' AND COALESCE(u.paymentAmount, 0) > 0
+           AND NOT EXISTS (
+             SELECT 1 FROM PaymentHistory ph
+             WHERE ph.tenantId COLLATE utf8mb4_unicode_ci = u.tenantId COLLATE utf8mb4_unicode_ci
+               AND ph.status = 'SUCCESS'
+           )
+         LIMIT 500`
+      );
+
+      for (const u of paidUsers) {
+        try {
+          await execute(
+            `INSERT INTO PaymentHistory
+               (id, userId, tenantId, orderId, plan, amount, currency, status, orderStatus, paymentMode, customerName, customerEmail, customerPhone, gateway, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, 'INR', 'SUCCESS', 'PAID', ?, ?, ?, ?, 'Cashfree', ?, NOW())
+             ON DUPLICATE KEY UPDATE
+               amount = VALUES(amount), status = 'SUCCESS', orderStatus = 'PAID',
+               paymentMode = COALESCE(VALUES(paymentMode), paymentMode), updatedAt = NOW()`,
+            [
+              crypto.randomUUID(), u.id, u.tenantId, `backfill_${u.tenantId}`,
+              u.subscriptionPlan || null, Number(u.paymentAmount) || 0,
+              u.paymentMethod || "Cashfree", u.name || null, u.email || null, u.phone || null,
+              u.updatedAt ? new Date(u.updatedAt) : new Date(),
+            ]
+          );
+          backfilled++;
+        } catch (e: any) {
+          console.warn(`[AdminSync][backfill] Failed for tenant ${u.tenantId}:`, e.message);
+        }
+      }
+    } catch (e: any) {
+      console.warn("[AdminSync][backfill] Skipped:", e.message);
+    }
+
+    // ── Step 2: Reconcile non-terminal orders directly against Cashfree ──
     const pending = await query<any>(
       `SELECT orderId FROM PaymentHistory
        WHERE status <> 'SUCCESS' AND orderId IS NOT NULL AND orderId <> ''
+         AND orderId NOT LIKE 'backfill_%'
        ORDER BY createdAt DESC
        LIMIT 300`
     );
@@ -561,6 +611,7 @@ export const syncAllPaymentsFromCashfreeServerFn = createServerFn({ method: "POS
       reconciled,
       promoted,
       failed,
+      backfilled,
     };
   });
 

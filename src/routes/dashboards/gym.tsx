@@ -937,6 +937,7 @@ function MedicalDashboardPage() {
   // ── Cashfree recurring AutoPay subscription ──
   const [mySubscription, setMySubscription] = useState<any | null>(null);
   const [subPayments, setSubPayments] = useState<any[]>([]);
+  const [myPayments, setMyPayments] = useState<any[]>([]);
   const [subActionLoading, setSubActionLoading] = useState(false);
   const [isVerifyingSubscription, setIsVerifyingSubscription] = useState(false);
   const [subscriptionSuccess, setSubscriptionSuccess] = useState<{ plan: string; amount: number; pending?: boolean } | null>(null);
@@ -947,6 +948,13 @@ function MedicalDashboardPage() {
       const res = await getMySubscriptionServerFn();
       setMySubscription(res.subscription);
       setSubPayments(res.payments || []);
+    } catch { /* non-fatal */ }
+    // One-time (non-recurring) Cashfree payments for this account so every
+    // transaction has a viewable/downloadable invoice in the billing view.
+    try {
+      const { getMyPaymentHistoryServerFn } = await import("../../lib/auth");
+      const ph = await getMyPaymentHistoryServerFn();
+      setMyPayments(ph.rows || []);
     } catch { /* non-fatal */ }
   }, []);
 
@@ -8675,23 +8683,38 @@ function MedicalDashboardPage() {
                                   <span className="text-[10px] text-zinc-400 font-medium">
                                     {new Date(p.paidAt || p.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                                   </span>
-                                  {p.status === "SUCCESS" && (
-                                    <button
-                                      type="button"
-                                      title="Download invoice"
-                                      onClick={async () => {
-                                        const { downloadSubscriptionInvoice } = await import("../../lib/pdf-invoice");
-                                        downloadSubscriptionInvoice({
-                                          clinicName: user?.clinicName, customerName: user?.name, customerEmail: user?.email, customerPhone: user?.phone,
-                                          plan: s.planTier, amount: Number(p.amount), status: p.status, paymentMethod: p.paymentMethod, paymentType: p.paymentType,
-                                          cfPaymentId: p.cfPaymentId, cfTxnId: p.cfTxnId, cfOrderId: p.cfOrderId, subscriptionRef: s.subscriptionRef, paidAt: p.paidAt, createdAt: p.createdAt,
-                                        });
-                                      }}
-                                      className="text-brand hover:text-brand/80 cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold"
-                                    >
-                                      <FileText className="h-3.5 w-3.5" /> Invoice
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    title="View invoice"
+                                    onClick={async () => {
+                                      const { viewInvoice } = await import("../../lib/pdf-invoice");
+                                      await viewInvoice({
+                                        clinicName: user?.clinicName, customerName: user?.name, customerEmail: user?.email, customerPhone: user?.phone,
+                                        plan: s.planTier, amount: Number(p.amount), status: p.status, paymentMethod: p.paymentMethod, paymentType: p.paymentType,
+                                        transactionType: p.paymentType === "AUTH" ? "Mandate Registration" : "Subscription Renewal",
+                                        cfPaymentId: p.cfPaymentId, cfTxnId: p.cfTxnId, cfOrderId: p.cfOrderId, subscriptionRef: s.subscriptionRef, transactionRef: p.id, paidAt: p.paidAt, createdAt: p.createdAt,
+                                      });
+                                    }}
+                                    className="text-zinc-500 hover:text-brand cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold"
+                                  >
+                                    <FileText className="h-3.5 w-3.5" /> View
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Download invoice"
+                                    onClick={async () => {
+                                      const { downloadInvoice } = await import("../../lib/pdf-invoice");
+                                      await downloadInvoice({
+                                        clinicName: user?.clinicName, customerName: user?.name, customerEmail: user?.email, customerPhone: user?.phone,
+                                        plan: s.planTier, amount: Number(p.amount), status: p.status, paymentMethod: p.paymentMethod, paymentType: p.paymentType,
+                                        transactionType: p.paymentType === "AUTH" ? "Mandate Registration" : "Subscription Renewal",
+                                        cfPaymentId: p.cfPaymentId, cfTxnId: p.cfTxnId, cfOrderId: p.cfOrderId, subscriptionRef: s.subscriptionRef, transactionRef: p.id, paidAt: p.paidAt, createdAt: p.createdAt,
+                                      });
+                                    }}
+                                    className="text-brand hover:text-brand/80 cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold"
+                                  >
+                                    <FileText className="h-3.5 w-3.5" /> PDF
+                                  </button>
                                 </div>
                               </div>
                             ))}
@@ -8701,6 +8724,64 @@ function MedicalDashboardPage() {
                     </div>
                   );
                 })()}
+
+                {/* One-time payment history — every Cashfree transaction with a viewable/downloadable invoice */}
+                {myPayments.length > 0 && (
+                  <div className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-xl bg-brand/10 p-2.5 shrink-0">
+                        <CreditCard className="h-5 w-5 text-brand" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-zinc-900">Payment History</h4>
+                        <p className="text-[11px] text-zinc-400 font-medium">Every transaction with a downloadable invoice.</p>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-zinc-100">
+                      {myPayments.map((p: any) => (
+                        <div key={p.id} className="flex items-center justify-between gap-3 py-2.5">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-black text-zinc-900">₹{Number(p.amount)}</span>
+                              <span className={`text-[10px] font-bold ${p.status === "SUCCESS" ? "text-emerald-600" : p.status === "FAILED" ? "text-red-600" : p.status === "CANCELLED" ? "text-zinc-500" : "text-amber-600"}`}>
+                                {p.status === "SUCCESS" ? "Paid" : p.status === "FAILED" ? "Failed" : p.status === "CANCELLED" ? "Cancelled" : "Pending"}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-zinc-400 font-medium mt-0.5 truncate">
+                              {p.plan ? `${p.plan} · ` : ""}{p.paymentMode || "Cashfree"} · {new Date(p.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </p>
+                          </div>
+                          <div className="shrink-0 flex items-center gap-3">
+                            <button type="button" title="View invoice"
+                              onClick={async () => {
+                                const { viewInvoice } = await import("../../lib/pdf-invoice");
+                                await viewInvoice({
+                                  clinicName: user?.clinicName, customerName: p.customerName || user?.name, customerEmail: p.customerEmail || user?.email, customerPhone: p.customerPhone || user?.phone,
+                                  plan: p.plan, amount: Number(p.amount), status: p.status, paymentMethod: p.paymentMode, transactionType: "One-time Payment",
+                                  cfPaymentId: p.cfPaymentId, cfOrderId: p.orderId, transactionRef: p.id, paidAt: p.updatedAt || p.createdAt, createdAt: p.createdAt,
+                                });
+                              }}
+                              className="text-zinc-500 hover:text-brand cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold">
+                              <FileText className="h-3.5 w-3.5" /> View
+                            </button>
+                            <button type="button" title="Download invoice"
+                              onClick={async () => {
+                                const { downloadInvoice } = await import("../../lib/pdf-invoice");
+                                await downloadInvoice({
+                                  clinicName: user?.clinicName, customerName: p.customerName || user?.name, customerEmail: p.customerEmail || user?.email, customerPhone: p.customerPhone || user?.phone,
+                                  plan: p.plan, amount: Number(p.amount), status: p.status, paymentMethod: p.paymentMode, transactionType: "One-time Payment",
+                                  cfPaymentId: p.cfPaymentId, cfOrderId: p.orderId, transactionRef: p.id, paidAt: p.updatedAt || p.createdAt, createdAt: p.createdAt,
+                                });
+                              }}
+                              className="text-brand hover:text-brand/80 cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold">
+                              <FileText className="h-3.5 w-3.5" /> PDF
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {trialActive && (
                   <div className="rounded-3xl border border-amber-300/60 bg-gradient-to-br from-amber-50 to-orange-50/60 p-6">
@@ -8832,54 +8913,62 @@ function MedicalDashboardPage() {
                           ))}
                         </ul>
 
-                        <button
-                          type="button"
-                          disabled={(plan.active && hasPaid) || processingPlan === plan.name}
-                          className={`mt-6 w-full rounded-lg py-2.5 text-xs font-bold transition-all cursor-pointer disabled:cursor-not-allowed ${
-                            plan.active && hasPaid
-                              ? "bg-black/10 text-brand border border-zinc-800/25 cursor-default"
-                              : plan.active && plan.name !== "Enterprise"
-                                ? "bg-brand text-white hover:bg-brand/90 shadow-lg shadow-brand/25"
-                                : plan.name === "Enterprise"
-                                  ? "bg-zinc-900 text-white hover:bg-zinc-800"
-                                  : plan.popular
-                                    ? "bg-brand text-white hover:bg-brand/90"
-                                    : "bg-zinc-900 text-white hover:bg-zinc-800"
-                          }`}
-                          onClick={() => {
-                            if ((plan.active && hasPaid) || processingPlan) return;
-                            if (plan.name === "Enterprise") {
-                              setIsContactModalOpen(true);
-                            } else {
-                              handleUpgradeClick(plan.name);
-                            }
-                          }}
-                        >
-                          {processingPlan === plan.name
-                            ? "Processing…"
-                            : plan.active && hasPaid
-                              ? "Current Plan"
-                              : plan.active && plan.name !== "Enterprise"
-                                ? (trialActive ? `Activate Now — Pay ${plan.price}` : `Renew Now — Pay ${plan.price}`)
-                                : plan.name === "Enterprise"
-                                  ? "Contact Support"
-                                  : `Upgrade to ${plan.name}`}
-                        </button>
+                        {(() => {
+                          const hasActiveAutoPay = !!(mySubscription && String(mySubscription.status).toUpperCase() === "ACTIVE");
+                          const isSelfServe = plan.name === "Basic" || plan.name === "Premium";
+                          if (plan.name === "Enterprise") {
+                            return (
+                              <button type="button" onClick={() => setIsContactModalOpen(true)}
+                                className="mt-6 w-full rounded-lg bg-zinc-900 py-2.5 text-xs font-bold text-white hover:bg-zinc-800 transition-all cursor-pointer">
+                                Contact Support
+                              </button>
+                            );
+                          }
+                          if (plan.active && hasPaid && !trialActive) {
+                            return (
+                              <button type="button" disabled
+                                className="mt-6 w-full rounded-lg bg-black/10 text-brand border border-zinc-800/25 py-2.5 text-xs font-bold cursor-default">
+                                Current Plan
+                              </button>
+                            );
+                          }
+                          if (!isSelfServe) {
+                            return (
+                              <button type="button" disabled={!!processingPlan}
+                                onClick={() => handleUpgradeClick(plan.name)}
+                                className="mt-6 w-full rounded-lg bg-brand py-2.5 text-xs font-bold text-white hover:bg-brand/90 shadow-lg shadow-brand/25 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+                                {processingPlan === plan.name ? "Processing…" : (plan.active ? `Renew Now — Pay ${plan.price}` : `Upgrade to ${plan.name}`)}
+                              </button>
+                            );
+                          }
+                          if (hasActiveAutoPay) {
+                            return (
+                              <button type="button" disabled
+                                className="mt-6 w-full rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200 py-2.5 text-xs font-bold cursor-default flex items-center justify-center gap-1.5">
+                                <RefreshCw className="h-3.5 w-3.5" /> AutoPay Active
+                              </button>
+                            );
+                          }
+                          return (
+                            <div className="mt-6 space-y-2">
+                              <button type="button" disabled={!!processingPlan}
+                                onClick={() => handleSubscribeAutoPay(plan.name as "Basic" | "Premium")}
+                                className="w-full rounded-lg bg-brand py-2.5 text-xs font-bold text-white hover:bg-brand/90 shadow-lg shadow-brand/25 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-1.5">
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                {processingPlan === plan.name ? "Starting…" : `Subscribe & AutoPay · ${plan.price}/mo`}
+                              </button>
+                              <button type="button" disabled={!!processingPlan}
+                                onClick={() => handleUpgradeClick(plan.name)}
+                                className="w-full rounded-lg border border-zinc-200 bg-white py-2 text-[11px] font-bold text-zinc-600 hover:border-brand/30 hover:text-brand transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
+                                {processingPlan === plan.name ? "Processing…" : `Or pay once for a month · ${plan.price}`}
+                              </button>
+                            </div>
+                          );
+                        })()}
                         {plan.active && trialActive && plan.name !== "Enterprise" && (
                           <p className="mt-2 text-center text-[10px] font-semibold text-amber-600">
                             Free trial active · {trialEndsInDays} day{trialEndsInDays === 1 ? "" : "s"} left
                           </p>
-                        )}
-                        {(plan.name === "Basic" || plan.name === "Premium") && !(mySubscription && String(mySubscription.status).toUpperCase() === "ACTIVE") && (
-                          <button
-                            type="button"
-                            disabled={!!processingPlan}
-                            onClick={() => handleSubscribeAutoPay(plan.name as "Basic" | "Premium")}
-                            className="mt-2 w-full rounded-lg border border-brand/30 bg-brand/5 py-2 text-[11px] font-bold text-brand hover:bg-brand/10 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                          >
-                            <RefreshCw className="h-3 w-3" />
-                            {processingPlan === plan.name ? "Starting…" : `Set up AutoPay · ${plan.price}/mo`}
-                          </button>
                         )}
                       </div>
                     ))}

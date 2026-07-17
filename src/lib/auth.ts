@@ -3951,3 +3951,28 @@ export async function reconcileOrderPaymentHistory(orderId: string): Promise<str
     return null;
   }
 }
+
+/**
+ * Returns the signed-in user's one-time Cashfree payment history (from the
+ * PaymentHistory ledger) so the billing view can list every transaction and
+ * offer a downloadable/viewable invoice for each — including single-rupee
+ * mandate/auth charges. Scoped strictly to the caller's tenant.
+ */
+export const getMyPaymentHistoryServerFn = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+
+    const rows = await query<any>(
+      `SELECT id, orderId, cfPaymentId, plan, amount, currency, status, orderStatus,
+              paymentMode, failureReason, customerName, customerEmail, customerPhone,
+              gateway, createdAt, updatedAt
+       FROM PaymentHistory
+       WHERE tenantId = ?
+       ORDER BY createdAt DESC
+       LIMIT 100`,
+      [user.tenantId]
+    );
+
+    return { rows };
+  });

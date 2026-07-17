@@ -25,6 +25,7 @@ import {
   ChevronRight,
   TrendingUp,
   FileText,
+  Eye,
   UserCheck,
   Clipboard,
   ClipboardCheck,
@@ -355,13 +356,43 @@ function AdminDashboardPage() {
     }
   };
 
+  // Generate (view or download) a branded PDF invoice for a PaymentHistory row.
+  const openPaymentInvoice = async (p: any, mode: "view" | "download") => {
+    try {
+      const { viewInvoice, downloadInvoice } = await import("../lib/pdf-invoice");
+      const data = {
+        clinicName: p.clinicName,
+        customerName: p.customerName,
+        customerEmail: p.customerEmail,
+        customerPhone: p.customerPhone,
+        plan: p.plan,
+        amount: Number(p.amount),
+        currency: p.currency,
+        status: p.status,
+        paymentMethod: p.paymentMode,
+        transactionType: "One-time Payment",
+        cfPaymentId: p.cfPaymentId,
+        cfOrderId: p.orderId,
+        transactionRef: p.id,
+        paidAt: p.updatedAt || p.createdAt,
+        createdAt: p.createdAt,
+      };
+      if (mode === "view") await viewInvoice(data);
+      else await downloadInvoice(data);
+    } catch (err: any) {
+      console.error("[Invoice] generation failed:", err);
+      toast.error("Could not generate invoice: " + err.message);
+    }
+  };
+
   // Reconcile every non-terminal payment against Cashfree, then refresh.
   const syncPaymentsFromCashfree = async () => {
     setSyncingPayments(true);
     try {
       const res = await syncAllPaymentsFromCashfreeServerFn();
       console.log("[AdminSync] Payments reconciled:", res);
-      toast.success(`Synced ${res.reconciled}/${res.scanned} payments${res.promoted ? ` — ${res.promoted} now paid` : ""}`);
+      const backfillNote = res.backfilled ? `${res.backfilled} recovered from accounts, ` : "";
+      toast.success(`${backfillNote}synced ${res.reconciled}/${res.scanned} pending${res.promoted ? ` — ${res.promoted} now paid` : ""}`);
       await fetchPaymentHistory();
     } catch (err: any) {
       console.error("[AdminSync] Payment sync failed:", err);
@@ -1701,7 +1732,8 @@ function AdminDashboardPage() {
                             <th className="pb-3">Payment Mode</th>
                             <th className="pb-3">Status</th>
                             <th className="pb-3">Reason</th>
-                            <th className="pb-3 text-right pr-3">Date</th>
+                            <th className="pb-3">Date</th>
+                            <th className="pb-3 text-right pr-3">Invoice</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
@@ -1774,13 +1806,35 @@ function AdminDashboardPage() {
                                 </td>
 
                                 {/* Date */}
-                                <td className="py-4 text-right pr-3">
+                                <td className="py-4">
                                   <span className="text-[10px] text-zinc-500 font-semibold whitespace-nowrap">
                                     {new Date(p.createdAt).toLocaleString("en-US", {
                                       month: "short", day: "numeric", year: "numeric",
                                       hour: "numeric", minute: "2-digit", hour12: true
                                     })}
                                   </span>
+                                </td>
+
+                                {/* Invoice */}
+                                <td className="py-4 text-right pr-3">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      title="View invoice"
+                                      onClick={() => openPaymentInvoice(p, "view")}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand hover:border-brand/30 transition-colors cursor-pointer"
+                                    >
+                                      <Eye className="size-3" /> View
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Download invoice"
+                                      onClick={() => openPaymentInvoice(p, "download")}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand hover:border-brand/30 transition-colors cursor-pointer"
+                                    >
+                                      <FileText className="size-3" /> PDF
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -2483,23 +2537,35 @@ function AdminDashboardPage() {
                             {p.cfTxnId && <div>Txn: <code className="text-[9px] bg-zinc-100 border border-zinc-200/50 px-1 rounded font-mono">{p.cfTxnId}</code></div>}
                           </div>
                         </div>
-                        {p.status === "SUCCESS" && (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const { downloadSubscriptionInvoice } = await import("../lib/pdf-invoice");
-                              const sub = subPaymentsModal.subscription || {};
-                              downloadSubscriptionInvoice({
-                                clinicName: sub.clinicName, customerName: sub.customerName, customerEmail: sub.customerEmail, customerPhone: sub.customerPhone,
-                                plan: sub.planTier, amount: Number(p.amount), status: p.status, paymentMethod: p.paymentMethod, paymentType: p.paymentType,
-                                cfPaymentId: p.cfPaymentId, cfTxnId: p.cfTxnId, cfOrderId: p.cfOrderId, subscriptionRef: sub.subscriptionRef, paidAt: p.paidAt, createdAt: p.createdAt,
-                              });
-                            }}
-                            className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand hover:border-brand/30 transition-colors cursor-pointer"
-                          >
-                            <FileText className="size-3" /> Invoice
-                          </button>
-                        )}
+                        <div className="shrink-0 flex items-center gap-1.5">
+                          {(["view", "download"] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              title={mode === "view" ? "View invoice" : "Download invoice"}
+                              onClick={async () => {
+                                try {
+                                  const { viewInvoice, downloadInvoice } = await import("../lib/pdf-invoice");
+                                  const sub = subPaymentsModal.subscription || {};
+                                  const data = {
+                                    clinicName: sub.clinicName, customerName: sub.customerName, customerEmail: sub.customerEmail, customerPhone: sub.customerPhone,
+                                    plan: sub.planTier, amount: Number(p.amount), status: p.status, paymentMethod: p.paymentMethod, paymentType: p.paymentType,
+                                    transactionType: p.paymentType === "AUTH" ? "Mandate Registration" : "Subscription Renewal",
+                                    cfPaymentId: p.cfPaymentId, cfTxnId: p.cfTxnId, cfOrderId: p.cfOrderId, subscriptionRef: sub.subscriptionRef,
+                                    transactionRef: p.id, paidAt: p.paidAt, createdAt: p.createdAt,
+                                  };
+                                  if (mode === "view") await viewInvoice(data);
+                                  else await downloadInvoice(data);
+                                } catch (err: any) {
+                                  toast.error("Could not generate invoice: " + err.message);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand hover:border-brand/30 transition-colors cursor-pointer"
+                            >
+                              {mode === "view" ? <><Eye className="size-3" /> View</> : <><FileText className="size-3" /> PDF</>}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
