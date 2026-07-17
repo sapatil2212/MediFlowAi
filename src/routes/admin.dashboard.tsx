@@ -70,6 +70,7 @@ import {
   getTenantFullProfileServerFn,
   deleteTenantServerFn
 } from "../lib/admin";
+import { getAdminSubscriptionsServerFn } from "../lib/subscription";
 import {
   getDemoAppointmentsServerFn,
   updateDemoAppointmentServerFn,
@@ -214,7 +215,16 @@ function AdminDashboardPage() {
   });
 
   // Active Dashboard Tab View
-  const [activeTab, setActiveTab] = useState<"overview" | "registry" | "payments" | "demo">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "registry" | "payments" | "subscriptions" | "demo">("overview");
+
+  // Recurring subscriptions (AutoPay) admin state
+  const [subscriptionRows, setSubscriptionRows] = useState<any[]>([]);
+  const [subscriptionSummary, setSubscriptionSummary] = useState<{
+    totalCount: number; activeCount: number; cancelledCount: number; onHoldCount: number; activeMrr: number; failedRenewals: number;
+  }>({ totalCount: 0, activeCount: 0, cancelledCount: 0, onHoldCount: 0, activeMrr: 0, failedRenewals: 0 });
+  const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
+  const [subAdminStatusFilter, setSubAdminStatusFilter] = useState("all");
+  const [subAdminSearch, setSubAdminSearch] = useState("");
 
   // Payment History states
   const [paymentRows, setPaymentRows] = useState<any[]>([]);
@@ -330,6 +340,31 @@ function AdminDashboardPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, paymentStatusFilter]);
+
+  const fetchAdminSubscriptions = async () => {
+    setLoadingSubscriptions(true);
+    try {
+      const res = await getAdminSubscriptionsServerFn({
+        data: {
+          status: subAdminStatusFilter === "all" ? undefined : subAdminStatusFilter,
+          search: subAdminSearch || undefined,
+        },
+      });
+      setSubscriptionRows(res.rows || []);
+      setSubscriptionSummary(res.summary);
+    } catch (err: any) {
+      toast.error("Failed to load subscriptions: " + err.message);
+    } finally {
+      setLoadingSubscriptions(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "subscriptions") {
+      fetchAdminSubscriptions();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, subAdminStatusFilter]);
 
   const handleLogout = async () => {
     try {
@@ -672,6 +707,7 @@ function AdminDashboardPage() {
               { id: "overview",    label: "Overview",     icon: TrendingUp },
               { id: "registry",   label: "Tenants",      icon: Building },
               { id: "payments",   label: "Payments",     icon: CreditCard },
+              { id: "subscriptions", label: "Subscriptions", icon: RefreshCw },
               { id: "demo",       label: "Demos",        icon: Calendar },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -729,6 +765,7 @@ function AdminDashboardPage() {
                 {activeTab === "overview" && "Platform Overview"}
                 {activeTab === "registry" && "Tenants Directory"}
                 {activeTab === "payments" && "Payment History"}
+                {activeTab === "subscriptions" && "Recurring Subscriptions"}
                 {activeTab === "demo" && "Demo Appointments"}
               </span>
             </div>
@@ -758,12 +795,14 @@ function AdminDashboardPage() {
                   {activeTab === "overview" && "Platform Overview"}
                   {activeTab === "registry" && "Tenants Directory"}
                   {activeTab === "payments" && "Payment History"}
+                  {activeTab === "subscriptions" && "Recurring Subscriptions"}
                   {activeTab === "demo" && "Demo Pipeline"}
                 </h1>
                 <p className="text-xs text-zinc-500 mt-0.5">
                   {activeTab === "overview" && "Real-time metrics, signup distribution, and telemetry snapshots."}
                   {activeTab === "registry" && "Manage clinician accounts, billing status, and plan packages."}
                   {activeTab === "payments" && "Every Cashfree payment attempt — received, failed, cancelled, and pending."}
+                  {activeTab === "subscriptions" && "Cashfree AutoPay mandates — active, cancelled, on-hold, and renewal health."}
                   {activeTab === "demo" && "Track incoming public demo requests, follow-up status, and booking intent."}
                 </p>
               </div>
@@ -1678,6 +1717,152 @@ function AdminDashboardPage() {
                                       month: "short", day: "numeric", year: "numeric",
                                       hour: "numeric", minute: "2-digit", hour12: true
                                     })}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* VIEW: RECURRING SUBSCRIPTIONS */}
+            {activeTab === "subscriptions" && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Active MRR</span>
+                    <p className="text-xl font-black text-emerald-600">{formatCurrencyInr(subscriptionSummary.activeMrr)}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">{subscriptionSummary.activeCount} active mandates</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Active</span>
+                    <p className="text-xl font-black text-emerald-600">{subscriptionSummary.activeCount}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">AutoPay running</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">On Hold</span>
+                    <p className="text-xl font-black text-amber-600">{subscriptionSummary.onHoldCount}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">Retrying / grace period</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Cancelled</span>
+                    <p className="text-xl font-black text-zinc-600">{subscriptionSummary.cancelledCount}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">AutoPay stopped</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Failed Renewals</span>
+                    <p className="text-xl font-black text-red-600">{subscriptionSummary.failedRenewals}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">All-time declines</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">
+                  <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
+                    <div>
+                      <h2 className="text-sm font-extrabold text-zinc-900">AutoPay Mandates</h2>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">Cashfree recurring subscriptions across all tenants ({subscriptionRows.length} shown).</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
+                      <div className="relative w-full sm:w-64">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
+                        <input
+                          type="text"
+                          placeholder="Search tenant, email, or subscription ID..."
+                          value={subAdminSearch}
+                          onChange={(e) => setSubAdminSearch(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") fetchAdminSubscriptions(); }}
+                          className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all font-semibold"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
+                        <Filter className="size-3.5 text-zinc-400" />
+                        <select value={subAdminStatusFilter} onChange={(e) => setSubAdminStatusFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1">
+                          <option value="all">All Statuses</option>
+                          <option value="ACTIVE">Active</option>
+                          <option value="ON_HOLD">On Hold</option>
+                          <option value="CANCELLED">Cancelled</option>
+                          <option value="INITIALIZED">Initialized</option>
+                        </select>
+                      </div>
+                      <button
+                        onClick={fetchAdminSubscriptions}
+                        disabled={loadingSubscriptions}
+                        className="flex items-center justify-center size-9 border border-zinc-200 bg-white rounded-xl text-zinc-500 hover:text-zinc-800 transition-colors active:scale-[0.98] cursor-pointer"
+                        title="Refresh"
+                      >
+                        <RefreshCw className={`size-4 ${loadingSubscriptions ? "animate-spin" : ""}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {loadingSubscriptions ? (
+                    <div className="flex flex-col items-center justify-center py-24 gap-3">
+                      <Loader2 className="size-7 text-zinc-900 animate-spin" />
+                      <span className="text-xs text-zinc-400 font-bold">Loading subscriptions...</span>
+                    </div>
+                  ) : subscriptionRows.length === 0 ? (
+                    <div className="text-center py-20 space-y-3">
+                      <div className="flex size-12 items-center justify-center rounded-full bg-zinc-50 border border-zinc-150 mx-auto">
+                        <RefreshCw className="size-5 text-zinc-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-bold text-zinc-700">No Subscriptions Found</h3>
+                        <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">Recurring AutoPay mandates will appear here once tenants subscribe.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse min-w-[1000px]">
+                        <thead>
+                          <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
+                            <th className="pb-3 pl-3">Tenant & Subscription</th>
+                            <th className="pb-3">Plan / Amount</th>
+                            <th className="pb-3">Status</th>
+                            <th className="pb-3">Next Renewal</th>
+                            <th className="pb-3 text-right pr-3">Created</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
+                          {subscriptionRows.map((s) => {
+                            const st = String(s.status || "").toUpperCase();
+                            const statusStyle =
+                              st === "ACTIVE" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
+                              st === "ON_HOLD" || st === "PAUSED" ? "bg-amber-50 text-amber-700 border-amber-150" :
+                              st === "CANCELLED" ? "bg-zinc-100 text-zinc-650 border-zinc-200" :
+                              "bg-sky-50 text-sky-700 border-sky-150";
+                            const next = s.nextChargeAt || s.currentPeriodEnd;
+                            return (
+                              <tr key={s.id} className="hover:bg-slate-50/40 transition-colors group">
+                                <td className="py-4 pl-3">
+                                  <span className="font-extrabold text-zinc-900 text-xs block">{s.clinicName || s.customerName || "—"}</span>
+                                  <div className="text-[10px] text-zinc-400 font-medium mt-0.5 space-y-0.5">
+                                    {s.customerEmail && <div>{s.customerEmail}</div>}
+                                    <div className="flex items-center gap-1.5">
+                                      <span>Sub:</span>
+                                      <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">{s.subscriptionRef}</code>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-4">
+                                  <span className="block font-extrabold text-zinc-900 text-xs">{formatCurrencyInr(s.amount)}</span>
+                                  <span className="block text-[10px] text-zinc-400 font-semibold mt-0.5">{s.planTier} · {s.paymentMethod || "Cashfree"}</span>
+                                </td>
+                                <td className="py-4">
+                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${statusStyle}`}>
+                                    {st}
+                                  </span>
+                                </td>
+                                <td className="py-4 text-zinc-600 font-semibold">
+                                  {next ? new Date(next).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                                </td>
+                                <td className="py-4 text-right pr-3">
+                                  <span className="text-[10px] text-zinc-500 font-semibold whitespace-nowrap">
+                                    {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                                   </span>
                                 </td>
                               </tr>

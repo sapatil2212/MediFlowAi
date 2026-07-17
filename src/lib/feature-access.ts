@@ -72,6 +72,46 @@ export const FEATURE_IDS: FeatureId[] = [
 export const PLAN_TIERS: PlanTier[] = ["Basic", "Premium", "Enterprise"];
 
 // ---------------------------------------------------------------------------
+// Plan pricing & billing metadata (single source of truth)
+// ---------------------------------------------------------------------------
+
+/** Billing metadata for a plan tier, consumed by both one-time and recurring
+ *  (Cashfree AutoPay) flows so amounts/cycles are never hardcoded per call. */
+export interface PlanBilling {
+  /** Recurring amount charged each cycle, in INR. 0 = custom / not self-serve. */
+  monthly: number;
+  currency: "INR";
+  /** Cashfree plan interval type for recurring subscriptions. */
+  intervalType: "MONTH";
+  /** Number of intervals per cycle (1 = every month). */
+  intervals: number;
+  /** Whether this tier can be purchased via self-serve checkout/AutoPay. */
+  selfServe: boolean;
+}
+
+/**
+ * The canonical price list. Any billing/checkout code (one-time orders or
+ * recurring AutoPay subscriptions) must read amounts from here rather than
+ * inlining numbers, so pricing stays consistent across the app.
+ */
+export const PLAN_BILLING: Record<PlanTier, PlanBilling> = {
+  Basic: { monthly: 999, currency: "INR", intervalType: "MONTH", intervals: 1, selfServe: true },
+  Premium: { monthly: 1499, currency: "INR", intervalType: "MONTH", intervals: 1, selfServe: true },
+  Enterprise: { monthly: 0, currency: "INR", intervalType: "MONTH", intervals: 1, selfServe: false },
+};
+
+/** Returns the monthly recurring amount (INR) for a raw/aliased plan value. */
+export function getPlanMonthlyAmount(plan?: string | null): number {
+  return PLAN_BILLING[normalizePlan(plan)].monthly;
+}
+
+/** Maps an order/charge amount (INR) back to a canonical plan tier. */
+export function amountToPlanTier(amount: number): PlanTier {
+  if (amount >= PLAN_BILLING.Premium.monthly) return "Premium";
+  return "Basic";
+}
+
+// ---------------------------------------------------------------------------
 // Plan normalization
 // ---------------------------------------------------------------------------
 

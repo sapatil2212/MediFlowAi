@@ -259,3 +259,75 @@ export async function sendDemoAdminNotificationEmail(data: DemoBookingMailData):
     text: `New demo request ${data.referenceId}\nName: ${data.name}\nEmail: ${data.email}\nPhone: ${data.phone}\nOrganization: ${data.organization}\nBusiness type: ${data.businessType}\nTeam size: ${data.teamSize}\nPreferred slot: ${scheduleLabel}\nMode: ${data.preferredMode}\nCity: ${data.city}\nNotes: ${data.message || "No extra notes"}`,
   });
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Billing / Subscription (AutoPay) notifications
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type BillingEventTone = "success" | "warning" | "danger" | "info";
+
+const TONE_COLORS: Record<BillingEventTone, string> = {
+  success: "#059669",
+  warning: "#d97706",
+  danger: "#dc2626",
+  info: "#0059C6",
+};
+
+/**
+ * Sends a branded billing/subscription notification email. Used for all AutoPay
+ * lifecycle events (activation, renewal success/failure, cancellation, upcoming
+ * renewal, invoice available). Non-blocking failures should be swallowed by the
+ * caller so billing flows never break on email issues.
+ */
+export async function sendBillingNotificationEmail(params: {
+  email: string;
+  subject: string;
+  title: string;
+  message: string;
+  tone?: BillingEventTone;
+  details?: Array<{ label: string; value: string }>;
+}): Promise<void> {
+  const tone = params.tone || "info";
+  const accent = TONE_COLORS[tone];
+  const bcc = process.env.EMAIL_BCC || "";
+
+  const detailRows = (params.details || [])
+    .map(
+      (d) => `
+        <tr>
+          <td style="padding: 8px 0; color: #71717a; font-size: 12px;">${d.label}</td>
+          <td style="padding: 8px 0; color: #18181b; font-size: 12px; font-weight: 600; text-align: right;">${d.value}</td>
+        </tr>`
+    )
+    .join("");
+
+  await transporter.sendMail({
+    from: `"BookMyTime Billing" <${process.env.EMAIL_USERNAME}>`,
+    to: params.email,
+    bcc: bcc || undefined,
+    subject: params.subject,
+    html: `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #ffffff; padding: 24px 16px;">
+        <div style="background: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e4e4e7;">
+          ${emailHeader()}
+          <div style="padding: 32px 32px 24px;">
+            <div style="height: 4px; width: 44px; background: ${accent}; border-radius: 4px; margin: 0 auto 20px;"></div>
+            <h2 style="color: #18181b; font-size: 19px; font-weight: 600; text-align: center; margin: 0 0 10px; letter-spacing: -0.2px;">
+              ${params.title}
+            </h2>
+            <p style="color: #52525b; font-size: 13px; text-align: center; margin: 0 0 22px; line-height: 1.7;">
+              ${params.message}
+            </p>
+            ${
+              detailRows
+                ? `<table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; border-collapse: collapse; border-top: 1px solid #f4f4f5; margin-top: 8px;">${detailRows}</table>`
+                : ""
+            }
+            ${emailFooter()}
+          </div>
+        </div>
+      </div>
+    `,
+  });
+}

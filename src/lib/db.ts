@@ -600,6 +600,100 @@ if (typeof window === "undefined") {
           console.warn("[DB] ⚠️ Could not verify/alter PaymentHistory columns:", err.message);
         }
 
+        // Create Subscription Table (Cashfree recurring AutoPay mandates)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS Subscription (
+              id VARCHAR(255) PRIMARY KEY,
+              userId VARCHAR(255) NOT NULL,
+              tenantId VARCHAR(255) NULL,
+              subscriptionRef VARCHAR(255) NOT NULL,
+              cfSubscriptionId VARCHAR(255) NULL,
+              cfPlanId VARCHAR(255) NULL,
+              planTier VARCHAR(50) NOT NULL,
+              amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+              currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+              intervalType VARCHAR(20) NOT NULL DEFAULT 'MONTH',
+              intervals INT NOT NULL DEFAULT 1,
+              status VARCHAR(50) NOT NULL DEFAULT 'INITIALIZED',
+              authStatus VARCHAR(50) NULL,
+              paymentMethod VARCHAR(100) NULL,
+              mandateReference VARCHAR(255) NULL,
+              sessionId VARCHAR(512) NULL,
+              currentPeriodStart TIMESTAMP NULL,
+              currentPeriodEnd TIMESTAMP NULL,
+              nextChargeAt TIMESTAMP NULL,
+              gracePeriodEnds TIMESTAMP NULL,
+              cancelAtPeriodEnd TINYINT(1) NOT NULL DEFAULT 0,
+              customerName VARCHAR(255) NULL,
+              customerEmail VARCHAR(255) NULL,
+              customerPhone VARCHAR(50) NULL,
+              gateway VARCHAR(50) NOT NULL DEFAULT 'Cashfree',
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_subscription_ref (subscriptionRef),
+              INDEX idx_sub_user (userId),
+              INDEX idx_sub_tenant (tenantId),
+              INDEX idx_sub_status (status),
+              INDEX idx_sub_cf (cfSubscriptionId)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create Subscription table:", err.message);
+        }
+
+        // Create SubscriptionPayment Table (per-cycle charge / renewal ledger)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS SubscriptionPayment (
+              id VARCHAR(255) PRIMARY KEY,
+              subscriptionRef VARCHAR(255) NOT NULL,
+              cfSubscriptionId VARCHAR(255) NULL,
+              userId VARCHAR(255) NULL,
+              tenantId VARCHAR(255) NULL,
+              cfPaymentId VARCHAR(255) NULL,
+              paymentRef VARCHAR(255) NULL,
+              amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+              currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+              status VARCHAR(50) NOT NULL,
+              paymentMethod VARCHAR(100) NULL,
+              cycle INT NULL,
+              failureReason VARCHAR(500) NULL,
+              scheduledAt TIMESTAMP NULL,
+              paidAt TIMESTAMP NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              INDEX idx_subpay_ref (subscriptionRef),
+              INDEX idx_subpay_user (userId),
+              INDEX idx_subpay_status (status),
+              INDEX idx_subpay_cfpay (cfPaymentId)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create SubscriptionPayment table:", err.message);
+        }
+
+        // Create WebhookEvent Table (idempotency + audit for gateway webhooks)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS WebhookEvent (
+              id VARCHAR(255) PRIMARY KEY,
+              eventKey VARCHAR(512) NOT NULL,
+              eventType VARCHAR(120) NULL,
+              subscriptionRef VARCHAR(255) NULL,
+              referenceId VARCHAR(255) NULL,
+              signatureValid TINYINT(1) NOT NULL DEFAULT 0,
+              status VARCHAR(50) NOT NULL DEFAULT 'processed',
+              rawPayload MEDIUMTEXT NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_webhook_event (eventKey),
+              INDEX idx_webhook_type (eventType),
+              INDEX idx_webhook_created (createdAt)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create WebhookEvent table:", err.message);
+        }
+
         // Create SubUser Table (reception / doctor sub-accounts per tenant)
         try {
           await conn.query(`

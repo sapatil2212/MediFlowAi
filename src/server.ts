@@ -41,9 +41,21 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   });
 }
 
+// Stable public endpoint for Cashfree subscription webhooks. Handled here in
+// the request entry because this TanStack Start version has no file-based
+// server routes. Configure this URL in the Cashfree dashboard:
+//   https://<your-domain>/api/cashfree/webhook
+const CASHFREE_WEBHOOK_PATH = "/api/cashfree/webhook";
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const url = new URL(request.url);
+      if (request.method === "POST" && url.pathname === CASHFREE_WEBHOOK_PATH) {
+        const { handleCashfreeWebhookRequest } = await import("./lib/subscription-webhook");
+        return await handleCashfreeWebhookRequest(request);
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

@@ -934,6 +934,108 @@ function MedicalDashboardPage() {
     }
   }, [verifyReturnedPayment]);
 
+  // ── Cashfree recurring AutoPay subscription ──
+  const [mySubscription, setMySubscription] = useState<any | null>(null);
+  const [subPayments, setSubPayments] = useState<any[]>([]);
+  const [subActionLoading, setSubActionLoading] = useState(false);
+  const [isVerifyingSubscription, setIsVerifyingSubscription] = useState(false);
+  const [subscriptionSuccess, setSubscriptionSuccess] = useState<{ plan: string; amount: number; pending?: boolean } | null>(null);
+
+  const fetchMySubscription = useCallback(async () => {
+    try {
+      const { getMySubscriptionServerFn } = await import("../../lib/subscription");
+      const res = await getMySubscriptionServerFn();
+      setMySubscription(res.subscription);
+      setSubPayments(res.payments || []);
+    } catch { /* non-fatal */ }
+  }, []);
+
+  useEffect(() => { if (user) fetchMySubscription(); }, [user, fetchMySubscription]);
+
+  const handleSubscribeAutoPay = useCallback(async (planTier: "Basic" | "Premium") => {
+    if (!user || !user.email) { showToast("error", "Session expired. Please log in again."); return; }
+    if (processingPlan) return;
+    setProcessingPlan(planTier);
+    showToast("info", "Setting up AutoPay mandate...");
+    try {
+      const { createSubscriptionServerFn } = await import("../../lib/subscription");
+      const returnPath = `${window.location.pathname}?tab=plans`;
+      const res = await createSubscriptionServerFn({ data: { planTier, returnPath } });
+      if (res.success && res.subscription_session_id) {
+        const cf = (window as any).Cashfree;
+        if (!cf) throw new Error("Payment gateway SDK failed to load. Please refresh the page.");
+        const cashfree = cf({ mode: res.mode === "production" ? "production" : "sandbox" });
+        await cashfree.subscriptionsCheckout({ subsSessionId: res.subscription_session_id, redirectTarget: "_self" });
+      } else {
+        showToast("error", "Failed to start the subscription. Please try again.");
+      }
+    } catch (err: any) {
+      showToast("error", err.message || "Failed to set up AutoPay.");
+    } finally {
+      setProcessingPlan(null);
+    }
+  }, [user, processingPlan, showToast]);
+
+  const verifyReturnedSubscription = useCallback(async (subscriptionRef: string) => {
+    setIsVerifyingSubscription(true);
+    try {
+      const { verifySubscriptionServerFn } = await import("../../lib/subscription");
+      const res = await verifySubscriptionServerFn({ data: { subscriptionRef } });
+      if (res.success) {
+        setSubscriptionSuccess({ plan: res.plan as string, amount: Number(res.amount) });
+        setActiveTab("plans");
+        try { const fresh = await getCurrentUserServerFn(); if (fresh) setUser(fresh); } catch { /* modal confirms */ }
+      } else if (res.status === "BANK_APPROVAL_PENDING") {
+        setSubscriptionSuccess({ plan: res.plan as string, amount: Number(res.amount), pending: true });
+      } else {
+        showToast("error", res.message || "Mandate authorization was not completed.");
+      }
+      fetchMySubscription();
+    } catch (err: any) {
+      showToast("error", err?.message || "We couldn't verify your subscription. Please contact support if you were charged.");
+    } finally {
+      setIsVerifyingSubscription(false);
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("sub_id");
+        window.history.replaceState({}, document.title, url.pathname + url.search);
+      }
+    }
+  }, [showToast, fetchMySubscription]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const subId = params.get("sub_id");
+    if (subId) verifyReturnedSubscription(subId);
+  }, [verifyReturnedSubscription]);
+
+  const handleCancelAutoPay = useCallback(async () => {
+    if (!mySubscription || subActionLoading) return;
+    setSubActionLoading(true);
+    try {
+      const { cancelSubscriptionServerFn } = await import("../../lib/subscription");
+      const res = await cancelSubscriptionServerFn({ data: { subscriptionRef: mySubscription.subscriptionRef } });
+      showToast("success", res.message);
+      fetchMySubscription();
+    } catch (err: any) {
+      showToast("error", err.message || "Failed to cancel subscription.");
+    } finally { setSubActionLoading(false); }
+  }, [mySubscription, subActionLoading, showToast, fetchMySubscription]);
+
+  const handleResumeAutoPay = useCallback(async () => {
+    if (!mySubscription || subActionLoading) return;
+    setSubActionLoading(true);
+    try {
+      const { resumeSubscriptionServerFn } = await import("../../lib/subscription");
+      await resumeSubscriptionServerFn({ data: { subscriptionRef: mySubscription.subscriptionRef } });
+      showToast("success", "Subscription resumed. AutoPay is active again.");
+      fetchMySubscription();
+    } catch (err: any) {
+      showToast("error", err.message || "Failed to resume subscription.");
+    } finally { setSubActionLoading(false); }
+  }, [mySubscription, subActionLoading, showToast, fetchMySubscription]);
+
   const handleUpgradeClick = useCallback(async (planName: string) => {
     if (planName === "Enterprise") {
       setActiveTab("settings");
@@ -8489,6 +8591,86 @@ function MedicalDashboardPage() {
                     </div>
                   </div>
 
+                {mySubscription && (() => {
+                  const s = mySubscription;
+                  const st = String(s.status || "").toUpperCase();
+                  const nextRenewal = s.nextChargeAt || s.currentPeriodEnd;
+                  const nextRenewalStr = nextRenewal
+                    ? new Date(nextRenewal).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+                    : "—";
+                  const badge =
+                    st === "ACTIVE" ? { cls: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20", label: "AutoPay Active" } :
+                    st === "ON_HOLD" ? { cls: "bg-amber-500/10 text-amber-600 border-amber-500/20", label: "Payment Retry" } :
+                    st === "PAUSED" ? { cls: "bg-amber-500/10 text-amber-600 border-amber-500/20", label: "Paused" } :
+                    st === "CANCELLED" ? { cls: "bg-zinc-100 text-zinc-600 border-zinc-200", label: "Cancelled" } :
+                    { cls: "bg-amber-500/10 text-amber-600 border-amber-500/20", label: "Pending Authorization" };
+                  return (
+                    <div className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-5">
+                      <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className="flex items-start gap-3">
+                          <div className="rounded-xl bg-brand/10 p-2.5 shrink-0">
+                            <RefreshCw className="h-5 w-5 text-brand" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-black text-zinc-900">Recurring AutoPay</h4>
+                              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${badge.cls}`}>{badge.label}</span>
+                            </div>
+                            <p className="text-xs text-zinc-500 font-medium mt-1">
+                              {s.planTier} plan · ₹{Number(s.amount)}/month · {s.paymentMethod || "Cashfree"}
+                            </p>
+                            <p className="text-[11px] text-zinc-400 font-medium mt-1">
+                              {st === "CANCELLED"
+                                ? `AutoPay cancelled — access continues until ${nextRenewalStr}.`
+                                : st === "ON_HOLD"
+                                  ? `Last renewal failed. We'll retry automatically${s.gracePeriodEnds ? ` (grace period until ${new Date(s.gracePeriodEnds).toLocaleDateString("en-US")})` : ""}.`
+                                  : `Next automatic renewal on ${nextRenewalStr}.`}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {(st === "PAUSED" || st === "ON_HOLD") && (
+                            <button type="button" disabled={subActionLoading} onClick={handleResumeAutoPay}
+                              className="rounded-full bg-brand px-4 py-2 text-xs font-bold text-white hover:bg-brand/90 disabled:opacity-60 cursor-pointer">
+                              {subActionLoading ? "Working…" : "Resume AutoPay"}
+                            </button>
+                          )}
+                          {st === "ACTIVE" && (
+                            <button type="button" disabled={subActionLoading} onClick={handleCancelAutoPay}
+                              className="rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-100 disabled:opacity-60 cursor-pointer">
+                              {subActionLoading ? "Working…" : "Cancel AutoPay"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {subPayments.length > 0 && (
+                        <div className="border-t border-zinc-100 pt-4">
+                          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-3">Billing History</p>
+                          <div className="space-y-2">
+                            {subPayments.slice(0, 6).map((p: any) => (
+                              <div key={p.id} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className={`h-1.5 w-1.5 rounded-full ${p.status === "SUCCESS" ? "bg-emerald-500" : p.status === "FAILED" ? "bg-red-500" : "bg-amber-500"}`} />
+                                  <span className="font-semibold text-zinc-700">₹{Number(p.amount)}</span>
+                                  <span className="text-zinc-400">· {p.paymentMethod || "Cashfree"}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className={`text-[10px] font-bold ${p.status === "SUCCESS" ? "text-emerald-600" : p.status === "FAILED" ? "text-red-600" : "text-amber-600"}`}>
+                                    {p.status === "SUCCESS" ? "Paid" : p.status === "FAILED" ? "Failed" : "Pending"}
+                                  </span>
+                                  <span className="text-[10px] text-zinc-400 font-medium">
+                                    {new Date(p.paidAt || p.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {trialActive && (
                   <div className="rounded-3xl border border-amber-300/60 bg-gradient-to-br from-amber-50 to-orange-50/60 p-6">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -8656,6 +8838,17 @@ function MedicalDashboardPage() {
                           <p className="mt-2 text-center text-[10px] font-semibold text-amber-600">
                             Free trial active · {trialEndsInDays} day{trialEndsInDays === 1 ? "" : "s"} left
                           </p>
+                        )}
+                        {(plan.name === "Basic" || plan.name === "Premium") && !(mySubscription && String(mySubscription.status).toUpperCase() === "ACTIVE") && (
+                          <button
+                            type="button"
+                            disabled={!!processingPlan}
+                            onClick={() => handleSubscribeAutoPay(plan.name as "Basic" | "Premium")}
+                            className="mt-2 w-full rounded-lg border border-brand/30 bg-brand/5 py-2 text-[11px] font-bold text-brand hover:bg-brand/10 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                          >
+                            <RefreshCw className="h-3 w-3" />
+                            {processingPlan === plan.name ? "Starting…" : `Set up AutoPay · ${plan.price}/mo`}
+                          </button>
                         )}
                       </div>
                     ))}
@@ -10024,6 +10217,53 @@ function MedicalDashboardPage() {
           <p className="text-xs text-zinc-300 mt-1">Please do not refresh the page or press back.</p>
         </div>
       )}
+
+      {isVerifyingSubscription && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md text-white">
+          <Loader2 className="h-10 w-10 animate-spin text-brand" />
+          <p className="mt-4 text-sm font-bold tracking-wide">Confirming your AutoPay mandate...</p>
+          <p className="text-xs text-zinc-300 mt-1">Please do not refresh the page or press back.</p>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {subscriptionSuccess && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              className="relative bg-white rounded-[1.75rem] border border-zinc-150 p-7 max-w-md w-full shadow-2xl text-center space-y-4"
+            >
+              <button type="button" onClick={() => setSubscriptionSuccess(null)}
+                className="absolute top-4 right-4 rounded-full p-1 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 transition-all cursor-pointer">
+                <X className="h-4 w-4" />
+              </button>
+              <motion.div
+                initial={{ scale: 0 }} animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 260, damping: 18, delay: 0.05 }}
+                className={`flex h-14 w-14 items-center justify-center rounded-full mx-auto border ${subscriptionSuccess.pending ? "bg-amber-50 border-amber-100 text-amber-600" : "bg-emerald-50 border-emerald-100 text-emerald-600"}`}
+              >
+                {subscriptionSuccess.pending ? <Clock className="h-7 w-7" /> : <Check className="h-7 w-7" />}
+              </motion.div>
+              <div className="space-y-2">
+                <h3 className="text-lg font-black text-zinc-900 leading-tight">
+                  {subscriptionSuccess.pending ? "Mandate Pending Approval" : "AutoPay Activated"}
+                </h3>
+                <p className="text-xs text-zinc-500 leading-relaxed font-medium">
+                  {subscriptionSuccess.pending
+                    ? `Your ${subscriptionSuccess.plan} mandate is awaiting bank approval. We'll activate your subscription automatically once it's confirmed.`
+                    : <>Your <span className="font-bold text-zinc-800">{subscriptionSuccess.plan}</span> subscription is active. You'll be charged <span className="font-bold text-zinc-800">₹{subscriptionSuccess.amount.toLocaleString("en-IN")}/month</span> automatically — no manual renewals needed.</>}
+                </p>
+              </div>
+              <button type="button" onClick={() => setSubscriptionSuccess(null)}
+                className="w-full rounded-full bg-brand hover:bg-brand/90 py-2.5 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer">
+                Done
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Enterprise "Contact Support" modal */}
       <AnimatePresence>
