@@ -11,8 +11,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import crypto from "crypto";
 
-// Cashfree API versions (pinned per the latest documented Subscriptions APIs).
-const PLAN_API_VERSION = "2025-08-01";
+// Cashfree API versions. Both the Plans and Subscriptions endpoints accept
+// "2025-01-01" (v5). Note: "2025-08-01" is NOT a valid version for this
+// account and is rejected by the gateway.
+const PLAN_API_VERSION = "2025-01-01";
 const SUB_API_VERSION = "2025-01-01";
 
 export interface CashfreeConfig {
