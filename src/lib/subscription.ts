@@ -139,6 +139,161 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Create subscription (mandate) from the /login renewal flow — pre-login, so
+// the account is resolved by username (email/phone) instead of a session.
+// Mirrors createCashfreeOrderServerFn's (one-time) username lookup pattern.
+// ─────────────────────────────────────────────────────────────────────────────
+export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST" })
+  .validator((data: { username: string; planTier: "Basic" | "Premium"; returnPath?: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await queryOne<any>(
+      "SELECT id, name, email, phone, tenantId FROM User WHERE email = ? OR phone = ? LIMIT 1",
+      [data.username, data.username]
+    );
+    if (!user) throw new Error("Account not found");
+
+    const tier = normalizePlan(data.planTier);
+    const billing = PLAN_BILLING[tier];
+    if (!billing.selfServe || billing.monthly <= 0) {
+      throw new Error("This plan is not available for self-serve AutoPay. Please contact support.");
+    }
+
+    // Prevent duplicate active/pending subscriptions.
+    const existingActive = await queryOne<any>(
+      "SELECT subscriptionRef, status FROM Subscription WHERE userId = ? AND status IN ('ACTIVE','BANK_APPROVAL_PENDING') LIMIT 1",
+      [user.id]
+    );
+    if (existingActive) {
+      throw new Error("You already have an active subscription. Cancel it before starting a new one.");
+    }
+
+    const amount = billing.monthly;
+    const cfg = getCashfreeConfig();
+    const planId = planIdFor(tier, amount);
+
+    await ensureCashfreePeriodicPlan({
+      planId,
+      planName: `BookMyTime ${tier} Monthly`,
+      recurringAmount: amount,
+      maxAmount: amount,
+      maxCycles: 120,
+      intervalType: billing.intervalType,
+      intervals: billing.intervals,
+      currency: billing.currency,
+      note: `${tier} monthly plan Rs ${amount}`,
+    });
+
+    const subscriptionRef = `sub_${user.tenantId}_${Date.now()}`;
+
+    // Default return path preserves the /login renewal flow so the same page
+    // can verify + show a confirmation without bouncing through the dashboard.
+    let basePath = "/login";
+    if (typeof data.returnPath === "string" && data.returnPath.startsWith("/") && !data.returnPath.startsWith("//")) {
+      basePath = data.returnPath;
+    }
+    const returnUrl = `${cfg.origin}${basePath}${basePath.includes("?") ? "&" : "?"}sub_id=${subscriptionRef}`;
+
+    const expiry = new Date();
+    expiry.setFullYear(expiry.getFullYear() + 5);
+
+    const cfSub = await createCashfreeSubscription({
+      subscriptionId: subscriptionRef,
+      planId,
+      planName: `BookMyTime ${tier} Monthly`,
+      customer: { name: user.name, email: user.email, phone: user.phone || "9999999999" },
+      returnUrl,
+      expiryTimeIso: expiry.toISOString(),
+      authorizationAmount: 1,
+      note: `${tier} AutoPay`,
+    });
+
+    await execute(
+      `INSERT INTO Subscription
+         (id, userId, tenantId, subscriptionRef, cfSubscriptionId, cfPlanId, planTier, amount, currency, intervalType, intervals,
+          status, sessionId, customerName, customerEmail, customerPhone, gateway, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Cashfree', NOW(), NOW())`,
+      [
+        generateId(), user.id, user.tenantId, subscriptionRef,
+        cfSub?.cf_subscription_id ? String(cfSub.cf_subscription_id) : null,
+        planId, tier, amount, billing.currency, billing.intervalType, billing.intervals,
+        String(cfSub?.subscription_status || "INITIALIZED").toUpperCase(),
+        cfSub?.subscription_session_id || null,
+        user.name, user.email, user.phone || null,
+      ]
+    );
+
+    return {
+      success: true,
+      subscription_id: subscriptionRef,
+      subscription_session_id: cfSub?.subscription_session_id || null,
+      mode: cfg.mode,
+      amount,
+      plan: tier,
+    };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verify a renewal subscription's mandate after return — pre-login, so this
+// looks the record up by subscriptionRef only (no session/ownership check is
+// possible before the user is authenticated). The subscriptionRef itself is
+// an unguessable Cashfree-facing id, and this only reconciles read-only status
+// + logs the ledger; it never grants access on its own (User.subscriptionStatus
+// is updated by the shared reconcileSubscriptionFromCashfree helper against the
+// tenant embedded in the ref, matching the same trust model as the one-time
+// verifyAndProcessPaymentServerFn used on the same /login return trip).
+// ─────────────────────────────────────────────────────────────────────────────
+export const verifyRenewalSubscriptionServerFn = createServerFn({ method: "POST" })
+  .validator((data: { subscriptionRef: string }) => data)
+  .handler(async ({ data }) => {
+    const local = await getLocalSubscriptionByRef(data.subscriptionRef);
+    if (!local) throw new Error("Subscription not found.");
+
+    const cfSub = await getCashfreeSubscription(data.subscriptionRef);
+    if (!cfSub) throw new Error("Unable to fetch subscription status from the payment gateway.");
+
+    await reconcileSubscriptionFromCashfree(data.subscriptionRef, cfSub);
+    await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef);
+
+    const status = String(cfSub.subscription_status || "").toUpperCase();
+    const authStatus = String(cfSub?.authorization_details?.authorization_status || "").toUpperCase();
+    const success = status === "ACTIVE" || authStatus === "ACTIVE";
+
+    if (success && local.customerEmail) {
+      try {
+        const tier = normalizePlan(local.planTier);
+        await sendBillingNotificationEmail({
+          email: local.customerEmail,
+          subject: `AutoPay activated — BookMyTime ${tier} plan`,
+          title: "Payment Received & AutoPay Active",
+          message: `Hi ${local.customerName || "there"}, your BookMyTime ${tier} subscription is active and AutoPay is set up. Your plan will renew automatically every month. Thank you for choosing BookMyTime.`,
+          tone: "success",
+          details: [
+            { label: "Plan", value: tier },
+            { label: "Amount", value: `Rs ${Number(local.amount).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/month` },
+            { label: "AutoPay", value: "Active" },
+            { label: "Subscription Ref", value: data.subscriptionRef },
+          ],
+        });
+      } catch (mailErr: any) {
+        console.warn(`[Subscription] Failed to send renewal AutoPay confirmation email:`, mailErr.message);
+      }
+    }
+
+    return {
+      success,
+      status,
+      authStatus,
+      plan: normalizePlan(local.planTier),
+      amount: local.amount,
+      message: success
+        ? "Your subscription is active. AutoPay is now set up."
+        : status === "BANK_APPROVAL_PENDING"
+          ? "Your mandate is pending bank approval. We'll activate access as soon as it's approved."
+          : "Mandate authorization was not completed.",
+    };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Verify subscription after mandate authorization return
 // ─────────────────────────────────────────────────────────────────────────────
 export const verifySubscriptionServerFn = createServerFn({ method: "POST" })

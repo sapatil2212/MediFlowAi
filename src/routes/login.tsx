@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { HeartPulse, Home, X, Check, Loader2, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { HeartPulse, Home, X, Check, Loader2, AlertCircle, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import {
   loginServerFn,
@@ -76,6 +76,11 @@ function LoginPage() {
   const [selectedRenewPlan, setSelectedRenewPlan] = useState<"Basic" | "Premium">("Basic");
   const [renewLoading, setRenewLoading] = useState(false);
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+  // Renewal AutoPay (recurring mandate) — separate loading flag from the
+  // one-time "Pay & Activate" button so both CTAs can be disabled/labeled
+  // independently while a checkout is in flight.
+  const [renewAutoPayLoading, setRenewAutoPayLoading] = useState(false);
+  const [isVerifyingRenewalSubscription, setIsVerifyingRenewalSubscription] = useState(false);
 
   // Handle click on Renew button
   const handleRenewClick = async () => {
@@ -129,6 +134,76 @@ function LoginPage() {
     }
   };
 
+  // Set up recurring AutoPay for the renewal (mirrors the dashboard's
+  // "Subscribe & AutoPay" flow, but resolves the account by username since
+  // there's no session yet on the login page).
+  const handleRenewAutoPay = async (plan: "Basic" | "Premium") => {
+    setRenewAutoPayLoading(true);
+    try {
+      const { createRenewalSubscriptionServerFn } = await import("../lib/subscription");
+      const returnPath = "/login";
+      const res = await createRenewalSubscriptionServerFn({
+        data: { username, planTier: plan, returnPath },
+      });
+
+      if (!res.success || !res.subscription_session_id) {
+        toast.error("Could not start AutoPay. Please try again.");
+        return;
+      }
+
+      if (!(window as any).Cashfree) {
+        throw new Error("Cashfree payment gateway SDK failed to load. Please refresh the page.");
+      }
+
+      const cashfree = (window as any).Cashfree({
+        mode: res.mode === "production" ? "production" : "sandbox",
+      });
+
+      const result = await cashfree.subscriptionsCheckout({
+        subsSessionId: res.subscription_session_id,
+        returnUrl: `${window.location.origin}/login?sub_id=${res.subscription_id}`,
+      });
+
+      if (result && result.error) {
+        console.error("[AutoPay] subscriptionsCheckout error:", result.error);
+        toast.error(result.error.message || "AutoPay checkout could not be opened.");
+      }
+    } catch (err: any) {
+      console.error("[AutoPay] Renewal setup failed:", err);
+      toast.error(err?.message || "Failed to set up AutoPay.");
+    } finally {
+      setRenewAutoPayLoading(false);
+    }
+  };
+
+  // Verify the renewal AutoPay mandate on return from Cashfree
+  const verifyRenewalSubscription = async (subscriptionRef: string) => {
+    setIsVerifyingRenewalSubscription(true);
+    const loadingToastId = toast.loading("Confirming your AutoPay mandate...");
+    try {
+      const { verifyRenewalSubscriptionServerFn } = await import("../lib/subscription");
+      const res = await verifyRenewalSubscriptionServerFn({ data: { subscriptionRef } });
+      if (res.success) {
+        toast.success(`AutoPay is active! Your ${res.plan} subscription will renew automatically.`, {
+          id: loadingToastId,
+          duration: 6000,
+        });
+      } else {
+        toast.dismiss(loadingToastId);
+        console.log(`[AutoPay] Renewal verification not completed:`, res.message);
+        if (res.message) toast.info(res.message);
+      }
+    } catch (err: any) {
+      toast.dismiss(loadingToastId);
+      console.error("[AutoPay] Error verifying renewal subscription:", err);
+    } finally {
+      if (typeof window !== "undefined") {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+      setIsVerifyingRenewalSubscription(false);
+    }
+  };
+
   // Verify payment on return
   const verifyPayment = async (orderId: string) => {
     setIsVerifyingPayment(true);
@@ -158,14 +233,17 @@ function LoginPage() {
     }
   };
 
-  // Add mount effect to look for order_id
+  // Add mount effect to look for order_id (one-time) or sub_id (AutoPay)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const orderId = params.get("order_id");
+      const subId = params.get("sub_id");
 
       if (orderId) {
         verifyPayment(orderId);
+      } else if (subId) {
+        verifyRenewalSubscription(subId);
       }
     }
   }, []);
@@ -882,10 +960,28 @@ function LoginPage() {
               <div className="mt-6 flex flex-col space-y-2">
                 <button
                   type="button"
-                  onClick={() => handleInitiatePayment(selectedRenewPlan)}
-                  disabled={renewLoading}
-                  className="w-full rounded-full py-2.5 text-xs font-bold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 hover:opacity-95"
+                  onClick={() => handleRenewAutoPay(selectedRenewPlan)}
+                  disabled={renewLoading || renewAutoPayLoading}
+                  className="w-full rounded-full py-2.5 text-xs font-bold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed"
                   style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
+                >
+                  {renewAutoPayLoading ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Setting up AutoPay...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Subscribe & AutoPay (₹{selectedRenewPlan === "Basic" ? "999" : "1,499"}/mo)
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleInitiatePayment(selectedRenewPlan)}
+                  disabled={renewLoading || renewAutoPayLoading}
+                  className="w-full rounded-full py-2.5 text-xs font-bold text-zinc-700 border border-zinc-200 bg-white transition-all cursor-pointer flex items-center justify-center gap-1.5 hover:border-zinc-300 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {renewLoading ? (
                     <>
@@ -894,18 +990,27 @@ function LoginPage() {
                     </>
                   ) : (
                     <>
-                      Pay & Activate Account (₹{selectedRenewPlan === "Basic" ? "999" : "1,499"})
+                      Or pay once for a month (₹{selectedRenewPlan === "Basic" ? "999" : "1,499"})
                     </>
                   )}
                 </button>
                 <p className="text-[9px] text-zinc-400 text-center">
-                  Payments are processed securely via Cashfree Payments. You will be redirected to complete the transaction.
+                  Payments are processed securely via Cashfree Payments. AutoPay renews your plan automatically every month — you can cancel anytime. You will be redirected to complete the transaction.
                 </p>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* AutoPay Mandate Verification Processing Overlay */}
+      {isVerifyingRenewalSubscription && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md text-white">
+          <Loader2 className="h-10 w-10 animate-spin text-[#0D83FF]" />
+          <p className="mt-4 text-sm font-bold tracking-wide">Confirming your AutoPay mandate...</p>
+          <p className="text-xs text-zinc-450 mt-1">Please do not refresh the page or click back.</p>
+        </div>
+      )}
 
       {/* Payment Verification Processing Overlay */}
       {isVerifyingPayment && (
