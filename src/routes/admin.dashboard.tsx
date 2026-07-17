@@ -39,7 +39,10 @@ import {
   Edit2,
   Power,
   Trash2,
-  ArrowLeft
+  ArrowLeft,
+  CreditCard,
+  XCircle,
+  Ban
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -62,6 +65,7 @@ import {
   logoutSuperAdminServerFn,
   controlWhatsAppServerFn,
   getSubscriptionHistoryServerFn,
+  getPaymentHistoryServerFn,
   toggleTenantStatusServerFn,
   getTenantFullProfileServerFn,
   deleteTenantServerFn
@@ -210,7 +214,16 @@ function AdminDashboardPage() {
   });
 
   // Active Dashboard Tab View
-  const [activeTab, setActiveTab] = useState<"overview" | "registry" | "demo">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "registry" | "payments" | "demo">("overview");
+
+  // Payment History states
+  const [paymentRows, setPaymentRows] = useState<any[]>([]);
+  const [paymentSummary, setPaymentSummary] = useState<{
+    totalCount: number; successCount: number; failedCount: number; cancelledCount: number; pendingCount: number; totalReceived: number;
+  }>({ totalCount: 0, successCount: 0, failedCount: 0, cancelledCount: 0, pendingCount: 0, totalReceived: 0 });
+  const [loadingPayments, setLoadingPayments] = useState(false);
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
+  const [paymentSearchQuery, setPaymentSearchQuery] = useState("");
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState("");
@@ -291,6 +304,32 @@ function AdminDashboardPage() {
       setLoadingData(false);
     }
   };
+
+  const fetchPaymentHistory = async () => {
+    setLoadingPayments(true);
+    try {
+      const res = await getPaymentHistoryServerFn({
+        data: {
+          status: paymentStatusFilter === "all" ? undefined : paymentStatusFilter,
+          search: paymentSearchQuery || undefined,
+        },
+      });
+      setPaymentRows(res.rows || []);
+      setPaymentSummary(res.summary);
+    } catch (err: any) {
+      toast.error("Failed to load payment history: " + err.message);
+    } finally {
+      setLoadingPayments(false);
+    }
+  };
+
+  // Load payment history when the tab is opened or filters change.
+  useEffect(() => {
+    if (activeTab === "payments") {
+      fetchPaymentHistory();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, paymentStatusFilter]);
 
   const handleLogout = async () => {
     try {
@@ -632,6 +671,7 @@ function AdminDashboardPage() {
             {[
               { id: "overview",    label: "Overview",     icon: TrendingUp },
               { id: "registry",   label: "Tenants",      icon: Building },
+              { id: "payments",   label: "Payments",     icon: CreditCard },
               { id: "demo",       label: "Demos",        icon: Calendar },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -688,6 +728,7 @@ function AdminDashboardPage() {
               <span className="text-xs font-semibold text-zinc-500">
                 {activeTab === "overview" && "Platform Overview"}
                 {activeTab === "registry" && "Tenants Directory"}
+                {activeTab === "payments" && "Payment History"}
                 {activeTab === "demo" && "Demo Appointments"}
               </span>
             </div>
@@ -716,11 +757,13 @@ function AdminDashboardPage() {
                 <h1 className="text-xl font-black tracking-tight text-zinc-950">
                   {activeTab === "overview" && "Platform Overview"}
                   {activeTab === "registry" && "Tenants Directory"}
+                  {activeTab === "payments" && "Payment History"}
                   {activeTab === "demo" && "Demo Pipeline"}
                 </h1>
                 <p className="text-xs text-zinc-500 mt-0.5">
                   {activeTab === "overview" && "Real-time metrics, signup distribution, and telemetry snapshots."}
                   {activeTab === "registry" && "Manage clinician accounts, billing status, and plan packages."}
+                  {activeTab === "payments" && "Every Cashfree payment attempt — received, failed, cancelled, and pending."}
                   {activeTab === "demo" && "Track incoming public demo requests, follow-up status, and booking intent."}
                 </p>
               </div>
@@ -1456,6 +1499,194 @@ function AdminDashboardPage() {
                       )}
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* VIEW: PAYMENT HISTORY */}
+            {activeTab === "payments" && (
+              <div className="space-y-6">
+                {/* Summary cards */}
+                <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Received</span>
+                    <p className="text-xl font-black text-emerald-600">{formatCurrencyInr(paymentSummary.totalReceived)}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.successCount} successful</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Failed</span>
+                    <p className="text-xl font-black text-red-600">{paymentSummary.failedCount}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">Declined / errored attempts</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Cancelled</span>
+                    <p className="text-xl font-black text-zinc-600">{paymentSummary.cancelledCount}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">User dropped / abandoned</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Pending</span>
+                    <p className="text-xl font-black text-amber-600">{paymentSummary.pendingCount}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">Awaiting completion</p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Total Attempts</span>
+                    <p className="text-xl font-black text-zinc-900">{paymentSummary.totalCount}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">All-time checkout events</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">
+                  <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
+                    <div>
+                      <h2 className="text-sm font-extrabold text-zinc-900">Transactions</h2>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">Every Cashfree order attempt with full gateway details ({paymentRows.length} shown).</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
+                      <div className="relative w-full sm:w-64">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
+                        <input
+                          type="text"
+                          placeholder="Search order ID, email, phone, or name..."
+                          value={paymentSearchQuery}
+                          onChange={(e) => setPaymentSearchQuery(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") fetchPaymentHistory(); }}
+                          className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all font-semibold"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
+                        <Filter className="size-3.5 text-zinc-400" />
+                        <select value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1">
+                          <option value="all">All Statuses</option>
+                          <option value="SUCCESS">Received</option>
+                          <option value="FAILED">Failed</option>
+                          <option value="CANCELLED">Cancelled</option>
+                          <option value="PENDING">Pending</option>
+                        </select>
+                      </div>
+                      <button
+                        onClick={fetchPaymentHistory}
+                        disabled={loadingPayments}
+                        className="flex items-center justify-center size-9 border border-zinc-200 bg-white rounded-xl text-zinc-500 hover:text-zinc-800 transition-colors active:scale-[0.98] cursor-pointer"
+                        title="Refresh"
+                      >
+                        <RefreshCw className={`size-4 ${loadingPayments ? "animate-spin" : ""}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {loadingPayments ? (
+                    <div className="flex flex-col items-center justify-center py-24 gap-3">
+                      <Loader2 className="size-7 text-zinc-900 animate-spin" />
+                      <span className="text-xs text-zinc-400 font-bold">Loading payment ledger...</span>
+                    </div>
+                  ) : paymentRows.length === 0 ? (
+                    <div className="text-center py-20 space-y-3">
+                      <div className="flex size-12 items-center justify-center rounded-full bg-zinc-50 border border-zinc-150 mx-auto">
+                        <CreditCard className="size-5 text-zinc-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-bold text-zinc-700">No Payment Records Found</h3>
+                        <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">Try adjusting your filters, or check back once a checkout is attempted.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse min-w-[1100px]">
+                        <thead>
+                          <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
+                            <th className="pb-3 pl-3">Customer & Order</th>
+                            <th className="pb-3">Plan / Amount</th>
+                            <th className="pb-3">Payment Mode</th>
+                            <th className="pb-3">Status</th>
+                            <th className="pb-3">Reason</th>
+                            <th className="pb-3 text-right pr-3">Date</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
+                          {paymentRows.map((p) => {
+                            const statusStyle =
+                              p.status === "SUCCESS" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
+                              p.status === "FAILED" ? "bg-red-50 text-red-700 border-red-150" :
+                              p.status === "CANCELLED" ? "bg-zinc-100 text-zinc-650 border-zinc-200" :
+                              "bg-amber-50 text-amber-700 border-amber-150";
+                            const StatusIcon =
+                              p.status === "SUCCESS" ? CheckCircle2 :
+                              p.status === "FAILED" ? XCircle :
+                              p.status === "CANCELLED" ? Ban :
+                              Clock3;
+                            const statusLabel =
+                              p.status === "SUCCESS" ? "Received" :
+                              p.status === "FAILED" ? "Failed" :
+                              p.status === "CANCELLED" ? "Cancelled" :
+                              "Pending";
+
+                            return (
+                              <tr key={p.id} className="hover:bg-slate-50/40 transition-colors group">
+                                {/* Customer & Order */}
+                                <td className="py-4 pl-3">
+                                  <div className="space-y-1">
+                                    <span className="font-extrabold text-zinc-900 text-xs leading-tight block">
+                                      {p.customerName || p.clinicName || "—"}
+                                    </span>
+                                    <div className="text-[10px] text-zinc-400 font-medium space-y-0.5">
+                                      {p.customerEmail && <div>{p.customerEmail}</div>}
+                                      {p.customerPhone && <div>{p.customerPhone}</div>}
+                                      <div className="flex items-center gap-1.5">
+                                        <span>Order:</span>
+                                        <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">{p.orderId}</code>
+                                      </div>
+                                      {p.cfPaymentId && (
+                                        <div className="flex items-center gap-1.5">
+                                          <span>CF ID:</span>
+                                          <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">{p.cfPaymentId}</code>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Plan / Amount */}
+                                <td className="py-4">
+                                  <span className="block font-extrabold text-zinc-900 text-xs">{formatCurrencyInr(p.amount)}</span>
+                                  <span className="block text-[10px] text-zinc-400 font-semibold mt-0.5">{p.plan || "—"} Plan</span>
+                                </td>
+
+                                {/* Payment Mode */}
+                                <td className="py-4">
+                                  <span className="text-[11px] font-bold text-zinc-700">{p.paymentMode || "—"}</span>
+                                </td>
+
+                                {/* Status */}
+                                <td className="py-4">
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${statusStyle}`}>
+                                    <StatusIcon className="size-2.5" />
+                                    {statusLabel}
+                                  </span>
+                                </td>
+
+                                {/* Reason */}
+                                <td className="py-4 max-w-[220px]">
+                                  <span className="text-[10px] text-zinc-450 font-medium line-clamp-2">
+                                    {p.failureReason || "—"}
+                                  </span>
+                                </td>
+
+                                {/* Date */}
+                                <td className="py-4 text-right pr-3">
+                                  <span className="text-[10px] text-zinc-500 font-semibold whitespace-nowrap">
+                                    {new Date(p.createdAt).toLocaleString("en-US", {
+                                      month: "short", day: "numeric", year: "numeric",
+                                      hour: "numeric", minute: "2-digit", hour12: true
+                                    })}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

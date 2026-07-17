@@ -5,7 +5,7 @@ import { HeartPulse, Home, X, Check, Loader2, AlertCircle, Eye, EyeOff } from "l
 import { toast } from "sonner";
 import {
   loginServerFn,
-  sendOtpServerFn,
+  sendPasswordResetOtpServerFn,
   verifyOtpServerFn,
   resetPasswordServerFn,
   getExpiredUserPlanDetailsServerFn,
@@ -67,6 +67,7 @@ function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [forgotVerificationSuccess, setForgotVerificationSuccess] = useState(false);
   const [forgotResetSuccess, setForgotResetSuccess] = useState(false);
+  const [forgotOtpResent, setForgotOtpResent] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
   // Subscription Renewal States
@@ -274,10 +275,15 @@ function LoginPage() {
     }
     setLoading(true);
     try {
-      await sendOtpServerFn({ data: forgotEmail });
+      await sendPasswordResetOtpServerFn({ data: forgotEmail });
       setErrorMsg("");
+      // Show a brief inline "code resent" confirmation when triggered from
+      // step 2 (resend); a fresh send from step 1 just advances the step.
+      if (forgotStep === 2) {
+        setForgotOtpResent(true);
+        setTimeout(() => setForgotOtpResent(false), 3000);
+      }
       setForgotStep(2);
-      toast.info("Verification code sent to " + forgotEmail);
     } catch (err: any) {
       setErrorMsg(err.message || "Failed to generate verification code");
     } finally {
@@ -548,6 +554,7 @@ function LoginPage() {
                   setNewPassword("");
                   setConfirmPassword("");
                   setErrorMsg("");
+                  setForgotOtpResent(false);
                 }}
                 className="absolute top-4 right-4 rounded-full p-1 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 transition-all cursor-pointer"
                 disabled={loading}
@@ -559,6 +566,15 @@ function LoginPage() {
               {errorMsg && (
                 <div className="mb-4 rounded-2xl bg-red-50 border border-red-100 p-3.5 text-center">
                   <p className="text-[10px] text-red-650 font-bold leading-normal text-red-700">{errorMsg}</p>
+                </div>
+              )}
+
+              {/* Inline confirmation when the code is resent (replaces a toast popup) */}
+              {forgotOtpResent && !errorMsg && (
+                <div className="mb-4 rounded-2xl bg-emerald-50 border border-emerald-100 p-3.5 text-center">
+                  <p className="text-[10px] text-emerald-650 font-bold leading-normal text-emerald-700">
+                    A new verification code has been sent to {forgotEmail}
+                  </p>
                 </div>
               )}
 

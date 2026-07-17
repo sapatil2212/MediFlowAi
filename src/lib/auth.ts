@@ -98,6 +98,48 @@ export const sendOtpServerFn = createServerFn({ method: "POST" })
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // 2. Verify OTP Server Function
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export const sendPasswordResetOtpServerFn = createServerFn({ method: "POST" })
+  .validator((email: string) => {
+    if (!email || !email.includes("@")) throw new Error("Invalid email");
+    return email;
+  })
+  .handler(async ({ data: email }) => {
+    const existingUser = await queryOne<any>(
+      "SELECT id FROM User WHERE email = ? LIMIT 1",
+      [email]
+    );
+
+    if (!existingUser) {
+      throw new Error("No account found with this email address");
+    }
+
+    const code = generateOtp();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+
+    // Clean up previous OTPs for this email
+    await execute("DELETE FROM OtpCode WHERE email = ?", [email]);
+
+    // Globally clean up expired OTPs from the database
+    await execute("DELETE FROM OtpCode WHERE expiresAt < ?", [new Date()]);
+
+    // Create new OTP
+    await execute(
+      "INSERT INTO OtpCode (id, email, code, expiresAt, createdAt) VALUES (?, ?, ?, ?, NOW())",
+      [generateId(), email, code, expiresAt]
+    );
+
+    // Send OTP via email in the background (non-blocking) to optimize performance
+    sendOtpEmail(email, code)
+      .then(() => {
+        console.log(`[OTP] Password reset code sent to ${email}`);
+      })
+      .catch((err: any) => {
+        console.error(`[OTP] Failed to send reset email to ${email}:`, err.message);
+      });
+
+    return { success: true };
+  });
+
 export const verifyOtpServerFn = createServerFn({ method: "POST" })
   .validator((data: { email: string; code: string }) => {
     if (!data.email || !data.code) throw new Error("Invalid inputs");
@@ -3409,6 +3451,62 @@ export const getExpiredUserPlanDetailsServerFn = createServerFn({ method: "POST"
     };
   });
 
+/**
+ * Writes/updates a row in PaymentHistory keyed by orderId. Used to record
+ * every Cashfree payment attempt — pending, success, failed, and cancelled —
+ * so the Super Admin dashboard has a complete transaction ledger. Never
+ * throws: a logging failure must never block the underlying payment flow.
+ */
+async function upsertPaymentHistory(fields: {
+  userId?: string | null;
+  tenantId?: string | null;
+  orderId: string;
+  cfPaymentId?: string | null;
+  plan?: string | null;
+  amount: number;
+  currency?: string;
+  status: string;
+  orderStatus?: string | null;
+  paymentMode?: string | null;
+  failureReason?: string | null;
+  customerName?: string | null;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+}): Promise<void> {
+  try {
+    await execute(
+      `INSERT INTO PaymentHistory
+         (id, userId, tenantId, orderId, cfPaymentId, plan, amount, currency, status, orderStatus, paymentMode, failureReason, customerName, customerEmail, customerPhone, gateway, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Cashfree', NOW(), NOW())
+       ON DUPLICATE KEY UPDATE
+         userId = COALESCE(?, userId),
+         tenantId = COALESCE(?, tenantId),
+         cfPaymentId = COALESCE(?, cfPaymentId),
+         plan = COALESCE(?, plan),
+         amount = ?,
+         status = ?,
+         orderStatus = COALESCE(?, orderStatus),
+         paymentMode = COALESCE(?, paymentMode),
+         failureReason = ?,
+         customerName = COALESCE(?, customerName),
+         customerEmail = COALESCE(?, customerEmail),
+         customerPhone = COALESCE(?, customerPhone),
+         updatedAt = NOW()`,
+      [
+        crypto.randomUUID(), fields.userId ?? null, fields.tenantId ?? null, fields.orderId, fields.cfPaymentId ?? null,
+        fields.plan ?? null, fields.amount, fields.currency || "INR", fields.status, fields.orderStatus ?? null,
+        fields.paymentMode ?? null, fields.failureReason ?? null, fields.customerName ?? null, fields.customerEmail ?? null, fields.customerPhone ?? null,
+        // ON DUPLICATE KEY UPDATE params
+        fields.userId ?? null, fields.tenantId ?? null, fields.cfPaymentId ?? null, fields.plan ?? null,
+        fields.amount, fields.status, fields.orderStatus ?? null, fields.paymentMode ?? null, fields.failureReason ?? null,
+        fields.customerName ?? null, fields.customerEmail ?? null, fields.customerPhone ?? null,
+      ]
+    );
+  } catch (err: any) {
+    console.warn("[PaymentHistory] Failed to upsert record for order", fields.orderId, ":", err.message);
+  }
+}
+
 export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
   .validator((data: { username: string; planName: "Basic" | "Premium"; returnPath?: string }) => data)
   .handler(async ({ data }) => {
@@ -3474,6 +3572,22 @@ export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
       const orderData = await response.json();
       console.log(`[CASHFREE] Order ${orderId} created successfully. Session ID: ${orderData.payment_session_id}`);
 
+      // Record the attempt immediately so it shows up in the admin ledger even
+      // if the user abandons checkout before Cashfree ever reports a terminal
+      // status (never blocks checkout — logging failures are swallowed).
+      await upsertPaymentHistory({
+        userId: user.id,
+        tenantId: user.tenantId,
+        orderId,
+        plan: data.planName,
+        amount,
+        status: "PENDING",
+        orderStatus: "ACTIVE",
+        customerName: user.name,
+        customerEmail: user.email,
+        customerPhone: user.phone,
+      });
+
       return {
         success: true,
         payment_session_id: orderData.payment_session_id,
@@ -3532,17 +3646,17 @@ function formatCashfreePaymentMode(paymentGroup: string, paymentMethod: any): st
 }
 
 /**
- * Looks up the most recent successful payment attempt for a Cashfree order
- * and returns a human-readable payment mode (UPI, Card, Net Banking, etc.).
- * Never throws — any failure falls back to a generic "Cashfree" label so a
- * lookup issue can never block activation of an already-confirmed payment.
+ * Fetches all payment attempts for a Cashfree order and returns the most
+ * recent one regardless of outcome (SUCCESS, FAILED, USER_DROPPED, PENDING).
+ * Used to capture the actual payment mode and failure reason for the ledger.
+ * Never throws — returns null on any lookup issue.
  */
-async function detectCashfreePaymentMethod(
+async function getLatestCashfreePaymentAttempt(
   host: string,
   appId: string | undefined,
   secretKey: string | undefined,
   orderId: string
-): Promise<string> {
+): Promise<any | null> {
   try {
     const response = await fetch(`https://${host}/pg/orders/${orderId}/payments`, {
       method: "GET",
@@ -3553,22 +3667,17 @@ async function detectCashfreePaymentMethod(
         "x-api-version": "2023-08-01",
       },
     });
-    if (!response.ok) return "Cashfree";
+    if (!response.ok) return null;
 
     const payments = await response.json();
-    if (!Array.isArray(payments) || payments.length === 0) return "Cashfree";
+    if (!Array.isArray(payments) || payments.length === 0) return null;
 
-    // Prefer the most recent SUCCESS payment attempt.
-    const successPayment = payments
-      .filter((p: any) => p.payment_status === "SUCCESS")
+    return payments
+      .slice()
       .sort((a: any, b: any) => new Date(b.payment_completion_time || b.payment_time).getTime() - new Date(a.payment_completion_time || a.payment_time).getTime())[0];
-
-    if (!successPayment) return "Cashfree";
-
-    return formatCashfreePaymentMode(successPayment.payment_group, successPayment.payment_method);
   } catch (err: any) {
-    console.warn("[CASHFREE] Could not detect payment method:", err.message);
-    return "Cashfree";
+    console.warn("[CASHFREE] Could not fetch payment attempts:", err.message);
+    return null;
   }
 }
 
@@ -3630,7 +3739,10 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
         // etc.) by looking up the order's payment attempts. Falls back to a
         // generic "Cashfree" label if the lookup fails for any reason — this
         // must never block activation of a already-confirmed PAID order.
-        const paymentMethodLabel = await detectCashfreePaymentMethod(host, appId, secretKey, data.orderId);
+        const latestAttempt = await getLatestCashfreePaymentAttempt(host, appId, secretKey, data.orderId);
+        const paymentMethodLabel = latestAttempt
+          ? formatCashfreePaymentMode(latestAttempt.payment_group, latestAttempt.payment_method)
+          : "Cashfree";
 
         await execute(
           `UPDATE User 
@@ -3654,6 +3766,19 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
           [crypto.randomUUID(), user.id, user.subscriptionStatus || "Expired", user.subscriptionPlan || "Trial", selectedPlan, orderAmount]
         );
 
+        // Record the successful (received) payment in the ledger.
+        await upsertPaymentHistory({
+          userId: user.id,
+          tenantId,
+          orderId: data.orderId,
+          cfPaymentId: latestAttempt?.cf_payment_id ?? null,
+          plan: selectedPlan,
+          amount: orderAmount,
+          status: "SUCCESS",
+          orderStatus,
+          paymentMode: paymentMethodLabel,
+        });
+
         console.log(`[CASHFREE] Successfully recorded transaction log for order ${data.orderId}`);
 
         return {
@@ -3663,6 +3788,55 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
           tenantId,
         };
       } else {
+        // Order did not result in a successful payment (FAILED, CANCELLED,
+        // USER_DROPPED, EXPIRED, VOID, or still ACTIVE/pending). Record the
+        // outcome in the ledger so it's visible to the Super Admin instead of
+        // silently disappearing.
+        const parts = data.orderId.split("_");
+        const tenantId = parts[1] === "renew" ? parts[2] : null;
+        const user = tenantId
+          ? await queryOne<any>("SELECT id FROM User WHERE tenantId = ? LIMIT 1", [tenantId])
+          : null;
+
+        const latestAttempt = await getLatestCashfreePaymentAttempt(host, appId, secretKey, data.orderId);
+        const paymentMode = latestAttempt
+          ? formatCashfreePaymentMode(latestAttempt.payment_group, latestAttempt.payment_method)
+          : null;
+
+        // Prefer the granular payment-attempt status (Cashfree reports
+        // USER_DROPPED/CANCELLED/VOID/FAILED/PENDING/NOT_ATTEMPTED at the
+        // payment level) over the coarser order-level status, so cancelled
+        // checkouts are distinguished from genuine failures.
+        const attemptStatus = (latestAttempt?.payment_status || "").toUpperCase();
+        let ledgerStatus: string;
+        if (attemptStatus === "USER_DROPPED" || attemptStatus === "CANCELLED" || attemptStatus === "VOID") {
+          ledgerStatus = "CANCELLED";
+        } else if (attemptStatus === "FAILED") {
+          ledgerStatus = "FAILED";
+        } else if (attemptStatus === "PENDING" || attemptStatus === "NOT_ATTEMPTED" || orderStatus === "ACTIVE") {
+          ledgerStatus = "PENDING";
+        } else if (orderStatus === "EXPIRED" || orderStatus === "TERMINATED") {
+          ledgerStatus = "CANCELLED";
+        } else {
+          ledgerStatus = "FAILED";
+        }
+
+        const failureReason = latestAttempt?.payment_message
+          || latestAttempt?.error_details?.error_description
+          || `Order status: ${orderStatus}`;
+
+        await upsertPaymentHistory({
+          userId: user?.id ?? null,
+          tenantId,
+          orderId: data.orderId,
+          cfPaymentId: latestAttempt?.cf_payment_id ?? null,
+          amount: orderAmount,
+          status: ledgerStatus,
+          orderStatus,
+          paymentMode,
+          failureReason: ledgerStatus === "PENDING" ? null : failureReason,
+        });
+
         return {
           success: false,
           status: orderStatus,

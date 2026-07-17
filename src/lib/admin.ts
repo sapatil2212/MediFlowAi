@@ -452,6 +452,70 @@ export const toggleTenantStatusServerFn = createServerFn({ method: "POST" })
   });
 
 // ──────────────────────────────────────────────
+// Fetch Platform-wide Payment History (received/failed/cancelled/pending)
+// ──────────────────────────────────────────────
+export const getPaymentHistoryServerFn = createServerFn({ method: "GET" })
+  .validator((data?: { status?: string; search?: string; limit?: number }) => data || {})
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (data.status && data.status !== "all") {
+      conditions.push("ph.status = ?");
+      params.push(data.status);
+    }
+    if (data.search) {
+      conditions.push("(ph.orderId LIKE ? OR ph.customerEmail LIKE ? OR ph.customerName LIKE ? OR ph.customerPhone LIKE ? OR ph.cfPaymentId LIKE ?)");
+      const like = `%${data.search}%`;
+      params.push(like, like, like, like, like);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const limit = Math.min(Math.max(Number(data.limit) || 200, 1), 1000);
+
+    const rows = await query<any>(
+      `SELECT ph.id, ph.userId, ph.tenantId, ph.orderId, ph.cfPaymentId, ph.plan, ph.amount, ph.currency,
+              ph.status, ph.orderStatus, ph.paymentMode, ph.failureReason,
+              ph.customerName, ph.customerEmail, ph.customerPhone, ph.gateway,
+              ph.createdAt, ph.updatedAt,
+              u.clinicName
+       FROM PaymentHistory ph
+       LEFT JOIN User u ON u.tenantId = ph.tenantId
+       ${where}
+       ORDER BY ph.createdAt DESC
+       LIMIT ?`,
+      [...params, limit]
+    );
+
+    // Summary counts + totals for the header cards.
+    const summary = await queryOne<any>(
+      `SELECT
+         COUNT(*) as totalCount,
+         SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as successCount,
+         SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failedCount,
+         SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) as cancelledCount,
+         SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) as pendingCount,
+         SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END) as totalReceived
+       FROM PaymentHistory`
+    );
+
+    return {
+      rows,
+      summary: {
+        totalCount: parseInt(summary?.totalCount || 0),
+        successCount: parseInt(summary?.successCount || 0),
+        failedCount: parseInt(summary?.failedCount || 0),
+        cancelledCount: parseInt(summary?.cancelledCount || 0),
+        pendingCount: parseInt(summary?.pendingCount || 0),
+        totalReceived: parseFloat(summary?.totalReceived || 0),
+      },
+    };
+  });
+
+// ──────────────────────────────────────────────
 // Fetch Subscription History for Clinic Server Function
 // ──────────────────────────────────────────────
 export const getSubscriptionHistoryServerFn = createServerFn({ method: "GET" })

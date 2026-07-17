@@ -547,6 +547,59 @@ if (typeof window === "undefined") {
           console.error("[DB] ❌ Failed to create SubscriptionHistory table:", err.message);
         }
 
+        // Create PaymentHistory Table (every Cashfree payment attempt —
+        // received/success, failed, cancelled/user-dropped, pending, expired)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS PaymentHistory (
+              id VARCHAR(255) PRIMARY KEY,
+              userId VARCHAR(255) NULL,
+              tenantId VARCHAR(255) NULL,
+              orderId VARCHAR(255) NOT NULL,
+              cfPaymentId VARCHAR(255) NULL,
+              plan VARCHAR(50) NULL,
+              amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+              currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+              status VARCHAR(50) NOT NULL,
+              orderStatus VARCHAR(50) NULL,
+              paymentMode VARCHAR(100) NULL,
+              failureReason VARCHAR(500) NULL,
+              customerName VARCHAR(255) NULL,
+              customerEmail VARCHAR(255) NULL,
+              customerPhone VARCHAR(50) NULL,
+              gateway VARCHAR(50) NOT NULL DEFAULT 'Cashfree',
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uniq_payment_order (orderId),
+              INDEX idx_payment_user (userId),
+              INDEX idx_payment_status (status),
+              INDEX idx_payment_created (createdAt)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create PaymentHistory table:", err.message);
+        }
+
+        // Migrate: add columns to PaymentHistory if upgrading from an older version
+        try {
+          const phCols: any[] = await conn.query("SHOW COLUMNS FROM PaymentHistory");
+          const phColNames = phCols.map((c: any) => c.Field || c.field || c.ColumnName || "");
+          if (!phColNames.includes("failureReason")) {
+            await conn.query("ALTER TABLE PaymentHistory ADD COLUMN failureReason VARCHAR(500) NULL");
+          }
+          if (!phColNames.includes("customerName")) {
+            await conn.query("ALTER TABLE PaymentHistory ADD COLUMN customerName VARCHAR(255) NULL");
+          }
+          if (!phColNames.includes("customerEmail")) {
+            await conn.query("ALTER TABLE PaymentHistory ADD COLUMN customerEmail VARCHAR(255) NULL");
+          }
+          if (!phColNames.includes("customerPhone")) {
+            await conn.query("ALTER TABLE PaymentHistory ADD COLUMN customerPhone VARCHAR(50) NULL");
+          }
+        } catch (err: any) {
+          console.warn("[DB] ⚠️ Could not verify/alter PaymentHistory columns:", err.message);
+        }
+
         // Create SubUser Table (reception / doctor sub-accounts per tenant)
         try {
           await conn.query(`
