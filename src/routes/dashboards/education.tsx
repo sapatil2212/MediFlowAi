@@ -961,16 +961,30 @@ function EducationDashboardPage() {
       const { createSubscriptionServerFn } = await import("../../lib/subscription");
       const returnPath = `${window.location.pathname}?tab=plans`;
       const res = await createSubscriptionServerFn({ data: { planTier, returnPath } });
-      if (res.success && res.subscription_session_id) {
-        const cf = (window as any).Cashfree;
-        if (!cf) throw new Error("Payment gateway SDK failed to load. Please refresh the page.");
-        const cashfree = cf({ mode: res.mode === "production" ? "production" : "sandbox" });
-        await cashfree.subscriptionsCheckout({ subsSessionId: res.subscription_session_id, redirectTarget: "_self" });
-      } else {
-        showToast("error", "Failed to start the subscription. Please try again.");
+      console.log("[AutoPay] createSubscription response:", res);
+      if (!res.success || !res.subscription_session_id) {
+        showToast("error", "Could not start the subscription. Please try again.");
+        return;
+      }
+      const cf = (window as any).Cashfree;
+      if (typeof cf !== "function") {
+        throw new Error("Payment gateway SDK failed to load. Please refresh the page.");
+      }
+      const cashfree = cf({ mode: res.mode === "production" ? "production" : "sandbox" });
+      if (typeof cashfree.subscriptionsCheckout !== "function") {
+        throw new Error("This payment gateway build doesn't support subscription checkout. Please contact support.");
+      }
+      const result = await cashfree.subscriptionsCheckout({
+        subsSessionId: res.subscription_session_id,
+        redirectTarget: "_self",
+      });
+      if (result && result.error) {
+        console.error("[AutoPay] subscriptionsCheckout error:", result.error);
+        showToast("error", result.error.message || "Subscription checkout could not be opened.");
       }
     } catch (err: any) {
-      showToast("error", err.message || "Failed to set up AutoPay.");
+      console.error("[AutoPay] setup failed:", err);
+      showToast("error", err?.message || "Failed to set up AutoPay.");
     } finally {
       setProcessingPlan(null);
     }
