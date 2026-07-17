@@ -23,13 +23,12 @@ import {
   ensureCashfreePeriodicPlan,
   createCashfreeSubscription,
   getCashfreeSubscription,
-  getCashfreeSubscriptionPayments,
   manageCashfreeSubscription,
 } from "./cashfree";
 import {
   getLocalSubscriptionByRef,
   reconcileSubscriptionFromCashfree,
-  recordSubscriptionCharge,
+  syncSubscriptionPaymentsFromCashfree,
 } from "./subscription-webhook";
 
 function generateId(): string {
@@ -156,22 +155,9 @@ export const verifySubscriptionServerFn = createServerFn({ method: "POST" })
 
     await reconcileSubscriptionFromCashfree(data.subscriptionRef, cfSub);
 
-    // Record the first successful charge (if any) so billing history is complete
-    // even before the webhook arrives. recordSubscriptionCharge is idempotent.
-    const payments = await getCashfreeSubscriptionPayments(data.subscriptionRef);
-    const firstSuccess = payments.find((p: any) => String(p.payment_status || "").toUpperCase() === "SUCCESS");
-    if (firstSuccess) {
-      await recordSubscriptionCharge(data.subscriptionRef, {
-        cfPaymentId: firstSuccess.cf_payment_id || firstSuccess.payment_id || null,
-        amount: Number(firstSuccess.payment_amount || local.amount),
-        status: "SUCCESS",
-        paymentMethod:
-          (firstSuccess.payment_method && typeof firstSuccess.payment_method === "object"
-            ? Object.keys(firstSuccess.payment_method)[0]
-            : firstSuccess.payment_group) || null,
-        paidAt: firstSuccess.payment_completion_time ? new Date(firstSuccess.payment_completion_time) : null,
-      });
-    }
+    // Record ALL payments (AUTH + CHARGE) with full Cashfree transaction detail
+    // so billing history is complete even before the webhook arrives. Idempotent.
+    await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef);
 
     const status = String(cfSub.subscription_status || "").toUpperCase();
     const authStatus = String(cfSub?.authorization_details?.authorization_status || "").toUpperCase();
@@ -205,15 +191,36 @@ export const getMySubscriptionServerFn = createServerFn({ method: "GET" })
       [user.id]
     );
 
+    // Best-effort refresh of the payment ledger from Cashfree so billing history
+    // stays current even without a configured webhook. Never blocks the read.
+    if (subscription) {
+      try { await syncSubscriptionPaymentsFromCashfree(subscription.subscriptionRef); } catch { /* non-fatal */ }
+    }
+
     const payments = subscription
       ? await query<any>(
-          `SELECT id, cfPaymentId, amount, currency, status, paymentMethod, failureReason, scheduledAt, paidAt, createdAt
+          `SELECT id, cfPaymentId, cfTxnId, cfOrderId, paymentRef, amount, currency, status, paymentMethod, paymentType, remarks, failureReason, scheduledAt, paidAt, createdAt
            FROM SubscriptionPayment WHERE subscriptionRef = ? ORDER BY createdAt DESC LIMIT 50`,
           [subscription.subscriptionRef]
         )
       : [];
 
     return { subscription: subscription || null, payments };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Manual sync of a subscription's payments from Cashfree (tenant-owned)
+// ─────────────────────────────────────────────────────────────────────────────
+export const syncSubscriptionPaymentsServerFn = createServerFn({ method: "POST" })
+  .validator((data: { subscriptionRef: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const local = await getLocalSubscriptionByRef(data.subscriptionRef);
+    if (!local) throw new Error("Subscription not found.");
+    if (local.userId !== user.id) throw new Error("You are not authorized to access this subscription.");
+    const recorded = await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef);
+    return { success: true, recorded };
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -328,4 +335,34 @@ export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
         failedRenewals: parseInt(failedRenewals?.cnt || 0),
       },
     };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin: fetch (and refresh) a subscription's full payment ledger
+// ─────────────────────────────────────────────────────────────────────────────
+export const getAdminSubscriptionPaymentsServerFn = createServerFn({ method: "GET" })
+  .validator((data: { subscriptionRef: string }) => data)
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const subscription = await queryOne<any>(
+      `SELECT s.*, u.clinicName
+       FROM Subscription s
+       LEFT JOIN User u ON u.id COLLATE utf8mb4_unicode_ci = s.userId COLLATE utf8mb4_unicode_ci
+       WHERE s.subscriptionRef = ? LIMIT 1`,
+      [data.subscriptionRef]
+    );
+    if (!subscription) throw new Error("Subscription not found.");
+
+    // Pull the latest transaction detail straight from Cashfree, then read back.
+    try { await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef); } catch { /* non-fatal */ }
+
+    const payments = await query<any>(
+      `SELECT id, cfPaymentId, cfTxnId, cfOrderId, paymentRef, amount, currency, status, paymentMethod, paymentType, remarks, failureReason, scheduledAt, paidAt, createdAt
+       FROM SubscriptionPayment WHERE subscriptionRef = ? ORDER BY createdAt DESC LIMIT 100`,
+      [data.subscriptionRef]
+    );
+
+    return { subscription, payments };
   });

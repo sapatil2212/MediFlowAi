@@ -8646,6 +8646,23 @@ function DashboardPage() {
                                   <span className="text-[10px] text-zinc-400 font-medium">
                                     {new Date(p.paidAt || p.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                                   </span>
+                                  {p.status === "SUCCESS" && (
+                                    <button
+                                      type="button"
+                                      title="Download invoice"
+                                      onClick={async () => {
+                                        const { downloadSubscriptionInvoice } = await import("../../lib/pdf-invoice");
+                                        downloadSubscriptionInvoice({
+                                          clinicName: user?.clinicName, customerName: user?.name, customerEmail: user?.email, customerPhone: user?.phone,
+                                          plan: s.planTier, amount: Number(p.amount), status: p.status, paymentMethod: p.paymentMethod, paymentType: p.paymentType,
+                                          cfPaymentId: p.cfPaymentId, cfTxnId: p.cfTxnId, cfOrderId: p.cfOrderId, subscriptionRef: s.subscriptionRef, paidAt: p.paidAt, createdAt: p.createdAt,
+                                        });
+                                      }}
+                                      className="text-brand hover:text-brand/80 cursor-pointer inline-flex items-center gap-1 text-[10px] font-bold"
+                                    >
+                                      <FileText className="h-3.5 w-3.5" /> Invoice
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             ))}

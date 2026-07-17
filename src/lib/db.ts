@@ -672,6 +672,18 @@ if (typeof window === "undefined") {
           console.error("[DB] ❌ Failed to create SubscriptionPayment table:", err.message);
         }
 
+        // Migrate: add full Cashfree transaction detail columns to SubscriptionPayment.
+        try {
+          const spCols: any[] = await conn.query("SHOW COLUMNS FROM SubscriptionPayment");
+          const spNames = spCols.map((c: any) => c.Field || c.field || c.ColumnName || "");
+          if (!spNames.includes("cfTxnId")) await conn.query("ALTER TABLE SubscriptionPayment ADD COLUMN cfTxnId VARCHAR(255) NULL");
+          if (!spNames.includes("cfOrderId")) await conn.query("ALTER TABLE SubscriptionPayment ADD COLUMN cfOrderId VARCHAR(255) NULL");
+          if (!spNames.includes("paymentType")) await conn.query("ALTER TABLE SubscriptionPayment ADD COLUMN paymentType VARCHAR(40) NULL");
+          if (!spNames.includes("remarks")) await conn.query("ALTER TABLE SubscriptionPayment ADD COLUMN remarks VARCHAR(500) NULL");
+        } catch (err: any) {
+          console.warn("[DB] ⚠️ Could not verify/alter SubscriptionPayment columns:", err.message);
+        }
+
         // Create WebhookEvent Table (idempotency + audit for gateway webhooks)
         try {
           await conn.query(`

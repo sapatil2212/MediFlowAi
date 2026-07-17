@@ -70,7 +70,7 @@ import {
   getTenantFullProfileServerFn,
   deleteTenantServerFn
 } from "../lib/admin";
-import { getAdminSubscriptionsServerFn } from "../lib/subscription";
+import { getAdminSubscriptionsServerFn, getAdminSubscriptionPaymentsServerFn } from "../lib/subscription";
 import {
   getDemoAppointmentsServerFn,
   updateDemoAppointmentServerFn,
@@ -225,6 +225,23 @@ function AdminDashboardPage() {
   const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
   const [subAdminStatusFilter, setSubAdminStatusFilter] = useState("all");
   const [subAdminSearch, setSubAdminSearch] = useState("");
+  // Per-subscription payment ledger modal (super admin)
+  const [subPaymentsModal, setSubPaymentsModal] = useState<{ subscription: any; payments: any[] } | null>(null);
+  const [loadingSubPayments, setLoadingSubPayments] = useState(false);
+
+  const openSubscriptionPayments = async (subscriptionRef: string) => {
+    setLoadingSubPayments(true);
+    setSubPaymentsModal({ subscription: { subscriptionRef }, payments: [] });
+    try {
+      const res = await getAdminSubscriptionPaymentsServerFn({ data: { subscriptionRef } });
+      setSubPaymentsModal({ subscription: res.subscription, payments: res.payments || [] });
+    } catch (err: any) {
+      toast.error("Failed to load subscription payments: " + err.message);
+      setSubPaymentsModal(null);
+    } finally {
+      setLoadingSubPayments(false);
+    }
+  };
 
   // Payment History states
   const [paymentRows, setPaymentRows] = useState<any[]>([]);
@@ -1824,7 +1841,8 @@ function AdminDashboardPage() {
                             <th className="pb-3">Plan / Amount</th>
                             <th className="pb-3">Status</th>
                             <th className="pb-3">Next Renewal</th>
-                            <th className="pb-3 text-right pr-3">Created</th>
+                            <th className="pb-3">Created</th>
+                            <th className="pb-3 text-right pr-3">Payments</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
@@ -1860,10 +1878,19 @@ function AdminDashboardPage() {
                                 <td className="py-4 text-zinc-600 font-semibold">
                                   {next ? new Date(next).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
                                 </td>
-                                <td className="py-4 text-right pr-3">
+                                <td className="py-4">
                                   <span className="text-[10px] text-zinc-500 font-semibold whitespace-nowrap">
                                     {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                                   </span>
+                                </td>
+                                <td className="py-4 text-right pr-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => openSubscriptionPayments(s.subscriptionRef)}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand hover:border-brand/30 transition-colors cursor-pointer"
+                                  >
+                                    <FileText className="size-3" /> View / Invoice
+                                  </button>
                                 </td>
                               </tr>
                             );
@@ -2338,6 +2365,85 @@ function AdminDashboardPage() {
                   {isDeleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Delete
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Subscription payments + invoices modal */}
+      <AnimatePresence>
+        {subPaymentsModal && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="relative bg-white rounded-[1.5rem] border border-zinc-200 w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 shrink-0">
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900">Subscription Payments</h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                    {subPaymentsModal.subscription?.clinicName || subPaymentsModal.subscription?.customerName || subPaymentsModal.subscription?.subscriptionRef}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setSubPaymentsModal(null)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="overflow-y-auto p-5">
+                {loadingSubPayments ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    <Loader2 className="size-6 text-zinc-900 animate-spin" />
+                    <span className="text-xs text-zinc-400 font-bold">Syncing payments from Cashfree...</span>
+                  </div>
+                ) : subPaymentsModal.payments.length === 0 ? (
+                  <div className="text-center py-14 text-xs text-zinc-400 font-semibold">
+                    No payments recorded for this subscription yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {subPaymentsModal.payments.map((p: any) => (
+                      <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-150 bg-zinc-50/40 px-4 py-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-black text-zinc-900">{formatCurrencyInr(p.amount)}</span>
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
+                              p.status === "SUCCESS" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
+                              p.status === "FAILED" ? "bg-red-50 text-red-700 border-red-150" :
+                              "bg-amber-50 text-amber-700 border-amber-150"
+                            }`}>{p.status}</span>
+                            {p.paymentType && <span className="text-[9px] font-bold text-zinc-400 uppercase">{p.paymentType}</span>}
+                          </div>
+                          <div className="text-[10px] text-zinc-400 font-medium mt-1 space-y-0.5 truncate">
+                            <div>{p.paymentMethod || "Cashfree"} · {new Date(p.paidAt || p.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
+                            {p.cfPaymentId && <div>CF Payment: <code className="text-[9px] bg-zinc-100 border border-zinc-200/50 px-1 rounded font-mono">{p.cfPaymentId}</code></div>}
+                            {p.cfTxnId && <div>Txn: <code className="text-[9px] bg-zinc-100 border border-zinc-200/50 px-1 rounded font-mono">{p.cfTxnId}</code></div>}
+                          </div>
+                        </div>
+                        {p.status === "SUCCESS" && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const { downloadSubscriptionInvoice } = await import("../lib/pdf-invoice");
+                              const sub = subPaymentsModal.subscription || {};
+                              downloadSubscriptionInvoice({
+                                clinicName: sub.clinicName, customerName: sub.customerName, customerEmail: sub.customerEmail, customerPhone: sub.customerPhone,
+                                plan: sub.planTier, amount: Number(p.amount), status: p.status, paymentMethod: p.paymentMethod, paymentType: p.paymentType,
+                                cfPaymentId: p.cfPaymentId, cfTxnId: p.cfTxnId, cfOrderId: p.cfOrderId, subscriptionRef: sub.subscriptionRef, paidAt: p.paidAt, createdAt: p.createdAt,
+                              });
+                            }}
+                            className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand hover:border-brand/30 transition-colors cursor-pointer"
+                          >
+                            <FileText className="size-3" /> Invoice
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>

@@ -257,6 +257,77 @@ export async function recordSubscriptionCharge(
   }
 }
 
+/**
+ * Fetches ALL payments for a subscription from Cashfree and records each one
+ * (AUTH mandate registration + every CHARGE) with full transaction detail
+ * (cf_payment_id, cf_txn_id, cf_order_id, method, type, status, dates).
+ * Idempotent per cf_payment_id — safe to call repeatedly (on return, on
+ * dashboard load, or on demand). Never throws.
+ */
+export async function syncSubscriptionPaymentsFromCashfree(subscriptionRef: string): Promise<number> {
+  const local = await getLocalSubscriptionByRef(subscriptionRef);
+  if (!local) return 0;
+
+  let payments: any[] = [];
+  try {
+    payments = await getCashfreeSubscriptionPayments(subscriptionRef);
+  } catch {
+    return 0;
+  }
+  if (!Array.isArray(payments) || payments.length === 0) return 0;
+
+  let recorded = 0;
+  for (const p of payments) {
+    const cfPaymentId = p?.cf_payment_id ? String(p.cf_payment_id) : (p?.payment_id ? String(p.payment_id) : null);
+    if (!cfPaymentId) continue;
+
+    const rawStatus = String(p?.payment_status || "").toUpperCase();
+    const status = rawStatus === "SUCCESS" ? "SUCCESS" : (rawStatus === "FAILED" || rawStatus === "USER_DROPPED") ? "FAILED" : "PENDING";
+    const amount = Number(p?.payment_amount || 0);
+    const paymentType = p?.payment_type ? String(p.payment_type).toUpperCase() : null; // AUTH | CHARGE
+    const auth = p?.authorization_details || {};
+    const paymentMethod =
+      (auth.payment_method && typeof auth.payment_method === "object" ? Object.keys(auth.payment_method)[0] : null)
+      || auth.payment_group || null;
+    const cfTxnId = p?.cf_txn_id ? String(p.cf_txn_id) : null;
+    const cfOrderId = p?.cf_order_id ? String(p.cf_order_id) : null;
+    const remarks = p?.payment_remarks || null;
+    const failureReason = p?.failure_details?.failure_reason || null;
+    const paidAt = p?.payment_initiated_date ? toMysqlDateTime(new Date(p.payment_initiated_date)) : null;
+    const scheduledAt = p?.payment_schedule_date ? toMysqlDateTime(new Date(p.payment_schedule_date)) : null;
+
+    try {
+      const existing = await queryOne<any>("SELECT id FROM SubscriptionPayment WHERE cfPaymentId = ? LIMIT 1", [cfPaymentId]);
+      if (existing) {
+        await execute(
+          `UPDATE SubscriptionPayment
+             SET status = ?, amount = ?, paymentMethod = COALESCE(?, paymentMethod),
+                 paymentType = COALESCE(?, paymentType), cfTxnId = COALESCE(?, cfTxnId),
+                 cfOrderId = COALESCE(?, cfOrderId), remarks = COALESCE(?, remarks),
+                 failureReason = ?, paidAt = COALESCE(?, paidAt), scheduledAt = COALESCE(?, scheduledAt)
+           WHERE id = ?`,
+          [status, amount, paymentMethod ? String(paymentMethod).toUpperCase() : null, paymentType, cfTxnId, cfOrderId, remarks, failureReason, paidAt, scheduledAt, existing.id]
+        );
+      } else {
+        await execute(
+          `INSERT INTO SubscriptionPayment
+             (id, subscriptionRef, cfSubscriptionId, userId, tenantId, cfPaymentId, cfTxnId, cfOrderId, paymentRef, amount, currency, status, paymentMethod, paymentType, remarks, failureReason, scheduledAt, paidAt, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            generateId(), subscriptionRef, local.cfSubscriptionId, local.userId, local.tenantId,
+            cfPaymentId, cfTxnId, cfOrderId, p?.payment_id || null, amount, local.currency, status,
+            paymentMethod ? String(paymentMethod).toUpperCase() : null, paymentType, remarks, failureReason, scheduledAt, paidAt,
+          ]
+        );
+        recorded++;
+      }
+    } catch (err: any) {
+      console.warn("[Subscription] Failed to record payment", cfPaymentId, ":", err.message);
+    }
+  }
+  return recorded;
+}
+
 async function notify(
   local: LocalSubscription,
   n: { subject: string; title: string; message: string; tone: any; details?: Array<{ label: string; value: string }> }
