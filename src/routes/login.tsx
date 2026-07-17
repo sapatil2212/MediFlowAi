@@ -116,7 +116,7 @@ function LoginPage() {
         
         await cashfree.checkout({
           paymentSessionId: res.payment_session_id,
-          returnUrl: `http://localhost:3000/login?cf_payment_status=success&order_id=${res.order_id}`
+          returnUrl: `http://localhost:3000/login?order_id=${res.order_id}`
         });
       } else {
         toast.error("Failed to generate payment session. Please try again.");
@@ -157,14 +157,13 @@ function LoginPage() {
     }
   };
 
-  // Add mount effect to look for cf_payment_status and order_id
+  // Add mount effect to look for order_id
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      const cfStatus = params.get("cf_payment_status");
       const orderId = params.get("order_id");
 
-      if (cfStatus === "success" && orderId) {
+      if (orderId) {
         verifyPayment(orderId);
       }
     }

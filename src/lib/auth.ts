@@ -3427,8 +3427,8 @@ export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
     const host = environment === "production" ? "api.cashfree.com" : "sandbox.cashfree.com";
 
     const returnUrl = environment === "production"
-      ? `https://bookmytime.tech/login?cf_payment_status=success&order_id=${orderId}`
-      : `http://localhost:3000/login?cf_payment_status=success&order_id=${orderId}`;
+      ? `https://bookmytime.tech/login?order_id=${orderId}`
+      : `http://localhost:3000/login?order_id=${orderId}`;
 
     const payload = {
       order_id: orderId,
