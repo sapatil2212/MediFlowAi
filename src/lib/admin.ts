@@ -590,11 +590,7 @@ export const syncAllPaymentsFromCashfreeServerFn = createServerFn({ method: "POS
        LIMIT 300`
     );
 
-    // Dynamically imported (not a static top-level import) so this server-only
-    // module never gets pulled into the client bundle via auth.ts's other
-    // exports (which include db.ts / dotenv — see incident where a static
-    // import here leaked dotenv's Node-only code into the browser bundle).
-    const { reconcileOrderPaymentHistory } = await import("./auth");
+    const { reconcileOrderPaymentHistory } = await import("./payment-reconcile.server");
 
     let reconciled = 0;
     let promoted = 0; // became SUCCESS during this sync
