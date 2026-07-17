@@ -253,14 +253,14 @@ export function Hero() {
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/90 border border-[#0059C6]/20 text-xs font-semibold text-[#0059C6] mb-7 shadow-[0_2px_10px_rgba(0,89,198,0.08)] backdrop-blur-md"
             >
-              <Zap className="size-3 text-[#0059C6]" /> Trusted by 5,000+ Indian Businesses & Multi-Branch Groups
+              <Zap className="size-3 text-[#0059C6]" /> Trusted by Indian Businesses & Multi-Branch Groups
             </motion.div>
 
             <motion.h1
               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
               className="text-4xl md:text-5xl lg:text-[52px] font-semibold leading-[1.12] tracking-tight text-[#0F172A] mb-5"
             >
-              The Multi-Tenant <span className="text-gradient-brand">AI Booking Platform</span> for Modern Indian Businesses
+              The Multi-Tenant <span className="text-gradient-brand">Booking Platform</span> for Modern Businesses
             </motion.h1>
 
             <motion.p
@@ -274,15 +274,10 @@ export function Hero() {
               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
               className="flex flex-wrap items-center gap-3 mb-6"
             >
-              <Link to="/signup" className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:-translate-y-[1px]"
+              <Link to="/signup" className="group inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:-translate-y-[1px]"
                 style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
               >
-                <Sparkles className="size-4" /> Get Started Free
-              </Link>
-              <Link to="/demo" className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all hover:-translate-y-[1px] bg-white border hover:border-[#0059C6] hover:text-[#0059C6]"
-                style={{ borderColor: "rgba(0,89,198,0.2)", color: "#0F172A" }}
-              >
-                <CalendarDays className="size-4" /> Book a Demo
+                Get Started Free <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
               </Link>
             </motion.div>
           </div>
@@ -1069,7 +1064,6 @@ export function BeforeAfter() {
 
   return (
     <section className="relative py-24 bg-slate-50/50 overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
       <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[500px] bg-[#0059C6]/[0.03] blur-[100px] rounded-full" />
 
       <div className="relative mx-auto max-w-6xl px-6">
@@ -1088,14 +1082,14 @@ export function BeforeAfter() {
         <div className="relative grid md:grid-cols-2 gap-8 lg:gap-12 items-stretch">
           
           {/* VS Badge (Desktop) */}
-          <div className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 size-16 items-center justify-center rounded-full bg-white shadow-[0_8px_30px_rgba(0,0,0,0.08)] border border-zinc-100">
+          <div className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 size-16 items-center justify-center rounded-full bg-white border border-zinc-100">
             <span className="text-sm font-black text-zinc-400">VS</span>
           </div>
 
           {/* Before Card */}
           <motion.div
             initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, ease: "easeOut" }}
-            className="relative flex flex-col rounded-3xl border border-zinc-200 bg-white p-8 md:p-10 shadow-sm"
+            className="relative flex flex-col rounded-3xl border border-zinc-200 bg-white p-8 md:p-10"
           >
             <div className="flex items-center gap-4 mb-8">
               <div className="flex size-12 items-center justify-center rounded-2xl bg-red-50 border border-red-100">
@@ -1120,7 +1114,7 @@ export function BeforeAfter() {
           {/* After Card */}
           <motion.div
             initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
-            className="relative flex flex-col rounded-3xl p-8 md:p-10 overflow-hidden shadow-[0_20px_60px_-15px_rgba(0,89,198,0.15)] group"
+            className="relative flex flex-col rounded-3xl p-8 md:p-10 overflow-hidden group"
             style={{ background: "linear-gradient(145deg, #ffffff 0%, #f4f9ff 100%)", border: "1px solid rgba(0,89,198,0.15)" }}
           >
             {/* Animated Glow */}

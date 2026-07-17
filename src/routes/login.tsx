@@ -3,7 +3,15 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { HeartPulse, Home, X, Check, Loader2, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-import { loginServerFn, sendOtpServerFn, verifyOtpServerFn, resetPasswordServerFn } from "../lib/auth";
+import {
+  loginServerFn,
+  sendOtpServerFn,
+  verifyOtpServerFn,
+  resetPasswordServerFn,
+  getExpiredUserPlanDetailsServerFn,
+  createCashfreeOrderServerFn,
+  verifyAndProcessPaymentServerFn
+} from "../lib/auth";
 import bmtLogo from "../assets/bmt-logo.png";
 
 
@@ -60,6 +68,107 @@ function LoginPage() {
   const [forgotVerificationSuccess, setForgotVerificationSuccess] = useState(false);
   const [forgotResetSuccess, setForgotResetSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Subscription Renewal States
+  const [isRenewModalOpen, setIsRenewModalOpen] = useState(false);
+  const [renewUserPlanDetails, setRenewUserPlanDetails] = useState<any>(null);
+  const [selectedRenewPlan, setSelectedRenewPlan] = useState<"Basic" | "Premium">("Basic");
+  const [renewLoading, setRenewLoading] = useState(false);
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+
+  // Handle click on Renew button
+  const handleRenewClick = async () => {
+    if (!username) {
+      toast.error("Please enter your Username (Email or Phone) first.");
+      return;
+    }
+    setLoading(true);
+    setErrorMsg("");
+    try {
+      const details = await getExpiredUserPlanDetailsServerFn({ data: { username } });
+      setRenewUserPlanDetails(details);
+      setIsRenewModalOpen(true);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to fetch account details. Please ensure your username is correct.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initiate Cashfree checkout
+  const handleInitiatePayment = async (plan: "Basic" | "Premium") => {
+    setRenewLoading(true);
+    try {
+      const res = await createCashfreeOrderServerFn({
+        data: { username, planName: plan }
+      });
+      
+      if (res.success && res.payment_session_id) {
+        toast.success("Initiating Cashfree Payment Gateway...");
+        
+        if (!(window as any).Cashfree) {
+          throw new Error("Cashfree payment gateway SDK failed to load. Please refresh the page.");
+        }
+        
+        const cashfree = (window as any).Cashfree({
+          mode: res.environment === "production" ? "production" : "sandbox"
+        });
+        
+        await cashfree.checkout({
+          paymentSessionId: res.payment_session_id,
+          returnUrl: `http://localhost:3000/login?cf_payment_status=success&order_id=${res.order_id}`
+        });
+      } else {
+        toast.error("Failed to generate payment session. Please try again.");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to trigger payment. Please try again.");
+    } finally {
+      setRenewLoading(false);
+    }
+  };
+
+  // Verify payment on return
+  const verifyPayment = async (orderId: string) => {
+    setIsVerifyingPayment(true);
+    const loadingToastId = toast.loading("Verifying your payment with Cashfree...");
+    try {
+      const res = await verifyAndProcessPaymentServerFn({ data: { orderId } });
+      if (res.success) {
+        toast.success(`Payment verified successfully! Your ${res.plan} subscription is now Active.`, {
+          id: loadingToastId,
+          duration: 6000,
+        });
+        // Clear query parameters
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else {
+        toast.error(`Payment verification failed: ${res.message || "Please contact support."}`, {
+          id: loadingToastId,
+          duration: 5000,
+        });
+      }
+    } catch (err: any) {
+      toast.error(err.message || "An error occurred during payment verification. Please contact support.", {
+        id: loadingToastId,
+        duration: 5000,
+      });
+    } finally {
+      setIsVerifyingPayment(false);
+    }
+  };
+
+  // Add mount effect to look for cf_payment_status and order_id
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const cfStatus = params.get("cf_payment_status");
+      const orderId = params.get("order_id");
+
+      if (cfStatus === "success" && orderId) {
+        verifyPayment(orderId);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -257,6 +366,16 @@ function LoginPage() {
                       </span>
                     ))}
                   </p>
+                  {(errorMsg.toLowerCase().includes("ended") || errorMsg.toLowerCase().includes("expired") || errorMsg.toLowerCase().includes("deactivated")) && (
+                    <button
+                      type="button"
+                      onClick={handleRenewClick}
+                      className="mt-2.5 w-full flex items-center justify-center gap-1.5 rounded-full bg-red-600 hover:bg-red-750 text-white font-bold py-2 px-4 text-xs transition-colors shadow-sm cursor-pointer"
+                      style={{ background: "linear-gradient(135deg, #DC2626, #EF4444)" }}
+                    >
+                      Renew Subscription Now
+                    </button>
+                  )}
                 </div>
               )}
               <div>
@@ -639,6 +758,148 @@ function LoginPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Cashfree Subscription Renewal Modal */}
+      <AnimatePresence>
+        {isRenewModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-white rounded-[2rem] border border-zinc-200/60 p-6 sm:p-8 max-w-2xl w-full shadow-2xl flex flex-col my-8"
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRenewModalOpen(false);
+                  setSelectedRenewPlan("Basic");
+                }}
+                className="absolute top-4 right-4 rounded-full p-1 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 transition-all cursor-pointer"
+                disabled={renewLoading}
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="text-center mb-6">
+                <h3 className="text-xl font-black text-zinc-900">Renew Workspace Subscription</h3>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Choose a subscription plan to reactivate your BookMyTime account for tenant: <span className="font-bold text-brand">{renewUserPlanDetails?.tenantId}</span>
+                </p>
+              </div>
+
+              {/* Plans Comparison */}
+              <div className="grid sm:grid-cols-2 gap-4 my-2">
+                {/* Basic Plan */}
+                <div 
+                  onClick={() => !renewLoading && setSelectedRenewPlan("Basic")}
+                  className={`relative flex flex-col rounded-2xl p-5 border-2 cursor-pointer transition-all ${
+                    selectedRenewPlan === "Basic" 
+                      ? "border-[#0059C6] bg-[#0059C6]/[0.02] shadow-md animate-pulse-subtle" 
+                      : "border-zinc-200 hover:border-zinc-300"
+                  }`}
+                >
+                  {selectedRenewPlan === "Basic" && (
+                    <div className="absolute top-3 right-3 bg-[#0059C6] text-white rounded-full p-0.5 z-10">
+                      <Check className="h-3 w-3" />
+                    </div>
+                  )}
+                  <h4 className="text-sm font-bold text-zinc-900">Basic Plan</h4>
+                  <p className="text-2xl font-black text-zinc-900 mt-2">₹999<span className="text-xs font-normal text-zinc-500">/month</span></p>
+                  <p className="text-[10px] text-zinc-500 mt-1">Perfect for solo practitioners and small businesses.</p>
+                  <ul className="mt-4 space-y-2 border-t border-zinc-100 pt-4 flex-1">
+                    {[
+                      "1 Dashboard",
+                      "500 Bookings / Month",
+                      "Up to 500 Customers",
+                      "QR Code Booking",
+                      "Standard AI Assistant",
+                      "Standard Support"
+                    ].map((f) => (
+                      <li key={f} className="flex items-center gap-1.5 text-[11px] text-zinc-650">
+                        <Check className="h-3 w-3 text-[#0059C6] shrink-0" />
+                        <span className="text-zinc-650 font-medium text-left">{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Premium Plan */}
+                <div 
+                  onClick={() => !renewLoading && setSelectedRenewPlan("Premium")}
+                  className={`relative flex flex-col rounded-2xl p-5 border-2 cursor-pointer transition-all ${
+                    selectedRenewPlan === "Premium" 
+                      ? "border-[#0059C6] bg-[#0059C6]/[0.02] shadow-md" 
+                      : "border-zinc-200 hover:border-zinc-300"
+                  }`}
+                >
+                  <div className="absolute top-2 right-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider">
+                    Popular
+                  </div>
+                  {selectedRenewPlan === "Premium" && (
+                    <div className="absolute top-3 right-3 bg-[#0059C6] text-white rounded-full p-0.5 z-10 mt-4">
+                      <Check className="h-3 w-3" />
+                    </div>
+                  )}
+                  <h4 className="text-sm font-bold text-zinc-900 mt-2 sm:mt-0">Premium Plan</h4>
+                  <p className="text-2xl font-black text-zinc-900 mt-2">₹1,499<span className="text-xs font-normal text-zinc-500">/month</span></p>
+                  <p className="text-[10px] text-zinc-500 mt-1">For growing multi-professional networks & groups.</p>
+                  <ul className="mt-4 space-y-2 border-t border-zinc-100 pt-4 flex-1">
+                    {[
+                      "1 Dashboard + 1 sub location",
+                      "2,000 Bookings / Month",
+                      "Up to 5,000 Customers",
+                      "WhatsApp alerts included",
+                      "Advanced AI Scribe & bot",
+                      "Priority Support"
+                    ].map((f) => (
+                      <li key={f} className="flex items-center gap-1.5 text-[11px] text-zinc-650">
+                        <Check className="h-3 w-3 text-[#0059C6] shrink-0" />
+                        <span className="text-zinc-650 font-medium text-left">{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Checkout CTA */}
+              <div className="mt-6 flex flex-col space-y-2">
+                <button
+                  type="button"
+                  onClick={() => handleInitiatePayment(selectedRenewPlan)}
+                  disabled={renewLoading}
+                  className="w-full rounded-full py-2.5 text-xs font-bold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 hover:opacity-95"
+                  style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
+                >
+                  {renewLoading ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Generating Secure Payment Session...
+                    </>
+                  ) : (
+                    <>
+                      Pay & Activate Account (₹{selectedRenewPlan === "Basic" ? "999" : "1,499"})
+                    </>
+                  )}
+                </button>
+                <p className="text-[9px] text-zinc-400 text-center">
+                  Payments are processed securely via Cashfree Payments. You will be redirected to complete the transaction.
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Payment Verification Processing Overlay */}
+      {isVerifyingPayment && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md text-white">
+          <Loader2 className="h-10 w-10 animate-spin text-[#0D83FF]" />
+          <p className="mt-4 text-sm font-bold tracking-wide">Verifying your payment with Cashfree...</p>
+          <p className="text-xs text-zinc-450 mt-1">Please do not refresh the page or click back.</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -3384,3 +3384,195 @@ export const getWAConversationHistoryServerFn = createServerFn({ method: "POST" 
     );
     return rows;
   });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CASHFREE PAYMENT GATEWAY SUBSCRIPTION RENEWAL SERVER FUNCTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getExpiredUserPlanDetailsServerFn = createServerFn({ method: "POST" })
+  .validator((data: { username: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await queryOne<any>(
+      "SELECT id, name, email, phone, tenantId, subscriptionPlan, subscriptionExpiresAt, subscriptionStatus FROM User WHERE email = ? OR phone = ? LIMIT 1",
+      [data.username, data.username]
+    );
+    if (!user) throw new Error("Account not found");
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone || "",
+      tenantId: user.tenantId,
+      subscriptionPlan: user.subscriptionPlan,
+      subscriptionExpiresAt: user.subscriptionExpiresAt,
+      subscriptionStatus: user.subscriptionStatus,
+    };
+  });
+
+export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
+  .validator((data: { username: string; planName: "Basic" | "Premium" }) => data)
+  .handler(async ({ data }) => {
+    const user = await queryOne<any>(
+      "SELECT id, name, email, phone, tenantId FROM User WHERE email = ? OR phone = ? LIMIT 1",
+      [data.username, data.username]
+    );
+    if (!user) throw new Error("Account not found");
+
+    const amount = data.planName === "Basic" ? 999 : 1499;
+    const orderId = `order_renew_${user.tenantId}_${Date.now()}`;
+
+    const appId = process.env.CASHFREE_APP_ID;
+    const secretKey = process.env.CASHFREE_SECRET_KEY;
+    const environment = process.env.CASHFREE_ENV || "production";
+    const host = environment === "production" ? "api.cashfree.com" : "sandbox.cashfree.com";
+
+    const returnUrl = environment === "production"
+      ? `https://bookmytime.tech/login?cf_payment_status=success&order_id=${orderId}`
+      : `http://localhost:3000/login?cf_payment_status=success&order_id=${orderId}`;
+
+    const payload = {
+      order_id: orderId,
+      order_amount: amount,
+      order_currency: "INR",
+      customer_details: {
+        customer_id: user.id,
+        customer_phone: user.phone || "9999999999",
+        customer_email: user.email,
+        customer_name: user.name,
+      },
+      order_meta: {
+        return_url: returnUrl,
+      },
+    };
+
+    console.log(`[CASHFREE] Creating order ${orderId} on ${host} for plan ${data.planName}...`);
+
+    try {
+      const response = await fetch(`https://${host}/pg/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-id": appId,
+          "x-client-secret": secretKey,
+          "x-api-version": "2023-08-01",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[CASHFREE] Create Order API Error:", errorText);
+        throw new Error(`Failed to initiate payment gateway: ${response.statusText}`);
+      }
+
+      const orderData = await response.json();
+      console.log(`[CASHFREE] Order ${orderId} created successfully. Session ID: ${orderData.payment_session_id}`);
+
+      return {
+        success: true,
+        payment_session_id: orderData.payment_session_id,
+        order_id: orderId,
+        environment,
+      };
+    } catch (err: any) {
+      console.error("[CASHFREE] Exception creating order:", err);
+      throw new Error(err.message || "Failed to create payment order");
+    }
+  });
+
+export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" })
+  .validator((data: { orderId: string }) => data)
+  .handler(async ({ data }) => {
+    const appId = process.env.CASHFREE_APP_ID;
+    const secretKey = process.env.CASHFREE_SECRET_KEY;
+    const environment = process.env.CASHFREE_ENV || "production";
+    const host = environment === "production" ? "api.cashfree.com" : "sandbox.cashfree.com";
+
+    console.log(`[CASHFREE] Verifying payment for order ${data.orderId}...`);
+
+    try {
+      const response = await fetch(`https://${host}/pg/orders/${data.orderId}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-id": appId,
+          "x-client-secret": secretKey,
+          "x-api-version": "2023-08-01",
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[CASHFREE] Get Order Status API Error:`, errorText);
+        throw new Error(`Failed to fetch payment status from Cashfree: ${response.statusText}`);
+      }
+
+      const orderData = await response.json();
+      const orderStatus = orderData.order_status;
+      const orderAmount = Number(orderData.order_amount);
+
+      console.log(`[CASHFREE] Order ${data.orderId} status: ${orderStatus}, amount: ${orderAmount}`);
+
+      if (orderStatus === "PAID") {
+        const parts = data.orderId.split("_");
+        let tenantId = "";
+        if (parts[1] === "renew") {
+          tenantId = parts[2];
+        }
+
+        if (!tenantId) {
+          throw new Error("Invalid Order ID format: Could not extract tenant details.");
+        }
+
+        const user = await queryOne<any>(
+          "SELECT id, subscriptionStatus, subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
+          [tenantId]
+        );
+        if (!user) {
+          throw new Error(`User not found for tenantId: ${tenantId}`);
+        }
+
+        const selectedPlan = orderAmount >= 1400 ? "Premium" : "Basic";
+
+        await execute(
+          `UPDATE User 
+           SET subscriptionStatus = 'Active', 
+               subscriptionPlan = ?, 
+               subscriptionExpiresAt = DATE_ADD(NOW(), INTERVAL 1 MONTH),
+               paymentAmount = ?, 
+               paymentMethod = 'Cashfree', 
+               billingInterval = 'monthly',
+               updatedAt = NOW() 
+           WHERE id = ?`,
+          [selectedPlan, orderAmount, user.id]
+        );
+
+        console.log(`[CASHFREE] Updated User table for user ${user.id} to active plan ${selectedPlan}`);
+
+        // Insert SubscriptionHistory log
+        await execute(
+          `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
+           VALUES (?, ?, ?, 'Active', ?, ?, ?, 'monthly', NOW(), 'Cashfree')`,
+          [crypto.randomUUID(), user.id, user.subscriptionStatus || "Expired", user.subscriptionPlan || "Trial", selectedPlan, orderAmount]
+        );
+
+        console.log(`[CASHFREE] Successfully recorded transaction log for order ${data.orderId}`);
+
+        return {
+          success: true,
+          plan: selectedPlan,
+          amount: orderAmount,
+          tenantId,
+        };
+      } else {
+        return {
+          success: false,
+          status: orderStatus,
+          message: `The payment is not completed. Current status: ${orderStatus}`,
+        };
+      }
+    } catch (err: any) {
+      console.error("[CASHFREE] Exception verifying payment:", err);
+      throw new Error(err.message || "Failed to verify payment");
+    }
+  });
