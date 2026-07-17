@@ -870,6 +870,40 @@ function MedicalDashboardPage() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
   }, []);
 
+  const handleUpgradeClick = useCallback(async (planName: string) => {
+    if (planName === "Enterprise") {
+      setActiveTab("settings");
+      return;
+    }
+    if (!user || !user.email) {
+      showToast("error", "Session expired. Please log in again.");
+      return;
+    }
+    showToast("info", "Initiating secure payment gateway...");
+    try {
+      const { createCashfreeOrderServerFn } = await import("../../lib/auth");
+      const res = await createCashfreeOrderServerFn({
+        data: { username: user.email, planName: planName as any }
+      });
+      if (res.success && res.payment_session_id) {
+        if (!(window as any).Cashfree) {
+          throw new Error("Payment gateway SDK failed to load. Please refresh the page.");
+        }
+        const cashfree = (window as any).Cashfree({
+          mode: res.environment === "production" ? "production" : "sandbox"
+        });
+        await cashfree.checkout({
+          paymentSessionId: res.payment_session_id,
+          returnUrl: window.location.origin + `/login?order_id=${res.order_id}`
+        });
+      } else {
+        showToast("error", "Failed to initiate payment checkout. Please try again.");
+      }
+    } catch (err: any) {
+      showToast("error", err.message || "Failed to trigger payment gateway.");
+    }
+  }, [user, showToast]);
+
   // Confirm dialog
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void } | null>(null);
   const [isDialogConfirming, setIsDialogConfirming] = useState(false);
@@ -8487,7 +8521,7 @@ function MedicalDashboardPage() {
                           }`}
                           onClick={() => {
                             if (plan.name !== "Enterprise") {
-                              showToast("info", `Upgrading to ${plan.name} plan is requested. Support team will connect with you.`);
+                              handleUpgradeClick(plan.name);
                             } else {
                               setActiveTab("settings");
                             }
