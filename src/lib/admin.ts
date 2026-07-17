@@ -483,7 +483,7 @@ export const getPaymentHistoryServerFn = createServerFn({ method: "GET" })
               ph.createdAt, ph.updatedAt,
               u.clinicName
        FROM PaymentHistory ph
-       LEFT JOIN User u ON u.tenantId = ph.tenantId
+       LEFT JOIN User u ON u.tenantId COLLATE utf8mb4_unicode_ci = ph.tenantId COLLATE utf8mb4_unicode_ci
        ${where}
        ORDER BY ph.createdAt DESC
        LIMIT ?`,

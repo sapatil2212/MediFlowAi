@@ -296,7 +296,7 @@ export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
     const rows = await query<any>(
       `SELECT s.*, u.clinicName
        FROM Subscription s
-       LEFT JOIN User u ON u.id = s.userId
+       LEFT JOIN User u ON u.id COLLATE utf8mb4_unicode_ci = s.userId COLLATE utf8mb4_unicode_ci
        ${where}
        ORDER BY s.createdAt DESC
        LIMIT ?`,
