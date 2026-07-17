@@ -139,20 +139,20 @@ function LoginPage() {
           id: loadingToastId,
           duration: 6000,
         });
-        // Clear query parameters
-        window.history.replaceState({}, document.title, window.location.pathname);
       } else {
-        toast.error(`Payment verification failed: ${res.message || "Please contact support."}`, {
-          id: loadingToastId,
-          duration: 5000,
-        });
+        // Silently dismiss the loading toast if payment is not completed/cancelled
+        toast.dismiss(loadingToastId);
+        console.log(`[CASHFREE] Payment verification not completed/cancelled:`, res.message);
       }
     } catch (err: any) {
-      toast.error(err.message || "An error occurred during payment verification. Please contact support.", {
-        id: loadingToastId,
-        duration: 5000,
-      });
+      // Silently dismiss loading toast on errors to prevent confusing/technical toast alerts
+      toast.dismiss(loadingToastId);
+      console.error("[CASHFREE] Error verifying payment:", err);
     } finally {
+      // Clear query parameters from URL silently in all cases
+      if (typeof window !== "undefined") {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
       setIsVerifyingPayment(false);
     }
   };
