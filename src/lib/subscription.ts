@@ -83,7 +83,9 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
       intervalType: billing.intervalType,
       intervals: billing.intervals,
       currency: billing.currency,
-      note: `${tier} plan — ₹${amount}/month`,
+      // Cashfree plan_note allows only alphanumerics + a few special chars —
+      // no currency symbols or em dashes.
+      note: `${tier} monthly plan Rs ${amount}`,
     });
 
     const subscriptionRef = `sub_${user.tenantId}_${Date.now()}`;
