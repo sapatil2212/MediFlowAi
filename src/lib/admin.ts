@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { verifyAdminSession } from "./admin.server";
 import { query, queryOne, execute } from "./db";
+import { reconcileOrderPaymentHistory } from "./auth";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -498,7 +499,10 @@ export const getPaymentHistoryServerFn = createServerFn({ method: "GET" })
          SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failedCount,
          SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) as cancelledCount,
          SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) as pendingCount,
-         SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END) as totalReceived
+         SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END) as totalReceived,
+         SUM(CASE WHEN status = 'FAILED' THEN amount ELSE 0 END) as failedAmount,
+         SUM(CASE WHEN status = 'CANCELLED' THEN amount ELSE 0 END) as cancelledAmount,
+         SUM(CASE WHEN status = 'PENDING' THEN amount ELSE 0 END) as pendingAmount
        FROM PaymentHistory`
     );
 
@@ -511,7 +515,52 @@ export const getPaymentHistoryServerFn = createServerFn({ method: "GET" })
         cancelledCount: parseInt(summary?.cancelledCount || 0),
         pendingCount: parseInt(summary?.pendingCount || 0),
         totalReceived: parseFloat(summary?.totalReceived || 0),
+        failedAmount: parseFloat(summary?.failedAmount || 0),
+        cancelledAmount: parseFloat(summary?.cancelledAmount || 0),
+        pendingAmount: parseFloat(summary?.pendingAmount || 0),
       },
+    };
+  });
+
+// ──────────────────────────────────────────────
+// Reconcile every non-terminal payment against Cashfree (real-time sync)
+// ──────────────────────────────────────────────
+// Pulls the live status/amount/mode/failure reason for orders that were never
+// finalized locally (webhook not configured, user abandoned the return trip,
+// etc.). SUCCESS is terminal and skipped. Never mutates user access — purely
+// reconciles the ledger so the admin sees exact collected/failed/cancelled.
+export const syncAllPaymentsFromCashfreeServerFn = createServerFn({ method: "POST" })
+  .handler(async () => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const pending = await query<any>(
+      `SELECT orderId FROM PaymentHistory
+       WHERE status <> 'SUCCESS' AND orderId IS NOT NULL AND orderId <> ''
+       ORDER BY createdAt DESC
+       LIMIT 300`
+    );
+
+    let reconciled = 0;
+    let promoted = 0; // became SUCCESS during this sync
+    let failed = 0;
+
+    for (const row of pending) {
+      const result = await reconcileOrderPaymentHistory(row.orderId);
+      if (result) {
+        reconciled++;
+        if (result === "SUCCESS") promoted++;
+      } else {
+        failed++;
+      }
+    }
+
+    return {
+      success: true,
+      scanned: pending.length,
+      reconciled,
+      promoted,
+      failed,
     };
   });
 

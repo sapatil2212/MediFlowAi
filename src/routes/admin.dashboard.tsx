@@ -66,11 +66,12 @@ import {
   controlWhatsAppServerFn,
   getSubscriptionHistoryServerFn,
   getPaymentHistoryServerFn,
+  syncAllPaymentsFromCashfreeServerFn,
   toggleTenantStatusServerFn,
   getTenantFullProfileServerFn,
   deleteTenantServerFn
 } from "../lib/admin";
-import { getAdminSubscriptionsServerFn, getAdminSubscriptionPaymentsServerFn } from "../lib/subscription";
+import { getAdminSubscriptionsServerFn, getAdminSubscriptionPaymentsServerFn, syncAllSubscriptionsFromCashfreeServerFn } from "../lib/subscription";
 import {
   getDemoAppointmentsServerFn,
   updateDemoAppointmentServerFn,
@@ -221,8 +222,10 @@ function AdminDashboardPage() {
   const [subscriptionRows, setSubscriptionRows] = useState<any[]>([]);
   const [subscriptionSummary, setSubscriptionSummary] = useState<{
     totalCount: number; activeCount: number; cancelledCount: number; onHoldCount: number; activeMrr: number; failedRenewals: number;
-  }>({ totalCount: 0, activeCount: 0, cancelledCount: 0, onHoldCount: 0, activeMrr: 0, failedRenewals: 0 });
+    collectedAmount: number; failedAmount: number; successCount: number;
+  }>({ totalCount: 0, activeCount: 0, cancelledCount: 0, onHoldCount: 0, activeMrr: 0, failedRenewals: 0, collectedAmount: 0, failedAmount: 0, successCount: 0 });
   const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
+  const [syncingSubscriptions, setSyncingSubscriptions] = useState(false);
   const [subAdminStatusFilter, setSubAdminStatusFilter] = useState("all");
   const [subAdminSearch, setSubAdminSearch] = useState("");
   // Per-subscription payment ledger modal (super admin)
@@ -247,8 +250,10 @@ function AdminDashboardPage() {
   const [paymentRows, setPaymentRows] = useState<any[]>([]);
   const [paymentSummary, setPaymentSummary] = useState<{
     totalCount: number; successCount: number; failedCount: number; cancelledCount: number; pendingCount: number; totalReceived: number;
-  }>({ totalCount: 0, successCount: 0, failedCount: 0, cancelledCount: 0, pendingCount: 0, totalReceived: 0 });
+    failedAmount: number; cancelledAmount: number; pendingAmount: number;
+  }>({ totalCount: 0, successCount: 0, failedCount: 0, cancelledCount: 0, pendingCount: 0, totalReceived: 0, failedAmount: 0, cancelledAmount: 0, pendingAmount: 0 });
   const [loadingPayments, setLoadingPayments] = useState(false);
+  const [syncingPayments, setSyncingPayments] = useState(false);
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [paymentSearchQuery, setPaymentSearchQuery] = useState("");
 
@@ -350,6 +355,22 @@ function AdminDashboardPage() {
     }
   };
 
+  // Reconcile every non-terminal payment against Cashfree, then refresh.
+  const syncPaymentsFromCashfree = async () => {
+    setSyncingPayments(true);
+    try {
+      const res = await syncAllPaymentsFromCashfreeServerFn();
+      console.log("[AdminSync] Payments reconciled:", res);
+      toast.success(`Synced ${res.reconciled}/${res.scanned} payments${res.promoted ? ` — ${res.promoted} now paid` : ""}`);
+      await fetchPaymentHistory();
+    } catch (err: any) {
+      console.error("[AdminSync] Payment sync failed:", err);
+      toast.error("Cashfree payment sync failed: " + err.message);
+    } finally {
+      setSyncingPayments(false);
+    }
+  };
+
   // Load payment history when the tab is opened or filters change.
   useEffect(() => {
     if (activeTab === "payments") {
@@ -373,6 +394,22 @@ function AdminDashboardPage() {
       toast.error("Failed to load subscriptions: " + err.message);
     } finally {
       setLoadingSubscriptions(false);
+    }
+  };
+
+  // Reconcile every subscription + its payment ledger against Cashfree, then refresh.
+  const syncSubscriptionsFromCashfree = async () => {
+    setSyncingSubscriptions(true);
+    try {
+      const res = await syncAllSubscriptionsFromCashfreeServerFn();
+      console.log("[AdminSync] Subscriptions reconciled:", res);
+      toast.success(`Synced ${res.reconciled}/${res.scanned} subscriptions — ${res.paymentsSynced} payments recorded`);
+      await fetchAdminSubscriptions();
+    } catch (err: any) {
+      console.error("[AdminSync] Subscription sync failed:", err);
+      toast.error("Cashfree subscription sync failed: " + err.message);
+    } finally {
+      setSyncingSubscriptions(false);
     }
   };
 
@@ -1571,18 +1608,18 @@ function AdminDashboardPage() {
                   </div>
                   <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Failed</span>
-                    <p className="text-xl font-black text-red-600">{paymentSummary.failedCount}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">Declined / errored attempts</p>
+                    <p className="text-xl font-black text-red-600">{formatCurrencyInr(paymentSummary.failedAmount)}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.failedCount} declined / errored</p>
                   </div>
                   <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Cancelled</span>
-                    <p className="text-xl font-black text-zinc-600">{paymentSummary.cancelledCount}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">User dropped / abandoned</p>
+                    <p className="text-xl font-black text-zinc-600">{formatCurrencyInr(paymentSummary.cancelledAmount)}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.cancelledCount} dropped / abandoned</p>
                   </div>
                   <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Pending</span>
-                    <p className="text-xl font-black text-amber-600">{paymentSummary.pendingCount}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">Awaiting completion</p>
+                    <p className="text-xl font-black text-amber-600">{formatCurrencyInr(paymentSummary.pendingAmount)}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.pendingCount} awaiting completion</p>
                   </div>
                   <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Total Attempts</span>
@@ -1619,6 +1656,15 @@ function AdminDashboardPage() {
                           <option value="PENDING">Pending</option>
                         </select>
                       </div>
+                      <button
+                        onClick={syncPaymentsFromCashfree}
+                        disabled={syncingPayments || loadingPayments}
+                        className="flex items-center gap-2 h-9 px-3.5 border border-emerald-200 bg-emerald-50 rounded-xl text-emerald-700 text-xs font-extrabold hover:bg-emerald-100 transition-colors active:scale-[0.98] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                        title="Reconcile pending/failed orders directly against Cashfree"
+                      >
+                        <RefreshCw className={`size-3.5 ${syncingPayments ? "animate-spin" : ""}`} />
+                        {syncingPayments ? "Syncing..." : "Sync with Cashfree"}
+                      </button>
                       <button
                         onClick={fetchPaymentHistory}
                         disabled={loadingPayments}
@@ -1750,10 +1796,15 @@ function AdminDashboardPage() {
             {/* VIEW: RECURRING SUBSCRIPTIONS */}
             {activeTab === "subscriptions" && (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+                <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+                  <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-4 space-y-1.5">
+                    <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Collected</span>
+                    <p className="text-xl font-black text-emerald-600">{formatCurrencyInr(subscriptionSummary.collectedAmount)}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">{subscriptionSummary.successCount} AutoPay charges</p>
+                  </div>
                   <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Active MRR</span>
-                    <p className="text-xl font-black text-emerald-600">{formatCurrencyInr(subscriptionSummary.activeMrr)}</p>
+                    <p className="text-xl font-black text-zinc-900">{formatCurrencyInr(subscriptionSummary.activeMrr)}</p>
                     <p className="text-[10px] text-zinc-400 font-semibold">{subscriptionSummary.activeCount} active mandates</p>
                   </div>
                   <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
@@ -1773,8 +1824,8 @@ function AdminDashboardPage() {
                   </div>
                   <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Failed Renewals</span>
-                    <p className="text-xl font-black text-red-600">{subscriptionSummary.failedRenewals}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">All-time declines</p>
+                    <p className="text-xl font-black text-red-600">{formatCurrencyInr(subscriptionSummary.failedAmount)}</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">{subscriptionSummary.failedRenewals} declined charges</p>
                   </div>
                 </div>
 
@@ -1806,6 +1857,15 @@ function AdminDashboardPage() {
                           <option value="INITIALIZED">Initialized</option>
                         </select>
                       </div>
+                      <button
+                        onClick={syncSubscriptionsFromCashfree}
+                        disabled={syncingSubscriptions || loadingSubscriptions}
+                        className="flex items-center gap-2 h-9 px-3.5 border border-emerald-200 bg-emerald-50 rounded-xl text-emerald-700 text-xs font-extrabold hover:bg-emerald-100 transition-colors active:scale-[0.98] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                        title="Reconcile every subscription + payment ledger directly against Cashfree"
+                      >
+                        <RefreshCw className={`size-3.5 ${syncingSubscriptions ? "animate-spin" : ""}`} />
+                        {syncingSubscriptions ? "Syncing..." : "Sync with Cashfree"}
+                      </button>
                       <button
                         onClick={fetchAdminSubscriptions}
                         disabled={loadingSubscriptions}

@@ -320,8 +320,16 @@ export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
        FROM Subscription`
     );
 
-    const failedRenewals = await queryOne<any>(
-      "SELECT COUNT(*) as cnt FROM SubscriptionPayment WHERE status = 'FAILED'"
+    // Real collected / failed revenue straight from the recurring payment
+    // ledger (AUTH + CHARGE rows recorded from Cashfree). This reflects the
+    // exact money actually moved via AutoPay, independent of MRR.
+    const paymentTotals = await queryOne<any>(
+      `SELECT
+         SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END) as collectedAmount,
+         SUM(CASE WHEN status = 'FAILED' THEN amount ELSE 0 END) as failedAmount,
+         SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failedCount,
+         SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as successCount
+       FROM SubscriptionPayment`
     );
 
     return {
@@ -332,8 +340,58 @@ export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
         cancelledCount: parseInt(summary?.cancelledCount || 0),
         onHoldCount: parseInt(summary?.onHoldCount || 0),
         activeMrr: parseFloat(summary?.activeMrr || 0),
-        failedRenewals: parseInt(failedRenewals?.cnt || 0),
+        failedRenewals: parseInt(paymentTotals?.failedCount || 0),
+        collectedAmount: parseFloat(paymentTotals?.collectedAmount || 0),
+        failedAmount: parseFloat(paymentTotals?.failedAmount || 0),
+        successCount: parseInt(paymentTotals?.successCount || 0),
       },
+    };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin: reconcile every subscription against Cashfree (real-time sync)
+// ─────────────────────────────────────────────────────────────────────────────
+// Iterates local Subscription rows, refreshes each subscription's status from
+// Cashfree, and re-syncs its full payment ledger (AUTH + CHARGE) so the admin
+// sees exact collected/failed amounts and live subscription states even when
+// the webhook is not yet configured. Never throws per-row — best effort.
+export const syncAllSubscriptionsFromCashfreeServerFn = createServerFn({ method: "POST" })
+  .handler(async () => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const subs = await query<any>(
+      `SELECT subscriptionRef FROM Subscription
+       WHERE subscriptionRef IS NOT NULL AND subscriptionRef <> ''
+       ORDER BY createdAt DESC
+       LIMIT 500`
+    );
+
+    let reconciled = 0;
+    let paymentsSynced = 0;
+    let failed = 0;
+
+    for (const s of subs) {
+      try {
+        const cfSub = await getCashfreeSubscription(s.subscriptionRef);
+        if (cfSub) {
+          await reconcileSubscriptionFromCashfree(s.subscriptionRef, cfSub);
+          reconciled++;
+        }
+        const recorded = await syncSubscriptionPaymentsFromCashfree(s.subscriptionRef);
+        paymentsSynced += Number(recorded) || 0;
+      } catch (err: any) {
+        failed++;
+        console.warn(`[CASHFREE][sync-subs] Failed to reconcile ${s.subscriptionRef}:`, err.message);
+      }
+    }
+
+    return {
+      success: true,
+      scanned: subs.length,
+      reconciled,
+      paymentsSynced,
+      failed,
     };
   });
 
