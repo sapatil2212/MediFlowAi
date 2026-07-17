@@ -3,7 +3,7 @@ import { verifySession } from "./auth.server";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { query, queryOne, execute } from "./db";
-import { sendOtpEmail } from "./email";
+import { sendOtpEmail, sendBillingNotificationEmail } from "./email";
 
 // WhatsApp HTTP client — pure ESM, safe to import (no Puppeteer/CJS globals)
 import { enqueueWA, getWAStatus, disconnectWA, initializeWA, enqueueWABulk, sendWAMedia, pauseWACampaign } from "./whatsapp";
@@ -3726,7 +3726,7 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
         }
 
         const user = await queryOne<any>(
-          "SELECT id, subscriptionStatus, subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
+          "SELECT id, name, email, clinicName, subscriptionStatus, subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
           [tenantId]
         );
         if (!user) {
@@ -3780,6 +3780,35 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
         });
 
         console.log(`[CASHFREE] Successfully recorded transaction log for order ${data.orderId}`);
+
+        // Send a payment-received confirmation email on behalf of the portal.
+        // Best-effort: never block/breaks the confirmed payment on email issues.
+        if (user.email) {
+          try {
+            const paidOn = new Date().toLocaleString("en-IN", {
+              day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+            });
+            await sendBillingNotificationEmail({
+              email: user.email,
+              subject: `Payment received — BookMyTime ${selectedPlan} plan`,
+              title: "Payment Received",
+              message: `Hi ${user.name || "there"}, we've received your payment and your BookMyTime ${selectedPlan} subscription is now active. Thank you for choosing BookMyTime.`,
+              tone: "success",
+              details: [
+                { label: "Plan", value: `${selectedPlan}` },
+                { label: "Amount Paid", value: `Rs ${orderAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+                { label: "Payment Mode", value: paymentMethodLabel },
+                { label: "Order ID", value: data.orderId },
+                ...(latestAttempt?.cf_payment_id ? [{ label: "Transaction ID", value: String(latestAttempt.cf_payment_id) }] : []),
+                { label: "Paid On", value: paidOn },
+                { label: "Valid Till", value: "1 month from today" },
+              ],
+            });
+            console.log(`[CASHFREE] Payment confirmation email sent to ${user.email}`);
+          } catch (mailErr: any) {
+            console.warn(`[CASHFREE] Failed to send payment confirmation email:`, mailErr.message);
+          }
+        }
 
         return {
           success: true,

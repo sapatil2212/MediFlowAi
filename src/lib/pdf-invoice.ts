@@ -10,6 +10,7 @@
 // billing view and the super-admin dashboard (view in a new tab or download).
 // ─────────────────────────────────────────────────────────────────────────────
 import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import bmtLogo from "../assets/bmt-logo.png";
 
 export interface InvoiceData {
@@ -184,7 +185,7 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
   const planLabel = `${d.plan ? `BookMyTime ${d.plan} Plan` : "BookMyTime Subscription"}${d.paymentType === "AUTH" ? " (Mandate Registration)" : ""}`.trim();
   const billingLabel = d.transactionType || (d.paymentType === "AUTH" ? "Mandate" : "Monthly");
   const tableTop = Math.max(y, 74) + 6;
-  (doc as any).autoTable({
+  autoTable(doc, {
     startY: tableTop,
     head: [["Description", "Billing", "Amount"]],
     body: [[planLabel, billingLabel, fmtInr(d.amount)]],
@@ -195,7 +196,7 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
     margin: { left: 14, right: 14 },
   });
 
-  let afterTable = (doc as any).lastAutoTable.finalY + 6;
+  let afterTable = ((doc as any).lastAutoTable?.finalY ?? tableTop) + 6;
 
   // ── Total ──
   doc.setFont("Helvetica", "bold");

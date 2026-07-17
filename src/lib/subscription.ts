@@ -13,6 +13,7 @@ import crypto from "crypto";
 import { verifySession } from "./auth.server";
 import { verifyAdminSession } from "./admin.server";
 import { query, queryOne, execute } from "./db";
+import { sendBillingNotificationEmail } from "./email";
 import {
   normalizePlan,
   PLAN_BILLING,
@@ -162,6 +163,30 @@ export const verifySubscriptionServerFn = createServerFn({ method: "POST" })
     const status = String(cfSub.subscription_status || "").toUpperCase();
     const authStatus = String(cfSub?.authorization_details?.authorization_status || "").toUpperCase();
     const success = status === "ACTIVE" || authStatus === "ACTIVE";
+
+    // Send an AutoPay activation / payment-received confirmation email on
+    // behalf of the portal. Best-effort — never blocks the billing flow.
+    if (success && (user as any).email) {
+      try {
+        const tier = normalizePlan(local.planTier);
+        await sendBillingNotificationEmail({
+          email: (user as any).email,
+          subject: `AutoPay activated — BookMyTime ${tier} plan`,
+          title: "Payment Received & AutoPay Active",
+          message: `Hi ${(user as any).name || "there"}, your BookMyTime ${tier} subscription is active and AutoPay is set up. Your plan will renew automatically every month. Thank you for choosing BookMyTime.`,
+          tone: "success",
+          details: [
+            { label: "Plan", value: tier },
+            { label: "Amount", value: `Rs ${Number(local.amount).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/month` },
+            { label: "AutoPay", value: "Active" },
+            { label: "Subscription Ref", value: data.subscriptionRef },
+          ],
+        });
+        console.log(`[Subscription] AutoPay confirmation email sent to ${(user as any).email}`);
+      } catch (mailErr: any) {
+        console.warn(`[Subscription] Failed to send AutoPay confirmation email:`, mailErr.message);
+      }
+    }
 
     return {
       success,
