@@ -2,19 +2,19 @@ import { Link } from "@tanstack/react-router";
 import { ShieldCheck, Globe, Lock, Database } from "lucide-react";
 import bmtLogo from "@/assets/bmt-logo.png";
 
+// "Features" is a plain, non-clickable list of capabilities — it has no
+// dedicated link target, so items are rendered as static text.
+const featureItems = [
+  "AI Booking Assistant",
+  "Online Scheduling",
+  "WhatsApp Notifications",
+  "Booking Portal",
+  "QR Code Booking",
+  "Customer Management",
+  "Analytics & Reports",
+];
+
 const cols = [
-  {
-    title: "Features",
-    links: [
-      { label: "AI Booking Assistant", to: "/features" as const },
-      { label: "Online Scheduling", to: "/features" as const },
-      { label: "WhatsApp Notifications", to: "/features" as const },
-      { label: "Booking Portal", to: "/features" as const },
-      { label: "QR Code Booking", to: "/features" as const },
-      { label: "Customer Management", to: "/features" as const },
-      { label: "Analytics & Reports", to: "/features" as const },
-    ],
-  },
   {
     title: "Company",
     links: [
@@ -45,6 +45,19 @@ export function Footer() {
             </p>
           </div>
           <div className="grid grid-cols-2 gap-8 md:grid-cols-3">
+            {/* Features column — static labels, not links */}
+            <div>
+              <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                Features
+              </p>
+              <ul className="space-y-2.5">
+                {featureItems.map((label) => (
+                  <li key={label}>
+                    <span className="text-xs text-zinc-600">{label}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
             {cols.map((c) => (
               <div key={c.title}>
                 <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">

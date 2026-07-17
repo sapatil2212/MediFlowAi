@@ -721,7 +721,30 @@ function EducationDashboardPage() {
 
   useEffect(() => {
     setIsClient(true);
+    // Restore the last active sidebar tab so a page refresh keeps the user on
+    // the same view instead of jumping back to the overview. A ?tab= URL param
+    // (used by the payment return flow / deep links) takes precedence.
+    try {
+      const validTabs = ["overview", "calendar", "patients", "analytics", "settings", "appointments", "plans", "whatsapp"];
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = params.get("tab");
+      const stored = window.localStorage.getItem("bmt_active_tab");
+      const restore = fromUrl && validTabs.includes(fromUrl)
+        ? fromUrl
+        : stored && validTabs.includes(stored)
+          ? stored
+          : null;
+      if (restore) setActiveTab(restore as any);
+    } catch { /* ignore storage/URL access errors */ }
   }, []);
+
+  // Persist the active tab so it survives refreshes.
+  useEffect(() => {
+    if (!isClient) return;
+    try {
+      window.localStorage.setItem("bmt_active_tab", activeTab);
+    } catch { /* ignore storage errors */ }
+  }, [activeTab, isClient]);
 
   // Authentication states
   const [user, setUser] = useState<{
@@ -870,6 +893,47 @@ function EducationDashboardPage() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
   }, []);
 
+  const [processingPlan, setProcessingPlan] = useState<string | null>(null);
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+  const [paymentSuccess, setPaymentSuccess] = useState<{ plan: string; amount: number } | null>(null);
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+
+  const verifyReturnedPayment = useCallback(async (orderId: string) => {
+    setIsVerifyingPayment(true);
+    try {
+      const { verifyAndProcessPaymentServerFn } = await import("../../lib/auth");
+      const res = await verifyAndProcessPaymentServerFn({ data: { orderId } });
+      if (res.success) {
+        setPaymentSuccess({ plan: res.plan as string, amount: Number(res.amount) });
+        setActiveTab("plans");
+        try {
+          const fresh = await getCurrentUserServerFn();
+          if (fresh) setUser(fresh);
+        } catch { /* non-fatal: modal already confirms success */ }
+      } else {
+        showToast("error", (res as any).message || "Payment was not completed.");
+      }
+    } catch (err: any) {
+      showToast("error", err?.message || "We couldn't verify your payment. Please contact support if you were charged.");
+    } finally {
+      setIsVerifyingPayment(false);
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("order_id");
+        window.history.replaceState({}, document.title, url.pathname + url.search);
+      }
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get("order_id");
+    if (orderId) {
+      verifyReturnedPayment(orderId);
+    }
+  }, [verifyReturnedPayment]);
+
   const handleUpgradeClick = useCallback(async (planName: string) => {
     if (planName === "Enterprise") {
       setActiveTab("settings");
@@ -879,11 +943,14 @@ function EducationDashboardPage() {
       showToast("error", "Session expired. Please log in again.");
       return;
     }
+    if (processingPlan) return;
+    setProcessingPlan(planName);
     showToast("info", "Initiating secure payment gateway...");
     try {
       const { createCashfreeOrderServerFn } = await import("../../lib/auth");
+      const returnPath = `${window.location.pathname}?tab=plans`;
       const res = await createCashfreeOrderServerFn({
-        data: { username: user.email, planName: planName as any }
+        data: { username: user.email, planName: planName as any, returnPath }
       });
       if (res.success && res.payment_session_id) {
         if (!(window as any).Cashfree) {
@@ -894,15 +961,17 @@ function EducationDashboardPage() {
         });
         await cashfree.checkout({
           paymentSessionId: res.payment_session_id,
-          returnUrl: window.location.origin + `/login?order_id=${res.order_id}`
+          returnUrl: res.return_url
         });
       } else {
         showToast("error", "Failed to initiate payment checkout. Please try again.");
       }
     } catch (err: any) {
       showToast("error", err.message || "Failed to trigger payment gateway.");
+    } finally {
+      setProcessingPlan(null);
     }
-  }, [user, showToast]);
+  }, [user, showToast, processingPlan]);
 
   // Confirm dialog
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void } | null>(null);
@@ -4082,12 +4151,7 @@ function EducationDashboardPage() {
   if (checkingAuth) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-zinc-200 border-t-brand" />
-          <h2 className="text-sm font-semibold tracking-tight text-zinc-900">
-            Verifying clinician session...
-          </h2>
-        </div>
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-zinc-200 border-t-brand" />
       </div>
     );
   }
@@ -8334,13 +8398,29 @@ function EducationDashboardPage() {
                 TAB: MANAGE PLANS & BILLING
                 ────────────────────────────────────────────── */}
             {activeTab === "plans" && (() => {
-              const planDisplayName = user?.subscriptionPlan === "Trial" || !user?.subscriptionPlan || user?.subscriptionPlan === "Solo" ? "Basic" : user?.subscriptionPlan === "Clinic" ? "Premium" : user.subscriptionPlan;
-              const expiryTime = user?.subscriptionExpiresAt 
+              const rawPlan = (user?.subscriptionPlan || "").toLowerCase();
+              const currentTier: "Basic" | "Premium" | "Enterprise" =
+                rawPlan.includes("enterprise") || rawPlan.includes("hospital")
+                  ? "Enterprise"
+                  : (rawPlan.includes("premium") || rawPlan.includes("clinic") || rawPlan.includes("1499") || rawPlan.includes("pro"))
+                    ? "Premium"
+                    : "Basic";
+              const planDisplayName = currentTier;
+
+              const paymentMethodRaw = (user?.paymentMethod || "").toLowerCase();
+              const hasPaid = Number(user?.paymentAmount) > 0
+                && paymentMethodRaw !== ""
+                && paymentMethodRaw !== "none"
+                && paymentMethodRaw !== "trial";
+              const isTrialing = !hasPaid;
+
+              const expiryTime = user?.subscriptionExpiresAt
                 ? new Date(user.subscriptionExpiresAt).getTime()
                 : user?.createdAt
-                  ? new Date(user.createdAt).getTime() + 14 * 24 * 60 * 60 * 1000
-                  : Date.now() + 14 * 24 * 60 * 60 * 1000;
+                  ? new Date(user.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000
+                  : Date.now() + 7 * 24 * 60 * 60 * 1000;
               const trialEndsInDays = Math.max(0, Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)));
+              const trialActive = isTrialing && expiryTime > Date.now();
               const expiryDateString = new Date(expiryTime).toLocaleDateString("en-US", {
                 year: "numeric",
                 month: "long",
@@ -8369,8 +8449,14 @@ function EducationDashboardPage() {
                       <div className="rounded-2xl border border-zinc-200/80 bg-zinc-50/50 p-4.5 space-y-3.5">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Current Plan</span>
-                          <span className="rounded-full bg-brand/10 px-2.5 py-0.5 text-[10px] font-bold text-brand border border-brand/20">
-                            {user?.subscriptionStatus || "Trialing"}
+                          <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
+                            trialActive
+                              ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
+                              : hasPaid
+                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                : "bg-red-500/10 text-red-600 border-red-500/20"
+                          }`}>
+                            {trialActive ? "Free Trial" : hasPaid ? "Active" : "Trial Ended"}
                           </span>
                         </div>
                         <div>
@@ -8397,8 +8483,12 @@ function EducationDashboardPage() {
                           <p className="text-lg font-black text-zinc-800">
                             {expiryDateString}
                           </p>
-                          <p className="text-xs text-zinc-400 font-medium mt-1">
-                            Trial ends in {trialEndsInDays} days
+                          <p className={`text-xs font-medium mt-1 ${trialActive ? "text-amber-600" : "text-zinc-400"}`}>
+                            {trialActive
+                              ? `Free trial ends in ${trialEndsInDays} day${trialEndsInDays === 1 ? "" : "s"}`
+                              : hasPaid
+                                ? `Renews in ${trialEndsInDays} day${trialEndsInDays === 1 ? "" : "s"}`
+                                : "Trial period has ended"}
                           </p>
                         </div>
                       </div>
@@ -8411,15 +8501,45 @@ function EducationDashboardPage() {
                         </div>
                         <div>
                           <p className="text-lg font-black text-zinc-800">
-                            {user?.paymentMethod === "None" ? "No card on file" : user?.paymentMethod || "Trial Mode"}
+                            {!hasPaid ? "No card on file" : user?.paymentMethod || "Cashfree"}
                           </p>
                           <p className="text-xs text-zinc-400 font-medium mt-1">
-                            Amount: {user?.paymentAmount ? `₹${user.paymentAmount}` : "₹0.00 during trial"}
+                            Amount: {hasPaid ? `₹${user?.paymentAmount}` : "₹0.00 during trial"}
                           </p>
                         </div>
                       </div>
                     </div>
                   </div>
+
+                {trialActive && (
+                  <div className="rounded-3xl border border-amber-300/60 bg-gradient-to-br from-amber-50 to-orange-50/60 p-6">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        <div className="rounded-xl bg-amber-500/15 p-2.5 shrink-0">
+                          <CreditCard className="h-5 w-5 text-amber-600" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black text-zinc-900">
+                            You're on a free trial of the {planDisplayName} plan
+                          </h4>
+                          <p className="text-xs text-zinc-600 font-medium mt-1 max-w-xl">
+                            Your trial ends in <span className="font-bold text-amber-700">{trialEndsInDays} day{trialEndsInDays === 1 ? "" : "s"}</span>.
+                            Activate now to avoid any interruption — you'll be charged{" "}
+                            <span className="font-bold">{planDisplayName === "Premium" ? "₹1,499" : "₹999"}/month</span> and your subscription stays active without a break.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!!processingPlan}
+                        onClick={() => handleUpgradeClick(planDisplayName === "Premium" ? "Premium" : "Basic")}
+                        className="shrink-0 rounded-full bg-amber-500 px-5 py-2.5 text-xs font-bold text-white transition-all hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer shadow-lg shadow-amber-500/25"
+                      >
+                        {processingPlan ? "Processing…" : `Activate Now — Pay ${planDisplayName === "Premium" ? "₹1,499" : "₹999"}`}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Plan Packages comparison */}
                 <div className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-6">
@@ -8445,7 +8565,7 @@ function EducationDashboardPage() {
                         ],
                         popular: false,
                         dark: false,
-                        active: user?.subscriptionPlan === "Basic" || user?.subscriptionPlan === "Solo" || !user?.subscriptionPlan || user?.subscriptionPlan === "Trial"
+                        active: currentTier === "Basic"
                       },
                       {
                         name: "Premium",
@@ -8464,7 +8584,7 @@ function EducationDashboardPage() {
                         ],
                         popular: true,
                         dark: false,
-                        active: user?.subscriptionPlan === "Premium" || user?.subscriptionPlan === "Clinic"
+                        active: currentTier === "Premium"
                       },
                       {
                         name: "Enterprise",
@@ -8473,32 +8593,29 @@ function EducationDashboardPage() {
                         features: ["Unlimited sub locations", "Unlimited professionals & locations", "Custom CRM & ERP integrations", "Dedicated AI fine-tuning", "Dedicated CSM & support"],
                         popular: false,
                         dark: false,
-                        active: user?.subscriptionPlan === "Hospital" || user?.subscriptionPlan === "Enterprise"
+                        active: currentTier === "Enterprise"
                       }
                     ].map((plan) => (
                       <div
                         key={plan.name}
-                        className={`relative flex flex-col rounded-2xl p-6 transition-all ${
-                          plan.popular
-                            ? "bg-brand/[0.03] text-zinc-900 ring-2 ring-brand/35 scale-[1.02]"
-                            : plan.dark
-                              ? "bg-zinc-900 text-white ring-1 ring-zinc-700/60"
-                              : plan.active
-                                ? "bg-white text-zinc-900 ring-2 ring-brand/40 border border-brand/20"
-                                : "bg-white text-zinc-900 ring-1 ring-zinc-950/5 hover:ring-brand/20"
+                        className={`relative flex flex-col rounded-2xl border p-6 transition-all ${
+                          plan.active
+                            ? "bg-white text-zinc-900 border-emerald-400/70"
+                            : plan.popular
+                              ? "bg-white text-zinc-900 border-brand/25 scale-[1.02]"
+                              : plan.dark
+                                ? "bg-zinc-900 text-white border-zinc-700/60"
+                                : "bg-white text-zinc-900 border-zinc-200 hover:border-brand/20"
                         }`}
                       >
                         {plan.popular && !plan.active && (
-                          <>
-                            <div className="absolute -inset-px -z-10 rounded-2xl bg-gradient-to-br from-brand via-brand to-cyan-400 opacity-30 blur" />
-                            <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-brand to-cyan-400 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white whitespace-nowrap">
-                              Most Popular
-                            </span>
-                          </>
+                          <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-brand to-cyan-400 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white whitespace-nowrap">
+                            Most Popular
+                          </span>
                         )}
                         {plan.active && (
-                          <span className="absolute -top-3 left-4 rounded-full bg-black px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white whitespace-nowrap">
-                            Current Plan
+                          <span className={`absolute -top-3 left-4 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white whitespace-nowrap ${trialActive ? "bg-amber-500" : "bg-black"}`}>
+                            {trialActive ? "Current · Trial" : "Current Plan"}
                           </span>
                         )}
 
@@ -8526,28 +8643,42 @@ function EducationDashboardPage() {
 
                         <button
                           type="button"
-                          disabled={plan.active || plan.name === "Enterprise"}
-                          className={`mt-6 w-full rounded-lg py-2.5 text-xs font-bold transition-all cursor-pointer ${
-                            plan.active
-                              ? plan.dark
-                                ? "bg-white/10 text-white border border-white/20 cursor-default"
-                                : "bg-black/10 text-brand border border-zinc-800/25 cursor-default"
-                              : plan.name === "Enterprise"
-                                ? "bg-zinc-900 text-white hover:bg-zinc-800"
-                                : plan.popular
-                                  ? "bg-brand text-white hover:bg-brand/90"
-                                  : "bg-zinc-900 text-white hover:bg-zinc-800"
+                          disabled={(plan.active && hasPaid) || processingPlan === plan.name}
+                          className={`mt-6 w-full rounded-lg py-2.5 text-xs font-bold transition-all cursor-pointer disabled:cursor-not-allowed ${
+                            plan.active && hasPaid
+                              ? "bg-black/10 text-brand border border-zinc-800/25 cursor-default"
+                              : plan.active && plan.name !== "Enterprise"
+                                ? "bg-brand text-white hover:bg-brand/90 shadow-lg shadow-brand/25"
+                                : plan.name === "Enterprise"
+                                  ? "bg-zinc-900 text-white hover:bg-zinc-800"
+                                  : plan.popular
+                                    ? "bg-brand text-white hover:bg-brand/90"
+                                    : "bg-zinc-900 text-white hover:bg-zinc-800"
                           }`}
                           onClick={() => {
-                            if (plan.name !== "Enterprise") {
-                              handleUpgradeClick(plan.name);
+                            if ((plan.active && hasPaid) || processingPlan) return;
+                            if (plan.name === "Enterprise") {
+                              setIsContactModalOpen(true);
                             } else {
-                              setActiveTab("settings");
+                              handleUpgradeClick(plan.name);
                             }
                           }}
                         >
-                          {plan.active ? "Current Plan" : plan.name === "Enterprise" ? "Contact Support" : `Upgrade to ${plan.name}`}
+                          {processingPlan === plan.name
+                            ? "Processing…"
+                            : plan.active && hasPaid
+                              ? "Current Plan"
+                              : plan.active && plan.name !== "Enterprise"
+                                ? (trialActive ? `Activate Now — Pay ${plan.price}` : `Renew Now — Pay ${plan.price}`)
+                                : plan.name === "Enterprise"
+                                  ? "Contact Support"
+                                  : `Upgrade to ${plan.name}`}
                         </button>
+                        {plan.active && trialActive && plan.name !== "Enterprise" && (
+                          <p className="mt-2 text-center text-[10px] font-semibold text-amber-600">
+                            Free trial active · {trialEndsInDays} day{trialEndsInDays === 1 ? "" : "s"} left
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -10071,6 +10202,133 @@ function EducationDashboardPage() {
                   Confirm Delete
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {isVerifyingPayment && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md text-white">
+          <Loader2 className="h-10 w-10 animate-spin text-brand" />
+          <p className="mt-4 text-sm font-bold tracking-wide">Verifying your payment...</p>
+          <p className="text-xs text-zinc-300 mt-1">Please do not refresh the page or press back.</p>
+        </div>
+      )}
+
+      {/* Enterprise "Contact Support" modal */}
+      <AnimatePresence>
+        {isContactModalOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              className="relative bg-white rounded-[1.75rem] border border-zinc-150 p-7 max-w-md w-full shadow-2xl text-center space-y-5"
+            >
+              <button
+                type="button"
+                onClick={() => setIsContactModalOpen(false)}
+                className="absolute top-4 right-4 rounded-full p-1 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 transition-all cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-brand/10 border border-brand/20 mx-auto text-brand">
+                <Building2 className="h-6 w-6" />
+              </div>
+
+              <div className="space-y-1.5">
+                <h3 className="text-lg font-black text-zinc-900 leading-tight">Talk to Our Enterprise Team</h3>
+                <p className="text-xs text-zinc-500 leading-relaxed font-medium">
+                  For custom pricing, unlimited locations, and dedicated support — reach out and we'll get back to you shortly.
+                </p>
+              </div>
+
+              <div className="space-y-2.5">
+                <a
+                  href="mailto:bookmytime1355@gmail.com"
+                  className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/60 px-4 py-3 text-left hover:border-brand/30 hover:bg-brand/5 transition-all cursor-pointer"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white border border-zinc-200 text-brand">
+                    <Mail className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Email</p>
+                    <p className="text-sm font-bold text-zinc-800">bookmytime1355@gmail.com</p>
+                  </div>
+                </a>
+                <a
+                  href="tel:+919168081355"
+                  className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/60 px-4 py-3 text-left hover:border-brand/30 hover:bg-brand/5 transition-all cursor-pointer"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white border border-zinc-200 text-brand">
+                    <Phone className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Phone</p>
+                    <p className="text-sm font-bold text-zinc-800">+91 9168 08 1355</p>
+                  </div>
+                </a>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsContactModalOpen(false)}
+                className="w-full rounded-full bg-zinc-900 hover:bg-zinc-800 py-2.5 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer"
+              >
+                Close
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {paymentSuccess && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              className="relative bg-white rounded-[1.75rem] border border-zinc-150 p-7 max-w-md w-full shadow-2xl text-center space-y-4"
+            >
+              <button
+                type="button"
+                onClick={() => setPaymentSuccess(null)}
+                className="absolute top-4 right-4 rounded-full p-1 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 transition-all cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 260, damping: 18, delay: 0.05 }}
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 border border-emerald-100 mx-auto text-emerald-600"
+              >
+                <Check className="h-7 w-7" />
+              </motion.div>
+
+              <div className="space-y-2">
+                <h3 className="text-lg font-black text-zinc-900 leading-tight">Payment Successful</h3>
+                <p className="text-xs text-zinc-500 leading-relaxed font-medium">
+                  Your <span className="font-bold text-zinc-800">{paymentSuccess.plan}</span> subscription is now active.
+                  {typeof paymentSuccess.amount === "number" && !Number.isNaN(paymentSuccess.amount) && (
+                    <> A payment of <span className="font-bold text-zinc-800">₹{paymentSuccess.amount.toLocaleString("en-IN")}</span> was received.</>
+                  )}
+                </p>
+                <p className="text-[11px] text-zinc-400 font-medium">
+                  A confirmation has been recorded on your account. Thank you for choosing BookMyTime.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPaymentSuccess(null)}
+                className="w-full rounded-full bg-brand hover:bg-brand/90 py-2.5 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer"
+              >
+                Done
+              </button>
             </motion.div>
           </div>
         )}

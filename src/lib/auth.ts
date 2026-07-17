@@ -181,7 +181,7 @@ export const signupServerFn = createServerFn({ method: "POST" })
 
     await execute(
       `INSERT INTO User (id, tenantId, name, email, phone, clinicName, practiceSize, password, subscriptionStatus, subscriptionPlan, subscriptionExpiresAt, createdAt, updatedAt, profession)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, DATE_ADD(NOW(), INTERVAL 14 DAY), NOW(), NOW(), ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, DATE_ADD(NOW(), INTERVAL 7 DAY), NOW(), NOW(), ?)`,
       [userId, tenantId, data.name, data.email, data.phone, data.clinicName, data.practiceSize, hashedPassword, selectedPlan, profession]
     );
 
@@ -3410,7 +3410,7 @@ export const getExpiredUserPlanDetailsServerFn = createServerFn({ method: "POST"
   });
 
 export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
-  .validator((data: { username: string; planName: "Basic" | "Premium" }) => data)
+  .validator((data: { username: string; planName: "Basic" | "Premium"; returnPath?: string }) => data)
   .handler(async ({ data }) => {
     const user = await queryOne<any>(
       "SELECT id, name, email, phone, tenantId FROM User WHERE email = ? OR phone = ? LIMIT 1",
@@ -3425,10 +3425,16 @@ export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
     const secretKey = process.env.CASHFREE_SECRET_KEY;
     const environment = process.env.CASHFREE_ENV || "production";
     const host = environment === "production" ? "api.cashfree.com" : "sandbox.cashfree.com";
+    const origin = environment === "production" ? "https://bookmytime.tech" : "http://localhost:3000";
 
-    const returnUrl = environment === "production"
-      ? `https://bookmytime.tech/login?order_id=${orderId}`
-      : `http://localhost:3000/login?order_id=${orderId}`;
+    // Callers may specify where the user should land after payment (e.g. their
+    // dashboard). Default preserves the original /login renewal flow. Only
+    // relative, same-origin paths are accepted to prevent open-redirects.
+    let basePath = "/login";
+    if (typeof data.returnPath === "string" && data.returnPath.startsWith("/") && !data.returnPath.startsWith("//")) {
+      basePath = data.returnPath;
+    }
+    const returnUrl = `${origin}${basePath}${basePath.includes("?") ? "&" : "?"}order_id=${orderId}`;
 
     const payload = {
       order_id: orderId,
@@ -3473,12 +3479,98 @@ export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
         payment_session_id: orderData.payment_session_id,
         order_id: orderId,
         environment,
+        return_url: returnUrl,
+        amount,
       };
     } catch (err: any) {
       console.error("[CASHFREE] Exception creating order:", err);
       throw new Error(err.message || "Failed to create payment order");
     }
   });
+
+/**
+ * Maps a Cashfree `payment_group` to a human-readable label shown in the
+ * dashboard's Payment Method card (e.g. "UPI", "Visa Card", "Net Banking").
+ */
+function formatCashfreePaymentMode(paymentGroup: string, paymentMethod: any): string {
+  const group = (paymentGroup || "").toLowerCase();
+  switch (group) {
+    case "upi":
+    case "upi_ppi":
+    case "upi_ppi_offline":
+    case "upi_credit_card":
+      return "UPI";
+    case "credit_card":
+    case "credit_card_emi": {
+      const network = paymentMethod?.card?.card_network || paymentMethod?.card?.card_type;
+      return network ? `${network} Credit Card` : "Credit Card";
+    }
+    case "debit_card":
+    case "debit_card_emi": {
+      const network = paymentMethod?.card?.card_network || paymentMethod?.card?.card_type;
+      return network ? `${network} Debit Card` : "Debit Card";
+    }
+    case "prepaid_card":
+      return "Prepaid Card";
+    case "net_banking":
+      return "Net Banking";
+    case "wallet":
+      return "Wallet";
+    case "pay_later":
+      return "Pay Later";
+    case "cardless_emi":
+      return "Cardless EMI";
+    case "bank_transfer":
+      return "Bank Transfer";
+    case "cash":
+      return "Cash";
+    case "paypal":
+      return "PayPal";
+    default:
+      return "Cashfree";
+  }
+}
+
+/**
+ * Looks up the most recent successful payment attempt for a Cashfree order
+ * and returns a human-readable payment mode (UPI, Card, Net Banking, etc.).
+ * Never throws — any failure falls back to a generic "Cashfree" label so a
+ * lookup issue can never block activation of an already-confirmed payment.
+ */
+async function detectCashfreePaymentMethod(
+  host: string,
+  appId: string | undefined,
+  secretKey: string | undefined,
+  orderId: string
+): Promise<string> {
+  try {
+    const response = await fetch(`https://${host}/pg/orders/${orderId}/payments`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "x-client-id": appId || "",
+        "x-client-secret": secretKey || "",
+        "x-api-version": "2023-08-01",
+      },
+    });
+    if (!response.ok) return "Cashfree";
+
+    const payments = await response.json();
+    if (!Array.isArray(payments) || payments.length === 0) return "Cashfree";
+
+    // Prefer the most recent SUCCESS payment attempt.
+    const successPayment = payments
+      .filter((p: any) => p.payment_status === "SUCCESS")
+      .sort((a: any, b: any) => new Date(b.payment_completion_time || b.payment_time).getTime() - new Date(a.payment_completion_time || a.payment_time).getTime())[0];
+
+    if (!successPayment) return "Cashfree";
+
+    return formatCashfreePaymentMode(successPayment.payment_group, successPayment.payment_method);
+  } catch (err: any) {
+    console.warn("[CASHFREE] Could not detect payment method:", err.message);
+    return "Cashfree";
+  }
+}
 
 export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" })
   .validator((data: { orderId: string }) => data)
@@ -3534,17 +3626,23 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
 
         const selectedPlan = orderAmount >= 1400 ? "Premium" : "Basic";
 
+        // Detect the actual payment mode used (UPI, Card, Net Banking, Wallet,
+        // etc.) by looking up the order's payment attempts. Falls back to a
+        // generic "Cashfree" label if the lookup fails for any reason — this
+        // must never block activation of a already-confirmed PAID order.
+        const paymentMethodLabel = await detectCashfreePaymentMethod(host, appId, secretKey, data.orderId);
+
         await execute(
           `UPDATE User 
            SET subscriptionStatus = 'Active', 
                subscriptionPlan = ?, 
                subscriptionExpiresAt = DATE_ADD(NOW(), INTERVAL 1 MONTH),
                paymentAmount = ?, 
-               paymentMethod = 'Cashfree', 
+               paymentMethod = ?, 
                billingInterval = 'monthly',
                updatedAt = NOW() 
            WHERE id = ?`,
-          [selectedPlan, orderAmount, user.id]
+          [selectedPlan, orderAmount, paymentMethodLabel, user.id]
         );
 
         console.log(`[CASHFREE] Updated User table for user ${user.id} to active plan ${selectedPlan}`);

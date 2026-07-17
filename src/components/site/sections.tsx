@@ -1973,12 +1973,12 @@ export function FAQ() {
       a: "Most solo practices are live in under 12 minutes. Multi-location clinics typically complete onboarding in 3–5 days, including EMR data migration.",
     },
     {
-      q: "Is BookMyTime HIPAA compliant?",
-      a: "Yes. We're HIPAA compliant, SOC 2 Type II certified, and offer BAAs at every tier. Data is encrypted at rest (AES-256) and in transit (TLS 1.3).",
+      q: "How does the free trial work?",
+      a: "Every new account gets a 7-day free trial with full access to your plan's features — no card required upfront. You can activate your subscription anytime from the Manage Plans tab in your dashboard before or after the trial ends.",
     },
     {
-      q: "Will it work with my existing EMR?",
-      a: "Yes. We support HL7 v2, FHIR R4, and have prebuilt integrations with Epic, Athena, Cerner, eClinicalWorks, and 40+ other systems.",
+      q: "Can I manage multiple locations and staff from one dashboard?",
+      a: "Yes. Premium and Enterprise plans support sub-locations and multi-user dashboards, so receptionists and doctors can log in with their own role-based access while you manage everything centrally.",
     },
     {
       q: "How accurate is the AI scribe?",

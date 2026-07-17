@@ -351,7 +351,7 @@ export const createTenantAdminServerFn = createServerFn({ method: "POST" })
       `INSERT INTO User (id, tenantId, name, email, phone, clinicName, practiceSize, password, 
                          subscriptionStatus, subscriptionPlan, subscriptionExpiresAt, paymentMethod, paymentAmount, billingInterval,
                          createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', 'Trial', DATE_ADD(NOW(), INTERVAL 30 DAY), 'None', 0.00, 'monthly', NOW(), NOW())`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', 'Trial', DATE_ADD(NOW(), INTERVAL 7 DAY), 'None', 0.00, 'monthly', NOW(), NOW())`,
       [
         userId,
         tenantId,
