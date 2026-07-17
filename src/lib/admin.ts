@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { verifyAdminSession } from "./admin.server";
 import { query, queryOne, execute } from "./db";
-import { reconcileOrderPaymentHistory } from "./auth";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -590,6 +589,12 @@ export const syncAllPaymentsFromCashfreeServerFn = createServerFn({ method: "POS
        ORDER BY createdAt DESC
        LIMIT 300`
     );
+
+    // Dynamically imported (not a static top-level import) so this server-only
+    // module never gets pulled into the client bundle via auth.ts's other
+    // exports (which include db.ts / dotenv — see incident where a static
+    // import here leaked dotenv's Node-only code into the browser bundle).
+    const { reconcileOrderPaymentHistory } = await import("./auth");
 
     let reconciled = 0;
     let promoted = 0; // became SUCCESS during this sync
