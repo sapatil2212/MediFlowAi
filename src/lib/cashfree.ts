@@ -139,32 +139,47 @@ export interface CreateSubscriptionInput {
   expiryTimeIso: string;
   authorizationAmount?: number;
   note?: string;
+  /**
+   * ISO-8601 time at which the first real plan charge is collected AFTER mandate
+   * authorization (PERIODIC plans only). Set to (near) now to collect the first
+   * month's amount immediately — i.e. "pay now AND enable AutoPay". If omitted,
+   * Cashfree only runs the small authorization amount and defers the first
+   * charge to the next natural cycle, so no plan amount is ever collected up
+   * front (the ₹1-only-invoice bug).
+   */
+  firstChargeTimeIso?: string;
 }
 
 export async function createCashfreeSubscription(input: CreateSubscriptionInput): Promise<any> {
   const cfg = getCashfreeConfig();
+  const body: Record<string, any> = {
+    subscription_id: input.subscriptionId,
+    customer_details: {
+      customer_name: input.customer.name,
+      customer_email: input.customer.email,
+      customer_phone: input.customer.phone || "9999999999",
+    },
+    plan_details: { plan_id: input.planId },
+    authorization_details: {
+      authorization_amount: input.authorizationAmount ?? 1,
+      authorization_amount_refund: true,
+    },
+    subscription_meta: {
+      return_url: input.returnUrl,
+      notification_channel: ["EMAIL", "SMS"],
+    },
+    subscription_expiry_time: input.expiryTimeIso,
+    subscription_tags: { subscription_note: input.note || input.planName },
+  };
+  // Collect the first cycle immediately after authorization when requested.
+  if (input.firstChargeTimeIso) {
+    body.subscription_first_charge_time = input.firstChargeTimeIso;
+  }
+
   const res = await fetch(`https://${cfg.host}/pg/subscriptions`, {
     method: "POST",
     headers: baseHeaders(cfg, SUB_API_VERSION, input.subscriptionId),
-    body: JSON.stringify({
-      subscription_id: input.subscriptionId,
-      customer_details: {
-        customer_name: input.customer.name,
-        customer_email: input.customer.email,
-        customer_phone: input.customer.phone || "9999999999",
-      },
-      plan_details: { plan_id: input.planId },
-      authorization_details: {
-        authorization_amount: input.authorizationAmount ?? 1,
-        authorization_amount_refund: true,
-      },
-      subscription_meta: {
-        return_url: input.returnUrl,
-        notification_channel: ["EMAIL", "SMS"],
-      },
-      subscription_expiry_time: input.expiryTimeIso,
-      subscription_tags: { subscription_note: input.note || input.planName },
-    }),
+    body: JSON.stringify(body),
   });
   const data = await parseJsonSafe(res);
   if (!res.ok) {
@@ -237,23 +252,32 @@ export function verifyCashfreeWebhookSignature(
   timestamp: string | null
 ): boolean {
   if (!signature || !timestamp) return false;
-  let secretKey: string;
-  try {
-    secretKey = getCashfreeConfig().secretKey;
-  } catch {
-    return false;
-  }
-  const computed = crypto
-    .createHmac("sha256", secretKey)
-    .update(`${timestamp}${rawBody}`)
-    .digest("base64");
 
-  const a = Buffer.from(computed);
-  const b = Buffer.from(signature);
-  if (a.length !== b.length) return false;
+  // Cashfree signs PG webhooks with the merchant API secret key. Some accounts
+  // also expose a dedicated webhook secret — try both so verification succeeds
+  // regardless of which one the dashboard used.
+  const candidates: string[] = [];
+  if (process.env.CASHFREE_WEBHOOK_SECRET) candidates.push(process.env.CASHFREE_WEBHOOK_SECRET);
   try {
-    return crypto.timingSafeEqual(a, b);
-  } catch {
-    return false;
+    candidates.push(getCashfreeConfig().secretKey);
+  } catch { /* credentials not configured */ }
+  if (process.env.CASHFREE_SECRET_KEY && !candidates.includes(process.env.CASHFREE_SECRET_KEY)) {
+    candidates.push(process.env.CASHFREE_SECRET_KEY);
   }
+  if (candidates.length === 0) return false;
+
+  const sigBuf = Buffer.from(signature);
+  for (const secret of candidates) {
+    const computed = crypto
+      .createHmac("sha256", secret)
+      .update(`${timestamp}${rawBody}`)
+      .digest("base64");
+    const a = Buffer.from(computed);
+    if (a.length === sigBuf.length) {
+      try {
+        if (crypto.timingSafeEqual(a, sigBuf)) return true;
+      } catch { /* length mismatch — try next */ }
+    }
+  }
+  return false;
 }

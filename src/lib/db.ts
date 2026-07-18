@@ -600,6 +600,35 @@ if (typeof window === "undefined") {
           console.warn("[DB] ⚠️ Could not verify/alter PaymentHistory columns:", err.message);
         }
 
+        // Migrate: ensure the UNIQUE(orderId) key exists. Tables created before
+        // this key was introduced allow duplicate orderId rows, which breaks the
+        // ON DUPLICATE KEY UPDATE upsert (every reconcile inserts a NEW row
+        // instead of updating). De-duplicate first (keep the SUCCESS row, else
+        // the most-recently-updated), then add the unique key.
+        try {
+          const phIdx: any[] = await conn.query("SHOW INDEX FROM PaymentHistory WHERE Key_name = 'uniq_payment_order'");
+          if (!phIdx || phIdx.length === 0) {
+            await conn.query("SET SESSION group_concat_max_len = 1000000");
+            await conn.query(`
+              DELETE ph FROM PaymentHistory ph
+              JOIN (
+                SELECT orderId,
+                       SUBSTRING_INDEX(
+                         GROUP_CONCAT(id ORDER BY (status = 'SUCCESS') DESC, updatedAt DESC, createdAt DESC),
+                         ',', 1
+                       ) AS keepId
+                FROM PaymentHistory
+                GROUP BY orderId
+                HAVING COUNT(*) > 1
+              ) dup ON ph.orderId = dup.orderId AND ph.id <> dup.keepId
+            `);
+            await conn.query("ALTER TABLE PaymentHistory ADD UNIQUE KEY uniq_payment_order (orderId)");
+            console.log("[DB] ✅ De-duplicated PaymentHistory and added UNIQUE(orderId) key");
+          }
+        } catch (err: any) {
+          console.warn("[DB] ⚠️ Could not add UNIQUE(orderId) to PaymentHistory:", err.message);
+        }
+
         // Create Subscription Table (Cashfree recurring AutoPay mandates)
         try {
           await conn.query(`

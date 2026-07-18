@@ -126,6 +126,10 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
       expiryTimeIso: expiry.toISOString(),
       authorizationAmount: 1,
       note: `${tier} AutoPay`,
+      // Collect the first month immediately after the mandate is authorized so
+      // "Subscribe & AutoPay" actually charges the plan amount now (not just
+      // the ₹1 mandate) and then auto-renews every cycle.
+      firstChargeTimeIso: new Date().toISOString(),
     });
 
     // Persist the local subscription record (INITIALIZED).
@@ -222,6 +226,8 @@ export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST"
       expiryTimeIso: expiry.toISOString(),
       authorizationAmount: 1,
       note: `${tier} AutoPay`,
+      // Collect the first month immediately after mandate authorization.
+      firstChargeTimeIso: new Date().toISOString(),
     });
 
     await execute(
@@ -520,12 +526,14 @@ export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
     // Real collected / failed revenue straight from the recurring payment
     // ledger (AUTH + CHARGE rows recorded from Cashfree). This reflects the
     // exact money actually moved via AutoPay, independent of MRR.
+    // Collected/failed revenue counts only real plan CHARGEs — the ₹1 AUTH
+    // mandate rows are refundable validations, not revenue, so they're excluded.
     const paymentTotals = await queryOne<any>(
       `SELECT
-         SUM(CASE WHEN status = 'SUCCESS' THEN amount ELSE 0 END) as collectedAmount,
-         SUM(CASE WHEN status = 'FAILED' THEN amount ELSE 0 END) as failedAmount,
-         SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failedCount,
-         SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as successCount
+         SUM(CASE WHEN status = 'SUCCESS' AND COALESCE(paymentType,'') <> 'AUTH' THEN amount ELSE 0 END) as collectedAmount,
+         SUM(CASE WHEN status = 'FAILED' AND COALESCE(paymentType,'') <> 'AUTH' THEN amount ELSE 0 END) as failedAmount,
+         SUM(CASE WHEN status = 'FAILED' AND COALESCE(paymentType,'') <> 'AUTH' THEN 1 ELSE 0 END) as failedCount,
+         SUM(CASE WHEN status = 'SUCCESS' AND COALESCE(paymentType,'') <> 'AUTH' THEN 1 ELSE 0 END) as successCount
        FROM SubscriptionPayment`
     );
 

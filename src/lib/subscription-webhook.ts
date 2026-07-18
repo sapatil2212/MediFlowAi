@@ -372,10 +372,14 @@ export async function handleCashfreeWebhookRequest(request: Request): Promise<Re
   const eventType = String(payload?.type || payload?.event || "UNKNOWN");
   const data = payload?.data || {};
   const subDetails = data?.subscription_details || data?.subscription || {};
-  const payDetails = data?.payment_details || data?.subscription_payment || null;
-  const subscriptionRef = subDetails?.subscription_id || data?.subscription_id || null;
-  const cfSubscriptionId = subDetails?.cf_subscription_id || data?.cf_subscription_id || null;
+  const payDetails = data?.payment_details || data?.subscription_payment || data?.payment || null;
+  const orderDetails = data?.order || null;
+  const subscriptionRef = subDetails?.subscription_id || data?.subscription_id || payDetails?.subscription_id || null;
+  const cfSubscriptionId = subDetails?.cf_subscription_id || data?.cf_subscription_id || payDetails?.cf_subscription_id || null;
   const cfPaymentId = payDetails?.cf_payment_id || payDetails?.payment_id || null;
+  // Payment-Gateway (one-time order) events carry an order object. Our renewal
+  // orders are prefixed "order_" — used to reconcile the PaymentHistory ledger.
+  const orderId = orderDetails?.order_id || data?.order_id || null;
 
   // Build a stable idempotency key. Fall back to a hash of the raw body.
   const eventKey =
@@ -399,20 +403,47 @@ export async function handleCashfreeWebhookRequest(request: Request): Promise<Re
   }
 
   try {
-    if (subscriptionRef) {
-      // Reconcile authoritative state from Cashfree (do not trust payload).
-      const cfSub = await getCashfreeSubscription(subscriptionRef);
+    // ── (A) Payment-Gateway one-time ORDER events → reconcile PaymentHistory ──
+    // Fires for renewal orders created via createCashfreeOrderServerFn. Pulls
+    // the authoritative order status/amount/mode from Cashfree (never trusts the
+    // payload) so the ledger flips PENDING → SUCCESS/FAILED automatically.
+    if (orderId && String(orderId).startsWith("order_")) {
+      try {
+        const { reconcileOrderPaymentHistory } = await import("./payment-reconcile.server");
+        await reconcileOrderPaymentHistory(String(orderId));
+      } catch (e: any) {
+        console.warn("[Webhook] PaymentHistory reconcile failed for", orderId, ":", e.message);
+      }
+    }
+
+    // ── (B) Resolve the local subscription (by ref or by cf_subscription_id) ──
+    let subRef: string | null = subscriptionRef;
+    if (!subRef && cfSubscriptionId) {
+      const row = await queryOne<any>(
+        "SELECT subscriptionRef FROM Subscription WHERE cfSubscriptionId = ? LIMIT 1",
+        [String(cfSubscriptionId)]
+      );
+      subRef = row?.subscriptionRef || null;
+    }
+
+    if (subRef) {
+      // Reconcile authoritative subscription state from Cashfree (never trust payload).
+      const cfSub = await getCashfreeSubscription(subRef);
       if (cfSub) {
-        await reconcileSubscriptionFromCashfree(subscriptionRef, cfSub);
+        await reconcileSubscriptionFromCashfree(subRef, cfSub);
       }
 
-      // Record a charge outcome if this event carries payment details.
+      // Honor an explicit terminal charge outcome from the payload FIRST — this
+      // creates the ledger row and drives access-window / grace-period
+      // side-effects + the renewal notification. Skips AUTH (the refundable ₹1
+      // mandate validation, not real revenue).
       if (payDetails) {
         const rawStatus = String(payDetails?.payment_status || payDetails?.status || "").toUpperCase();
+        const paymentType = String(payDetails?.payment_type || "").toUpperCase();
         const status: "SUCCESS" | "FAILED" | "PENDING" =
           rawStatus === "SUCCESS" ? "SUCCESS" : rawStatus === "FAILED" || rawStatus === "USER_DROPPED" ? "FAILED" : "PENDING";
-        if (status !== "PENDING") {
-          await recordSubscriptionCharge(subscriptionRef, {
+        if (status !== "PENDING" && paymentType !== "AUTH") {
+          await recordSubscriptionCharge(subRef, {
             cfPaymentId,
             amount: Number(payDetails?.payment_amount || payDetails?.amount || 0),
             status,
@@ -425,6 +456,16 @@ export async function handleCashfreeWebhookRequest(request: Request): Promise<Re
             paidAt: payDetails?.payment_completion_time ? new Date(payDetails.payment_completion_time) : null,
           });
         }
+      }
+
+      // Then pull the FULL payment ledger (AUTH + every CHARGE) from Cashfree so
+      // every payment — not just the one in this event — is recorded/enriched
+      // with complete transaction detail (cf_txn_id, cf_order_id, type, method).
+      // Idempotent per cf_payment_id: enriches the row created above.
+      try {
+        await syncSubscriptionPaymentsFromCashfree(subRef);
+      } catch (e: any) {
+        console.warn("[Webhook] subscription payment sync failed for", subRef, ":", e.message);
       }
     }
 
