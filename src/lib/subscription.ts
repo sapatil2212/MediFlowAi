@@ -25,6 +25,7 @@ import {
   createCashfreeSubscription,
   getCashfreeSubscription,
   manageCashfreeSubscription,
+  raiseCashfreeSubscriptionCharge,
 } from "./cashfree";
 import {
   getLocalSubscriptionByRef,
@@ -597,6 +598,72 @@ export const syncAllSubscriptionsFromCashfreeServerFn = createServerFn({ method:
       reconciled,
       paymentsSynced,
       failed,
+    };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin: raise an on-demand CHARGE for the plan amount right now
+// ─────────────────────────────────────────────────────────────────────────────
+// Some ACTIVE mandates were created before `subscription_first_charge_time`
+// was wired into subscription creation — Cashfree deferred the real plan
+// charge to the next natural billing cycle, so only the refundable Rs 1 AUTH
+// exists and no revenue has actually been collected yet. This lets an admin
+// trigger that charge immediately instead of waiting for the natural cycle.
+// Safety: only allowed on ACTIVE mandates with a verified authorization, and
+// only when no SUCCESS CHARGE (real revenue) already exists for this ref —
+// prevents accidentally double-charging a customer.
+export const chargeSubscriptionNowServerFn = createServerFn({ method: "POST" })
+  .validator((data: { subscriptionRef: string }) => data)
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const local = await getLocalSubscriptionByRef(data.subscriptionRef);
+    if (!local) throw new Error("Subscription not found.");
+
+    const cfSub = await getCashfreeSubscription(data.subscriptionRef);
+    if (!cfSub) throw new Error("Unable to fetch subscription status from the payment gateway.");
+
+    const status = String(cfSub.subscription_status || "").toUpperCase();
+    const authStatus = String(cfSub?.authorization_details?.authorization_status || "").toUpperCase();
+    if (status !== "ACTIVE" || authStatus !== "ACTIVE") {
+      throw new Error(`Mandate is not active on Cashfree (subscription: ${status}, authorization: ${authStatus}). Cannot charge.`);
+    }
+
+    // Guard against double-charging: refuse if a real CHARGE already succeeded.
+    const existingCharge = await queryOne<any>(
+      "SELECT id FROM SubscriptionPayment WHERE subscriptionRef = ? AND status = 'SUCCESS' AND COALESCE(paymentType,'') = 'CHARGE' LIMIT 1",
+      [data.subscriptionRef]
+    );
+    if (existingCharge) {
+      throw new Error("A successful plan charge already exists for this subscription. Refusing to charge again.");
+    }
+
+    const amount = Number(cfSub?.plan_details?.plan_recurring_amount || local.amount);
+    const paymentId = `ondemand_${data.subscriptionRef}_${Date.now()}`;
+
+    const result = await raiseCashfreeSubscriptionCharge({
+      subscriptionId: data.subscriptionRef,
+      paymentId,
+      amount,
+      remarks: "Admin-triggered first-cycle plan charge",
+    });
+
+    // Pull the authoritative payment record (created/updated async by Cashfree)
+    // into our ledger. Charges may settle a few seconds after this call
+    // returns, so this sync is best-effort; "Sync with Cashfree" will catch it
+    // if it hasn't posted yet.
+    let recorded = 0;
+    try {
+      recorded = await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef);
+    } catch { /* non-fatal — visible via the manual sync button */ }
+
+    return {
+      success: true,
+      amount,
+      status: String(result?.payment_status || "PENDING").toUpperCase(),
+      recorded,
+      message: `Charge of ₹${amount} has been raised on Cashfree. It may take a few seconds to settle — refresh to see the final status.`,
     };
   });
 

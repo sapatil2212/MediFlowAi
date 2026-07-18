@@ -188,6 +188,44 @@ export async function createCashfreeSubscription(input: CreateSubscriptionInput)
   return data;
 }
 
+export interface RaiseChargeInput {
+  subscriptionId: string;
+  /** Merchant-side unique id for this payment attempt. */
+  paymentId: string;
+  amount: number;
+  /** ISO date (only the date component is used) — required for UPI/CARD. Defaults to today. */
+  scheduleDateIso?: string;
+  remarks?: string;
+}
+
+/**
+ * Raises an on-demand CHARGE against an already-authorized PERIODIC mandate.
+ * Used to collect a plan amount immediately for subscriptions whose first
+ * charge was left on Cashfree's default (deferred to the next natural cycle)
+ * — e.g. mandates created before `subscription_first_charge_time` was wired up.
+ */
+export async function raiseCashfreeSubscriptionCharge(input: RaiseChargeInput): Promise<any> {
+  const cfg = getCashfreeConfig();
+  const scheduleDate = input.scheduleDateIso || new Date().toISOString();
+  const res = await fetch(`https://${cfg.host}/pg/subscriptions/pay`, {
+    method: "POST",
+    headers: baseHeaders(cfg, SUB_API_VERSION, input.paymentId),
+    body: JSON.stringify({
+      subscription_id: input.subscriptionId,
+      payment_id: input.paymentId,
+      payment_amount: input.amount,
+      payment_schedule_date: scheduleDate,
+      payment_remarks: input.remarks || "On-demand plan charge",
+      payment_type: "CHARGE",
+    }),
+  });
+  const data = await parseJsonSafe(res);
+  if (!res.ok) {
+    throw new Error(data?.message || `Failed to raise Cashfree subscription charge (${res.status})`);
+  }
+  return data;
+}
+
 /** GET subscription details/status. Returns null on 404. */
 export async function getCashfreeSubscription(subscriptionId: string): Promise<any | null> {
   const cfg = getCashfreeConfig();

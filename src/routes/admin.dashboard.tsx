@@ -83,7 +83,8 @@ import {
   createAdminSubscriptionServerFn,
   updateAdminSubscriptionServerFn,
   deleteAdminSubscriptionServerFn,
-  createAdminSubscriptionPaymentServerFn
+  createAdminSubscriptionPaymentServerFn,
+  chargeSubscriptionNowServerFn
 } from "../lib/subscription";
 import {
   getDemoAppointmentsServerFn,
@@ -333,6 +334,7 @@ function AdminDashboardPage() {
   // View Subscription payments ledger state
   const [viewSubPayments, setViewSubPayments] = useState<any[]>([]);
   const [loadingViewSubPayments, setLoadingViewSubPayments] = useState(false);
+  const [chargingSubRef, setChargingSubRef] = useState<string | null>(null);
 
   // States for Recording Manual Payment
   const [addPayTenantId, setAddPayTenantId] = useState("");
@@ -391,17 +393,39 @@ function AdminDashboardPage() {
   const [logPayRemarks, setLogPayRemarks] = useState("");
 
   // Load payments linked to the subscription when viewing sub details
+  const reloadViewSubPayments = (subscriptionRef: string) => {
+    setLoadingViewSubPayments(true);
+    return getAdminSubscriptionPaymentsServerFn({ data: { subscriptionRef } })
+      .then(res => setViewSubPayments(res.payments || []))
+      .catch(err => toast.error("Failed to load payments ledger: " + err.message))
+      .finally(() => setLoadingViewSubPayments(false));
+  };
+
   useEffect(() => {
     if (viewSubDetails) {
-      setLoadingViewSubPayments(true);
-      getAdminSubscriptionPaymentsServerFn({ data: { subscriptionRef: viewSubDetails.subscriptionRef } })
-        .then(res => setViewSubPayments(res.payments || []))
-        .catch(err => toast.error("Failed to load payments ledger: " + err.message))
-        .finally(() => setLoadingViewSubPayments(false));
+      reloadViewSubPayments(viewSubDetails.subscriptionRef);
     } else {
       setViewSubPayments([]);
     }
   }, [viewSubDetails]);
+
+  // Raises an on-demand Cashfree CHARGE for mandates where only the Rs 1 AUTH
+  // exists (first charge was deferred to the natural cycle). Guarded server-side
+  // against double-charging — only allowed when no real CHARGE has succeeded yet.
+  const handleChargeSubscriptionNow = async (subscriptionRef: string) => {
+    if (chargingSubRef) return;
+    setChargingSubRef(subscriptionRef);
+    try {
+      const res = await chargeSubscriptionNowServerFn({ data: { subscriptionRef } });
+      toast.success(res.message || `Charge of ₹${res.amount} raised successfully.`);
+      await reloadViewSubPayments(subscriptionRef);
+      fetchAdminSubscriptions();
+    } catch (err: any) {
+      toast.error("Failed to charge subscription: " + err.message);
+    } finally {
+      setChargingSubRef(null);
+    }
+  };
 
   // Set default values for add/edit states on modal trigger
   useEffect(() => {
@@ -4182,6 +4206,41 @@ function AdminDashboardPage() {
                     </span>
                   </div>
                 </div>
+
+                {/* Rs 1-mandate-only warning + on-demand charge trigger. Shown
+                    when the mandate is ACTIVE but no real plan CHARGE has ever
+                    succeeded — i.e. the customer paid only the refundable Rs 1
+                    authorization and Cashfree deferred the real charge to the
+                    natural next cycle. */}
+                {!loadingViewSubPayments &&
+                  String(viewSubDetails.status).toUpperCase() === "ACTIVE" &&
+                  !viewSubPayments.some((p: any) => p.status === "SUCCESS" && String(p.paymentType || "").toUpperCase() === "CHARGE") && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-2.5">
+                    <div className="flex items-start gap-2.5">
+                      <AlertCircle className="size-4 text-amber-600 mt-0.5 shrink-0" />
+                      <div className="text-xs text-amber-900">
+                        <p className="font-extrabold">No plan payment collected yet</p>
+                        <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                          Only the refundable ₹1 mandate authorization has been paid. The {viewSubDetails.planTier} plan
+                          amount ({formatCurrencyInr(viewSubDetails.amount)}) has not been charged — Cashfree has
+                          deferred it to the next scheduled cycle{viewSubDetails.nextChargeAt ? ` (${new Date(viewSubDetails.nextChargeAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })})` : ""}.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={chargingSubRef === viewSubDetails.subscriptionRef}
+                      onClick={() => handleChargeSubscriptionNow(viewSubDetails.subscriptionRef)}
+                      className="w-full rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                    >
+                      {chargingSubRef === viewSubDetails.subscriptionRef ? (
+                        <><Loader2 className="size-3.5 animate-spin" /> Charging {formatCurrencyInr(viewSubDetails.amount)} on Cashfree...</>
+                      ) : (
+                        <><IndianRupee className="size-3.5" /> Charge {formatCurrencyInr(viewSubDetails.amount)} Now</>
+                      )}
+                    </button>
+                  </div>
+                )}
 
                 {/* Primary Specs */}
                 <div className="space-y-3.5">
