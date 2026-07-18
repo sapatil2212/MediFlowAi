@@ -3523,7 +3523,18 @@ export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
     const secretKey = process.env.CASHFREE_SECRET_KEY;
     const environment = process.env.CASHFREE_ENV || "production";
     const host = environment === "production" ? "api.cashfree.com" : "sandbox.cashfree.com";
-    const origin = environment === "production" ? "https://bookmytime.tech" : "http://localhost:3000";
+
+    // Resolve the origin the user actually came from (so the post-payment
+    // redirect returns to the same host/port — e.g. localhost:8080 in dev,
+    // https://bookmytime.tech in prod) instead of a hardcoded value. Falls back
+    // to env/production defaults when no request headers are available.
+    let origin = process.env.APP_ORIGIN || (environment === "production" ? "https://bookmytime.tech" : "http://localhost:3000");
+    try {
+      const { getHeaders } = await import("@tanstack/react-start/server");
+      const headers = getHeaders();
+      const originHeader = (headers.origin as string) || (headers.referer ? new URL(headers.referer as string).origin : null);
+      if (originHeader) origin = originHeader;
+    } catch { /* no request context — keep fallback */ }
 
     // Callers may specify where the user should land after payment (e.g. their
     // dashboard). Default preserves the original /login renewal flow. Only

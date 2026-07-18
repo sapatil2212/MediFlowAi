@@ -147,6 +147,7 @@ import {
   uploadProfilePhotoServerFn,
 } from "../../lib/auth";
 import WhatsAppHub from "../../components/WhatsAppHub";
+import WelcomeTrialModal from "../../components/WelcomeTrialModal";
 import MultiLocationSettings from "../../components/settings/MultiLocationSettings";
 import { resolveFeatureAccess, type FeatureId } from "../../lib/feature-access";
 
@@ -959,6 +960,17 @@ function MedicalDashboardPage() {
   }, []);
 
   useEffect(() => { if (user) fetchMySubscription(); }, [user, fetchMySubscription]);
+
+  // First-login welcome modal — shown once per browser after signup/first login.
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  useEffect(() => {
+    if (!user?.id || typeof window === "undefined") return;
+    const key = `bmt_welcome_seen_${user.id}`;
+    if (!localStorage.getItem(key)) {
+      localStorage.setItem(key, "1");
+      setShowWelcomeModal(true);
+    }
+  }, [user]);
 
   const handleSubscribeAutoPay = useCallback(async (planTier: "Basic" | "Premium") => {
     if (!user || !user.email) { showToast("error", "Session expired. Please log in again."); return; }
@@ -10337,6 +10349,15 @@ function MedicalDashboardPage() {
           <p className="text-xs text-zinc-300 mt-1">Please do not refresh the page or press back.</p>
         </div>
       )}
+
+      <WelcomeTrialModal
+        open={showWelcomeModal}
+        onClose={() => setShowWelcomeModal(false)}
+        user={user}
+        processingPlan={processingPlan}
+        onPayNow={handleUpgradeClick}
+        onAutoPay={handleSubscribeAutoPay}
+      />
 
       {isVerifyingSubscription && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md text-white">

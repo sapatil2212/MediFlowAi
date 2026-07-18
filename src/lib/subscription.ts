@@ -41,6 +41,21 @@ function planIdFor(tier: PlanTier, amount: number): string {
   return `bmt_${tier.toLowerCase()}_monthly_${amount}`;
 }
 
+/**
+ * Resolves the origin the request actually came from (so the post-mandate
+ * redirect returns to the same host/port — localhost:8080 in dev,
+ * https://bookmytime.tech in prod) rather than a hardcoded config value.
+ */
+async function resolveRequestOrigin(fallback: string): Promise<string> {
+  try {
+    const { getHeaders } = await import("@tanstack/react-start/server");
+    const headers = getHeaders();
+    const originHeader = (headers.origin as string) || (headers.referer ? new URL(headers.referer as string).origin : null);
+    if (originHeader) return originHeader;
+  } catch { /* no request context */ }
+  return fallback;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Create subscription (mandate) — returns a subscription_session_id for checkout
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,7 +110,8 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
     if (typeof data.returnPath === "string" && data.returnPath.startsWith("/") && !data.returnPath.startsWith("//")) {
       basePath = data.returnPath;
     }
-    const returnUrl = `${cfg.origin}${basePath}${basePath.includes("?") ? "&" : "?"}sub_id=${subscriptionRef}`;
+    const origin = await resolveRequestOrigin(cfg.origin);
+    const returnUrl = `${origin}${basePath}${basePath.includes("?") ? "&" : "?"}sub_id=${subscriptionRef}`;
 
     // 5-year expiry window for the mandate.
     const expiry = new Date();
@@ -191,7 +207,8 @@ export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST"
     if (typeof data.returnPath === "string" && data.returnPath.startsWith("/") && !data.returnPath.startsWith("//")) {
       basePath = data.returnPath;
     }
-    const returnUrl = `${cfg.origin}${basePath}${basePath.includes("?") ? "&" : "?"}sub_id=${subscriptionRef}`;
+    const origin = await resolveRequestOrigin(cfg.origin);
+    const returnUrl = `${origin}${basePath}${basePath.includes("?") ? "&" : "?"}sub_id=${subscriptionRef}`;
 
     const expiry = new Date();
     expiry.setFullYear(expiry.getFullYear() + 5);
@@ -603,4 +620,265 @@ export const getAdminSubscriptionPaymentsServerFn = createServerFn({ method: "GE
     );
 
     return { subscription, payments };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin Subscription CRUD and Manual Charge Entries
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const createAdminSubscriptionServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    tenantId: string;
+    planTier: string;
+    amount: number;
+    status: string;
+    intervalType: string;
+    intervals: number;
+    nextChargeAt?: string | null;
+    currentPeriodStart?: string | null;
+    currentPeriodEnd?: string | null;
+    customerName?: string;
+    customerEmail?: string;
+    customerPhone?: string;
+  }) => {
+    if (!data.tenantId || !data.planTier || data.amount === undefined || !data.status) {
+      throw new Error("Tenant ID, Plan Tier, Amount, and Status are required");
+    }
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    // Look up User matching tenantId
+    const user = await queryOne<any>(
+      "SELECT id, name, email, phone, clinicName FROM User WHERE tenantId = ? LIMIT 1",
+      [data.tenantId]
+    );
+    if (!user) throw new Error(`Tenant not found with ID ${data.tenantId}`);
+
+    const subRef = `manual_sub_${data.tenantId}_${Date.now()}`;
+    const subId = generateId();
+
+    const nextCharge = data.nextChargeAt ? new Date(data.nextChargeAt) : null;
+    const periodStart = data.currentPeriodStart ? new Date(data.currentPeriodStart) : new Date();
+    const periodEnd = data.currentPeriodEnd ? new Date(data.currentPeriodEnd) : null;
+
+    await execute(
+      `INSERT INTO Subscription
+         (id, userId, tenantId, subscriptionRef, cfSubscriptionId, cfPlanId, planTier, amount, currency, intervalType, intervals,
+          status, currentPeriodStart, currentPeriodEnd, nextChargeAt, customerName, customerEmail, customerPhone, gateway, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'INR', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Manual', NOW(), NOW())`,
+      [
+        subId,
+        user.id,
+        data.tenantId,
+        subRef,
+        `manual_cf_sub_${crypto.randomBytes(4).toString("hex")}`,
+        `manual_plan_${data.planTier.toLowerCase()}`,
+        data.planTier,
+        Number(data.amount),
+        data.intervalType || "MONTH",
+        Number(data.intervals) || 1,
+        data.status.toUpperCase(),
+        periodStart,
+        periodEnd,
+        nextCharge,
+        data.customerName || user.name,
+        data.customerEmail || user.email,
+        data.customerPhone || user.phone,
+      ]
+    );
+
+    // Log subscription history
+    await execute(
+      `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
+       VALUES (?, ?, 'None', ?, 'None', ?, ?, ?, NOW(), 'SuperAdmin')`,
+      [generateId(), user.id, data.status, data.planTier, Number(data.amount), data.intervalType === "YEAR" ? "yearly" : "monthly"]
+    );
+
+    // Sync with User table status
+    await execute(
+      `UPDATE User
+       SET subscriptionStatus = ?, subscriptionPlan = ?, paymentAmount = ?, billingInterval = ?
+       WHERE tenantId = ?`,
+      [
+        data.status === "ACTIVE" ? "Active" : data.status === "CANCELLED" ? "Cancelled" : "Trialing",
+        data.planTier,
+        Number(data.amount),
+        data.intervalType === "YEAR" ? "yearly" : "monthly",
+        data.tenantId
+      ]
+    );
+
+    return { success: true, id: subId, subscriptionRef: subRef };
+  });
+
+export const updateAdminSubscriptionServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    id: string;
+    planTier: string;
+    amount: number;
+    status: string;
+    intervalType: string;
+    intervals: number;
+    nextChargeAt?: string | null;
+    currentPeriodStart?: string | null;
+    currentPeriodEnd?: string | null;
+    cancelAtPeriodEnd?: number;
+    customerName?: string;
+    customerEmail?: string;
+    customerPhone?: string;
+  }) => {
+    if (!data.id || !data.planTier || data.amount === undefined || !data.status) {
+      throw new Error("ID, Plan Tier, Amount, and Status are required");
+    }
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const prev = await queryOne<any>(
+      "SELECT userId, status, planTier, amount, intervalType FROM Subscription WHERE id = ? LIMIT 1",
+      [data.id]
+    );
+    if (!prev) throw new Error("Subscription not found");
+
+    const nextCharge = data.nextChargeAt ? new Date(data.nextChargeAt) : null;
+    const periodStart = data.currentPeriodStart ? new Date(data.currentPeriodStart) : null;
+    const periodEnd = data.currentPeriodEnd ? new Date(data.currentPeriodEnd) : null;
+
+    await execute(
+      `UPDATE Subscription
+       SET planTier = ?, amount = ?, status = ?, intervalType = ?, intervals = ?,
+           nextChargeAt = ?, currentPeriodStart = COALESCE(?, currentPeriodStart), currentPeriodEnd = COALESCE(?, currentPeriodEnd),
+           cancelAtPeriodEnd = ?, customerName = ?, customerEmail = ?, customerPhone = ?, updatedAt = NOW()
+       WHERE id = ?`,
+      [
+        data.planTier,
+        Number(data.amount),
+        data.status.toUpperCase(),
+        data.intervalType,
+        Number(data.intervals),
+        nextCharge,
+        periodStart,
+        periodEnd,
+        Number(data.cancelAtPeriodEnd) || 0,
+        data.customerName || null,
+        data.customerEmail || null,
+        data.customerPhone || null,
+        data.id,
+      ]
+    );
+
+    // Update the base User subscription parameters if it matches
+    const sub = await queryOne<any>("SELECT tenantId FROM Subscription WHERE id = ? LIMIT 1", [data.id]);
+    if (sub?.tenantId) {
+      await execute(
+        `UPDATE User
+         SET subscriptionStatus = ?, subscriptionPlan = ?, paymentAmount = ?, billingInterval = ?
+         WHERE tenantId = ?`,
+        [
+          data.status === "ACTIVE" ? "Active" : data.status === "CANCELLED" ? "Cancelled" : "Trialing",
+          data.planTier,
+          Number(data.amount),
+          data.intervalType === "YEAR" ? "yearly" : "monthly",
+          sub.tenantId
+        ]
+      );
+    }
+
+    // Log history
+    if (prev.status !== data.status || prev.planTier !== data.planTier || prev.amount !== data.amount) {
+      await execute(
+        `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'SuperAdmin')`,
+        [
+          generateId(),
+          prev.userId,
+          prev.status,
+          data.status,
+          prev.planTier,
+          data.planTier,
+          Number(data.amount),
+          data.intervalType === "YEAR" ? "yearly" : "monthly",
+        ]
+      );
+    }
+
+    return { success: true };
+  });
+
+export const deleteAdminSubscriptionServerFn = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => {
+    if (!data.id) throw new Error("ID is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const sub = await queryOne<any>("SELECT subscriptionRef FROM Subscription WHERE id = ? LIMIT 1", [data.id]);
+    if (sub?.subscriptionRef) {
+      // Clean up linked payments
+      await execute("DELETE FROM SubscriptionPayment WHERE subscriptionRef = ?", [sub.subscriptionRef]);
+    }
+    await execute("DELETE FROM Subscription WHERE id = ?", [data.id]);
+
+    return { success: true };
+  });
+
+export const createAdminSubscriptionPaymentServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    subscriptionRef: string;
+    amount: number;
+    status: string;
+    paymentMethod: string;
+    paymentType: string; // AUTH | CHARGE
+    paidAt?: string | null;
+    remarks?: string | null;
+  }) => {
+    if (!data.subscriptionRef || data.amount === undefined || !data.status) {
+      throw new Error("Subscription Reference, Amount, and Status are required");
+    }
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const sub = await queryOne<any>("SELECT userId, tenantId, cfSubscriptionId FROM Subscription WHERE subscriptionRef = ? LIMIT 1", [data.subscriptionRef]);
+    if (!sub) throw new Error("Subscription not found");
+
+    const payId = generateId();
+    const cfPaymentId = `manual_sp_${crypto.randomBytes(6).toString("hex")}`;
+    const cfOrderId = `manual_order_${crypto.randomBytes(6).toString("hex")}`;
+    const paidDate = data.paidAt ? new Date(data.paidAt) : new Date();
+
+    await execute(
+      `INSERT INTO SubscriptionPayment
+         (id, subscriptionRef, cfSubscriptionId, userId, tenantId, cfPaymentId, cfTxnId, cfOrderId, paymentRef, amount, currency, status, paymentMethod, paymentType, remarks, failureReason, scheduledAt, paidAt, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'INR', ?, ?, ?, ?, NULL, ?, ?, NOW())`,
+      [
+        payId,
+        data.subscriptionRef,
+        sub.cfSubscriptionId,
+        sub.userId,
+        sub.tenantId,
+        cfPaymentId,
+        `manual_txn_${crypto.randomBytes(4).toString("hex")}`,
+        cfOrderId,
+        cfPaymentId,
+        Number(data.amount),
+        data.status.toUpperCase(),
+        data.paymentMethod || "OFFLINE",
+        data.paymentType || "CHARGE",
+        data.remarks || "Manual charge entry",
+        paidDate,
+        paidDate
+      ]
+    );
+
+    return { success: true, paymentId: payId };
   });

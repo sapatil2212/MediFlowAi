@@ -122,7 +122,7 @@ function LoginPage() {
         
         await cashfree.checkout({
           paymentSessionId: res.payment_session_id,
-          returnUrl: `http://localhost:3000/login?order_id=${res.order_id}`
+          returnUrl: `${window.location.origin}/login?order_id=${res.order_id}`
         });
       } else {
         toast.error("Failed to generate payment session. Please try again.");
