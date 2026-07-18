@@ -18,6 +18,7 @@ import {
   AlertCircle,
   Building,
   UserPlus,
+  User,
   X,
   Database,
   Mail,
@@ -70,9 +71,20 @@ import {
   syncAllPaymentsFromCashfreeServerFn,
   toggleTenantStatusServerFn,
   getTenantFullProfileServerFn,
-  deleteTenantServerFn
+  deleteTenantServerFn,
+  createPaymentServerFn,
+  updatePaymentServerFn,
+  deletePaymentServerFn
 } from "../lib/admin";
-import { getAdminSubscriptionsServerFn, getAdminSubscriptionPaymentsServerFn, syncAllSubscriptionsFromCashfreeServerFn } from "../lib/subscription";
+import {
+  getAdminSubscriptionsServerFn,
+  getAdminSubscriptionPaymentsServerFn,
+  syncAllSubscriptionsFromCashfreeServerFn,
+  createAdminSubscriptionServerFn,
+  updateAdminSubscriptionServerFn,
+  deleteAdminSubscriptionServerFn,
+  createAdminSubscriptionPaymentServerFn
+} from "../lib/subscription";
 import {
   getDemoAppointmentsServerFn,
   updateDemoAppointmentServerFn,
@@ -258,6 +270,27 @@ function AdminDashboardPage() {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [paymentSearchQuery, setPaymentSearchQuery] = useState("");
 
+  // Payment Dynamic Sorting State
+  const [paymentSortField, setPaymentSortField] = useState<string>("createdAt");
+  const [paymentSortOrder, setPaymentSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Payment CRUD Drawer / Modal States
+  const [viewPaymentDetails, setViewPaymentDetails] = useState<any | null>(null);
+  const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<any | null>(null);
+  const [deletingPayment, setDeletingPayment] = useState<any | null>(null);
+
+  // Subscription Dynamic Sorting State
+  const [subSortField, setSubSortField] = useState<string>("createdAt");
+  const [subSortOrder, setSubSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Subscription CRUD Drawer / Modal States
+  const [viewSubDetails, setViewSubDetails] = useState<any | null>(null);
+  const [isProvisionSubOpen, setIsProvisionSubOpen] = useState(false);
+  const [editingSub, setEditingSub] = useState<any | null>(null);
+  const [logPaymentSub, setLogPaymentSub] = useState<any | null>(null);
+  const [deletingSub, setDeletingSub] = useState<any | null>(null);
+
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState("");
   const [planFilter, setPlanFilter] = useState("all");
@@ -297,8 +330,334 @@ function AdminDashboardPage() {
   const [creating, setCreating] = useState(false);
   const [createdResult, setCreatedResult] = useState<any>(null);
 
+  // View Subscription payments ledger state
+  const [viewSubPayments, setViewSubPayments] = useState<any[]>([]);
+  const [loadingViewSubPayments, setLoadingViewSubPayments] = useState(false);
+
+  // States for Recording Manual Payment
+  const [addPayTenantId, setAddPayTenantId] = useState("");
+  const [addPayPlan, setAddPayPlan] = useState("Pro");
+  const [addPayAmount, setAddPayAmount] = useState(0);
+  const [addPayStatus, setAddPayStatus] = useState("SUCCESS");
+  const [addPayMethod, setAddPayMethod] = useState("UPI");
+  const [addPayName, setAddPayName] = useState("");
+  const [addPayEmail, setAddPayEmail] = useState("");
+  const [addPayPhone, setAddPayPhone] = useState("");
+  const [addPayDate, setAddPayDate] = useState("");
+
+  // States for Editing Payment
+  const [editPayAmount, setEditPayAmount] = useState(0);
+  const [editPayStatus, setEditPayStatus] = useState("SUCCESS");
+  const [editPayMethod, setEditPayMethod] = useState("UPI");
+  const [editPayReason, setEditPayReason] = useState("");
+  const [editPayName, setEditPayName] = useState("");
+  const [editPayEmail, setEditPayEmail] = useState("");
+  const [editPayPhone, setEditPayPhone] = useState("");
+
+  // States for Provisioning Subscription
+  const [addSubTenantId, setAddSubTenantId] = useState("");
+  const [addSubPlan, setAddSubPlan] = useState("Pro");
+  const [addSubAmount, setAddSubAmount] = useState(0);
+  const [addSubStatus, setAddSubStatus] = useState("ACTIVE");
+  const [addSubInterval, setAddSubInterval] = useState("MONTH");
+  const [addSubIntervals, setAddSubIntervals] = useState(1);
+  const [addSubNextCharge, setAddSubNextCharge] = useState("");
+  const [addSubPeriodStart, setAddSubPeriodStart] = useState("");
+  const [addSubPeriodEnd, setAddSubPeriodEnd] = useState("");
+  const [addSubName, setAddSubName] = useState("");
+  const [addSubEmail, setAddSubEmail] = useState("");
+  const [addSubPhone, setAddSubPhone] = useState("");
+
+  // States for Editing Subscription
+  const [editSubPlan, setEditSubPlan] = useState("Pro");
+  const [editSubAmount, setEditSubAmount] = useState(0);
+  const [editSubStatus, setEditSubStatus] = useState("ACTIVE");
+  const [editSubInterval, setEditSubInterval] = useState("MONTH");
+  const [editSubIntervals, setEditSubIntervals] = useState(1);
+  const [editSubNextCharge, setEditSubNextCharge] = useState("");
+  const [editSubPeriodStart, setEditSubPeriodStart] = useState("");
+  const [editSubPeriodEnd, setEditSubPeriodEnd] = useState("");
+  const [editSubCancelAtEnd, setEditSubCancelAtEnd] = useState(0);
+  const [editSubName, setEditSubName] = useState("");
+  const [editSubEmail, setEditSubEmail] = useState("");
+  const [editSubPhone, setEditSubPhone] = useState("");
+
+  // States for Logging Subscription Payment
+  const [logPayAmount, setLogPayAmount] = useState(0);
+  const [logPayStatus, setLogPayStatus] = useState("SUCCESS");
+  const [logPayMethod, setLogPayMethod] = useState("UPI");
+  const [logPayType, setLogPayType] = useState("CHARGE");
+  const [logPayDate, setLogPayDate] = useState("");
+  const [logPayRemarks, setLogPayRemarks] = useState("");
+
+  // Load payments linked to the subscription when viewing sub details
+  useEffect(() => {
+    if (viewSubDetails) {
+      setLoadingViewSubPayments(true);
+      getAdminSubscriptionPaymentsServerFn({ data: { subscriptionRef: viewSubDetails.subscriptionRef } })
+        .then(res => setViewSubPayments(res.payments || []))
+        .catch(err => toast.error("Failed to load payments ledger: " + err.message))
+        .finally(() => setLoadingViewSubPayments(false));
+    } else {
+      setViewSubPayments([]);
+    }
+  }, [viewSubDetails]);
+
+  // Set default values for add/edit states on modal trigger
+  useEffect(() => {
+    if (editingPayment) {
+      setEditPayAmount(Number(editingPayment.amount) || 0);
+      setEditPayStatus(editingPayment.status);
+      setEditPayMethod(editingPayment.paymentMode || "UPI");
+      setEditPayReason(editingPayment.failureReason || "");
+      setEditPayName(editingPayment.customerName || "");
+      setEditPayEmail(editingPayment.customerEmail || "");
+      setEditPayPhone(editingPayment.customerPhone || "");
+    }
+  }, [editingPayment]);
+
+  useEffect(() => {
+    if (editingSub) {
+      setEditSubPlan(editingSub.planTier);
+      setEditSubAmount(Number(editingSub.amount) || 0);
+      setEditSubStatus(editingSub.status);
+      setEditSubInterval(editingSub.intervalType || "MONTH");
+      setEditSubIntervals(Number(editingSub.intervals) || 1);
+      setEditSubNextCharge(editingSub.nextChargeAt ? new Date(editingSub.nextChargeAt).toISOString().substring(0, 10) : "");
+      setEditSubPeriodStart(editingSub.currentPeriodStart ? new Date(editingSub.currentPeriodStart).toISOString().substring(0, 10) : "");
+      setEditSubPeriodEnd(editingSub.currentPeriodEnd ? new Date(editingSub.currentPeriodEnd).toISOString().substring(0, 10) : "");
+      setEditSubCancelAtEnd(Number(editingSub.cancelAtPeriodEnd) || 0);
+      setEditSubName(editingSub.customerName || "");
+      setEditSubEmail(editingSub.customerEmail || "");
+      setEditSubPhone(editingSub.customerPhone || "");
+    }
+  }, [editingSub]);
+
+  useEffect(() => {
+    if (logPaymentSub) {
+      setLogPayAmount(Number(logPaymentSub.amount) || 0);
+      setLogPayStatus("SUCCESS");
+      setLogPayMethod("UPI");
+      setLogPayType("CHARGE");
+      setLogPayDate("");
+      setLogPayRemarks("Manual charge entry");
+    }
+  }, [logPaymentSub]);
+
+  // Handlers for payments CRUD
+  const handleRecordPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addPayTenantId) {
+      toast.error("Please select a tenant clinic");
+      return;
+    }
+    try {
+      await createPaymentServerFn({
+        data: {
+          tenantId: addPayTenantId,
+          plan: addPayPlan,
+          amount: Number(addPayAmount),
+          status: addPayStatus,
+          paymentMode: addPayMethod,
+          customerName: addPayName || undefined,
+          customerEmail: addPayEmail || undefined,
+          customerPhone: addPayPhone || undefined,
+          createdAt: addPayDate || undefined,
+        }
+      });
+      toast.success("Offline payment recorded successfully!");
+      setIsRecordPaymentOpen(false);
+      fetchPaymentHistory();
+      fetchDashboardData();
+      // Reset state
+      setAddPayTenantId("");
+      setAddPayAmount(0);
+      setAddPayName("");
+      setAddPayEmail("");
+      setAddPayPhone("");
+      setAddPayDate("");
+    } catch (err: any) {
+      toast.error("Failed to record payment: " + err.message);
+    }
+  };
+
+  const handleEditPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPayment) return;
+    try {
+      await updatePaymentServerFn({
+        data: {
+          id: editingPayment.id,
+          type: editingPayment.type,
+          amount: Number(editPayAmount),
+          status: editPayStatus,
+          paymentMode: editPayMethod,
+          failureReason: editPayReason || undefined,
+          customerName: editPayName || undefined,
+          customerEmail: editPayEmail || undefined,
+          customerPhone: editPayPhone || undefined,
+        }
+      });
+      toast.success("Payment log updated successfully!");
+      setEditingPayment(null);
+      fetchPaymentHistory();
+      fetchDashboardData();
+    } catch (err: any) {
+      toast.error("Failed to update payment log: " + err.message);
+    }
+  };
+
+  const handleDeletePaymentSubmit = async () => {
+    if (!deletingPayment) return;
+    try {
+      await deletePaymentServerFn({
+        data: {
+          id: deletingPayment.id,
+          type: deletingPayment.type,
+        }
+      });
+      toast.success("Payment log deleted successfully");
+      setDeletingPayment(null);
+      fetchPaymentHistory();
+      fetchDashboardData();
+    } catch (err: any) {
+      toast.error("Failed to delete payment log: " + err.message);
+    }
+  };
+
+  // Handlers for subscription CRUD
+  const handleProvisionSubSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addSubTenantId) {
+      toast.error("Please select a tenant clinic");
+      return;
+    }
+    try {
+      await createAdminSubscriptionServerFn({
+        data: {
+          tenantId: addSubTenantId,
+          planTier: addSubPlan,
+          amount: Number(addSubAmount),
+          status: addSubStatus,
+          intervalType: addSubInterval,
+          intervals: Number(addSubIntervals),
+          nextChargeAt: addSubNextCharge || null,
+          currentPeriodStart: addSubPeriodStart || null,
+          currentPeriodEnd: addSubPeriodEnd || null,
+          customerName: addSubName || undefined,
+          customerEmail: addSubEmail || undefined,
+          customerPhone: addSubPhone || undefined,
+        }
+      });
+      toast.success("Custom subscription provisioned successfully!");
+      setIsProvisionSubOpen(false);
+      fetchAdminSubscriptions();
+      fetchDashboardData();
+      // Reset state
+      setAddSubTenantId("");
+      setAddSubAmount(0);
+      setAddSubName("");
+      setAddSubEmail("");
+      setAddSubPhone("");
+      setAddSubNextCharge("");
+      setAddSubPeriodStart("");
+      setAddSubPeriodEnd("");
+    } catch (err: any) {
+      toast.error("Failed to provision subscription: " + err.message);
+    }
+  };
+
+  const handleEditSubSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSub) return;
+    try {
+      await updateAdminSubscriptionServerFn({
+        data: {
+          id: editingSub.id,
+          planTier: editSubPlan,
+          amount: Number(editSubAmount),
+          status: editSubStatus,
+          intervalType: editSubInterval,
+          intervals: Number(editSubIntervals),
+          nextChargeAt: editSubNextCharge || null,
+          currentPeriodStart: editSubPeriodStart || null,
+          currentPeriodEnd: editSubPeriodEnd || null,
+          cancelAtPeriodEnd: editSubCancelAtEnd,
+          customerName: editSubName || undefined,
+          customerEmail: editSubEmail || undefined,
+          customerPhone: editSubPhone || undefined,
+        }
+      });
+      toast.success("Subscription updated successfully!");
+      setEditingSub(null);
+      fetchAdminSubscriptions();
+      fetchDashboardData();
+    } catch (err: any) {
+      toast.error("Failed to update subscription: " + err.message);
+    }
+  };
+
+  const handleLogPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!logPaymentSub) return;
+    try {
+      await createAdminSubscriptionPaymentServerFn({
+        data: {
+          subscriptionRef: logPaymentSub.subscriptionRef,
+          amount: Number(logPayAmount),
+          status: logPayStatus,
+          paymentMethod: logPayMethod,
+          paymentType: logPayType,
+          paidAt: logPayDate || null,
+          remarks: logPayRemarks || null,
+        }
+      });
+      toast.success("Cycle payment logged successfully!");
+      setLogPaymentSub(null);
+      fetchAdminSubscriptions();
+      fetchDashboardData();
+    } catch (err: any) {
+      toast.error("Failed to log payment: " + err.message);
+    }
+  };
+
+  const handleDeleteSubSubmit = async () => {
+    if (!deletingSub) return;
+    try {
+      await deleteAdminSubscriptionServerFn({
+        data: {
+          id: deletingSub.id,
+        }
+      });
+      toast.success("Subscription deleted successfully");
+      setDeletingSub(null);
+      fetchAdminSubscriptions();
+      fetchDashboardData();
+    } catch (err: any) {
+      toast.error("Failed to delete subscription: " + err.message);
+    }
+  };
+
   // Clipboard copy feedback
   const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const handlePaymentSort = (field: string) => {
+    if (paymentSortField === field) {
+      setPaymentSortOrder(paymentSortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setPaymentSortField(field);
+      setPaymentSortOrder("desc");
+    }
+  };
+
+  const handleSubSort = (field: string) => {
+    if (subSortField === field) {
+      setSubSortOrder(subSortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSubSortField(field);
+      setSubSortOrder("desc");
+    }
+  };
 
   // Authenticate Admin
   useEffect(() => {
@@ -752,6 +1111,60 @@ function AdminDashboardPage() {
     name: plan,
     value: planCounts[plan],
   }));
+
+  // Computed sorted payments
+  const sortedPaymentRows = [...paymentRows].sort((a, b) => {
+    let valA = a[paymentSortField];
+    let valB = b[paymentSortField];
+
+    if (paymentSortField === "customerName") {
+      valA = a.customerName || a.clinicName || "";
+      valB = b.customerName || b.clinicName || "";
+    } else if (paymentSortField === "amount") {
+      valA = Number(a.amount) || 0;
+      valB = Number(b.amount) || 0;
+    } else if (paymentSortField === "createdAt") {
+      valA = new Date(a.createdAt).getTime();
+      valB = new Date(b.createdAt).getTime();
+    }
+
+    if (valA === undefined || valA === null) valA = "";
+    if (valB === undefined || valB === null) valB = "";
+
+    if (typeof valA === "string") valA = valA.toLowerCase();
+    if (typeof valB === "string") valB = valB.toLowerCase();
+
+    if (valA < valB) return paymentSortOrder === "asc" ? -1 : 1;
+    if (valA > valB) return paymentSortOrder === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  // Computed sorted subscriptions
+  const sortedSubscriptionRows = [...subscriptionRows].sort((a, b) => {
+    let valA = a[subSortField];
+    let valB = b[subSortField];
+
+    if (subSortField === "clinicName") {
+      valA = a.clinicName || a.customerName || "";
+      valB = b.clinicName || b.customerName || "";
+    } else if (subSortField === "amount") {
+      valA = Number(a.amount) || 0;
+      valB = Number(b.amount) || 0;
+    } else if (subSortField === "createdAt") {
+      valA = new Date(a.createdAt).getTime();
+      valB = new Date(b.createdAt).getTime();
+    }
+
+    if (valA === undefined || valA === null) valA = "";
+    if (valB === undefined || valB === null) valB = "";
+
+    if (typeof valA === "string") valA = valA.toLowerCase();
+    if (typeof valB === "string") valB = valB.toLowerCase();
+
+    if (valA < valB) return subSortOrder === "asc" ? -1 : 1;
+    if (valA > valB) return subSortOrder === "asc" ? 1 : -1;
+    return 0;
+  });
 
   const PIE_COLORS = ["rgb(24, 24, 27)", "rgb(5, 150, 105)", "rgb(161, 161, 170)", "rgb(228, 228, 231)"];  if (loadingSession) {
     return (
@@ -1629,30 +2042,30 @@ function AdminDashboardPage() {
 
             {/* VIEW: PAYMENT HISTORY */}
             {activeTab === "payments" && (
-              <div className="space-y-6">
+              <div className="space-y-6 animate-in fade-in duration-300">
                 {/* Summary cards */}
                 <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Received</span>
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Total Received</span>
                     <p className="text-xl font-black text-emerald-600">{formatCurrencyInr(paymentSummary.totalReceived)}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.successCount} successful</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.successCount} successful payments</p>
                   </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Failed</span>
                     <p className="text-xl font-black text-red-600">{formatCurrencyInr(paymentSummary.failedAmount)}</p>
                     <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.failedCount} declined / errored</p>
                   </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Cancelled</span>
                     <p className="text-xl font-black text-zinc-600">{formatCurrencyInr(paymentSummary.cancelledAmount)}</p>
                     <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.cancelledCount} dropped / abandoned</p>
                   </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Pending</span>
                     <p className="text-xl font-black text-amber-600">{formatCurrencyInr(paymentSummary.pendingAmount)}</p>
                     <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.pendingCount} awaiting completion</p>
                   </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Total Attempts</span>
                     <p className="text-xl font-black text-zinc-900">{paymentSummary.totalCount}</p>
                     <p className="text-[10px] text-zinc-400 font-semibold">All-time checkout events</p>
@@ -1662,8 +2075,8 @@ function AdminDashboardPage() {
                 <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">
                   <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
                     <div>
-                      <h2 className="text-sm font-extrabold text-zinc-900">Transactions</h2>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">Every Cashfree order attempt with full gateway details ({paymentRows.length} shown).</p>
+                      <h2 className="text-sm font-extrabold text-zinc-900">Unified Transaction Ledger</h2>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">Every checkout order attempt and recurring AutoPay cycle recorded ({paymentRows.length} fetched).</p>
                     </div>
                     <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
                       <div className="relative w-full sm:w-64">
@@ -1688,13 +2101,20 @@ function AdminDashboardPage() {
                         </select>
                       </div>
                       <button
+                        onClick={() => setIsRecordPaymentOpen(true)}
+                        className="flex items-center gap-1.5 h-9 px-3.5 bg-zinc-950 text-white rounded-xl text-xs font-extrabold hover:bg-zinc-800 transition-colors active:scale-[0.98] cursor-pointer shadow-sm"
+                      >
+                        <Plus className="size-3.5" />
+                        Record Offline
+                      </button>
+                      <button
                         onClick={syncPaymentsFromCashfree}
                         disabled={syncingPayments || loadingPayments}
                         className="flex items-center gap-2 h-9 px-3.5 border border-emerald-200 bg-emerald-50 rounded-xl text-emerald-700 text-xs font-extrabold hover:bg-emerald-100 transition-colors active:scale-[0.98] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                         title="Reconcile pending/failed orders directly against Cashfree"
                       >
                         <RefreshCw className={`size-3.5 ${syncingPayments ? "animate-spin" : ""}`} />
-                        {syncingPayments ? "Syncing..." : "Sync with Cashfree"}
+                        {syncingPayments ? "Syncing..." : "Sync"}
                       </button>
                       <button
                         onClick={fetchPaymentHistory}
@@ -1710,16 +2130,16 @@ function AdminDashboardPage() {
                   {loadingPayments ? (
                     <div className="flex flex-col items-center justify-center py-24 gap-3">
                       <Loader2 className="size-7 text-zinc-900 animate-spin" />
-                      <span className="text-xs text-zinc-400 font-bold">Loading payment ledger...</span>
+                      <span className="text-xs text-zinc-400 font-bold">Loading unified payment ledger...</span>
                     </div>
-                  ) : paymentRows.length === 0 ? (
+                  ) : sortedPaymentRows.length === 0 ? (
                     <div className="text-center py-20 space-y-3">
                       <div className="flex size-12 items-center justify-center rounded-full bg-zinc-50 border border-zinc-150 mx-auto">
                         <CreditCard className="size-5 text-zinc-400" />
                       </div>
                       <div>
                         <h3 className="text-xs font-bold text-zinc-700">No Payment Records Found</h3>
-                        <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">Try adjusting your filters, or check back once a checkout is attempted.</p>
+                        <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">Try adjusting your search query/filters, or log a manual transaction.</p>
                       </div>
                     </div>
                   ) : (
@@ -1727,17 +2147,28 @@ function AdminDashboardPage() {
                       <table className="w-full text-left border-collapse min-w-[1100px]">
                         <thead>
                           <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                            <th className="pb-3 pl-3">Customer & Order</th>
-                            <th className="pb-3">Plan / Amount</th>
+                            <th className="pb-3 pl-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("customerName")}>
+                              Customer & Order {paymentSortField === "customerName" && (paymentSortOrder === "asc" ? " ▲" : " ▼")}
+                            </th>
+                            <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("plan")}>
+                              Plan {paymentSortField === "plan" && (paymentSortOrder === "asc" ? " ▲" : " ▼")}
+                            </th>
+                            <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("amount")}>
+                              Amount {paymentSortField === "amount" && (paymentSortOrder === "asc" ? " ▲" : " ▼")}
+                            </th>
                             <th className="pb-3">Payment Mode</th>
-                            <th className="pb-3">Status</th>
-                            <th className="pb-3">Reason</th>
-                            <th className="pb-3">Date</th>
-                            <th className="pb-3 text-right pr-3">Invoice</th>
+                            <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("status")}>
+                              Status {paymentSortField === "status" && (paymentSortOrder === "asc" ? " ▲" : " ▼")}
+                            </th>
+                            <th className="pb-3">Type</th>
+                            <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("createdAt")}>
+                              Date {paymentSortField === "createdAt" && (paymentSortOrder === "asc" ? " ▲" : " ▼")}
+                            </th>
+                            <th className="pb-3 text-right pr-3">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
-                          {paymentRows.map((p) => {
+                          {sortedPaymentRows.map((p) => {
                             const statusStyle =
                               p.status === "SUCCESS" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
                               p.status === "FAILED" ? "bg-red-50 text-red-700 border-red-150" :
@@ -1781,8 +2212,12 @@ function AdminDashboardPage() {
 
                                 {/* Plan / Amount */}
                                 <td className="py-4">
+                                  <span className="block text-[10px] text-zinc-450 font-semibold">{p.plan || "—"} Plan</span>
+                                </td>
+
+                                {/* Amount */}
+                                <td className="py-4">
                                   <span className="block font-extrabold text-zinc-900 text-xs">{formatCurrencyInr(p.amount)}</span>
-                                  <span className="block text-[10px] text-zinc-400 font-semibold mt-0.5">{p.plan || "—"} Plan</span>
                                 </td>
 
                                 {/* Payment Mode */}
@@ -1798,10 +2233,14 @@ function AdminDashboardPage() {
                                   </span>
                                 </td>
 
-                                {/* Reason */}
-                                <td className="py-4 max-w-[220px]">
-                                  <span className="text-[10px] text-zinc-450 font-medium line-clamp-2">
-                                    {p.failureReason || "—"}
+                                {/* Type */}
+                                <td className="py-4">
+                                  <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${
+                                    p.type === "subscription" 
+                                      ? "bg-purple-50 text-purple-700 border-purple-100" 
+                                      : "bg-zinc-100 text-zinc-600 border-zinc-200"
+                                  }`}>
+                                    {p.type === "subscription" ? "AutoPay" : "Checkout"}
                                   </span>
                                 </td>
 
@@ -1815,24 +2254,32 @@ function AdminDashboardPage() {
                                   </span>
                                 </td>
 
-                                {/* Invoice */}
+                                {/* Actions */}
                                 <td className="py-4 text-right pr-3">
                                   <div className="flex items-center justify-end gap-1.5">
                                     <button
                                       type="button"
-                                      title="View invoice"
-                                      onClick={() => openPaymentInvoice(p, "view")}
-                                      className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand hover:border-brand/30 transition-colors cursor-pointer"
+                                      title="View payment details"
+                                      onClick={() => setViewPaymentDetails(p)}
+                                      className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
                                     >
-                                      <Eye className="size-3" /> View
+                                      <Eye className="size-3.5" />
                                     </button>
                                     <button
                                       type="button"
-                                      title="Download invoice"
-                                      onClick={() => openPaymentInvoice(p, "download")}
-                                      className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand hover:border-brand/30 transition-colors cursor-pointer"
+                                      title="Edit transaction log"
+                                      onClick={() => setEditingPayment(p)}
+                                      className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
                                     >
-                                      <FileText className="size-3" /> PDF
+                                      <Edit2 className="size-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Delete transaction log"
+                                      onClick={() => setDeletingPayment(p)}
+                                      className="p-1.5 rounded-xl border border-red-100 hover:border-red-200 hover:bg-red-50 text-red-600 transition-all cursor-pointer active:scale-[0.98]"
+                                    >
+                                      <Trash2 className="size-3.5" />
                                     </button>
                                   </div>
                                 </td>
@@ -1848,174 +2295,239 @@ function AdminDashboardPage() {
             )}
 
             {/* VIEW: RECURRING SUBSCRIPTIONS */}
-            {activeTab === "subscriptions" && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
-                  <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-4 space-y-1.5">
-                    <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Collected</span>
-                    <p className="text-xl font-black text-emerald-600">{formatCurrencyInr(subscriptionSummary.collectedAmount)}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">{subscriptionSummary.successCount} AutoPay charges</p>
-                  </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Active MRR</span>
-                    <p className="text-xl font-black text-zinc-900">{formatCurrencyInr(subscriptionSummary.activeMrr)}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">{subscriptionSummary.activeCount} active mandates</p>
-                  </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Active</span>
-                    <p className="text-xl font-black text-emerald-600">{subscriptionSummary.activeCount}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">AutoPay running</p>
-                  </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">On Hold</span>
-                    <p className="text-xl font-black text-amber-600">{subscriptionSummary.onHoldCount}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">Retrying / grace period</p>
-                  </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Cancelled</span>
-                    <p className="text-xl font-black text-zinc-600">{subscriptionSummary.cancelledCount}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">AutoPay stopped</p>
-                  </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Failed Renewals</span>
-                    <p className="text-xl font-black text-red-600">{formatCurrencyInr(subscriptionSummary.failedAmount)}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">{subscriptionSummary.failedRenewals} declined charges</p>
-                  </div>
-                </div>
+            {activeTab === "subscriptions" && (() => {
+              // Calculate custom SaaS telemetry values dynamically from rows
+              const activeCount = subscriptionRows.filter(s => String(s.status).toUpperCase() === "ACTIVE").length;
+              const cancelledCount = subscriptionRows.filter(s => String(s.status).toUpperCase() === "CANCELLED").length;
+              const onHoldCount = subscriptionRows.filter(s => ["ON_HOLD", "PAUSED", "UNDER_RESOLUTION"].includes(String(s.status).toUpperCase())).length;
+              
+              const mrr = subscriptionSummary.activeMrr;
+              const arr = mrr * 12;
+              const arpu = activeCount > 0 ? mrr / activeCount : 0;
+              const churnRate = (cancelledCount / (activeCount + cancelledCount || 1)) * 100;
+              const recoveryRate = subscriptionSummary.successCount > 0 
+                ? (subscriptionSummary.successCount / (subscriptionSummary.successCount + subscriptionSummary.failedRenewals || 1)) * 100 
+                : 100;
 
-                <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">
-                  <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
-                    <div>
-                      <h2 className="text-sm font-extrabold text-zinc-900">AutoPay Mandates</h2>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">Cashfree recurring subscriptions across all tenants ({subscriptionRows.length} shown).</p>
+              return (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                  {/* SaaS Telemetry Metrics */}
+                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Active MRR</span>
+                      <p className="text-xl font-black text-zinc-900">{formatCurrencyInr(mrr)}</p>
+                      <p className="text-[10px] text-zinc-400 font-semibold">{activeCount} active mandates</p>
                     </div>
-                    <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
-                      <div className="relative w-full sm:w-64">
-                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
-                        <input
-                          type="text"
-                          placeholder="Search tenant, email, or subscription ID..."
-                          value={subAdminSearch}
-                          onChange={(e) => setSubAdminSearch(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") fetchAdminSubscriptions(); }}
-                          className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all font-semibold"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
-                        <Filter className="size-3.5 text-zinc-400" />
-                        <select value={subAdminStatusFilter} onChange={(e) => setSubAdminStatusFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1">
-                          <option value="all">All Statuses</option>
-                          <option value="ACTIVE">Active</option>
-                          <option value="ON_HOLD">On Hold</option>
-                          <option value="CANCELLED">Cancelled</option>
-                          <option value="INITIALIZED">Initialized</option>
-                        </select>
-                      </div>
-                      <button
-                        onClick={syncSubscriptionsFromCashfree}
-                        disabled={syncingSubscriptions || loadingSubscriptions}
-                        className="flex items-center gap-2 h-9 px-3.5 border border-emerald-200 bg-emerald-50 rounded-xl text-emerald-700 text-xs font-extrabold hover:bg-emerald-100 transition-colors active:scale-[0.98] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                        title="Reconcile every subscription + payment ledger directly against Cashfree"
-                      >
-                        <RefreshCw className={`size-3.5 ${syncingSubscriptions ? "animate-spin" : ""}`} />
-                        {syncingSubscriptions ? "Syncing..." : "Sync with Cashfree"}
-                      </button>
-                      <button
-                        onClick={fetchAdminSubscriptions}
-                        disabled={loadingSubscriptions}
-                        className="flex items-center justify-center size-9 border border-zinc-200 bg-white rounded-xl text-zinc-500 hover:text-zinc-800 transition-colors active:scale-[0.98] cursor-pointer"
-                        title="Refresh"
-                      >
-                        <RefreshCw className={`size-4 ${loadingSubscriptions ? "animate-spin" : ""}`} />
-                      </button>
+                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Estimated ARR</span>
+                      <p className="text-xl font-black text-zinc-950">{formatCurrencyInr(arr)}</p>
+                      <p className="text-[10px] text-zinc-400 font-semibold">Annual monthly run rate</p>
+                    </div>
+                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Avg Contract Size</span>
+                      <p className="text-xl font-black text-indigo-600">{formatCurrencyInr(arpu)}</p>
+                      <p className="text-[10px] text-zinc-400 font-semibold">Average monthly ARPU</p>
+                    </div>
+                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">AutoPay Collected</span>
+                      <p className="text-xl font-black text-emerald-600">{formatCurrencyInr(subscriptionSummary.collectedAmount)}</p>
+                      <p className="text-[10px] text-zinc-400 font-semibold">{subscriptionSummary.successCount} successful cycles</p>
+                    </div>
+                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Churn Rate</span>
+                      <p className="text-xl font-black text-zinc-650">{churnRate.toFixed(1)}%</p>
+                      <p className="text-[10px] text-zinc-400 font-semibold">{cancelledCount} deactivated total</p>
+                    </div>
+                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Billing Success</span>
+                      <p className="text-xl font-black text-emerald-600">{recoveryRate.toFixed(1)}%</p>
+                      <p className="text-[10px] text-zinc-400 font-semibold">{subscriptionSummary.failedRenewals} failed renewals</p>
                     </div>
                   </div>
 
-                  {loadingSubscriptions ? (
-                    <div className="flex flex-col items-center justify-center py-24 gap-3">
-                      <Loader2 className="size-7 text-zinc-900 animate-spin" />
-                      <span className="text-xs text-zinc-400 font-bold">Loading subscriptions...</span>
-                    </div>
-                  ) : subscriptionRows.length === 0 ? (
-                    <div className="text-center py-20 space-y-3">
-                      <div className="flex size-12 items-center justify-center rounded-full bg-zinc-50 border border-zinc-150 mx-auto">
-                        <RefreshCw className="size-5 text-zinc-400" />
-                      </div>
+                  {/* AutoPay Registry */}
+                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">
+                    <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
                       <div>
-                        <h3 className="text-xs font-bold text-zinc-700">No Subscriptions Found</h3>
-                        <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">Recurring AutoPay mandates will appear here once tenants subscribe.</p>
+                        <h2 className="text-sm font-extrabold text-zinc-900">AutoPay Mandates</h2>
+                        <p className="text-[10px] text-zinc-400 mt-0.5">Manage subscription contracts, tiers, and payment ledgers ({subscriptionRows.length} fetched).</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
+                        <div className="relative w-full sm:w-64">
+                          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
+                          <input
+                            type="text"
+                            placeholder="Search tenant, email, or subscription ID..."
+                            value={subAdminSearch}
+                            onChange={(e) => setSubAdminSearch(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") fetchAdminSubscriptions(); }}
+                            className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all font-semibold"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
+                          <Filter className="size-3.5 text-zinc-400" />
+                          <select value={subAdminStatusFilter} onChange={(e) => setSubAdminStatusFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1">
+                            <option value="all">All Statuses</option>
+                            <option value="ACTIVE">Active</option>
+                            <option value="ON_HOLD">On Hold</option>
+                            <option value="CANCELLED">Cancelled</option>
+                            <option value="INITIALIZED">Initialized</option>
+                          </select>
+                        </div>
+                        <button
+                          onClick={() => setIsProvisionSubOpen(true)}
+                          className="flex items-center gap-1.5 h-9 px-3.5 bg-zinc-950 text-white rounded-xl text-xs font-extrabold hover:bg-zinc-850 transition-colors active:scale-[0.98] cursor-pointer shadow-sm"
+                        >
+                          <Plus className="size-3.5" />
+                          Provision Custom
+                        </button>
+                        <button
+                          onClick={syncSubscriptionsFromCashfree}
+                          disabled={syncingSubscriptions || loadingSubscriptions}
+                          className="flex items-center gap-2 h-9 px-3.5 border border-emerald-200 bg-emerald-50 rounded-xl text-emerald-700 text-xs font-extrabold hover:bg-emerald-100 transition-colors active:scale-[0.98] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                          title="Reconcile every subscription + payment ledger directly against Cashfree"
+                        >
+                          <RefreshCw className={`size-3.5 ${syncingSubscriptions ? "animate-spin" : ""}`} />
+                          {syncingSubscriptions ? "Syncing..." : "Sync"}
+                        </button>
+                        <button
+                          onClick={fetchAdminSubscriptions}
+                          disabled={loadingSubscriptions}
+                          className="flex items-center justify-center size-9 border border-zinc-200 bg-white rounded-xl text-zinc-500 hover:text-zinc-800 transition-colors active:scale-[0.98] cursor-pointer"
+                          title="Refresh"
+                        >
+                          <RefreshCw className={`size-4 ${loadingSubscriptions ? "animate-spin" : ""}`} />
+                        </button>
                       </div>
                     </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse min-w-[1000px]">
-                        <thead>
-                          <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                            <th className="pb-3 pl-3">Tenant & Subscription</th>
-                            <th className="pb-3">Plan / Amount</th>
-                            <th className="pb-3">Status</th>
-                            <th className="pb-3">Next Renewal</th>
-                            <th className="pb-3">Created</th>
-                            <th className="pb-3 text-right pr-3">Payments</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
-                          {subscriptionRows.map((s) => {
-                            const st = String(s.status || "").toUpperCase();
-                            const statusStyle =
-                              st === "ACTIVE" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
-                              st === "ON_HOLD" || st === "PAUSED" ? "bg-amber-50 text-amber-700 border-amber-150" :
-                              st === "CANCELLED" ? "bg-zinc-100 text-zinc-650 border-zinc-200" :
-                              "bg-sky-50 text-sky-700 border-sky-150";
-                            const next = s.nextChargeAt || s.currentPeriodEnd;
-                            return (
-                              <tr key={s.id} className="hover:bg-slate-50/40 transition-colors group">
-                                <td className="py-4 pl-3">
-                                  <span className="font-extrabold text-zinc-900 text-xs block">{s.clinicName || s.customerName || "—"}</span>
-                                  <div className="text-[10px] text-zinc-400 font-medium mt-0.5 space-y-0.5">
-                                    {s.customerEmail && <div>{s.customerEmail}</div>}
-                                    <div className="flex items-center gap-1.5">
-                                      <span>Sub:</span>
-                                      <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">{s.subscriptionRef}</code>
+
+                    {loadingSubscriptions ? (
+                      <div className="flex flex-col items-center justify-center py-24 gap-3">
+                        <Loader2 className="size-7 text-zinc-900 animate-spin" />
+                        <span className="text-xs text-zinc-400 font-bold">Loading subscriptions...</span>
+                      </div>
+                    ) : sortedSubscriptionRows.length === 0 ? (
+                      <div className="text-center py-20 space-y-3">
+                        <div className="flex size-12 items-center justify-center rounded-full bg-zinc-50 border border-zinc-150 mx-auto">
+                          <RefreshCw className="size-5 text-zinc-400" />
+                        </div>
+                        <div>
+                          <h3 className="text-xs font-bold text-zinc-700">No Subscriptions Found</h3>
+                          <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">Recurring AutoPay mandates will appear here once tenants subscribe.</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[1000px]">
+                          <thead>
+                            <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
+                              <th className="pb-3 pl-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("clinicName")}>
+                                Tenant & Subscription {subSortField === "clinicName" && (subSortOrder === "asc" ? " ▲" : " ▼")}
+                              </th>
+                              <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("planTier")}>
+                                Plan / Tier {subSortField === "planTier" && (subSortOrder === "asc" ? " ▲" : " ▼")}
+                              </th>
+                              <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("amount")}>
+                                Price {subSortField === "amount" && (subSortOrder === "asc" ? " ▲" : " ▼")}
+                              </th>
+                              <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("status")}>
+                                Status {subSortField === "status" && (subSortOrder === "asc" ? " ▲" : " ▼")}
+                              </th>
+                              <th className="pb-3">Next Renewal</th>
+                              <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("createdAt")}>
+                                Created {subSortField === "createdAt" && (subSortOrder === "asc" ? " ▲" : " ▼")}
+                              </th>
+                              <th className="pb-3 text-right pr-3">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
+                            {sortedSubscriptionRows.map((s) => {
+                              const st = String(s.status || "").toUpperCase();
+                              const statusStyle =
+                                st === "ACTIVE" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
+                                st === "ON_HOLD" || st === "PAUSED" ? "bg-amber-50 text-amber-700 border-amber-150" :
+                                st === "CANCELLED" ? "bg-zinc-100 text-zinc-650 border-zinc-200" :
+                                "bg-sky-50 text-sky-700 border-sky-150";
+                              const next = s.nextChargeAt || s.currentPeriodEnd;
+                              return (
+                                <tr key={s.id} className="hover:bg-slate-50/40 transition-colors group">
+                                  <td className="py-4 pl-3">
+                                    <span className="font-extrabold text-zinc-900 text-xs block">{s.clinicName || s.customerName || "—"}</span>
+                                    <div className="text-[10px] text-zinc-400 font-medium mt-0.5 space-y-0.5">
+                                      {s.customerEmail && <div>{s.customerEmail}</div>}
+                                      <div className="flex items-center gap-1.5">
+                                        <span>Sub:</span>
+                                        <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">{s.subscriptionRef}</code>
+                                      </div>
                                     </div>
-                                  </div>
-                                </td>
-                                <td className="py-4">
-                                  <span className="block font-extrabold text-zinc-900 text-xs">{formatCurrencyInr(s.amount)}</span>
-                                  <span className="block text-[10px] text-zinc-400 font-semibold mt-0.5">{s.planTier} · {s.paymentMethod || "Cashfree"}</span>
-                                </td>
-                                <td className="py-4">
-                                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${statusStyle}`}>
-                                    {st}
-                                  </span>
-                                </td>
-                                <td className="py-4 text-zinc-600 font-semibold">
-                                  {next ? new Date(next).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
-                                </td>
-                                <td className="py-4">
-                                  <span className="text-[10px] text-zinc-500 font-semibold whitespace-nowrap">
-                                    {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                                  </span>
-                                </td>
-                                <td className="py-4 text-right pr-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => openSubscriptionPayments(s.subscriptionRef)}
-                                    className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand hover:border-brand/30 transition-colors cursor-pointer"
-                                  >
-                                    <FileText className="size-3" /> View / Invoice
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                                  </td>
+                                  <td className="py-4">
+                                    <span className="font-extrabold text-zinc-900 text-xs uppercase">{s.planTier}</span>
+                                  </td>
+                                  <td className="py-4">
+                                    <span className="block font-extrabold text-zinc-900 text-xs">{formatCurrencyInr(s.amount)}</span>
+                                    <span className="block text-[10px] text-zinc-400 font-semibold mt-0.5">{s.intervalType === "YEAR" ? "Yearly" : "Monthly"} · {s.paymentMethod || "Mandate"}</span>
+                                  </td>
+                                  <td className="py-4">
+                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${statusStyle}`}>
+                                      {st}
+                                    </span>
+                                  </td>
+                                  <td className="py-4 text-zinc-600 font-semibold">
+                                    {next ? new Date(next).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                                  </td>
+                                  <td className="py-4">
+                                    <span className="text-[10px] text-zinc-500 font-semibold whitespace-nowrap">
+                                      {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                    </span>
+                                  </td>
+                                  <td className="py-4 text-right pr-3">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        title="View billing details"
+                                        onClick={() => setViewSubDetails(s)}
+                                        className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
+                                      >
+                                        <Eye className="size-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Edit subscription mandate"
+                                        onClick={() => setEditingSub(s)}
+                                        className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
+                                      >
+                                        <Edit2 className="size-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Record manual cycle payment"
+                                        onClick={() => setLogPaymentSub(s)}
+                                        className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
+                                      >
+                                        <Plus className="size-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Delete subscription mandate log"
+                                        onClick={() => setDeletingSub(s)}
+                                        className="p-1.5 rounded-xl border border-red-100 hover:border-red-200 hover:bg-red-50 text-red-600 transition-all cursor-pointer active:scale-[0.98]"
+                                      >
+                                        <Trash2 className="size-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
         {/* VIEW: DEMO APPOINTMENTS */}
         {activeTab === "demo" && (
@@ -2570,6 +3082,1257 @@ function AdminDashboardPage() {
                     ))}
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Record Manual Offline Payment */}
+      <AnimatePresence>
+        {isRecordPaymentOpen && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="bg-white rounded-3xl border border-zinc-200 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900">Record Offline Manual Payment</h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Manually log a custom bank transfer, cash, or offline payment.</p>
+                </div>
+                <button type="button" onClick={() => setIsRecordPaymentOpen(false)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleRecordPaymentSubmit} className="overflow-y-auto p-6 space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Select Clinic / Tenant *</label>
+                  <select
+                    required
+                    value={addPayTenantId}
+                    onChange={(e) => {
+                      const selected = tenants.find(t => t.tenantId === e.target.value);
+                      setAddPayTenantId(e.target.value);
+                      if (selected) {
+                        setAddPayName(selected.name || "");
+                        setAddPayEmail(selected.email || "");
+                        setAddPayPhone(selected.phone || "");
+                        setAddPayAmount(selected.subscriptionPlan === "Premium" ? 9999 : selected.subscriptionPlan === "Pro" ? 4999 : 2499);
+                      }
+                    }}
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                  >
+                    <option value="">-- Choose Clinic / Tenant --</option>
+                    {tenants.map(t => (
+                      <option key={t.id} value={t.tenantId}>{t.clinicName} ({t.name})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Plan Identifier *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Pro, Premium, Basic"
+                      value={addPayPlan}
+                      onChange={(e) => setAddPayPlan(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Amount (INR) *</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={addPayAmount}
+                      onChange={(e) => setAddPayAmount(Number(e.target.value))}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Payment Mode *</label>
+                    <select
+                      value={addPayMethod}
+                      onChange={(e) => setAddPayMethod(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    >
+                      <option value="UPI">UPI / GPay / PhonePe</option>
+                      <option value="BANK_TRANSFER">Bank Transfer (IMPS/NEFT)</option>
+                      <option value="CASH">Offline Cash</option>
+                      <option value="CARD">Credit / Debit Card</option>
+                      <option value="OFFLINE">Other Offline</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Status *</label>
+                    <select
+                      value={addPayStatus}
+                      onChange={(e) => setAddPayStatus(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    >
+                      <option value="SUCCESS">SUCCESS (Received)</option>
+                      <option value="PENDING">PENDING (Awaiting)</option>
+                      <option value="FAILED">FAILED (Rejected)</option>
+                      <option value="CANCELLED">CANCELLED</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="border-t border-zinc-100 pt-3 space-y-3">
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">Customer Details (Overrides)</span>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-zinc-400">Customer Name</label>
+                    <input
+                      type="text"
+                      placeholder="Full Name"
+                      value={addPayName}
+                      onChange={(e) => setAddPayName(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-zinc-400">Customer Email</label>
+                      <input
+                        type="email"
+                        placeholder="email@example.com"
+                        value={addPayEmail}
+                        onChange={(e) => setAddPayEmail(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-zinc-400">Customer Phone</label>
+                      <input
+                        type="text"
+                        placeholder="Phone Number"
+                        value={addPayPhone}
+                        onChange={(e) => setAddPayPhone(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Transaction Date (Backdate)</label>
+                  <input
+                    type="date"
+                    value={addPayDate}
+                    onChange={(e) => setAddPayDate(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                  />
+                </div>
+
+                <div className="flex gap-2.5 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsRecordPaymentOpen(false)}
+                    className="flex-1 rounded-xl border border-zinc-200 py-3 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-xl bg-zinc-950 hover:bg-zinc-800 py-3 text-xs font-extrabold text-white transition-all shadow-md active:scale-[0.98]"
+                  >
+                    Log Payment Entry
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Edit Payment Entry */}
+      <AnimatePresence>
+        {editingPayment && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="bg-white rounded-3xl border border-zinc-200 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900">Adjust Transaction Log</h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Order ID: {editingPayment.orderId}</p>
+                </div>
+                <button type="button" onClick={() => setEditingPayment(null)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleEditPaymentSubmit} className="overflow-y-auto p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Amount (INR)</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={editPayAmount}
+                      onChange={(e) => setEditPayAmount(Number(e.target.value))}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Payment Mode</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. UPI, CARD, BANK_TRANSFER"
+                      value={editPayMethod}
+                      onChange={(e) => setEditPayMethod(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Status</label>
+                  <select
+                    value={editPayStatus}
+                    onChange={(e) => setEditPayStatus(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                  >
+                    <option value="SUCCESS">SUCCESS (Received)</option>
+                    <option value="PENDING">PENDING (Awaiting)</option>
+                    <option value="FAILED">FAILED (Rejected)</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Remarks / Failure Reason</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Enter payment notes, remarks, check number, or gateway failure reason."
+                    value={editPayReason}
+                    onChange={(e) => setEditPayReason(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold resize-none"
+                  />
+                </div>
+
+                <div className="border-t border-zinc-100 pt-3 space-y-3">
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">Customer Details Override</span>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-zinc-400">Customer Name</label>
+                    <input
+                      type="text"
+                      value={editPayName}
+                      onChange={(e) => setEditPayName(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-zinc-400">Customer Email</label>
+                      <input
+                        type="email"
+                        value={editPayEmail}
+                        onChange={(e) => setEditPayEmail(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-zinc-400">Customer Phone</label>
+                      <input
+                        type="text"
+                        value={editPayPhone}
+                        onChange={(e) => setEditPayPhone(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2.5 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setEditingPayment(null)}
+                    className="flex-1 rounded-xl border border-zinc-200 py-3 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-xl bg-zinc-950 hover:bg-zinc-800 py-3 text-xs font-extrabold text-white transition-all shadow-md active:scale-[0.98]"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Delete Payment Log Confirmation */}
+      <AnimatePresence>
+        {deletingPayment && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white border border-zinc-200 rounded-3xl w-full max-w-sm shadow-2xl p-6 text-center relative"
+            >
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 border border-red-150 mb-4">
+                <AlertCircle className="size-7 text-red-600" />
+              </div>
+              <h3 className="text-lg font-black text-zinc-950 mb-2">Delete Payment Record?</h3>
+              <p className="text-xs text-zinc-500 leading-relaxed mb-6">
+                Are you sure you want to delete the transaction log for <span className="font-extrabold text-zinc-800">{deletingPayment.customerName || deletingPayment.clinicName}</span> of amount <span className="font-bold text-zinc-800">{formatCurrencyInr(deletingPayment.amount)}</span>? This action is permanent and cannot be undone.
+              </p>
+              
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDeletingPayment(null)}
+                  className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeletePaymentSubmit}
+                  className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer shadow-md active:scale-[0.98]"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* DRAWER: View Payment Info Details */}
+      <AnimatePresence>
+        {viewPaymentDetails && (
+          <div className="fixed inset-0 z-[110] flex justify-end bg-black/40 backdrop-blur-xs">
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 220 }}
+              className="h-full w-full max-w-md bg-white border-l border-zinc-200 shadow-2xl flex flex-col overflow-hidden"
+            >
+              <div className="px-6 py-5 border-b border-zinc-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-zinc-955">Payment Metadata Specs</h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Order ID: {viewPaymentDetails.orderId}</p>
+                </div>
+                <button
+                  onClick={() => setViewPaymentDetails(null)}
+                  className="p-1.5 rounded-lg hover:bg-zinc-50 text-zinc-400 hover:text-zinc-600 transition-colors"
+                >
+                  <X className="size-4.5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* Visual Status Header */}
+                <div className="bg-zinc-50 rounded-2xl border border-zinc-150 p-4 flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl border ${
+                    viewPaymentDetails.status === "SUCCESS" ? "bg-emerald-50 text-emerald-600 border-emerald-150" :
+                    viewPaymentDetails.status === "FAILED" ? "bg-red-50 text-red-600 border-red-150" :
+                    "bg-amber-50 text-amber-600 border-amber-150"
+                  }`}>
+                    <CreditCard className="size-5" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Transaction Amount</span>
+                    <span className="text-lg font-black text-zinc-950 block">{formatCurrencyInr(viewPaymentDetails.amount)}</span>
+                  </div>
+                  <div className="ml-auto">
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${
+                      viewPaymentDetails.status === "SUCCESS" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
+                      viewPaymentDetails.status === "FAILED" ? "bg-red-50 text-red-700 border-red-150" :
+                      "bg-amber-50 text-amber-700 border-amber-150"
+                    }`}>
+                      {viewPaymentDetails.status}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Primary Specs */}
+                <div className="space-y-3.5">
+                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Transaction Specs</h4>
+                  <div className="rounded-2xl border border-zinc-155 bg-white divide-y divide-zinc-100 text-xs">
+                    <div className="flex items-center justify-between p-3.5">
+                      <span className="font-semibold text-zinc-500">Transaction ID</span>
+                      <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">{viewPaymentDetails.id}</code>
+                    </div>
+                    <div className="flex items-center justify-between p-3.5">
+                      <span className="font-semibold text-zinc-505">Cashfree Order ID</span>
+                      <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">{viewPaymentDetails.orderId}</code>
+                    </div>
+                    {viewPaymentDetails.cfPaymentId && (
+                      <div className="flex items-center justify-between p-3.5">
+                        <span className="font-semibold text-zinc-500">CF Payment ID</span>
+                        <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">{viewPaymentDetails.cfPaymentId}</code>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between p-3.5">
+                      <span className="font-semibold text-zinc-500">Payment Mode</span>
+                      <span className="font-bold text-zinc-800">{viewPaymentDetails.paymentMode || "—"}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3.5">
+                      <span className="font-semibold text-zinc-500">Billing Type</span>
+                      <span className="font-extrabold text-purple-700 capitalize text-[10px] px-1.5 py-0.5 rounded bg-purple-50 border border-purple-100 uppercase">
+                        {viewPaymentDetails.type === "subscription" ? "AutoPay Recurring" : "Checkout One-time"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-3.5">
+                      <span className="font-semibold text-zinc-500">Date Logged</span>
+                      <span className="font-bold text-zinc-700">
+                        {new Date(viewPaymentDetails.createdAt).toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Customer Details */}
+                <div className="space-y-3.5">
+                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Clinician / Subscriber</h4>
+                  <div className="rounded-2xl border border-zinc-150 bg-white p-4 space-y-3 text-xs">
+                    <div className="flex items-start gap-2.5">
+                      <User className="size-4 text-zinc-400 mt-0.5" />
+                      <div>
+                        <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Name</span>
+                        <span className="font-bold text-zinc-900">{viewPaymentDetails.customerName || viewPaymentDetails.clinicName || "—"}</span>
+                      </div>
+                    </div>
+                    {viewPaymentDetails.customerEmail && (
+                      <div className="flex items-start gap-2.5">
+                        <Mail className="size-4 text-zinc-400 mt-0.5" />
+                        <div>
+                          <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Email</span>
+                          <span className="font-bold text-zinc-900 select-all">{viewPaymentDetails.customerEmail}</span>
+                        </div>
+                      </div>
+                    )}
+                    {viewPaymentDetails.customerPhone && (
+                      <div className="flex items-start gap-2.5">
+                        <Phone className="size-4 text-zinc-400 mt-0.5" />
+                        <div>
+                          <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Contact</span>
+                          <span className="font-bold text-zinc-900">{viewPaymentDetails.customerPhone}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Failure reason if failed */}
+                {viewPaymentDetails.failureReason && (
+                  <div className="bg-red-50/50 rounded-2xl border border-red-150 p-4 space-y-1">
+                    <span className="text-[10px] font-extrabold text-red-700 uppercase tracking-wider block">Gateway Failure / Remarks Log</span>
+                    <p className="text-xs text-red-950 font-medium leading-relaxed">{viewPaymentDetails.failureReason}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Invoice generation at footer */}
+              {viewPaymentDetails.status === "SUCCESS" && (
+                <div className="p-6 border-t border-zinc-100 bg-zinc-50 shrink-0 flex gap-2">
+                  {(["view", "download"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={async () => {
+                        try {
+                          const { viewInvoice, downloadInvoice } = await import("../lib/pdf-invoice");
+                          const data = {
+                            clinicName: viewPaymentDetails.clinicName,
+                            customerName: viewPaymentDetails.customerName,
+                            customerEmail: viewPaymentDetails.customerEmail,
+                            customerPhone: viewPaymentDetails.customerPhone,
+                            plan: viewPaymentDetails.plan || "Pro",
+                            amount: Number(viewPaymentDetails.amount),
+                            status: viewPaymentDetails.status,
+                            paymentMethod: viewPaymentDetails.paymentMode,
+                            paymentType: viewPaymentDetails.type === "subscription" ? "RECURRING" : "CHECKOUT",
+                            transactionType: viewPaymentDetails.type === "subscription" ? "Subscription Renewal" : "Setup Fee / Checkout",
+                            cfPaymentId: viewPaymentDetails.cfPaymentId,
+                            cfOrderId: viewPaymentDetails.orderId,
+                            transactionRef: viewPaymentDetails.id,
+                            paidAt: viewPaymentDetails.createdAt,
+                            createdAt: viewPaymentDetails.createdAt,
+                          };
+                          if (mode === "view") await viewInvoice(data);
+                          else await downloadInvoice(data);
+                        } catch (err: any) {
+                          toast.error("Could not generate invoice: " + err.message);
+                        }
+                      }}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white py-3 text-xs font-extrabold text-zinc-700 hover:text-brand hover:border-brand/30 transition-all cursor-pointer active:scale-[0.98] shadow-sm"
+                    >
+                      {mode === "view" ? <><Eye className="size-3.5" /> View Invoice</> : <><FileText className="size-3.5" /> Download Invoice</>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Provision Custom Subscription */}
+      <AnimatePresence>
+        {isProvisionSubOpen && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="bg-white rounded-3xl border border-zinc-200 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900">Provision Custom Subscription Mandate</h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Establish a manual, recurring SaaS subscription contract for a tenant.</p>
+                </div>
+                <button type="button" onClick={() => setIsProvisionSubOpen(false)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleProvisionSubSubmit} className="overflow-y-auto p-6 space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Select Clinic / Tenant *</label>
+                  <select
+                    required
+                    value={addSubTenantId}
+                    onChange={(e) => {
+                      const selected = tenants.find(t => t.tenantId === e.target.value);
+                      setAddSubTenantId(e.target.value);
+                      if (selected) {
+                        setAddSubName(selected.name || "");
+                        setAddSubEmail(selected.email || "");
+                        setAddSubPhone(selected.phone || "");
+                        setAddSubAmount(selected.subscriptionPlan === "Premium" ? 9999 : selected.subscriptionPlan === "Pro" ? 4999 : 2499);
+                        setAddSubPlan(selected.subscriptionPlan || "Pro");
+                      }
+                    }}
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                  >
+                    <option value="">-- Choose Clinic / Tenant --</option>
+                    {tenants.map(t => (
+                      <option key={t.id} value={t.tenantId}>{t.clinicName} ({t.name})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Plan / Tier *</label>
+                    <select
+                      value={addSubPlan}
+                      onChange={(e) => {
+                        setAddSubPlan(e.target.value);
+                        setAddSubAmount(e.target.value === "Premium" ? 9999 : e.target.value === "Pro" ? 4999 : 2499);
+                      }}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    >
+                      <option value="Basic">Basic</option>
+                      <option value="Pro">Pro</option>
+                      <option value="Premium">Premium</option>
+                      <option value="Clinic">Clinic</option>
+                      <option value="Enterprise">Enterprise</option>
+                      <option value="Solo">Solo</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Billing Amount (INR) *</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={addSubAmount}
+                      onChange={(e) => setAddSubAmount(Number(e.target.value))}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-1 space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Interval *</label>
+                    <select
+                      value={addSubInterval}
+                      onChange={(e) => setAddSubInterval(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    >
+                      <option value="MONTH">Monthly</option>
+                      <option value="YEAR">Yearly</option>
+                    </select>
+                  </div>
+                  <div className="col-span-1 space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Intervals *</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={addSubIntervals}
+                      onChange={(e) => setAddSubIntervals(Number(e.target.value))}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    />
+                  </div>
+                  <div className="col-span-1 space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Status *</label>
+                    <select
+                      value={addSubStatus}
+                      onChange={(e) => setAddSubStatus(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    >
+                      <option value="ACTIVE">ACTIVE</option>
+                      <option value="ON_HOLD">ON_HOLD</option>
+                      <option value="CANCELLED">CANCELLED</option>
+                      <option value="INITIALIZED">INITIALIZED</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-zinc-400">Period Start</label>
+                    <input
+                      type="date"
+                      value={addSubPeriodStart}
+                      onChange={(e) => setAddSubPeriodStart(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-800 focus:bg-white focus:outline-none font-semibold"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-zinc-400">Period End</label>
+                    <input
+                      type="date"
+                      value={addSubPeriodEnd}
+                      onChange={(e) => setAddSubPeriodEnd(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-800 focus:bg-white focus:outline-none font-semibold"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-zinc-400">Next Charge</label>
+                    <input
+                      type="date"
+                      value={addSubNextCharge}
+                      onChange={(e) => setAddSubNextCharge(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-800 focus:bg-white focus:outline-none font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t border-zinc-100 pt-3 space-y-3">
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">Customer Overrides</span>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-zinc-400">Subscriber Name</label>
+                    <input
+                      type="text"
+                      placeholder="Subscriber Full Name"
+                      value={addSubName}
+                      onChange={(e) => setAddSubName(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-zinc-400">Subscriber Email</label>
+                      <input
+                        type="email"
+                        placeholder="email@example.com"
+                        value={addSubEmail}
+                        onChange={(e) => setAddSubEmail(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-zinc-400">Subscriber Phone</label>
+                      <input
+                        type="text"
+                        placeholder="Phone Number"
+                        value={addSubPhone}
+                        onChange={(e) => setAddSubPhone(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2.5 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsProvisionSubOpen(false)}
+                    className="flex-1 rounded-xl border border-zinc-200 py-3 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-xl bg-zinc-950 hover:bg-zinc-800 py-3 text-xs font-extrabold text-white transition-all shadow-md active:scale-[0.98]"
+                  >
+                    Provision Mandate
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Edit Subscription Mandate */}
+      <AnimatePresence>
+        {editingSub && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="bg-white rounded-3xl border border-zinc-200 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900">Modify Subscription Mandate Specs</h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Ref ID: {editingSub.subscriptionRef}</p>
+                </div>
+                <button type="button" onClick={() => setEditingSub(null)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleEditSubSubmit} className="overflow-y-auto p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Plan Tier</label>
+                    <select
+                      value={editSubPlan}
+                      onChange={(e) => setEditSubPlan(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    >
+                      <option value="Basic">Basic</option>
+                      <option value="Pro">Pro</option>
+                      <option value="Premium">Premium</option>
+                      <option value="Clinic">Clinic</option>
+                      <option value="Enterprise">Enterprise</option>
+                      <option value="Solo">Solo</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Price (INR)</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={editSubAmount}
+                      onChange={(e) => setEditSubAmount(Number(e.target.value))}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-1 space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Interval</label>
+                    <select
+                      value={editSubInterval}
+                      onChange={(e) => setEditSubInterval(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    >
+                      <option value="MONTH">Monthly</option>
+                      <option value="YEAR">Yearly</option>
+                    </select>
+                  </div>
+                  <div className="col-span-1 space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Intervals</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={editSubIntervals}
+                      onChange={(e) => setEditSubIntervals(Number(e.target.value))}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    />
+                  </div>
+                  <div className="col-span-1 space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Status</label>
+                    <select
+                      value={editSubStatus}
+                      onChange={(e) => setEditSubStatus(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    >
+                      <option value="ACTIVE">ACTIVE</option>
+                      <option value="ON_HOLD">ON_HOLD</option>
+                      <option value="CANCELLED">CANCELLED</option>
+                      <option value="INITIALIZED">INITIALIZED</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-zinc-400">Period Start</label>
+                    <input
+                      type="date"
+                      value={editSubPeriodStart}
+                      onChange={(e) => setEditSubPeriodStart(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-800 focus:bg-white focus:outline-none font-semibold"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-zinc-400">Period End</label>
+                    <input
+                      type="date"
+                      value={editSubPeriodEnd}
+                      onChange={(e) => setEditSubPeriodEnd(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-800 focus:bg-white focus:outline-none font-semibold"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-zinc-400">Next Charge</label>
+                    <input
+                      type="date"
+                      value={editSubNextCharge}
+                      onChange={(e) => setEditSubNextCharge(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-800 focus:bg-white focus:outline-none font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Cancel At Period End?</label>
+                  <select
+                    value={editSubCancelAtEnd}
+                    onChange={(e) => setEditSubCancelAtEnd(Number(e.target.value))}
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                  >
+                    <option value={0}>No - Keep Auto-Renewing</option>
+                    <option value={1}>Yes - Terminate on period end</option>
+                  </select>
+                </div>
+
+                <div className="border-t border-zinc-100 pt-3 space-y-3">
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">Customer Details Override</span>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-zinc-400">Subscriber Name</label>
+                    <input
+                      type="text"
+                      value={editSubName}
+                      onChange={(e) => setEditSubName(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-zinc-400">Subscriber Email</label>
+                      <input
+                        type="email"
+                        value={editSubEmail}
+                        onChange={(e) => setEditSubEmail(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-zinc-400">Subscriber Phone</label>
+                      <input
+                        type="text"
+                        value={editSubPhone}
+                        onChange={(e) => setEditSubPhone(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2.5 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setEditingSub(null)}
+                    className="flex-1 rounded-xl border border-zinc-200 py-3 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-xl bg-zinc-950 hover:bg-zinc-850 py-3 text-xs font-extrabold text-white transition-all shadow-md active:scale-[0.98]"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Record Subscription Cycle Payment (Log Charge) */}
+      <AnimatePresence>
+        {logPaymentSub && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              className="bg-white rounded-3xl border border-zinc-200 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900">Log Subscription Charge / Renewal</h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Subscriber: {logPaymentSub.clinicName || logPaymentSub.customerName}</p>
+                </div>
+                <button type="button" onClick={() => setLogPaymentSub(null)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleLogPaymentSubmit} className="overflow-y-auto p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Charge Amount (INR) *</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={logPayAmount}
+                      onChange={(e) => setLogPayAmount(Number(e.target.value))}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Payment Mode *</label>
+                    <select
+                      value={logPayMethod}
+                      onChange={(e) => setLogPayMethod(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    >
+                      <option value="UPI">UPI / GPay / PhonePe</option>
+                      <option value="BANK_TRANSFER">Bank Transfer (IMPS/NEFT)</option>
+                      <option value="CASH">Offline Cash</option>
+                      <option value="CARD">Credit / Debit Card</option>
+                      <option value="OFFLINE">Other Offline</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Status *</label>
+                    <select
+                      value={logPayStatus}
+                      onChange={(e) => setLogPayStatus(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    >
+                      <option value="SUCCESS">SUCCESS (Paid)</option>
+                      <option value="PENDING">PENDING (Awaiting)</option>
+                      <option value="FAILED">FAILED (Rejected)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Txn Type *</label>
+                    <select
+                      value={logPayType}
+                      onChange={(e) => setLogPayType(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
+                    >
+                      <option value="CHARGE">CHARGE (Renewal Payment)</option>
+                      <option value="AUTH">AUTH (Mandate Setup verification)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Paid Date</label>
+                  <input
+                    type="date"
+                    value={logPayDate}
+                    onChange={(e) => setLogPayDate(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Remarks / Notes</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Enter manual cycle references, invoice notes, or receipt metadata."
+                    value={logPayRemarks}
+                    onChange={(e) => setLogPayRemarks(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-semibold resize-none"
+                  />
+                </div>
+
+                <div className="flex gap-2.5 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setLogPaymentSub(null)}
+                    className="flex-1 rounded-xl border border-zinc-200 py-3 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-xl bg-zinc-950 hover:bg-zinc-800 py-3 text-xs font-extrabold text-white transition-all shadow-md active:scale-[0.98]"
+                  >
+                    Record Cycle Payment
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Delete Subscription Confirmation */}
+      <AnimatePresence>
+        {deletingSub && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white border border-zinc-200 rounded-3xl w-full max-w-sm shadow-2xl p-6 text-center relative"
+            >
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 border border-red-150 mb-4">
+                <AlertCircle className="size-7 text-red-600" />
+              </div>
+              <h3 className="text-lg font-black text-zinc-950 mb-2">Delete Subscription Mandate?</h3>
+              <p className="text-xs text-zinc-500 leading-relaxed mb-6">
+                Are you sure you want to delete the subscription mandate log for <span className="font-extrabold text-zinc-800">{deletingSub.clinicName || deletingSub.customerName}</span>? This will wipe the billing contract logs from dashboard metrics, but will not cancel any actual live recurring payments in Cashfree.
+              </p>
+              
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDeletingSub(null)}
+                  className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteSubSubmit}
+                  className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer shadow-md active:scale-[0.98]"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* DRAWER: View Subscription Info Details */}
+      <AnimatePresence>
+        {viewSubDetails && (
+          <div className="fixed inset-0 z-[110] flex justify-end bg-black/40 backdrop-blur-xs">
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 220 }}
+              className="h-full w-full max-w-lg bg-white border-l border-zinc-200 shadow-2xl flex flex-col overflow-hidden"
+            >
+              <div className="px-6 py-5 border-b border-zinc-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-zinc-950">Subscription Contract Specs</h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Ref ID: {viewSubDetails.subscriptionRef}</p>
+                </div>
+                <button
+                  onClick={() => setViewSubDetails(null)}
+                  className="p-1.5 rounded-lg hover:bg-zinc-50 text-zinc-400 hover:text-zinc-600 transition-colors"
+                >
+                  <X className="size-4.5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* Visual Status Header */}
+                <div className="bg-zinc-50 rounded-2xl border border-zinc-150 p-4 flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl border ${
+                    String(viewSubDetails.status).toUpperCase() === "ACTIVE" ? "bg-emerald-50 text-emerald-600 border-emerald-150" :
+                    String(viewSubDetails.status).toUpperCase() === "CANCELLED" ? "bg-zinc-100 text-zinc-600 border-zinc-200" :
+                    "bg-amber-50 text-amber-600 border-amber-150"
+                  }`}>
+                    <Activity className="size-5" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">{viewSubDetails.planTier} Plan</span>
+                    <span className="text-lg font-black text-zinc-950 block">
+                      {formatCurrencyInr(viewSubDetails.amount)} <span className="text-xs font-bold text-zinc-400">/{viewSubDetails.intervalType === "YEAR" ? "yr" : "mo"}</span>
+                    </span>
+                  </div>
+                  <div className="ml-auto">
+                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${
+                      String(viewSubDetails.status).toUpperCase() === "ACTIVE" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
+                      String(viewSubDetails.status).toUpperCase() === "CANCELLED" ? "bg-zinc-100 text-zinc-650 border-zinc-200" :
+                      "bg-amber-50 text-amber-700 border-amber-150"
+                    }`}>
+                      {viewSubDetails.status}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Primary Specs */}
+                <div className="space-y-3.5">
+                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Contract Details</h4>
+                  <div className="rounded-2xl border border-zinc-150 bg-white divide-y divide-zinc-100 text-xs">
+                    <div className="flex items-center justify-between p-3.5">
+                      <span className="font-semibold text-zinc-500">Subscription Ref</span>
+                      <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800 select-all">{viewSubDetails.subscriptionRef}</code>
+                    </div>
+                    {viewSubDetails.cfSubscriptionId && (
+                      <div className="flex items-center justify-between p-3.5">
+                        <span className="font-semibold text-zinc-505">Cashfree Sub ID</span>
+                        <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">{viewSubDetails.cfSubscriptionId}</code>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between p-3.5">
+                      <span className="font-semibold text-zinc-505">Billing Cycle</span>
+                      <span className="font-bold text-zinc-800">{viewSubDetails.intervals} {viewSubDetails.intervalType}(s)</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3.5">
+                      <span className="font-semibold text-zinc-505">Next Charge Date</span>
+                      <span className="font-bold text-zinc-700">
+                        {viewSubDetails.nextChargeAt ? new Date(viewSubDetails.nextChargeAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-3.5">
+                      <span className="font-semibold text-zinc-505">Current Period</span>
+                      <span className="font-bold text-zinc-700">
+                        {viewSubDetails.currentPeriodStart ? new Date(viewSubDetails.currentPeriodStart).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—"}
+                        {" → "}
+                        {viewSubDetails.currentPeriodEnd ? new Date(viewSubDetails.currentPeriodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between p-3.5">
+                      <span className="font-semibold text-zinc-505">Created Date</span>
+                      <span className="font-bold text-zinc-700">
+                        {new Date(viewSubDetails.createdAt).toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Subscriber Info */}
+                <div className="space-y-3.5">
+                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Subscriber Clinic</h4>
+                  <div className="rounded-2xl border border-zinc-150 bg-white p-4 space-y-3 text-xs">
+                    <div className="flex items-start gap-2.5">
+                      <User className="size-4 text-zinc-400 mt-0.5" />
+                      <div>
+                        <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Name</span>
+                        <span className="font-bold text-zinc-900">{viewSubDetails.customerName || viewSubDetails.clinicName || "—"}</span>
+                      </div>
+                    </div>
+                    {viewSubDetails.customerEmail && (
+                      <div className="flex items-start gap-2.5">
+                        <Mail className="size-4 text-zinc-400 mt-0.5" />
+                        <div>
+                          <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Email</span>
+                          <span className="font-bold text-zinc-900 select-all">{viewSubDetails.customerEmail}</span>
+                        </div>
+                      </div>
+                    )}
+                    {viewSubDetails.customerPhone && (
+                      <div className="flex items-start gap-2.5">
+                        <Phone className="size-4 text-zinc-400 mt-0.5" />
+                        <div>
+                          <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Contact</span>
+                          <span className="font-bold text-zinc-900">{viewSubDetails.customerPhone}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Subscription Payment History Ledger */}
+                <div className="space-y-3.5">
+                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Payment Ledger History</h4>
+                  {loadingViewSubPayments ? (
+                    <div className="flex items-center justify-center py-6 text-zinc-400 text-xs gap-1.5">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Load billing history...
+                    </div>
+                  ) : viewSubPayments.length === 0 ? (
+                    <p className="text-[10px] text-zinc-400 italic">No cycle payments recorded for this mandate yet.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {viewSubPayments.map((p: any) => {
+                        const isAuth = String(p.paymentType || "").toUpperCase() === "AUTH";
+                        return (
+                          <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-150 bg-zinc-50/50 px-3 py-2 text-xs">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-zinc-900">{formatCurrencyInr(p.amount)}</span>
+                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black ${
+                                  p.status === "SUCCESS" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                                }`}>{p.status}</span>
+                                {isAuth && (
+                                  <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-zinc-100 text-zinc-500" title="Refundable mandate authorization, not a real charge">
+                                    MANDATE
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[9px] text-zinc-400 font-medium mt-0.5">
+                                {new Date(p.paidAt || p.createdAt).toLocaleDateString("en-IN")} · {p.paymentMethod || "AutoPay"}
+                              </div>
+                            </div>
+                            {p.status === "SUCCESS" && (
+                              <div className="flex items-center gap-1 shrink-0">
+                                {(["view", "download"] as const).map((mode) => (
+                                  <button
+                                    key={mode}
+                                    onClick={async () => {
+                                      try {
+                                        const { viewInvoice, downloadInvoice } = await import("../lib/pdf-invoice");
+                                        const data = {
+                                          clinicName: viewSubDetails.clinicName,
+                                          customerName: viewSubDetails.customerName,
+                                          customerEmail: viewSubDetails.customerEmail,
+                                          customerPhone: viewSubDetails.customerPhone,
+                                          plan: viewSubDetails.planTier,
+                                          amount: Number(p.amount),
+                                          status: p.status,
+                                          paymentMethod: p.paymentMethod,
+                                          paymentType: p.paymentType,
+                                          transactionType: isAuth ? "Mandate Registration" : "Subscription Renewal",
+                                          cfPaymentId: p.cfPaymentId,
+                                          cfOrderId: p.cfOrderId,
+                                          subscriptionRef: viewSubDetails.subscriptionRef,
+                                          transactionRef: p.id,
+                                          paidAt: p.paidAt,
+                                          createdAt: p.createdAt,
+                                        };
+                                        if (mode === "view") await viewInvoice(data);
+                                        else await downloadInvoice(data);
+                                      } catch (err: any) {
+                                        toast.error("Failed to generate invoice: " + err.message);
+                                      }
+                                    }}
+                                    className="p-1 border border-zinc-200 rounded hover:bg-white text-zinc-505 hover:text-zinc-800 transition-colors"
+                                    title={mode === "view" ? "View invoice" : "Download invoice"}
+                                  >
+                                    {mode === "view" ? <Eye className="size-3" /> : <FileText className="size-3" />}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </motion.div>
           </div>

@@ -464,33 +464,64 @@ export const getPaymentHistoryServerFn = createServerFn({ method: "GET" })
     const params: any[] = [];
 
     if (data.status && data.status !== "all") {
-      conditions.push("ph.status = ?");
+      conditions.push("combined.status = ?");
       params.push(data.status);
     }
     if (data.search) {
-      conditions.push("(ph.orderId LIKE ? OR ph.customerEmail LIKE ? OR ph.customerName LIKE ? OR ph.customerPhone LIKE ? OR ph.cfPaymentId LIKE ?)");
+      conditions.push("(combined.orderId LIKE ? OR combined.customerEmail LIKE ? OR combined.customerName LIKE ? OR combined.customerPhone LIKE ? OR combined.cfPaymentId LIKE ? OR combined.clinicName LIKE ?)");
       const like = `%${data.search}%`;
-      params.push(like, like, like, like, like);
+      params.push(like, like, like, like, like, like);
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const limit = Math.min(Math.max(Number(data.limit) || 200, 1), 1000);
 
+    // NOTE: every text column selected in BOTH branches of the UNION must share
+    // an identical collation, or MariaDB throws "Illegal mix of collations for
+    // operation 'UNION'". User.* columns are utf8mb4_0900_ai_ci while
+    // PaymentHistory/Subscription/SubscriptionPayment are utf8mb4_unicode_ci —
+    // every User-sourced text column is explicitly cast to utf8mb4_unicode_ci
+    // below so both branches agree.
     const rows = await query<any>(
-      `SELECT ph.id, ph.userId, ph.tenantId, ph.orderId, ph.cfPaymentId, ph.plan, ph.amount, ph.currency,
-              ph.status, ph.orderStatus, ph.paymentMode, ph.failureReason,
-              ph.customerName, ph.customerEmail, ph.customerPhone, ph.gateway,
-              ph.createdAt, ph.updatedAt,
-              u.clinicName
-       FROM PaymentHistory ph
-       LEFT JOIN User u ON u.tenantId COLLATE utf8mb4_unicode_ci = ph.tenantId COLLATE utf8mb4_unicode_ci
+      `SELECT * FROM (
+         SELECT ph.id, ph.userId, ph.tenantId, ph.orderId, ph.cfPaymentId,
+                ph.plan COLLATE utf8mb4_unicode_ci AS plan,
+                ph.amount, ph.currency,
+                ph.status, ph.orderStatus, ph.paymentMode, ph.failureReason,
+                ph.customerName COLLATE utf8mb4_unicode_ci AS customerName,
+                ph.customerEmail COLLATE utf8mb4_unicode_ci AS customerEmail,
+                ph.customerPhone COLLATE utf8mb4_unicode_ci AS customerPhone,
+                ph.gateway,
+                ph.createdAt, ph.updatedAt,
+                u.clinicName COLLATE utf8mb4_unicode_ci AS clinicName,
+                'one_time' AS type
+         FROM PaymentHistory ph
+         LEFT JOIN User u ON u.tenantId COLLATE utf8mb4_unicode_ci = ph.tenantId COLLATE utf8mb4_unicode_ci
+
+         UNION ALL
+
+         SELECT sp.id, sp.userId, sp.tenantId, COALESCE(sp.cfOrderId, sp.paymentRef) AS orderId, sp.cfPaymentId,
+                s.planTier COLLATE utf8mb4_unicode_ci AS plan,
+                sp.amount, sp.currency,
+                sp.status, sp.status AS orderStatus, sp.paymentMethod AS paymentMode, sp.failureReason,
+                u.name COLLATE utf8mb4_unicode_ci AS customerName,
+                u.email COLLATE utf8mb4_unicode_ci AS customerEmail,
+                u.phone COLLATE utf8mb4_unicode_ci AS customerPhone,
+                'Cashfree' AS gateway,
+                sp.createdAt, COALESCE(sp.paidAt, sp.createdAt) AS updatedAt,
+                u.clinicName COLLATE utf8mb4_unicode_ci AS clinicName,
+                'subscription' AS type
+         FROM SubscriptionPayment sp
+         LEFT JOIN User u ON u.id COLLATE utf8mb4_unicode_ci = sp.userId COLLATE utf8mb4_unicode_ci
+         LEFT JOIN Subscription s ON s.subscriptionRef COLLATE utf8mb4_unicode_ci = sp.subscriptionRef COLLATE utf8mb4_unicode_ci
+       ) AS combined
        ${where}
-       ORDER BY ph.createdAt DESC
+       ORDER BY combined.createdAt DESC
        LIMIT ?`,
       [...params, limit]
     );
 
-    // Summary counts + totals for the header cards.
+    // Summary counts + totals for the header cards (unified across both one-time and AutoPay)
     const summary = await queryOne<any>(
       `SELECT
          COUNT(*) as totalCount,
@@ -502,7 +533,11 @@ export const getPaymentHistoryServerFn = createServerFn({ method: "GET" })
          SUM(CASE WHEN status = 'FAILED' THEN amount ELSE 0 END) as failedAmount,
          SUM(CASE WHEN status = 'CANCELLED' THEN amount ELSE 0 END) as cancelledAmount,
          SUM(CASE WHEN status = 'PENDING' THEN amount ELSE 0 END) as pendingAmount
-       FROM PaymentHistory`
+       FROM (
+         SELECT status, amount FROM PaymentHistory
+         UNION ALL
+         SELECT status, amount FROM SubscriptionPayment
+       ) AS combined`
     );
 
     return {
@@ -704,4 +739,143 @@ export const getTenantFullProfileServerFn = createServerFn({ method: "GET" })
       },
       history
     };
+  });
+
+// ──────────────────────────────────────────────
+// CRUD Operations for Payments (manual creation, updates, deletion)
+// ──────────────────────────────────────────────
+
+export const createPaymentServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    tenantId: string;
+    plan: string;
+    amount: number;
+    status: string;
+    paymentMode: string;
+    customerName?: string;
+    customerEmail?: string;
+    customerPhone?: string;
+    createdAt?: string;
+  }) => {
+    if (!data.tenantId || !data.status || data.amount === undefined) {
+      throw new Error("Tenant ID, status, and amount are required");
+    }
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    // Look up the base User matching the tenantId
+    const user = await queryOne<any>(
+      "SELECT id, name, email, phone FROM User WHERE tenantId = ? LIMIT 1",
+      [data.tenantId]
+    );
+
+    const userId = user?.id || null;
+    const name = data.customerName || user?.name || "Manual Transaction";
+    const email = data.customerEmail || user?.email || null;
+    const phone = data.customerPhone || user?.phone || null;
+    const paymentId = generateId();
+    const orderId = `manual_${crypto.randomBytes(6).toString("hex")}`;
+    const date = data.createdAt ? new Date(data.createdAt) : new Date();
+
+    await execute(
+      `INSERT INTO PaymentHistory
+         (id, userId, tenantId, orderId, cfPaymentId, plan, amount, currency, status, orderStatus, paymentMode, customerName, customerEmail, customerPhone, gateway, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'INR', ?, ?, ?, ?, ?, ?, 'Manual', ?, NOW())`,
+      [
+        paymentId,
+        userId,
+        data.tenantId,
+        orderId,
+        `manual_txn_${crypto.randomBytes(4).toString("hex")}`,
+        data.plan || "Manual",
+        Number(data.amount),
+        data.status,
+        data.status === "SUCCESS" ? "PAID" : "ACTIVE",
+        data.paymentMode || "OFFLINE",
+        name,
+        email,
+        phone,
+        date
+      ]
+    );
+
+    return { success: true, paymentId, orderId };
+  });
+
+export const updatePaymentServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    id: string;
+    type: "one_time" | "subscription";
+    amount: number;
+    status: string;
+    paymentMode: string;
+    failureReason?: string;
+    customerName?: string;
+    customerEmail?: string;
+    customerPhone?: string;
+  }) => {
+    if (!data.id || !data.type || !data.status) {
+      throw new Error("ID, type, and status are required");
+    }
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    if (data.type === "subscription") {
+      await execute(
+        `UPDATE SubscriptionPayment
+         SET status = ?, amount = ?, paymentMethod = ?, failureReason = ?
+         WHERE id = ?`,
+        [
+          data.status,
+          Number(data.amount),
+          data.paymentMode,
+          data.failureReason || null,
+          data.id,
+        ]
+      );
+    } else {
+      await execute(
+        `UPDATE PaymentHistory
+         SET status = ?, amount = ?, paymentMode = ?, failureReason = ?, customerName = ?, customerEmail = ?, customerPhone = ?
+         WHERE id = ?`,
+        [
+          data.status,
+          Number(data.amount),
+          data.paymentMode,
+          data.failureReason || null,
+          data.customerName || null,
+          data.customerEmail || null,
+          data.customerPhone || null,
+          data.id,
+        ]
+      );
+    }
+
+    return { success: true };
+  });
+
+export const deletePaymentServerFn = createServerFn({ method: "POST" })
+  .validator((data: { id: string; type: "one_time" | "subscription" }) => {
+    if (!data.id || !data.type) {
+      throw new Error("ID and type are required");
+    }
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    if (data.type === "subscription") {
+      await execute("DELETE FROM SubscriptionPayment WHERE id = ?", [data.id]);
+    } else {
+      await execute("DELETE FROM PaymentHistory WHERE id = ?", [data.id]);
+    }
+
+    return { success: true };
   });
