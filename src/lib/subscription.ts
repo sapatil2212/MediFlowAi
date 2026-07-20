@@ -127,10 +127,11 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
       expiryTimeIso: expiry.toISOString(),
       authorizationAmount: 1,
       note: `${tier} AutoPay`,
-      // Collect the first month immediately after the mandate is authorized so
-      // "Subscribe & AutoPay" actually charges the plan amount now (not just
-      // the ₹1 mandate) and then auto-renews every cycle.
-      firstChargeTimeIso: new Date().toISOString(),
+      // Collect the first month as soon as possible after mandate authorization.
+      // Cashfree rejects first-charge-time if it's <= today; use tomorrow + 1
+      // day buffer (2 days from now) to avoid timezone/validation issues. This
+      // is still effectively immediate relative to a monthly billing cycle.
+      firstChargeTimeIso: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
     });
 
     // Persist the local subscription record (INITIALIZED).
@@ -227,8 +228,10 @@ export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST"
       expiryTimeIso: expiry.toISOString(),
       authorizationAmount: 1,
       note: `${tier} AutoPay`,
-      // Collect the first month immediately after mandate authorization.
-      firstChargeTimeIso: new Date().toISOString(),
+      // Collect the first month as soon as possible after mandate authorization.
+      // Cashfree requires first-charge-time to be in the future (not today);
+      // use 2 days from now to avoid timezone/validation edge cases.
+      firstChargeTimeIso: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
     });
 
     await execute(
