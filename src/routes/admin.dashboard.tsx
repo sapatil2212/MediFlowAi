@@ -379,6 +379,9 @@ function AdminDashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [planFilter, setPlanFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  // Robust tenant filtering: expiry window and sort order.
+  const [expiryFilter, setExpiryFilter] = useState("all"); // all | expiring | expired | active
+  const [tenantSort, setTenantSort] = useState("newest"); // newest | oldest | name_asc | name_desc | expiring | plan
   const [demoSearchQuery, setDemoSearchQuery] = useState("");
   const [demoStatusFilter, setDemoStatusFilter] = useState("all");
 
@@ -1348,6 +1351,17 @@ function AdminDashboardPage() {
     return Math.ceil((parsed.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   };
 
+  // A tenant is "paid" only when they have an actual recorded payment (amount
+  // > 0 and a real gateway/payment method) — mirrors the hasPaid/isTrialing
+  // logic used across every client dashboard (professional.tsx, medical.tsx,
+  // etc). subscriptionStatus alone is NOT reliable: new signups are inserted
+  // as 'Active' with a 7-day trial expiry, so status can't distinguish trial
+  // vs. paid on its own.
+  const isTenantPaid = (t: { paymentAmount?: number | string | null; paymentMethod?: string | null }) => {
+    const pm = String(t.paymentMethod || "").toLowerCase();
+    return Number(t.paymentAmount) > 0 && pm !== "none" && pm !== "trial";
+  };
+
   const handleDemoStatusUpdate = async (demo: DemoAppointment, status: DemoAppointmentStatus) => {
     setUpdatingDemoId(demo.id);
     try {
@@ -1389,20 +1403,63 @@ function AdminDashboardPage() {
       t.clinicName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.tenantId.toLowerCase().includes(searchQuery.toLowerCase());
 
-    // Robust plan matching — normalize aliases; "trial" matches trial plans/status.
     let planMatch = true;
     if (planFilter !== "all") {
-      const rawPlan = String(t.subscriptionPlan || "").toLowerCase();
       if (planFilter === "trial") {
-        planMatch = rawPlan.includes("trial") || t.subscriptionStatus === "Trialing";
+        planMatch = !isTenantPaid(t);
       } else {
-        planMatch = !rawPlan.includes("trial") && normalizePlan(t.subscriptionPlan).toLowerCase() === planFilter.toLowerCase();
+        planMatch = isTenantPaid(t) && normalizePlan(t.subscriptionPlan).toLowerCase() === planFilter.toLowerCase();
       }
     }
     const statusMatch = statusFilter === "all" || t.subscriptionStatus.toLowerCase() === statusFilter.toLowerCase();
 
-    return queryMatch && planMatch && statusMatch;
+    // Expiry window filter based on days left until subscription expiry.
+    let expiryMatch = true;
+    if (expiryFilter !== "all") {
+      const days = getDaysLeft(t.subscriptionExpiresAt);
+      if (expiryFilter === "expired") expiryMatch = days !== null && days < 0;
+      else if (expiryFilter === "expiring") expiryMatch = days !== null && days >= 0 && days <= 7;
+      else if (expiryFilter === "active") expiryMatch = days === null || days > 7;
+    }
+
+    return queryMatch && planMatch && statusMatch && expiryMatch;
+  }).sort((a, b) => {
+    switch (tenantSort) {
+      case "oldest":
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      case "name_asc":
+        return (a.clinicName || "").localeCompare(b.clinicName || "");
+      case "name_desc":
+        return (b.clinicName || "").localeCompare(a.clinicName || "");
+      case "expiring": {
+        const da = getDaysLeft(a.subscriptionExpiresAt);
+        const db = getDaysLeft(b.subscriptionExpiresAt);
+        // Nulls (no expiry) sort last; otherwise ascending by days left.
+        if (da === null && db === null) return 0;
+        if (da === null) return 1;
+        if (db === null) return -1;
+        return da - db;
+      }
+      case "plan":
+        return normalizePlan(b.subscriptionPlan).localeCompare(normalizePlan(a.subscriptionPlan));
+      case "newest":
+      default:
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    }
   });
+
+  // Whether any tenant filter is active (used to show the Clear button).
+  const tenantFiltersActive =
+    searchQuery !== "" || planFilter !== "all" || statusFilter !== "all" ||
+    expiryFilter !== "all" || tenantSort !== "newest";
+
+  const clearTenantFilters = () => {
+    setSearchQuery("");
+    setPlanFilter("all");
+    setStatusFilter("all");
+    setExpiryFilter("all");
+    setTenantSort("newest");
+  };
 
   const filteredDemoAppointments = demoAppointments.filter((item) => {
     const query = demoSearchQuery.trim().toLowerCase();
@@ -1989,8 +2046,8 @@ function AdminDashboardPage() {
               {/* Summary cards */}
               {(() => {
                 const totalTenants = tenants.length;
-                const paidCount = tenants.filter(t => t.subscriptionStatus === "Active" && t.subscriptionPlan !== "Trial").length;
-                const trialCount = tenants.filter(t => t.subscriptionStatus === "Trialing" || t.subscriptionPlan === "Trial").length;
+                const paidCount = tenants.filter(t => isTenantPaid(t)).length;
+                const trialCount = tenants.filter(t => !isTenantPaid(t)).length;
                 const suspendedCount = tenants.filter(t => ["Suspended", "Cancelled", "Expired", "Inactive"].includes(String(t.subscriptionStatus))).length;
                 const cards = [
                   { label: "Total", value: totalTenants, hint: "All accounts", icon: Building, color: "bg-blue-50 text-[#0059C6]" },
@@ -2025,22 +2082,31 @@ function AdminDashboardPage() {
                 <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
                   <div>
                     <h2 className="text-sm font-extrabold text-zinc-900">Tenants</h2>
-                    <p className="text-[10px] text-zinc-400 mt-0.5">Manage billing details, limits, and settings for active tenants ({filteredTenants.length}).</p>
+                    <p className="text-[10px] text-zinc-400 mt-0.5">
+                      {tenantFiltersActive
+                        ? `Showing ${filteredTenants.length} of ${tenants.length} tenants (filtered)`
+                        : `Manage billing, limits, and settings for ${tenants.length} tenants`}
+                    </p>
                   </div>
                   <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
                     <div className="relative w-full sm:w-60">
                       <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
                       <input
                         type="text"
-                        placeholder="Search tenants, director name, or ID..."
+                        placeholder="Search name, email, phone, or ID..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all font-semibold"
+                        className="w-full pl-9 pr-8 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all font-semibold"
                       />
+                      {searchQuery && (
+                        <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 cursor-pointer">
+                          <X className="size-3.5" />
+                        </button>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
                       <Filter className="size-3.5 text-zinc-400" />
-                      <select value={planFilter} onChange={(e) => setPlanFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1">
+                      <select value={planFilter} onChange={(e) => setPlanFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer">
                         <option value="all">All Plans</option>
                         <option value="trial">Trial</option>
                         <option value="basic">Basic</option>
@@ -2050,7 +2116,7 @@ function AdminDashboardPage() {
                     </div>
                     <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
                       <Activity className="size-3.5 text-zinc-400" />
-                      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1">
+                      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer">
                         <option value="all">All Statuses</option>
                         <option value="active">Active</option>
                         <option value="trialing">Trialing</option>
@@ -2058,6 +2124,36 @@ function AdminDashboardPage() {
                         <option value="past due">Past Due</option>
                       </select>
                     </div>
+                    <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
+                      <Clock3 className="size-3.5 text-zinc-400" />
+                      <select value={expiryFilter} onChange={(e) => setExpiryFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer">
+                        <option value="all">Any Expiry</option>
+                        <option value="active">Active (&gt;7d)</option>
+                        <option value="expiring">Expiring (&le;7d)</option>
+                        <option value="expired">Expired</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
+                      <Sliders className="size-3.5 text-zinc-400" />
+                      <select value={tenantSort} onChange={(e) => setTenantSort(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="name_asc">Name A–Z</option>
+                        <option value="name_desc">Name Z–A</option>
+                        <option value="expiring">Expiring Soon</option>
+                        <option value="plan">Plan Tier</option>
+                      </select>
+                    </div>
+                    {tenantFiltersActive && (
+                      <button
+                        onClick={clearTenantFilters}
+                        className="flex items-center gap-1.5 border border-red-200 bg-red-50 text-red-600 rounded-xl px-3 py-2 text-xs font-bold hover:bg-red-100 transition-all cursor-pointer"
+                        title="Clear all filters"
+                      >
+                        <X className="size-3.5" />
+                        Clear
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2104,7 +2200,14 @@ function AdminDashboardPage() {
                   </div>
                   <div>
                     <h3 className="text-xs font-bold text-zinc-700">No Tenant Records Found</h3>
-                    <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">Try refining your search queries or register a new tenant.</p>
+                    <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">
+                      {tenantFiltersActive ? "No tenants match the current filters." : "Register a new tenant to get started."}
+                    </p>
+                    {tenantFiltersActive && (
+                      <button onClick={clearTenantFilters} className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-[#0059C6] hover:underline cursor-pointer">
+                        <X className="size-3.5" /> Clear filters
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : (

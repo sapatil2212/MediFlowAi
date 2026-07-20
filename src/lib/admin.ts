@@ -219,8 +219,18 @@ export const getSuperAdminDashboardDataServerFn = createServerFn({ method: "GET"
         totalTenants: tenants.length,
         totalMRR,
         totalCallsHandled,
-        activePaid: tenants.filter(t => t.subscriptionStatus === 'Active' && t.subscriptionPlan !== 'Trial').length,
-        trialing: tenants.filter(t => t.subscriptionStatus === 'Trialing' || t.subscriptionPlan === 'Trial').length,
+        // A tenant is "paid" only if they have an actual recorded payment
+        // (amount > 0 and a real payment method) — matches the hasPaid/isTrialing
+        // logic used across every client dashboard. subscriptionStatus alone is
+        // not a reliable signal since new signups are inserted as 'Active'.
+        activePaid: tenants.filter(t => {
+          const pm = String(t.paymentMethod || "").toLowerCase();
+          return Number(t.paymentAmount) > 0 && pm !== "none" && pm !== "trial";
+        }).length,
+        trialing: tenants.filter(t => {
+          const pm = String(t.paymentMethod || "").toLowerCase();
+          return !(Number(t.paymentAmount) > 0 && pm !== "none" && pm !== "trial");
+        }).length,
         totalAppointments,
         totalDoctors,
         totalSoapNotes,
