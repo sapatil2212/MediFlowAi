@@ -348,6 +348,11 @@ function AdminDashboardPage() {
   const [paymentSortField, setPaymentSortField] = useState<string>("createdAt");
   const [paymentSortOrder, setPaymentSortOrder] = useState<"asc" | "desc">("desc");
 
+  // Payments multi-select bulk delete state.
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState<Set<string>>(new Set());
+  const [showBulkDeletePayments, setShowBulkDeletePayments] = useState(false);
+  const [isBulkDeletingPayments, setIsBulkDeletingPayments] = useState(false);
+
   // Payment CRUD Drawer / Modal States
   const [viewPaymentDetails, setViewPaymentDetails] = useState<any | null>(null);
   const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
@@ -357,6 +362,11 @@ function AdminDashboardPage() {
   // Subscription Dynamic Sorting State
   const [subSortField, setSubSortField] = useState<string>("createdAt");
   const [subSortOrder, setSubSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Subscriptions multi-select bulk delete state.
+  const [selectedSubIds, setSelectedSubIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteSubs, setShowBulkDeleteSubs] = useState(false);
+  const [isBulkDeletingSubs, setIsBulkDeletingSubs] = useState(false);
 
   // Subscription CRUD Drawer / Modal States
   const [viewSubDetails, setViewSubDetails] = useState<any | null>(null);
@@ -724,6 +734,43 @@ function AdminDashboardPage() {
     }
   };
 
+  // Payments multi-select helpers.
+  const togglePaymentSelection = (id: string) => {
+    setSelectedPaymentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAllPayments = (ids: string[]) => {
+    setSelectedPaymentIds((prev) => {
+      const allSelected = ids.length > 0 && ids.every((id) => prev.has(id));
+      return allSelected ? new Set() : new Set(ids);
+    });
+  };
+  const executeBulkDeletePayments = async () => {
+    if (selectedPaymentIds.size === 0) return;
+    setIsBulkDeletingPayments(true);
+    try {
+      const rows = paymentRows.filter((p) => selectedPaymentIds.has(p.id));
+      let ok = 0, fail = 0;
+      for (const p of rows) {
+        try { await deletePaymentServerFn({ data: { id: p.id, type: p.type } }); ok++; }
+        catch { fail++; }
+      }
+      if (fail > 0) toast.warning(`Deleted ${ok} of ${rows.length} — ${fail} failed.`);
+      else toast.success(`Deleted ${ok} payment${ok === 1 ? "" : "s"} successfully.`);
+      setSelectedPaymentIds(new Set());
+      setShowBulkDeletePayments(false);
+      fetchPaymentHistory();
+      fetchDashboardData();
+    } catch (err: any) {
+      toast.error("Failed to delete selected payments: " + err.message);
+    } finally {
+      setIsBulkDeletingPayments(false);
+    }
+  };
+
   // Handlers for subscription CRUD
   const handleProvisionSubSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -834,6 +881,43 @@ function AdminDashboardPage() {
       fetchDashboardData();
     } catch (err: any) {
       toast.error("Failed to delete subscription: " + err.message);
+    }
+  };
+
+  // Subscriptions multi-select helpers.
+  const toggleSubSelection = (id: string) => {
+    setSelectedSubIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAllSubs = (ids: string[]) => {
+    setSelectedSubIds((prev) => {
+      const allSelected = ids.length > 0 && ids.every((id) => prev.has(id));
+      return allSelected ? new Set() : new Set(ids);
+    });
+  };
+  const executeBulkDeleteSubs = async () => {
+    if (selectedSubIds.size === 0) return;
+    setIsBulkDeletingSubs(true);
+    try {
+      const ids = Array.from(selectedSubIds);
+      let ok = 0, fail = 0;
+      for (const id of ids) {
+        try { await deleteAdminSubscriptionServerFn({ data: { id } }); ok++; }
+        catch { fail++; }
+      }
+      if (fail > 0) toast.warning(`Deleted ${ok} of ${ids.length} — ${fail} failed.`);
+      else toast.success(`Deleted ${ok} subscription${ok === 1 ? "" : "s"} successfully.`);
+      setSelectedSubIds(new Set());
+      setShowBulkDeleteSubs(false);
+      fetchAdminSubscriptions();
+      fetchDashboardData();
+    } catch (err: any) {
+      toast.error("Failed to delete selected subscriptions: " + err.message);
+    } finally {
+      setIsBulkDeletingSubs(false);
     }
   };
 
@@ -2726,10 +2810,37 @@ function AdminDashboardPage() {
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
+                      <AnimatePresence>
+                        {selectedPaymentIds.size > 0 && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 mb-3 overflow-hidden"
+                          >
+                            <span className="text-xs font-bold text-red-700">
+                              {selectedPaymentIds.size} payment{selectedPaymentIds.size === 1 ? "" : "s"} selected
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => setSelectedPaymentIds(new Set())} className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 px-2.5 py-1.5 rounded-lg hover:bg-white/60 transition-all cursor-pointer">Clear</button>
+                              <button onClick={() => setShowBulkDeletePayments(true)} className="flex items-center gap-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-all cursor-pointer active:scale-95">
+                                <Trash2 className="size-3.5" /> Delete Selected
+                              </button>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                       <table className="w-full text-left border-collapse min-w-[1100px]">
                         <thead>
                           <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                            <th className="pb-3 pl-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("customerName")}>
+                            <th className="pb-3 pl-3 w-8">
+                              <CustomCheckbox
+                                checked={sortedPaymentRows.length > 0 && sortedPaymentRows.every((p) => selectedPaymentIds.has(p.id))}
+                                indeterminate={selectedPaymentIds.size > 0 && !sortedPaymentRows.every((p) => selectedPaymentIds.has(p.id))}
+                                onChange={() => toggleSelectAllPayments(sortedPaymentRows.map((p) => p.id))}
+                              />
+                            </th>
+                            <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("customerName")}>
                               Customer & Order {paymentSortField === "customerName" && (paymentSortOrder === "asc" ? " ▲" : " ▼")}
                             </th>
                             <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("plan")}>
@@ -2767,10 +2878,14 @@ function AdminDashboardPage() {
                               p.status === "CANCELLED" ? "Cancelled" :
                               "Pending";
 
+                            const isPaySelected = selectedPaymentIds.has(p.id);
                             return (
-                              <tr key={p.id} className="hover:bg-slate-50/40 transition-colors group">
+                              <tr key={p.id} className={`transition-colors group ${isPaySelected ? "bg-blue-50/60 hover:bg-blue-50" : "hover:bg-slate-50/40"}`}>
+                                <td className="py-4 pl-3 w-8">
+                                  <CustomCheckbox checked={isPaySelected} onChange={() => togglePaymentSelection(p.id)} />
+                                </td>
                                 {/* Customer & Order */}
-                                <td className="py-4 pl-3">
+                                <td className="py-4">
                                   <div className="space-y-1">
                                     <span className="font-extrabold text-zinc-900 text-xs leading-tight block">
                                       {p.customerName || p.clinicName || "—"}
@@ -3042,10 +3157,37 @@ function AdminDashboardPage() {
                       </div>
                     ) : (
                       <div className="overflow-x-auto">
+                        <AnimatePresence>
+                          {selectedSubIds.size > 0 && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 mb-3 overflow-hidden"
+                            >
+                              <span className="text-xs font-bold text-red-700">
+                                {selectedSubIds.size} subscription{selectedSubIds.size === 1 ? "" : "s"} selected
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => setSelectedSubIds(new Set())} className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 px-2.5 py-1.5 rounded-lg hover:bg-white/60 transition-all cursor-pointer">Clear</button>
+                                <button onClick={() => setShowBulkDeleteSubs(true)} className="flex items-center gap-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-all cursor-pointer active:scale-95">
+                                  <Trash2 className="size-3.5" /> Delete Selected
+                                </button>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                         <table className="w-full text-left border-collapse min-w-[1000px]">
                           <thead>
                             <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                              <th className="pb-3 pl-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("clinicName")}>
+                              <th className="pb-3 pl-3 w-8">
+                                <CustomCheckbox
+                                  checked={sortedSubscriptionRows.length > 0 && sortedSubscriptionRows.every((s) => selectedSubIds.has(s.id))}
+                                  indeterminate={selectedSubIds.size > 0 && !sortedSubscriptionRows.every((s) => selectedSubIds.has(s.id))}
+                                  onChange={() => toggleSelectAllSubs(sortedSubscriptionRows.map((s) => s.id))}
+                                />
+                              </th>
+                              <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("clinicName")}>
                                 Tenant & Subscription {subSortField === "clinicName" && (subSortOrder === "asc" ? " ▲" : " ▼")}
                               </th>
                               <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("planTier")}>
@@ -3073,9 +3215,13 @@ function AdminDashboardPage() {
                                 st === "CANCELLED" ? "bg-zinc-100 text-zinc-650 border-zinc-200" :
                                 "bg-sky-50 text-sky-700 border-sky-150";
                               const next = s.nextChargeAt || s.currentPeriodEnd;
+                              const isSubSelected = selectedSubIds.has(s.id);
                               return (
-                                <tr key={s.id} className="hover:bg-slate-50/40 transition-colors group">
-                                  <td className="py-4 pl-3">
+                                <tr key={s.id} className={`transition-colors group ${isSubSelected ? "bg-blue-50/60 hover:bg-blue-50" : "hover:bg-slate-50/40"}`}>
+                                  <td className="py-4 pl-3 w-8">
+                                    <CustomCheckbox checked={isSubSelected} onChange={() => toggleSubSelection(s.id)} />
+                                  </td>
+                                  <td className="py-4">
                                     <span className="font-extrabold text-zinc-900 text-xs block">{s.clinicName || s.customerName || "—"}</span>
                                     <div className="text-[10px] text-zinc-400 font-medium mt-0.5 space-y-0.5">
                                       {s.customerEmail && <div>{s.customerEmail}</div>}
@@ -3823,6 +3969,72 @@ function AdminDashboardPage() {
                   className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98]"
                 >
                   {isBulkDeleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Delete All
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Bulk Delete Payments Confirmation */}
+      <AnimatePresence>
+        {showBulkDeletePayments && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white border border-zinc-200 rounded-3xl w-full max-w-sm mx-4 shadow-2xl overflow-hidden p-6 text-center relative"
+            >
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 border border-red-100 mb-4">
+                <AlertCircle className="size-7 text-red-600" />
+              </div>
+              <h3 className="text-lg font-black text-zinc-950 mb-2">Delete {selectedPaymentIds.size} Payment Record{selectedPaymentIds.size === 1 ? "" : "s"}?</h3>
+              <p className="text-xs text-zinc-500 leading-relaxed mb-6">
+                This removes the selected payment log{selectedPaymentIds.size === 1 ? "" : "s"} from your records. This action cannot be undone.
+              </p>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setShowBulkDeletePayments(false)} disabled={isBulkDeletingPayments}
+                  className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer">
+                  Cancel
+                </button>
+                <button type="button" onClick={executeBulkDeletePayments} disabled={isBulkDeletingPayments}
+                  className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98]">
+                  {isBulkDeletingPayments && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Delete All
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Bulk Delete Subscriptions Confirmation */}
+      <AnimatePresence>
+        {showBulkDeleteSubs && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white border border-zinc-200 rounded-3xl w-full max-w-sm mx-4 shadow-2xl overflow-hidden p-6 text-center relative"
+            >
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 border border-red-100 mb-4">
+                <AlertCircle className="size-7 text-red-600" />
+              </div>
+              <h3 className="text-lg font-black text-zinc-950 mb-2">Delete {selectedSubIds.size} Subscription{selectedSubIds.size === 1 ? "" : "s"}?</h3>
+              <p className="text-xs text-zinc-500 leading-relaxed mb-6">
+                This removes the selected subscription record{selectedSubIds.size === 1 ? "" : "s"} from your dashboard. Note: this does not cancel the mandate on Cashfree. This action cannot be undone.
+              </p>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setShowBulkDeleteSubs(false)} disabled={isBulkDeletingSubs}
+                  className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer">
+                  Cancel
+                </button>
+                <button type="button" onClick={executeBulkDeleteSubs} disabled={isBulkDeletingSubs}
+                  className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98]">
+                  {isBulkDeletingSubs && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Delete All
                 </button>
               </div>
