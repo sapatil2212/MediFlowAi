@@ -125,13 +125,11 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
       customer: { name: user.name, email: user.email, phone: (user as any).phone || "9999999999" },
       returnUrl,
       expiryTimeIso: expiry.toISOString(),
-      authorizationAmount: 1,
+      authorizationAmount: amount, // Charge the full plan amount as authorization
       note: `${tier} AutoPay`,
-      // Collect the first month's amount starting tomorrow (Cashfree requires
-      // first-charge-time to be in the future, minimum next calendar day). This
-      // charges the plan amount within 24h of mandate authorization — effectively
-      // immediate for a "Subscribe & AutoPay" flow.
-      firstChargeTimeIso: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      // Set first recurring charge to start from next month (30 days out).
+      // The authorizationAmount above collects the first month immediately.
+      firstChargeTimeIso: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     });
 
     // Persist the local subscription record (INITIALIZED).
@@ -226,13 +224,11 @@ export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST"
       customer: { name: user.name, email: user.email, phone: user.phone || "9999999999" },
       returnUrl,
       expiryTimeIso: expiry.toISOString(),
-      authorizationAmount: 1,
+      authorizationAmount: amount, // Charge the full plan amount as authorization
       note: `${tier} AutoPay`,
-      // Collect the first month's amount starting tomorrow (Cashfree requires
-      // first-charge-time to be in the future, minimum next calendar day). This
-      // charges the plan amount within 24h of mandate authorization — effectively
-      // immediate for a "Subscribe & AutoPay" flow.
-      firstChargeTimeIso: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      // Set first recurring charge to start from next month (30 days out).
+      // The authorizationAmount above collects the first month immediately.
+      firstChargeTimeIso: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     });
 
     await execute(
