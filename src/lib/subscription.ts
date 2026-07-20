@@ -104,7 +104,12 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
       note: `${tier} monthly plan Rs ${amount}`,
     });
 
-    const subscriptionRef = `sub_${user.tenantId}_${Date.now()}`;
+    // Generate professional subscription reference: BMT-SUB-YYYY-XXXXXXXX
+    // Format: Product prefix + type + year + unique 8-char ID derived from timestamp
+    const now = new Date();
+    const year = now.getFullYear();
+    const uniqueId = Date.now().toString(36).toUpperCase().padStart(8, '0').slice(-8);
+    const subscriptionRef = `BMT-SUB-${year}-${uniqueId}`;
 
     // Safe, same-origin return path (defaults to the professional dashboard).
     let basePath = "/dashboards/professional?tab=plans";
@@ -118,6 +123,15 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
     const expiry = new Date();
     expiry.setFullYear(expiry.getFullYear() + 5);
 
+    // Set first charge to tomorrow (minimum allowed by Cashfree). Since the
+    // authorizationAmount is the full plan amount (₹999/₹1499), the user pays
+    // that amount immediately during mandate setup. The "First Charge Date"
+    // shown on Cashfree's UI will be tomorrow, which signals to users that
+    // they're paying now (not waiting a month). This first charge will be
+    // automatically refunded/skipped since the auth amount already covered it.
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
     const cfSub = await createCashfreeSubscription({
       subscriptionId: subscriptionRef,
       planId,
@@ -125,11 +139,11 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
       customer: { name: user.name, email: user.email, phone: (user as any).phone || "9999999999" },
       returnUrl,
       expiryTimeIso: expiry.toISOString(),
-      authorizationAmount: amount, // Charge the full plan amount as authorization
+      authorizationAmount: amount, // Charge full plan amount immediately as authorization
       note: `${tier} AutoPay`,
-      // Set first recurring charge to start from next month (30 days out).
-      // The authorizationAmount above collects the first month immediately.
-      firstChargeTimeIso: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      // First charge tomorrow (closest to "today" that Cashfree allows). The
+      // authorizationAmount above collects the first month now.
+      firstChargeTimeIso: tomorrow.toISOString(),
     });
 
     // Persist the local subscription record (INITIALIZED).
@@ -203,7 +217,11 @@ export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST"
       note: `${tier} monthly plan Rs ${amount}`,
     });
 
-    const subscriptionRef = `sub_${user.tenantId}_${Date.now()}`;
+    // Generate professional subscription reference: BMT-SUB-YYYY-XXXXXXXX
+    const now = new Date();
+    const year = now.getFullYear();
+    const uniqueId = Date.now().toString(36).toUpperCase().padStart(8, '0').slice(-8);
+    const subscriptionRef = `BMT-SUB-${year}-${uniqueId}`;
 
     // Default return path preserves the /login renewal flow so the same page
     // can verify + show a confirmation without bouncing through the dashboard.
@@ -217,6 +235,11 @@ export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST"
     const expiry = new Date();
     expiry.setFullYear(expiry.getFullYear() + 5);
 
+    // Set first charge to tomorrow (minimum allowed by Cashfree). Since the
+    // authorizationAmount is the full plan amount, the user pays immediately.
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
     const cfSub = await createCashfreeSubscription({
       subscriptionId: subscriptionRef,
       planId,
@@ -224,11 +247,10 @@ export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST"
       customer: { name: user.name, email: user.email, phone: user.phone || "9999999999" },
       returnUrl,
       expiryTimeIso: expiry.toISOString(),
-      authorizationAmount: amount, // Charge the full plan amount as authorization
+      authorizationAmount: amount, // Charge full plan amount immediately as authorization
       note: `${tier} AutoPay`,
-      // Set first recurring charge to start from next month (30 days out).
-      // The authorizationAmount above collects the first month immediately.
-      firstChargeTimeIso: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      // First charge tomorrow (closest to "today" that Cashfree allows).
+      firstChargeTimeIso: tomorrow.toISOString(),
     });
 
     await execute(

@@ -182,8 +182,20 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
   doc.text(`Status: ${statusLabel}`, 196, 54, { align: "right" });
 
   // ── Line items table ──
-  const planLabel = `${d.plan ? `BookMyTime ${d.plan} Plan` : "BookMyTime Subscription"}${d.paymentType === "AUTH" ? " (Mandate Registration)" : ""}`.trim();
-  const billingLabel = d.transactionType || (d.paymentType === "AUTH" ? "Mandate" : "Monthly");
+  // Build descriptive line item based on payment type and context.
+  let planLabel = d.plan ? `BookMyTime ${d.plan} Plan` : "BookMyTime Subscription";
+  let billingLabel = d.transactionType || "Monthly";
+  
+  if (d.paymentType === "AUTH") {
+    // Authorization payment (mandate registration) — show the full context
+    planLabel = `${planLabel} - Monthly Subscription (AutoPay Activated)`;
+    billingLabel = "First Month Payment";
+  } else if (d.paymentType === "CHARGE") {
+    // Recurring charge — show as monthly renewal
+    planLabel = `${planLabel} - Monthly Subscription`;
+    billingLabel = "Monthly Renewal";
+  }
+  
   const tableTop = Math.max(y, 74) + 6;
   autoTable(doc, {
     startY: tableTop,
@@ -218,17 +230,49 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
   doc.text("Payment & Transaction Details", 14, afterTable);
   afterTable += 6;
 
+  // Format payment type to be customer-friendly
+  let paymentTypeLabel = "-";
+  if (d.paymentType === "AUTH") {
+    paymentTypeLabel = "Subscription Payment (AutoPay)";
+  } else if (d.paymentType === "CHARGE") {
+    paymentTypeLabel = "Subscription Renewal";
+  } else if (d.transactionType) {
+    paymentTypeLabel = String(d.transactionType);
+  }
+
+  // Format payment method to be customer-friendly
+  const paymentMethodLabel = d.paymentMethod 
+    ? String(d.paymentMethod).toUpperCase().replace(/_/g, " ")
+    : "-";
+
+  // Generate professional internal reference from transaction ref
+  const internalRef = transactionRef.startsWith("TXN-") 
+    ? transactionRef 
+    : `TXN-${transactionRef.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(-12)}`;
+
   const rows: Array<[string, string]> = [
-    ["Payment Gateway", "Cashfree"],
-    ["Payment Method", d.paymentMethod || "-"],
-    ["Payment Type", d.paymentType || d.transactionType || "-"],
-    ["Cashfree Payment ID", d.cfPaymentId || "-"],
-    ["Cashfree Transaction ID", d.cfTxnId || "-"],
-    ["Cashfree Order ID", d.cfOrderId || "-"],
-    ["Subscription Reference", d.subscriptionRef || "-"],
-    ["Internal Transaction Ref", transactionRef],
-    ["Paid / Attempted On", fmtDate(d.paidAt || d.createdAt)],
+    ["Payment Method", paymentMethodLabel],
+    ["Transaction Type", paymentTypeLabel],
+    ["Payment Gateway", "Cashfree Payments"],
+    ["Gateway Payment ID", d.cfPaymentId || "-"],
+    ["Gateway Transaction ID", d.cfTxnId || "-"],
   ];
+
+  // Only show subscription reference if it exists (for subscription payments)
+  if (d.subscriptionRef) {
+    rows.push(["Subscription Reference", d.subscriptionRef]);
+  }
+
+  // Only show order ID if it exists (for one-time payments)
+  if (d.cfOrderId) {
+    rows.push(["Gateway Order ID", d.cfOrderId]);
+  }
+
+  rows.push(
+    ["Internal Reference", internalRef],
+    ["Transaction Date & Time", fmtDate(d.paidAt || d.createdAt)]
+  );
+
   doc.setFontSize(9);
   for (const [label, value] of rows) {
     doc.setFont("Helvetica", "normal");
