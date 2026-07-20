@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import bmtLogo from "../assets/bmt-logo.png";
 import {
   Users,
   IndianRupee,
@@ -72,9 +73,11 @@ import {
   toggleTenantStatusServerFn,
   getTenantFullProfileServerFn,
   deleteTenantServerFn,
+  bulkDeleteTenantsServerFn,
   createPaymentServerFn,
   updatePaymentServerFn,
-  deletePaymentServerFn
+  deletePaymentServerFn,
+  updateTenantFullServerFn
 } from "../lib/admin";
 import {
   getAdminSubscriptionsServerFn,
@@ -91,6 +94,7 @@ import {
   updateDemoAppointmentServerFn,
   type DemoAppointmentStatus,
 } from "../lib/demo";
+import { PLAN_BILLING, normalizePlan, type PlanTier } from "../lib/feature-access";
 
 export const Route = createFileRoute("/admin/dashboard")({
   head: () => ({
@@ -174,13 +178,25 @@ interface DemoAppointment {
 
 const CustomChartTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
+    const point = payload[0].payload;
+    const label = point.label || point.month;
+    const cumulative = typeof point.count === "number" ? point.count : null;
+    const newSignups = typeof point.signups === "number" ? point.signups : null;
     return (
-      <div className="rounded-xl border border-zinc-200/80 bg-white/90 backdrop-blur-md p-3.5 shadow-xl space-y-1">
-        <p className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">{payload[0].payload.month}</p>
-        <p className="text-sm font-black text-zinc-950 flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-zinc-950" />
-          {payload[0].value} Signups
-        </p>
+      <div className="rounded-xl border border-zinc-200/80 bg-white/95 backdrop-blur-md p-3.5 shadow-xl space-y-1.5 min-w-[140px]">
+        <p className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">{label}</p>
+        {newSignups !== null && (
+          <p className="text-xs font-bold text-emerald-600 flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            {newSignups} New Signup{newSignups === 1 ? "" : "s"}
+          </p>
+        )}
+        {cumulative !== null && (
+          <p className="text-sm font-black text-[#0059C6] flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-[#0059C6]" />
+            {cumulative} Total Tenants
+          </p>
+        )}
       </div>
     );
   }
@@ -201,6 +217,45 @@ const CustomPieTooltip = ({ active, payload }: any) => {
   }
   return null;
 };
+
+/**
+ * Branded custom checkbox — replaces the default browser checkbox everywhere.
+ * Supports checked and indeterminate (partial-select) states. Fully accessible
+ * via a visually-hidden native input.
+ */
+function CustomCheckbox({
+  checked,
+  indeterminate = false,
+  onChange,
+  label,
+  className = "",
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onChange: () => void;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <label className={`inline-flex items-center gap-2 cursor-pointer select-none ${className}`}>
+      <span
+        onClick={(e) => { e.preventDefault(); onChange(); }}
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition-all ${
+          checked || indeterminate
+            ? "bg-[#0059C6] border-[#0059C6]"
+            : "bg-white border-zinc-300 hover:border-[#0059C6]"
+        }`}
+      >
+        {indeterminate ? (
+          <span className="h-0.5 w-2 rounded-full bg-white" />
+        ) : checked ? (
+          <Check className="h-3 w-3 text-white" strokeWidth={3.5} />
+        ) : null}
+      </span>
+      {label && <span className="text-xs font-semibold text-zinc-700">{label}</span>}
+    </label>
+  );
+}
 
 function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -229,8 +284,26 @@ function AdminDashboardPage() {
     whatsappLogs: [],
   });
 
-  // Active Dashboard Tab View
-  const [activeTab, setActiveTab] = useState<"overview" | "registry" | "payments" | "subscriptions" | "demo">("overview");
+  // Active Dashboard Tab View — persisted across refreshes via localStorage.
+  const [activeTab, setActiveTab] = useState<"overview" | "registry" | "payments" | "subscriptions" | "demo">(() => {
+    if (typeof window !== "undefined") {
+      const saved = window.localStorage.getItem("bmt_admin_active_tab");
+      if (saved === "overview" || saved === "registry" || saved === "payments" || saved === "subscriptions" || saved === "demo") {
+        return saved;
+      }
+    }
+    return "overview";
+  });
+
+  // Persist the active tab so a refresh keeps the user on the same view.
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("bmt_admin_active_tab", activeTab);
+    }
+  }, [activeTab]);
+  
+  // Signup Trends Chart Filter
+  const [trendsTimeRange, setTrendsTimeRange] = useState<"day" | "week" | "month" | "all">("month");
 
   // Recurring subscriptions (AutoPay) admin state
   const [subscriptionRows, setSubscriptionRows] = useState<any[]>([]);
@@ -315,6 +388,11 @@ function AdminDashboardPage() {
   // Delete Modal States
   const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Multi-select bulk delete state for the tenants table.
+  const [selectedTenantIds, setSelectedTenantIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   
   // Full Profile State
   const [selectedTenantProfile, setSelectedTenantProfile] = useState<any>(null);
@@ -330,6 +408,103 @@ function AdminDashboardPage() {
   const [addPassword, setAddPassword] = useState("clinic123");
   const [creating, setCreating] = useState(false);
   const [createdResult, setCreatedResult] = useState<any>(null);
+
+  // Full Tenant Edit Modal states — super admin can edit all tenant information.
+  const [editTenantModal, setEditTenantModal] = useState<Tenant | null>(null);
+  const [savingTenantEdit, setSavingTenantEdit] = useState(false);
+  const [loadingTenantEdit, setLoadingTenantEdit] = useState(false);
+  const [etName, setEtName] = useState("");
+  const [etEmail, setEtEmail] = useState("");
+  const [etPhone, setEtPhone] = useState("");
+  const [etClinicName, setEtClinicName] = useState("");
+  const [etPracticeSize, setEtPracticeSize] = useState("");
+  const [etProfession, setEtProfession] = useState("");
+  const [etAddress, setEtAddress] = useState("");
+  const [etWhatsappNo, setEtWhatsappNo] = useState("");
+  const [etLandlineNo, setEtLandlineNo] = useState("");
+  const [etContactNo, setEtContactNo] = useState("");
+  const [etProfileEmail, setEtProfileEmail] = useState("");
+  const [etShortDescription, setEtShortDescription] = useState("");
+  const [etServices, setEtServices] = useState("");
+  const [etNewPassword, setEtNewPassword] = useState("");
+
+  // Opens the full-edit modal and loads the tenant's complete profile.
+  const openEditTenantModal = async (t: Tenant) => {
+    setEditTenantModal(t);
+    setLoadingTenantEdit(true);
+    // Seed with the row data we already have so the form isn't empty while loading.
+    setEtName(t.name || "");
+    setEtEmail(t.email || "");
+    setEtPhone(t.phone || "");
+    setEtClinicName(t.clinicName || "");
+    setEtPracticeSize(t.practiceSize || "");
+    setEtProfession("");
+    setEtAddress("");
+    setEtWhatsappNo("");
+    setEtLandlineNo("");
+    setEtContactNo("");
+    setEtProfileEmail("");
+    setEtShortDescription("");
+    setEtServices("");
+    setEtNewPassword("");
+    try {
+      const profileData = await getTenantFullProfileServerFn({ data: t.id });
+      const u = profileData.user || {};
+      const p = profileData.profile || {};
+      setEtName(u.name || "");
+      setEtEmail(u.email || "");
+      setEtPhone(u.phone || "");
+      setEtClinicName(u.clinicName || "");
+      setEtPracticeSize(u.practiceSize || "");
+      setEtProfession(u.profession || p.profession || "");
+      setEtAddress(p.address || "");
+      setEtWhatsappNo(p.whatsappNo || "");
+      setEtLandlineNo(p.landlineNo || "");
+      setEtContactNo(p.contactNo || "");
+      setEtProfileEmail(p.email || "");
+      setEtShortDescription(p.shortDescription || "");
+      setEtServices(p.services || "");
+    } catch (err: any) {
+      toast.error("Failed to load tenant details: " + err.message);
+    } finally {
+      setLoadingTenantEdit(false);
+    }
+  };
+
+  // Submits the full tenant edit.
+  const handleSaveTenantEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTenantModal) return;
+    setSavingTenantEdit(true);
+    try {
+      await updateTenantFullServerFn({
+        data: {
+          id: editTenantModal.id,
+          name: etName,
+          email: etEmail,
+          phone: etPhone,
+          clinicName: etClinicName,
+          practiceSize: etPracticeSize,
+          profession: etProfession,
+          address: etAddress,
+          whatsappNo: etWhatsappNo,
+          landlineNo: etLandlineNo,
+          contactNo: etContactNo,
+          profileEmail: etProfileEmail,
+          shortDescription: etShortDescription,
+          services: etServices,
+          newPassword: etNewPassword || undefined,
+        },
+      });
+      toast.success("Tenant information updated successfully!");
+      setEditTenantModal(null);
+      fetchDashboardData();
+    } catch (err: any) {
+      toast.error("Failed to update tenant: " + err.message);
+    } finally {
+      setSavingTenantEdit(false);
+    }
+  };
 
   // View Subscription payments ledger state
   const [viewSubPayments, setViewSubPayments] = useState<any[]>([]);
@@ -877,6 +1052,44 @@ function AdminDashboardPage() {
     }
   };
 
+  // Multi-select checkbox helpers for the tenants table.
+  const toggleTenantSelection = (id: string) => {
+    setSelectedTenantIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllTenants = (ids: string[]) => {
+    setSelectedTenantIds((prev) => {
+      const allSelected = ids.length > 0 && ids.every((id) => prev.has(id));
+      if (allSelected) return new Set();
+      return new Set(ids);
+    });
+  };
+
+  const executeBulkDeleteTenants = async () => {
+    if (selectedTenantIds.size === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      const res = await bulkDeleteTenantsServerFn({ data: { ids: Array.from(selectedTenantIds) } });
+      if (res.failed > 0) {
+        toast.warning(`Deleted ${res.deleted} of ${res.total} tenants — ${res.failed} failed.`);
+      } else {
+        toast.success(`Deleted ${res.deleted} tenant${res.deleted === 1 ? "" : "s"} successfully.`);
+      }
+      setSelectedTenantIds(new Set());
+      setShowBulkDeleteConfirm(false);
+      fetchDashboardData();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete selected tenants");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   // WhatsApp engine trigger action
   const handleControlWhatsApp = async (action: "disconnect" | "initialize") => {
     setControllingWA(true);
@@ -896,7 +1109,14 @@ function AdminDashboardPage() {
   const openTenantProfile = async (t: Tenant) => {
     setEditingTenant(t);
     setEditStatus(t.subscriptionStatus);
-    setEditPlan(t.subscriptionPlan);
+    // Normalize legacy/aliased plan values to a valid dropdown option so the
+    // select always reflects a real plan (Trial / Basic / Premium / Enterprise).
+    const rawPlan = String(t.subscriptionPlan || "").toLowerCase();
+    if (rawPlan.includes("trial") || t.subscriptionStatus === "Trialing") {
+      setEditPlan("Trial");
+    } else {
+      setEditPlan(normalizePlan(t.subscriptionPlan));
+    }
     
     let expiryVal = "";
     if (t.subscriptionExpiresAt) {
@@ -1085,7 +1305,16 @@ function AdminDashboardPage() {
       t.clinicName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.tenantId.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const planMatch = planFilter === "all" || t.subscriptionPlan.toLowerCase() === planFilter.toLowerCase();
+    // Robust plan matching — normalize aliases; "trial" matches trial plans/status.
+    let planMatch = true;
+    if (planFilter !== "all") {
+      const rawPlan = String(t.subscriptionPlan || "").toLowerCase();
+      if (planFilter === "trial") {
+        planMatch = rawPlan.includes("trial") || t.subscriptionStatus === "Trialing";
+      } else {
+        planMatch = !rawPlan.includes("trial") && normalizePlan(t.subscriptionPlan).toLowerCase() === planFilter.toLowerCase();
+      }
+    }
     const statusMatch = statusFilter === "all" || t.subscriptionStatus.toLowerCase() === statusFilter.toLowerCase();
 
     return queryMatch && planMatch && statusMatch;
@@ -1135,6 +1364,96 @@ function AdminDashboardPage() {
     name: plan,
     value: planCounts[plan],
   }));
+
+  // ── Dynamic Signup Trends (client-side, filterable by day/week/month/all) ──
+  // Recomputes cumulative tenant growth from raw createdAt timestamps whenever
+  // the selected time range changes — instant, no server round-trip.
+  const computedTrends = useMemo(() => {
+    const parsed = tenants
+      .map((t) => ({ time: new Date(t.createdAt).getTime() }))
+      .filter((t) => !Number.isNaN(t.time))
+      .sort((a, b) => a.time - b.time);
+
+    if (parsed.length === 0) return [] as Array<{ label: string; count: number; signups: number }>;
+
+    const now = new Date();
+    type Bucket = { key: string; label: string; start: number; end: number };
+    const buckets: Bucket[] = [];
+
+    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+    if (trendsTimeRange === "day") {
+      // Last 14 days, grouped by day
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        const start = startOfDay(d);
+        const end = start + 24 * 60 * 60 * 1000;
+        buckets.push({
+          key: `d-${start}`,
+          label: d.toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+          start,
+          end,
+        });
+      }
+    } else if (trendsTimeRange === "week") {
+      // Last 8 weeks, grouped by week (Mon–Sun)
+      for (let i = 7; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i * 7);
+        const day = (d.getDay() + 6) % 7; // days since Monday
+        const weekStart = startOfDay(new Date(d.getFullYear(), d.getMonth(), d.getDate() - day));
+        const end = weekStart + 7 * 24 * 60 * 60 * 1000;
+        buckets.push({
+          key: `w-${weekStart}`,
+          label: new Date(weekStart).toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+          start: weekStart,
+          end,
+        });
+      }
+    } else if (trendsTimeRange === "month") {
+      // Last 6 months, grouped by month
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const start = d.getTime();
+        const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1).getTime();
+        buckets.push({
+          key: `m-${start}`,
+          label: d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" }),
+          start,
+          end,
+        });
+      }
+    } else {
+      // All time — grouped by month from first signup to now
+      const first = new Date(parsed[0].time);
+      const cursor = new Date(first.getFullYear(), first.getMonth(), 1);
+      const last = new Date(now.getFullYear(), now.getMonth(), 1);
+      while (cursor.getTime() <= last.getTime()) {
+        const start = cursor.getTime();
+        const end = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1).getTime();
+        buckets.push({
+          key: `a-${start}`,
+          label: cursor.toLocaleDateString("en-IN", { month: "short", year: "2-digit" }),
+          start,
+          end,
+        });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    }
+
+    if (buckets.length === 0) return [];
+
+    // Cumulative baseline: tenants that signed up before the first visible bucket
+    const windowStart = buckets[0].start;
+    let cumulative = parsed.filter((p) => p.time < windowStart).length;
+
+    return buckets.map((b) => {
+      const signups = parsed.filter((p) => p.time >= b.start && p.time < b.end).length;
+      cumulative += signups;
+      return { label: b.label, count: cumulative, signups };
+    });
+  }, [tenants, trendsTimeRange]);
 
   // Computed sorted payments
   const sortedPaymentRows = [...paymentRows].sort((a, b) => {
@@ -1207,30 +1526,24 @@ function AdminDashboardPage() {
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-zinc-50 font-sans text-zinc-900 relative">
+    <div className="flex h-screen w-full overflow-hidden bg-gradient-to-br from-zinc-50 via-white to-zinc-50 font-sans text-zinc-900 relative">
 
-      {/* ── Left Sidebar ── */}
-      <aside className="hidden w-60 shrink-0 border-r border-zinc-200 bg-white p-4 flex-col justify-between md:flex">
+      {/* ── Left Sidebar — BookMyTime Branded ── */}
+      <aside className="hidden w-64 shrink-0 border-r border-zinc-200/80 bg-white/80 backdrop-blur-xl p-5 flex-col justify-between md:flex">
         <div className="space-y-6">
-          {/* Brand */}
-          <div className="flex items-center gap-2.5 px-2 pt-1">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-950 text-white shadow-sm">
-              <Sliders className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-xs font-black tracking-tight text-zinc-950 leading-none">Control Panel</p>
-              <p className="text-[9px] font-medium text-zinc-400 mt-0.5">SaaS Administration</p>
-            </div>
+          {/* BookMyTime Logo & Brand */}
+          <div className="flex items-center justify-center px-1 pt-1">
+            <img src={bmtLogo} alt="BookMyTime" className="h-12 w-auto" />
           </div>
 
           {/* Nav Items */}
-          <nav className="space-y-0.5">
+          <nav className="space-y-1">
             {[
               { id: "overview",    label: "Overview",     icon: TrendingUp },
               { id: "registry",   label: "Tenants",      icon: Building },
               { id: "payments",   label: "Payments",     icon: CreditCard },
               { id: "subscriptions", label: "Subscriptions", icon: RefreshCw },
-              { id: "demo",       label: "Demos",        icon: Calendar },
+              { id: "demo",       label: "Demo Requests",        icon: Calendar },
             ].map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -1241,14 +1554,14 @@ function AdminDashboardPage() {
                     setActiveTab(tab.id as any);
                     if (tab.id === "registry") { setSearchQuery(""); setPlanFilter("all"); setStatusFilter("all"); }
                   }}
-                  className={`flex w-full items-center gap-3 rounded-full px-4 py-2.5 text-xs font-semibold transition-all cursor-pointer ${
+                  className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all cursor-pointer ${
                     active
-                      ? "bg-zinc-950 text-white shadow-sm"
-                      : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                      ? "bg-[#0059C6]/10 text-[#0059C6] border border-[#0059C6]/20"
+                      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 border border-transparent"
                   }`}
                 >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {tab.label}
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <span>{tab.label}</span>
                 </button>
               );
             })}
@@ -1257,18 +1570,18 @@ function AdminDashboardPage() {
 
         {/* Sidebar Footer — Admin user card */}
         <div className="space-y-3">
-          <div className="w-full rounded-2xl bg-zinc-50 border border-zinc-200/60 p-3 flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-zinc-200 border border-zinc-300 flex items-center justify-center text-zinc-700 font-bold text-xs shrink-0">
+          <div className="w-full rounded-xl bg-gradient-to-br from-zinc-50 to-zinc-100/80 border border-zinc-200 p-3.5 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#0059C6] to-[#0070E0] flex items-center justify-center text-white font-bold text-sm shrink-0">
               {getInitials((admin?.name || "BookMyTime Admin").replace(/MediFlow/gi, "BookMyTime"))}
             </div>
             <div className="overflow-hidden flex-1 min-w-0">
               <h4 className="text-xs font-bold text-zinc-900 truncate leading-tight">{(admin?.name || "BookMyTime Admin").replace(/MediFlow/gi, "BookMyTime")}</h4>
-              <span className="text-[9px] font-medium text-zinc-400 truncate block">Platform Administrator</span>
+              <span className="text-[10px] font-medium text-zinc-500 truncate block">Platform Owner</span>
             </div>
           </div>
           <button
             onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-full px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 cursor-pointer transition-colors"
+            className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 cursor-pointer transition-all"
           >
             <LogOut className="h-4 w-4" />
             Sign Out
@@ -1278,28 +1591,34 @@ function AdminDashboardPage() {
 
       {/* ── Main Content Area ── */}
       <main className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Header Strip */}
-        <header className="h-16 border-b border-zinc-200 bg-white px-4 sm:px-6 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            {/* Page breadcrumb */}
-            <div className="flex">
-              <span className="text-xs font-semibold text-zinc-500">
+        {/* Header Strip — BookMyTime Branded */}
+        <header className="h-16 border-b border-zinc-200/80 bg-white/90 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-4">
+            {/* Page breadcrumb with icon */}
+            <div className="flex items-center gap-2.5">
+              {activeTab === "overview" && <TrendingUp className="h-5 w-5 text-[#0059C6]" />}
+              {activeTab === "registry" && <Building className="h-5 w-5 text-[#0059C6]" />}
+              {activeTab === "payments" && <CreditCard className="h-5 w-5 text-[#0059C6]" />}
+              {activeTab === "subscriptions" && <RefreshCw className="h-5 w-5 text-[#0059C6]" />}
+              {activeTab === "demo" && <Calendar className="h-5 w-5 text-[#0059C6]" />}
+              
+              <span className="text-sm font-bold text-zinc-900">
                 {activeTab === "overview" && "Platform Overview"}
                 {activeTab === "registry" && "Tenants Directory"}
                 {activeTab === "payments" && "Payment History"}
                 {activeTab === "subscriptions" && "Recurring Subscriptions"}
-                {activeTab === "demo" && "Demo Appointments"}
+                {activeTab === "demo" && "Demo Pipeline"}
               </span>
             </div>
           </div>
 
           {/* Right-side controls */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             <button
               onClick={fetchDashboardData}
               disabled={loadingData}
-              className="flex items-center justify-center size-9 border border-zinc-200 bg-white rounded-xl text-zinc-500 hover:text-zinc-800 transition-colors active:scale-[0.98] cursor-pointer"
-              title="Refresh"
+              className="flex items-center justify-center size-9 border border-zinc-200 bg-white/80 rounded-xl text-zinc-600 hover:text-[#0059C6] hover:border-[#0059C6] transition-all active:scale-95 cursor-pointer"
+              title="Refresh Dashboard"
             >
               <RefreshCw className={`size-4 ${loadingData ? "animate-spin" : ""}`} />
             </button>
@@ -1307,25 +1626,25 @@ function AdminDashboardPage() {
         </header>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="px-4 sm:px-6 py-6 space-y-6">
+        <div className="flex-1 overflow-y-auto bg-gradient-to-br from-zinc-50 via-white to-zinc-50">
+          <div className="px-4 sm:px-6 py-6 space-y-6 max-w-[1600px] mx-auto">
 
             {/* Page Title */}
             <div className="flex items-end justify-between gap-3">
               <div>
-                <h1 className="text-xl font-black tracking-tight text-zinc-950">
+                <h1 className="text-2xl font-black tracking-tight text-zinc-950">
                   {activeTab === "overview" && "Platform Overview"}
                   {activeTab === "registry" && "Tenants Directory"}
                   {activeTab === "payments" && "Payment History"}
                   {activeTab === "subscriptions" && "Recurring Subscriptions"}
                   {activeTab === "demo" && "Demo Pipeline"}
                 </h1>
-                <p className="text-xs text-zinc-500 mt-0.5">
-                  {activeTab === "overview" && "Real-time metrics, signup distribution, and telemetry snapshots."}
-                  {activeTab === "registry" && "Manage clinician accounts, billing status, and plan packages."}
-                  {activeTab === "payments" && "Every Cashfree payment attempt — received, failed, cancelled, and pending."}
-                  {activeTab === "subscriptions" && "Cashfree AutoPay mandates — active, cancelled, on-hold, and renewal health."}
-                  {activeTab === "demo" && "Track incoming public demo requests, follow-up status, and booking intent."}
+                <p className="text-sm text-zinc-500 mt-1">
+                  {activeTab === "overview" && "Real-time metrics, signup trends, and system health monitoring"}
+                  {activeTab === "registry" && "Manage clinic accounts, billing status, and subscription plans"}
+                  {activeTab === "payments" && "Complete payment history from Cashfree — successful, failed, and pending transactions"}
+                  {activeTab === "subscriptions" && "AutoPay subscription management — active mandates, renewals, and billing cycles"}
+                  {activeTab === "demo" && "Track demo requests, follow-ups, and conversion pipeline"}
                 </p>
               </div>
               <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 rounded-full shrink-0">
@@ -1337,110 +1656,197 @@ function AdminDashboardPage() {
             {/* VIEW: OVERVIEW */}
             {activeTab === "overview" && (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 relative overflow-hidden group hover:shadow-sm transition-all">
-                    <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.06] pointer-events-none">
-                      <IndianRupee className="size-16 text-zinc-900" />
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between group hover:border-[#0059C6]/30 transition-all">
+                    <div>
+                      <span className="block text-xl font-black text-zinc-950 tracking-tight">{formatCurrencyInr(metrics.totalMRR)}</span>
+                      <span className="block text-[10px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                        Live
+                      </span>
                     </div>
-                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Recurring Revenue</span>
-                    <span className="block text-2xl font-black text-zinc-950 tracking-tight mt-2">{formatCurrencyInr(metrics.totalMRR)}</span>
-                    <span className="block text-[9px] text-emerald-600 font-bold mt-1.5 flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                      Live monthly run rate
-                    </span>
-                  </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 relative overflow-hidden group hover:shadow-sm transition-all">
-                    <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.06] pointer-events-none">
-                      <Building className="size-16 text-zinc-900" />
-                    </div>
-                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Tenants Provisioned</span>
-                    <span className="block text-2xl font-black text-zinc-950 tracking-tight mt-2">{metrics.totalTenants}</span>
-                    <div className="flex gap-2 text-[9px] font-bold mt-1.5">
-                      <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-100">{metrics.activePaid} Paid</span>
-                      <span className="px-1.5 py-0.5 bg-zinc-100 text-zinc-600 rounded border border-zinc-200">{metrics.trialing} Free</span>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                        <IndianRupee className="size-3.5" />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">MRR</span>
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 relative overflow-hidden group hover:shadow-sm transition-all">
-                    <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.06] pointer-events-none">
-                      <PhoneCall className="size-16 text-zinc-900" />
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between group hover:border-[#0059C6]/30 transition-all">
+                    <div>
+                      <span className="block text-xl font-black text-zinc-950 tracking-tight">{metrics.totalTenants}</span>
+                      <div className="flex gap-1.5 text-[10px] font-semibold mt-1">
+                        <span className="text-emerald-600">{metrics.activePaid} Paid</span>
+                        <span className="text-zinc-300">•</span>
+                        <span className="text-blue-600">{metrics.trialing} Trial</span>
+                      </div>
                     </div>
-                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Calls Logged</span>
-                    <span className="block text-2xl font-black text-zinc-950 tracking-tight mt-2">{metrics.totalCallsHandled.toLocaleString()}</span>
-                    <span className="block text-[9px] text-zinc-500 font-bold mt-1.5">AI Telephony outbox volume</span>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-[#0059C6]">
+                        <Building className="size-3.5" />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Tenants</span>
+                    </div>
                   </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 relative overflow-hidden group hover:shadow-sm transition-all">
-                    <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.06] pointer-events-none">
-                      <Activity className="size-16 text-zinc-900" />
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between group hover:border-[#0059C6]/30 transition-all">
+                    <div>
+                      <span className="block text-xl font-black text-zinc-950 tracking-tight">{metrics.totalCallsHandled.toLocaleString()}</span>
+                      <span className="block text-[10px] text-zinc-400 font-semibold mt-1">Total handled</span>
                     </div>
-                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Platform Activity</span>
-                    <div className="flex items-baseline gap-1 mt-2">
-                      <span className="text-2xl font-black text-zinc-950 tracking-tight">{metrics.totalDoctors}</span>
-                      <span className="text-[10px] font-bold text-zinc-400">Providers</span>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+                        <PhoneCall className="size-3.5" />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">AI Calls</span>
                     </div>
-                    <div className="flex gap-2 text-[9px] text-zinc-500 font-bold mt-1.5 flex-wrap">
-                      <span className="flex items-center gap-1"><Calendar className="size-3" /> {metrics.totalAppointments} Appts</span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1"><FileText className="size-3" /> {metrics.totalSoapNotes} SOAP</span>
+                  </div>
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between group hover:border-[#0059C6]/30 transition-all">
+                    <div>
+                      <span className="block text-xl font-black text-zinc-950 tracking-tight">{metrics.totalAppointments}</span>
+                      <span className="block text-[10px] text-zinc-400 font-semibold mt-1">{metrics.totalDoctors} Providers</span>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                        <Calendar className="size-3.5" />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Appointments</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   {/* Area Chart: Tenant Signup Distribution */}
-                  <div className="lg:col-span-2 border border-zinc-200/80 rounded-2xl p-5 bg-white space-y-4">
-                    <div className="flex items-center justify-between border-b border-zinc-150 pb-3">
+                  <div className="lg:col-span-2 border border-zinc-200 rounded-xl p-6 bg-white space-y-5">
+                    <div className="flex items-center justify-between border-b border-zinc-150 pb-4">
                       <div>
-                        <h3 className="text-xs font-extrabold text-zinc-955 uppercase tracking-wider flex items-center gap-2">
-                          <TrendingUp className="size-4 text-zinc-650" />
-                          Tenant Signup Distribution
+                        <h3 className="text-sm font-black text-zinc-900 uppercase tracking-wide flex items-center gap-2.5">
+                          <TrendingUp className="size-5 text-[#0059C6]" />
+                          Signup Trends
                         </h3>
-                        <p className="text-[10px] text-zinc-400 mt-0.5">Cumulative client growth based on signup timestamps.</p>
+                        <p className="text-xs text-zinc-500 mt-1">Cumulative tenant growth over time</p>
                       </div>
-                      <span className="text-[10px] font-extrabold text-zinc-800 bg-zinc-100 px-2.5 py-0.5 rounded-lg border border-zinc-200">
-                        {metrics.totalTenants} Registered
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white bg-[#0059C6] px-3 py-1.5 rounded-lg">
+                          {metrics.totalTenants} Total
+                        </span>
+                      </div>
                     </div>
-                    <div className="h-56 w-full rounded-2xl border border-zinc-200/80 bg-slate-50/30 p-4">
+                    
+                    {/* Time Range Filter */}
+                    <div className="flex items-center gap-2 pb-2">
+                      <span className="text-xs font-semibold text-zinc-600 mr-1">View:</span>
+                      {[
+                        { id: "day" as const, label: "Daily" },
+                        { id: "week" as const, label: "Weekly" },
+                        { id: "month" as const, label: "Monthly" },
+                        { id: "all" as const, label: "All Time" },
+                      ].map((range) => (
+                        <button
+                          key={range.id}
+                          onClick={() => setTrendsTimeRange(range.id)}
+                          className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                            trendsTimeRange === range.id
+                              ? "bg-[#0059C6] text-white"
+                              : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                          }`}
+                        >
+                          {range.label}
+                        </button>
+                      ))}
+                    </div>
+                    
+                    {/* Quick stats for the selected range */}
+                    <div className="flex items-center gap-4 pb-1">
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span className="h-2 w-2 rounded-full bg-[#0059C6]" />
+                        <span className="font-semibold text-zinc-600">New in range:</span>
+                        <span className="font-black text-zinc-900">
+                          {computedTrends.reduce((sum, t) => sum + (t.signups || 0), 0)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        <span className="font-semibold text-zinc-600">Cumulative:</span>
+                        <span className="font-black text-zinc-900">
+                          {computedTrends.length ? computedTrends[computedTrends.length - 1].count : 0}
+                        </span>
+                      </div>
+                    </div>
+
+                    <motion.div 
+                      key={trendsTimeRange}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="h-60 w-full rounded-xl border border-zinc-200/80 bg-gradient-to-br from-zinc-50 to-white p-4"
+                    >
+                      {computedTrends.length === 0 ? (
+                        <div className="h-full w-full flex flex-col items-center justify-center text-zinc-400">
+                          <TrendingUp className="size-8 mb-2 opacity-40" />
+                          <p className="text-xs font-semibold">No signup data for this range</p>
+                        </div>
+                      ) : (
                       <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={trends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <AreaChart data={computedTrends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                           <defs>
                             <linearGradient id="colorSignups" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="rgb(24, 24, 27)" stopOpacity={0.08}/>
-                              <stop offset="95%" stopColor="rgb(24, 24, 27)" stopOpacity={0.00}/>
+                              <stop offset="5%" stopColor="#0059C6" stopOpacity={0.18}/>
+                              <stop offset="95%" stopColor="#0059C6" stopOpacity={0.00}/>
+                            </linearGradient>
+                            <linearGradient id="colorNew" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10B981" stopOpacity={0.15}/>
+                              <stop offset="95%" stopColor="#10B981" stopOpacity={0.00}/>
                             </linearGradient>
                           </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
                           <XAxis 
-                            dataKey="month" 
-                            stroke="#94a3b8" 
-                            fontSize={9} 
-                            fontWeight={700} 
+                            dataKey="label" 
+                            stroke="#71717a" 
+                            fontSize={10} 
+                            fontWeight={600} 
                             tickLine={false} 
                             axisLine={false} 
                             dy={10} 
+                            interval="preserveStartEnd"
                           />
                           <YAxis 
-                            stroke="#94a3b8" 
-                            fontSize={9} 
-                            fontWeight={700} 
+                            stroke="#71717a" 
+                            fontSize={10} 
+                            fontWeight={600} 
                             tickLine={false} 
                             axisLine={false} 
                             dx={-10} 
                             allowDecimals={false}
                           />
-                          <ChartTooltip content={<CustomChartTooltip />} cursor={{ stroke: '#f1f5f9', strokeWidth: 1.5 }} />
+                          <ChartTooltip content={<CustomChartTooltip />} cursor={{ stroke: '#0059C6', strokeWidth: 1, strokeDasharray: "4 4" }} />
+                          <Area 
+                            type="monotone" 
+                            dataKey="signups" 
+                            name="New Signups"
+                            stroke="#10B981" 
+                            strokeWidth={2} 
+                            fillOpacity={1} 
+                            fill="url(#colorNew)" 
+                            activeDot={{ r: 5, strokeWidth: 2, stroke: "white", fill: "#10B981" }} 
+                            animationDuration={800}
+                            animationEasing="ease-in-out"
+                          />
                           <Area 
                             type="monotone" 
                             dataKey="count" 
-                            stroke="rgb(24, 24, 27)" 
-                            strokeWidth={2.5} 
+                            name="Total Tenants"
+                            stroke="#0059C6" 
+                            strokeWidth={3} 
                             fillOpacity={1} 
                             fill="url(#colorSignups)" 
-                            activeDot={{ r: 5, strokeWidth: 1.5, stroke: "white", fill: "rgb(24, 24, 27)" }} 
+                            activeDot={{ r: 6, strokeWidth: 2, stroke: "white", fill: "#0059C6" }} 
+                            animationDuration={800}
+                            animationEasing="ease-in-out"
                           />
                         </AreaChart>
                       </ResponsiveContainer>
-                    </div>
+                      )}
+                    </motion.div>
                   </div>
 
                   {/* Doughnut Chart: Plan Distribution */}
@@ -1495,6 +1901,42 @@ function AdminDashboardPage() {
 
             {/* VIEW: TENANTS REGISTRY */}
             {activeTab === "registry" && !selectedTenantProfile && (
+              <div className="space-y-6">
+              {/* Summary cards */}
+              {(() => {
+                const totalTenants = tenants.length;
+                const paidCount = tenants.filter(t => t.subscriptionStatus === "Active" && t.subscriptionPlan !== "Trial").length;
+                const trialCount = tenants.filter(t => t.subscriptionStatus === "Trialing" || t.subscriptionPlan === "Trial").length;
+                const suspendedCount = tenants.filter(t => ["Suspended", "Cancelled", "Expired", "Inactive"].includes(String(t.subscriptionStatus))).length;
+                const cards = [
+                  { label: "Total", value: totalTenants, hint: "All accounts", icon: Building, color: "bg-blue-50 text-[#0059C6]" },
+                  { label: "Paid", value: paidCount, hint: "Active subscriptions", icon: CheckCircle2, color: "bg-emerald-50 text-emerald-600" },
+                  { label: "Trial", value: trialCount, hint: "On free trial", icon: Clock3, color: "bg-amber-50 text-amber-600" },
+                  { label: "Suspended", value: suspendedCount, hint: "Expired / cancelled", icon: Ban, color: "bg-red-50 text-red-600" },
+                ];
+                return (
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    {cards.map((card) => {
+                      const Icon = card.icon;
+                      return (
+                        <div key={card.label} className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                          <div>
+                            <span className="block text-xl font-black tracking-tight text-zinc-950">{card.value}</span>
+                            <span className="block text-[10px] font-semibold text-zinc-400 mt-1">{card.hint}</span>
+                          </div>
+                          <div className="flex flex-col items-end gap-1.5">
+                            <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${card.color}`}>
+                              <Icon className="size-3.5" />
+                            </div>
+                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">{card.label}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
               <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">
                 <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
                   <div>
@@ -1517,7 +1959,8 @@ function AdminDashboardPage() {
                       <select value={planFilter} onChange={(e) => setPlanFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1">
                         <option value="all">All Plans</option>
                         <option value="trial">Trial</option>
-                        <option value="pro">Pro</option>
+                        <option value="basic">Basic</option>
+                        <option value="premium">Premium</option>
                         <option value="enterprise">Enterprise</option>
                       </select>
                     </div>
@@ -1533,6 +1976,37 @@ function AdminDashboardPage() {
                     </div>
                   </div>
                 </div>
+
+              {/* Bulk action bar — appears when one or more tenants are selected */}
+              <AnimatePresence>
+                {selectedTenantIds.size > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 overflow-hidden"
+                  >
+                    <span className="text-xs font-bold text-red-700">
+                      {selectedTenantIds.size} tenant{selectedTenantIds.size === 1 ? "" : "s"} selected
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setSelectedTenantIds(new Set())}
+                        className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 px-2.5 py-1.5 rounded-lg hover:bg-white/60 transition-all cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        onClick={() => setShowBulkDeleteConfirm(true)}
+                        className="flex items-center gap-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-all cursor-pointer active:scale-95"
+                      >
+                        <Trash2 className="size-3.5" />
+                        Delete Selected
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {loadingData ? (
                 <div className="flex flex-col items-center justify-center py-24 gap-3">
@@ -1553,7 +2027,14 @@ function AdminDashboardPage() {
                 <table className="w-full text-left border-collapse min-w-[950px]">
                   <thead>
                     <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                      <th className="pb-3 pl-3">Tenant & ID</th>
+                      <th className="pb-3 pl-3 w-8">
+                        <CustomCheckbox
+                          checked={filteredTenants.length > 0 && filteredTenants.every((t) => selectedTenantIds.has(t.id))}
+                          indeterminate={selectedTenantIds.size > 0 && !filteredTenants.every((t) => selectedTenantIds.has(t.id))}
+                          onChange={() => toggleSelectAllTenants(filteredTenants.map((t) => t.id))}
+                        />
+                      </th>
+                      <th className="pb-3">Tenant & ID</th>
                       <th className="pb-3">Director Contact</th>
                       <th className="pb-3">Subscription</th>
                       <th className="pb-3">Days Left</th>
@@ -1568,11 +2049,20 @@ function AdminDashboardPage() {
                       const clinicColor = getColorClass(t.clinicName);
                       const daysLeft = getDaysLeft(t.subscriptionExpiresAt);
                       
+                      const isSelected = selectedTenantIds.has(t.id);
                       return (
-                        <tr key={t.id} className="hover:bg-slate-50/40 transition-colors group">
-                          
+                        <tr key={t.id} className={`transition-colors group ${isSelected ? "bg-blue-50/60 hover:bg-blue-50" : "hover:bg-slate-50/40"}`}>
+
+                          {/* Row checkbox */}
+                          <td className="py-4 pl-3 w-8">
+                            <CustomCheckbox
+                              checked={isSelected}
+                              onChange={() => toggleTenantSelection(t.id)}
+                            />
+                          </td>
+
                           {/* Tenant Avatar & ID */}
-                          <td className="py-4 pl-3">
+                          <td className="py-4">
                             <div className="flex items-center gap-3">
                               <div className={`flex size-9 items-center justify-center rounded-xl border text-xs font-black shrink-0 ${clinicColor}`}>
                                 {getInitials(t.clinicName)}
@@ -1637,9 +2127,9 @@ function AdminDashboardPage() {
                           <td className="py-4 text-right pr-3">
                             <div className="flex items-center justify-end gap-1.5">
                               <button
-                                onClick={() => toast.info("Edit user flow coming soon")}
-                                className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
-                                title="Edit Tenant"
+                                onClick={() => openEditTenantModal(t)}
+                                className="p-1.5 rounded-xl border border-zinc-200 hover:border-[#0059C6]/40 hover:bg-blue-50 text-zinc-600 hover:text-[#0059C6] transition-all cursor-pointer active:scale-[0.98]"
+                                title="Edit Tenant Information"
                               >
                                 <Edit2 className="size-3.5" />
                               </button>
@@ -1673,6 +2163,7 @@ function AdminDashboardPage() {
                   </tbody>
                 </table>
               )}
+              </div>
             </div>
           )}
 
@@ -1683,9 +2174,21 @@ function AdminDashboardPage() {
                   <button onClick={() => { setSelectedTenantProfile(null); setEditingTenant(null); }} className="p-2 rounded-full hover:bg-zinc-100 transition-colors cursor-pointer">
                     <ArrowLeft className="size-5 text-zinc-500" />
                   </button>
-                  <div>
-                    <h2 className="text-xl font-black text-zinc-950">{editingTenant?.clinicName} Profile</h2>
-                    <p className="text-xs text-zinc-500">ID: <code className="bg-zinc-100 px-1 py-0.5 rounded font-mono">{editingTenant?.tenantId}</code> • Created: {new Date(editingTenant?.createdAt || "").toLocaleDateString()}</p>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2.5">
+                      <h2 className="text-xl font-black text-zinc-950">{editingTenant?.clinicName}</h2>
+                      {(() => {
+                        const st = editingTenant?.subscriptionStatus || "";
+                        const cls = st === "Active" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : st === "Trialing" ? "bg-amber-50 text-amber-700 border-amber-200"
+                          : "bg-red-50 text-red-700 border-red-200";
+                        return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${cls}`}>{st || "Unknown"}</span>;
+                      })()}
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border bg-blue-50 text-[#0059C6] border-blue-200">
+                        {editPlan || "Trial"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-1">ID: <code className="bg-zinc-100 px-1 py-0.5 rounded font-mono">{editingTenant?.tenantId}</code> • Created: {new Date(editingTenant?.createdAt || "").toLocaleDateString()}</p>
                   </div>
                 </div>
 
@@ -1697,24 +2200,30 @@ function AdminDashboardPage() {
                   else if (prof.includes("education") || prof.includes("coach")) { l1 = "Instructors"; l2 = "Students"; l3 = "Classes"; l4 = "Progress Notes"; }
                   else if (prof.includes("legal") || prof.includes("consult")) { l1 = "Consultants"; l2 = "Clients"; l3 = "Meetings"; l4 = "Case Notes"; }
                   
+                  const profileCards = [
+                    { label: l1, value: selectedTenantProfile.metrics.doctors, icon: UserCheck, color: "bg-blue-50 text-[#0059C6]" },
+                    { label: l2, value: selectedTenantProfile.metrics.patients, icon: Users, color: "bg-emerald-50 text-emerald-600" },
+                    { label: l3, value: selectedTenantProfile.metrics.appointments, icon: Calendar, color: "bg-amber-50 text-amber-600" },
+                    { label: l4, value: selectedTenantProfile.metrics.soapNotes, icon: FileText, color: "bg-purple-50 text-purple-600" },
+                  ];
                   return (
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div className="rounded-2xl border border-zinc-200/80 bg-white p-5">
-                        <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">{l1}</span>
-                        <span className="block text-2xl font-black text-zinc-950 mt-2">{selectedTenantProfile.metrics.doctors}</span>
-                      </div>
-                      <div className="rounded-2xl border border-zinc-200/80 bg-white p-5">
-                        <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">{l2}</span>
-                        <span className="block text-2xl font-black text-zinc-950 mt-2">{selectedTenantProfile.metrics.patients}</span>
-                      </div>
-                      <div className="rounded-2xl border border-zinc-200/80 bg-white p-5">
-                        <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">{l3}</span>
-                        <span className="block text-2xl font-black text-zinc-950 mt-2">{selectedTenantProfile.metrics.appointments}</span>
-                      </div>
-                      <div className="rounded-2xl border border-zinc-200/80 bg-white p-5">
-                        <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">{l4}</span>
-                        <span className="block text-2xl font-black text-zinc-950 mt-2">{selectedTenantProfile.metrics.soapNotes}</span>
-                      </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      {profileCards.map((card) => {
+                        const Icon = card.icon;
+                        return (
+                          <div key={card.label} className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                            <div>
+                              <span className="block text-xl font-black text-zinc-950 tracking-tight">{card.value}</span>
+                            </div>
+                            <div className="flex flex-col items-end gap-1.5">
+                              <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${card.color}`}>
+                                <Icon className="size-3.5" />
+                              </div>
+                              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">{card.label}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })()}
@@ -1837,17 +2346,23 @@ function AdminDashboardPage() {
                               <label className="text-[10px] font-bold text-zinc-550 pl-1">Plan Tier</label>
                               <select
                                 value={editPlan}
-                                onChange={(e) => setEditPlan(e.target.value)}
+                                onChange={(e) => {
+                                  const newPlan = e.target.value;
+                                  setEditPlan(newPlan);
+                                  // Auto-fill the price from the canonical price list when a
+                                  // billable plan is chosen (Trial = free, Enterprise = custom).
+                                  if (newPlan === "Trial") {
+                                    setEditPaymentAmount(0);
+                                  } else if (newPlan === "Basic" || newPlan === "Premium" || newPlan === "Enterprise") {
+                                    setEditPaymentAmount(PLAN_BILLING[newPlan as PlanTier].monthly);
+                                  }
+                                }}
                                 className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-xs text-zinc-850 focus:border-zinc-300 focus:bg-white focus:outline-none transition-all select-light font-extrabold"
                               >
-                                <option value="Trial">Trial</option>
-                                <option value="Basic">Basic</option>
-                                <option value="Solo">Solo</option>
-                                <option value="Pro">Pro</option>
-                                <option value="Premium">Premium</option>
-                                <option value="Clinic">Clinic</option>
-                                <option value="Enterprise">Enterprise</option>
-                                <option value="Hospital">Hospital</option>
+                                <option value="Trial">Trial (Free)</option>
+                                <option value="Basic">Basic — ₹999/mo</option>
+                                <option value="Premium">Premium — ₹1,499/mo</option>
+                                <option value="Enterprise">Enterprise (Custom)</option>
                               </select>
                             </div>
                           </div>
@@ -1896,9 +2411,11 @@ function AdminDashboardPage() {
                                 className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-xs text-zinc-850 focus:border-zinc-300 focus:bg-white focus:outline-none transition-all select-light font-extrabold"
                               >
                                 <option value="None">None</option>
-                                <option value="Credit Card">Credit Card</option>
-                                <option value="PayPal">PayPal</option>
-                                <option value="Invoice">Invoice</option>
+                                <option value="Cashfree AutoPay">Cashfree AutoPay</option>
+                                <option value="UPI">UPI</option>
+                                <option value="Card">Card</option>
+                                <option value="Net Banking">Net Banking</option>
+                                <option value="Manual/Offline">Manual / Offline</option>
                               </select>
                             </div>
                           </div>
@@ -1913,7 +2430,13 @@ function AdminDashboardPage() {
                           <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3">
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] font-bold text-zinc-500 uppercase">Selected Tier</span>
-                              <span className="rounded bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand">{editPlan || "Trial"}</span>
+                              <span className="rounded-lg bg-[#0059C6]/10 px-2.5 py-1 text-[10px] font-bold text-[#0059C6]">
+                                {editPlan || "Trial"}
+                                {editPlan === "Basic" && " · ₹999/mo"}
+                                {editPlan === "Premium" && " · ₹1,499/mo"}
+                                {editPlan === "Enterprise" && " · Custom"}
+                                {(editPlan === "Trial" || !editPlan) && " · Free"}
+                              </span>
                             </div>
                             
                             <ul className="space-y-2 pt-2 border-t border-zinc-200">
@@ -2068,31 +2591,66 @@ function AdminDashboardPage() {
             {activeTab === "payments" && (
               <div className="space-y-6 animate-in fade-in duration-300">
                 {/* Summary cards */}
-                <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Total Received</span>
-                    <p className="text-xl font-black text-emerald-600">{formatCurrencyInr(paymentSummary.totalReceived)}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.successCount} successful payments</p>
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                    <div>
+                      <p className="text-xl font-black text-emerald-600 tracking-tight">{formatCurrencyInr(paymentSummary.totalReceived)}</p>
+                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">{paymentSummary.successCount} payments</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                        <CheckCircle2 className="size-3.5" />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Received</span>
+                    </div>
                   </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Failed</span>
-                    <p className="text-xl font-black text-red-600">{formatCurrencyInr(paymentSummary.failedAmount)}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.failedCount} declined / errored</p>
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                    <div>
+                      <p className="text-xl font-black text-red-600 tracking-tight">{formatCurrencyInr(paymentSummary.failedAmount)}</p>
+                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">{paymentSummary.failedCount} declined</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 text-red-600">
+                        <XCircle className="size-3.5" />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Failed</span>
+                    </div>
                   </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Cancelled</span>
-                    <p className="text-xl font-black text-zinc-600">{formatCurrencyInr(paymentSummary.cancelledAmount)}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.cancelledCount} dropped / abandoned</p>
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                    <div>
+                      <p className="text-xl font-black text-zinc-600 tracking-tight">{formatCurrencyInr(paymentSummary.cancelledAmount)}</p>
+                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">{paymentSummary.cancelledCount} dropped</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600">
+                        <Ban className="size-3.5" />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Cancelled</span>
+                    </div>
                   </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Pending</span>
-                    <p className="text-xl font-black text-amber-600">{formatCurrencyInr(paymentSummary.pendingAmount)}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">{paymentSummary.pendingCount} awaiting completion</p>
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                    <div>
+                      <p className="text-xl font-black text-amber-600 tracking-tight">{formatCurrencyInr(paymentSummary.pendingAmount)}</p>
+                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">{paymentSummary.pendingCount} awaiting</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                        <Clock3 className="size-3.5" />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Pending</span>
+                    </div>
                   </div>
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Total Attempts</span>
-                    <p className="text-xl font-black text-zinc-900">{paymentSummary.totalCount}</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">All-time checkout events</p>
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                    <div>
+                      <p className="text-xl font-black text-zinc-900 tracking-tight">{paymentSummary.totalCount}</p>
+                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">All-time events</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-[#0059C6]">
+                        <CreditCard className="size-3.5" />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Attempts</span>
+                    </div>
                   </div>
                 </div>
 
@@ -2336,36 +2894,78 @@ function AdminDashboardPage() {
               return (
                 <div className="space-y-6 animate-in fade-in duration-300">
                   {/* SaaS Telemetry Metrics */}
-                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
-                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Active MRR</span>
-                      <p className="text-xl font-black text-zinc-900">{formatCurrencyInr(mrr)}</p>
-                      <p className="text-[10px] text-zinc-400 font-semibold">{activeCount} active mandates</p>
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                      <div>
+                        <p className="text-xl font-black text-zinc-900 tracking-tight">{formatCurrencyInr(mrr)}</p>
+                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">{activeCount} mandates</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-[#0059C6]">
+                          <IndianRupee className="size-3.5" />
+                        </div>
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">MRR</span>
+                      </div>
                     </div>
-                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Estimated ARR</span>
-                      <p className="text-xl font-black text-zinc-950">{formatCurrencyInr(arr)}</p>
-                      <p className="text-[10px] text-zinc-400 font-semibold">Annual monthly run rate</p>
+                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                      <div>
+                        <p className="text-xl font-black text-zinc-950 tracking-tight">{formatCurrencyInr(arr)}</p>
+                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">Annual run rate</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                          <TrendingUp className="size-3.5" />
+                        </div>
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">ARR</span>
+                      </div>
                     </div>
-                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Avg Contract Size</span>
-                      <p className="text-xl font-black text-indigo-600">{formatCurrencyInr(arpu)}</p>
-                      <p className="text-[10px] text-zinc-400 font-semibold">Average monthly ARPU</p>
+                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                      <div>
+                        <p className="text-xl font-black text-indigo-600 tracking-tight">{formatCurrencyInr(arpu)}</p>
+                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">Monthly ARPU</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+                          <User className="size-3.5" />
+                        </div>
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">ARPU</span>
+                      </div>
                     </div>
-                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">AutoPay Collected</span>
-                      <p className="text-xl font-black text-emerald-600">{formatCurrencyInr(subscriptionSummary.collectedAmount)}</p>
-                      <p className="text-[10px] text-zinc-400 font-semibold">{subscriptionSummary.successCount} successful cycles</p>
+                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                      <div>
+                        <p className="text-xl font-black text-emerald-600 tracking-tight">{formatCurrencyInr(subscriptionSummary.collectedAmount)}</p>
+                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">{subscriptionSummary.successCount} cycles</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                          <CheckCircle2 className="size-3.5" />
+                        </div>
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Collected</span>
+                      </div>
                     </div>
-                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Churn Rate</span>
-                      <p className="text-xl font-black text-zinc-650">{churnRate.toFixed(1)}%</p>
-                      <p className="text-[10px] text-zinc-400 font-semibold">{cancelledCount} deactivated total</p>
+                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                      <div>
+                        <p className="text-xl font-black text-zinc-650 tracking-tight">{churnRate.toFixed(1)}%</p>
+                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">{cancelledCount} deactivated</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 text-red-600">
+                          <XCircle className="size-3.5" />
+                        </div>
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Churn</span>
+                      </div>
                     </div>
-                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 space-y-1.5 shadow-sm hover:shadow-md transition-shadow">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Billing Success</span>
-                      <p className="text-xl font-black text-emerald-600">{recoveryRate.toFixed(1)}%</p>
-                      <p className="text-[10px] text-zinc-400 font-semibold">{subscriptionSummary.failedRenewals} failed renewals</p>
+                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                      <div>
+                        <p className="text-xl font-black text-emerald-600 tracking-tight">{recoveryRate.toFixed(1)}%</p>
+                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">{subscriptionSummary.failedRenewals} failed</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                          <RefreshCw className="size-3.5" />
+                        </div>
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Success</span>
+                      </div>
                     </div>
                   </div>
 
@@ -2556,23 +3156,29 @@ function AdminDashboardPage() {
         {/* VIEW: DEMO APPOINTMENTS */}
         {activeTab === "demo" && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {[
-                { label: "Total Requests", value: demoSummary.total, hint: "All captured leads" },
-                { label: "Fresh Leads", value: demoSummary.fresh, hint: "Need first response" },
-                { label: "Contacted", value: demoSummary.contacted, hint: "Follow-up started" },
-                { label: "Scheduled", value: demoSummary.scheduled, hint: "Demo slot locked" },
-              ].map((card) => (
-                <div key={card.label} className="rounded-3xl border border-zinc-200/80 bg-white p-5">
-                  <span className="block text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">
-                    {card.label}
-                  </span>
-                  <span className="mt-2 block text-3xl font-black tracking-tight text-zinc-950">
-                    {card.value}
-                  </span>
-                  <span className="mt-2 block text-[10px] font-semibold text-zinc-500">{card.hint}</span>
-                </div>
-              ))}
+                { label: "Total", value: demoSummary.total, hint: "All leads", icon: Calendar, color: "bg-blue-50 text-[#0059C6]" },
+                { label: "Fresh", value: demoSummary.fresh, hint: "Need response", icon: AlertCircle, color: "bg-amber-50 text-amber-600" },
+                { label: "Contacted", value: demoSummary.contacted, hint: "Follow-up started", icon: Phone, color: "bg-purple-50 text-purple-600" },
+                { label: "Scheduled", value: demoSummary.scheduled, hint: "Slot locked", icon: CheckCircle2, color: "bg-emerald-50 text-emerald-600" },
+              ].map((card) => {
+                const Icon = card.icon;
+                return (
+                  <div key={card.label} className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                    <div>
+                      <span className="block text-xl font-black tracking-tight text-zinc-950">{card.value}</span>
+                      <span className="block text-[10px] font-semibold text-zinc-400 mt-1">{card.hint}</span>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${card.color}`}>
+                        <Icon className="size-3.5" />
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">{card.label}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="rounded-3xl border border-zinc-200/80 bg-white p-6 space-y-6">
@@ -2979,6 +3585,168 @@ function AdminDashboardPage() {
           </div>
         )}
       </AnimatePresence>
+      {/* MODAL: Full Tenant Edit */}
+      <AnimatePresence>
+        {editTenantModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white border border-zinc-200 rounded-2xl w-full max-w-2xl mx-4 overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-150 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-[#0059C6]">
+                    <Edit2 className="size-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-zinc-900">Edit Tenant Information</h3>
+                    <p className="text-[11px] text-zinc-500">{editTenantModal.clinicName} · {editTenantModal.tenantId}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setEditTenantModal(null)}
+                  className="p-2 rounded-lg hover:bg-zinc-100 text-zinc-500 transition-colors cursor-pointer"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              {loadingTenantEdit ? (
+                <div className="flex items-center justify-center py-20 text-zinc-500 gap-2">
+                  <Loader2 className="size-5 animate-spin" />
+                  <span className="text-xs font-semibold">Loading tenant details...</span>
+                </div>
+              ) : (
+                <form onSubmit={handleSaveTenantEdit} className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+                  {/* Director / Account Info */}
+                  <div className="space-y-3">
+                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Account & Director</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-zinc-500">Full Name</label>
+                        <input value={etName} onChange={(e) => setEtName(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-zinc-500">Email Address</label>
+                        <input type="email" value={etEmail} onChange={(e) => setEtEmail(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-zinc-500">Phone Number</label>
+                        <input value={etPhone} onChange={(e) => setEtPhone(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-zinc-500">Profession / Industry</label>
+                        <input value={etProfession} onChange={(e) => setEtProfession(e.target.value)}
+                          placeholder="e.g. Healthcare and medical"
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Business Info */}
+                  <div className="space-y-3">
+                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Business / Clinic</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-zinc-500">Business Name</label>
+                        <input value={etClinicName} onChange={(e) => setEtClinicName(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-zinc-500">Practice / Team Size</label>
+                        <input value={etPracticeSize} onChange={(e) => setEtPracticeSize(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                      </div>
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="text-[10px] font-bold text-zinc-500">Address</label>
+                        <input value={etAddress} onChange={(e) => setEtAddress(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                      </div>
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="text-[10px] font-bold text-zinc-500">Short Description</label>
+                        <textarea value={etShortDescription} onChange={(e) => setEtShortDescription(e.target.value)} rows={2}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all resize-none" />
+                      </div>
+                      <div className="space-y-1 sm:col-span-2">
+                        <label className="text-[10px] font-bold text-zinc-500">Services (comma separated)</label>
+                        <textarea value={etServices} onChange={(e) => setEtServices(e.target.value)} rows={2}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all resize-none" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Contact Channels */}
+                  <div className="space-y-3">
+                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Contact Channels</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-zinc-500">WhatsApp Number</label>
+                        <input value={etWhatsappNo} onChange={(e) => setEtWhatsappNo(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-zinc-500">Landline</label>
+                        <input value={etLandlineNo} onChange={(e) => setEtLandlineNo(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-zinc-500">Alternate Contact No.</label>
+                        <input value={etContactNo} onChange={(e) => setEtContactNo(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-zinc-500">Public / Booking Email</label>
+                        <input type="email" value={etProfileEmail} onChange={(e) => setEtProfileEmail(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Security */}
+                  <div className="space-y-3">
+                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Security</span>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-500">Reset Password <span className="text-zinc-400 font-medium">(leave blank to keep current)</span></label>
+                      <input type="text" value={etNewPassword} onChange={(e) => setEtNewPassword(e.target.value)}
+                        placeholder="Min 6 characters"
+                        className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              {/* Footer */}
+              {!loadingTenantEdit && (
+                <div className="flex gap-2.5 px-6 py-4 border-t border-zinc-150 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setEditTenantModal(null)}
+                    disabled={savingTenantEdit}
+                    className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveTenantEdit}
+                    disabled={savingTenantEdit}
+                    className="flex-1 rounded-xl bg-[#0059C6] hover:bg-[#0047A0] py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-60"
+                  >
+                    {savingTenantEdit && <Loader2 className="size-3.5 animate-spin" />}
+                    Save Changes
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* MODAL: Delete Confirmation */}
       <AnimatePresence>
         {deletingTenant && (
@@ -3014,6 +3782,48 @@ function AdminDashboardPage() {
                 >
                   {isDeleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Bulk Delete Confirmation */}
+      <AnimatePresence>
+        {showBulkDeleteConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white border border-zinc-200 rounded-3xl w-full max-w-sm mx-4 shadow-2xl overflow-hidden p-6 text-center relative"
+            >
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 border border-red-100 mb-4">
+                <AlertCircle className="size-7 text-red-600" />
+              </div>
+              <h3 className="text-lg font-black text-zinc-950 mb-2">Delete {selectedTenantIds.size} Tenant{selectedTenantIds.size === 1 ? "" : "s"}?</h3>
+              <p className="text-xs text-zinc-500 leading-relaxed mb-6">
+                Are you sure you want to permanently delete <span className="font-bold text-zinc-800">{selectedTenantIds.size} selected tenant{selectedTenantIds.size === 1 ? "" : "s"}</span>? This action cannot be undone and will erase all data associated with each one.
+              </p>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkDeleteConfirm(false)}
+                  disabled={isBulkDeleting}
+                  className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={executeBulkDeleteTenants}
+                  disabled={isBulkDeleting}
+                  className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98]"
+                >
+                  {isBulkDeleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Delete All
                 </button>
               </div>
             </motion.div>

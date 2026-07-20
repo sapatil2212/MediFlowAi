@@ -314,6 +314,131 @@ export const updateTenantSaasServerFn = createServerFn({ method: "POST" })
   });
 
 // ──────────────────────────────────────────────
+// Update Full Tenant Profile (super admin can edit everything)
+// ──────────────────────────────────────────────
+// Updates the base User account (identity + contact + profession) and the
+// linked ClinicProfile (address, alternate contacts, description, services).
+// Enforces email/phone uniqueness across other accounts. Optionally resets the
+// login password. All fields are optional — only provided values are written.
+export const updateTenantFullServerFn = createServerFn({ method: "POST" })
+  .validator((data: {
+    id: string;
+    name?: string;
+    email?: string;
+    phone?: string;
+    clinicName?: string;
+    practiceSize?: string;
+    profession?: string;
+    address?: string;
+    whatsappNo?: string;
+    landlineNo?: string;
+    contactNo?: string;
+    profileEmail?: string;
+    shortDescription?: string;
+    services?: string;
+    newPassword?: string;
+  }) => {
+    if (!data.id) throw new Error("Tenant ID is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const user = await queryOne<any>("SELECT * FROM User WHERE id = ? LIMIT 1", [data.id]);
+    if (!user) throw new Error("Tenant not found");
+
+    // Uniqueness guards — email/phone must not collide with other accounts.
+    if (data.email && data.email !== user.email) {
+      const dupe = await queryOne<any>("SELECT id FROM User WHERE email = ? AND id <> ? LIMIT 1", [data.email, data.id]);
+      if (dupe) throw new Error("That email is already used by another account.");
+    }
+    if (data.phone && data.phone !== user.phone) {
+      const dupe = await queryOne<any>("SELECT id FROM User WHERE phone = ? AND id <> ? LIMIT 1", [data.phone, data.id]);
+      if (dupe) throw new Error("That phone number is already used by another account.");
+    }
+
+    // Build a dynamic UPDATE for the User row from only the provided fields.
+    const userFields: string[] = [];
+    const userVals: any[] = [];
+    const setIf = (col: string, val: any) => {
+      if (val !== undefined && val !== null) { userFields.push(`${col} = ?`); userVals.push(val); }
+    };
+    setIf("name", data.name);
+    setIf("email", data.email);
+    setIf("phone", data.phone);
+    setIf("clinicName", data.clinicName);
+    setIf("practiceSize", data.practiceSize);
+    setIf("profession", data.profession);
+
+    if (data.newPassword && data.newPassword.trim().length >= 6) {
+      const hashed = await bcrypt.hash(data.newPassword.trim(), 10);
+      userFields.push("password = ?");
+      userVals.push(hashed);
+    }
+
+    if (userFields.length > 0) {
+      userVals.push(data.id);
+      await execute(`UPDATE User SET ${userFields.join(", ")}, updatedAt = NOW() WHERE id = ?`, userVals);
+    }
+
+    // Update / upsert the ClinicProfile row for this tenant.
+    const tId = user.tenantId;
+    if (tId) {
+      const profile = await queryOne<any>("SELECT id FROM ClinicProfile WHERE tenantId = ? LIMIT 1", [tId]);
+
+      if (profile) {
+        const pFields: string[] = [];
+        const pVals: any[] = [];
+        const setP = (col: string, val: any) => {
+          if (val !== undefined && val !== null) { pFields.push(`${col} = ?`); pVals.push(val); }
+        };
+        // Keep clinicName/clinicianName/phone in sync with the User record too.
+        setP("clinicName", data.clinicName);
+        setP("clinicianName", data.name);
+        setP("phone", data.phone);
+        setP("practiceSize", data.practiceSize);
+        setP("profession", data.profession);
+        setP("address", data.address);
+        setP("whatsappNo", data.whatsappNo);
+        setP("landlineNo", data.landlineNo);
+        setP("contactNo", data.contactNo);
+        setP("email", data.profileEmail);
+        setP("shortDescription", data.shortDescription);
+        setP("services", data.services);
+
+        if (pFields.length > 0) {
+          pVals.push(tId);
+          await execute(`UPDATE ClinicProfile SET ${pFields.join(", ")}, updatedAt = NOW() WHERE tenantId = ?`, pVals);
+        }
+      } else {
+        // Create a profile if none exists yet.
+        await execute(
+          `INSERT INTO ClinicProfile (id, tenantId, clinicName, clinicianName, phone, practiceSize, profession, address, whatsappNo, landlineNo, contactNo, email, shortDescription, services, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [
+            generateId(), tId,
+            data.clinicName || user.clinicName,
+            data.name || user.name,
+            data.phone || user.phone,
+            data.practiceSize || user.practiceSize,
+            data.profession || null,
+            data.address || null,
+            data.whatsappNo || null,
+            data.landlineNo || null,
+            data.contactNo || null,
+            data.profileEmail || null,
+            data.shortDescription || null,
+            data.services || null,
+          ]
+        );
+      }
+    }
+
+    return { success: true };
+  });
+
+// ──────────────────────────────────────────────
 // Create Tenant (Clinician User) Server Function
 // ──────────────────────────────────────────────
 export const createTenantAdminServerFn = createServerFn({ method: "POST" })
@@ -410,6 +535,56 @@ export const deleteTenantServerFn = createServerFn({ method: "POST" })
     await execute("DELETE FROM User WHERE id = ?", [data.id]);
 
     return { success: true };
+  });
+
+// ──────────────────────────────────────────────
+// Bulk Delete Tenants Server Function
+// ──────────────────────────────────────────────
+// Deletes multiple tenants in one call (used by the multi-select checkbox UI
+// in the tenants table). Reuses the same per-tenant cleanup as the single
+// delete above. Continues on individual failures and reports a summary rather
+// than aborting the whole batch.
+export const bulkDeleteTenantsServerFn = createServerFn({ method: "POST" })
+  .validator((data: { ids: string[] }) => {
+    if (!Array.isArray(data.ids) || data.ids.length === 0) {
+      throw new Error("At least one tenant ID is required");
+    }
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    let deleted = 0;
+    let failed = 0;
+
+    for (const id of data.ids) {
+      try {
+        const user = await queryOne<any>("SELECT tenantId FROM User WHERE id = ? LIMIT 1", [id]);
+        if (!user) { failed++; continue; }
+
+        const tId = user.tenantId;
+        if (tId) {
+          await execute("DELETE FROM ClinicProfile WHERE tenantId = ?", [tId]);
+          await execute("DELETE FROM SubUser WHERE tenantId = ?", [tId]);
+          await execute("DELETE FROM Appointment WHERE tenantId = ?", [tId]);
+          await execute("DELETE FROM Patient WHERE tenantId = ?", [tId]);
+          await execute("DELETE FROM SoapNote WHERE tenantId = ?", [tId]);
+          await execute("DELETE FROM WhatsAppConfig WHERE tenantId = ?", [tId]);
+          await execute("DELETE FROM Doctor WHERE tenantId = ?", [tId]);
+        }
+
+        await execute("DELETE FROM Session WHERE userId = ?", [id]);
+        await execute("DELETE FROM SubscriptionHistory WHERE userId = ?", [id]);
+        await execute("DELETE FROM User WHERE id = ?", [id]);
+        deleted++;
+      } catch (err: any) {
+        console.warn(`[Admin] Bulk delete failed for tenant ${id}:`, err.message);
+        failed++;
+      }
+    }
+
+    return { success: true, deleted, failed, total: data.ids.length };
   });
 
 export const toggleTenantStatusServerFn = createServerFn({ method: "POST" })
