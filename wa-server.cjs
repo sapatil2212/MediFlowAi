@@ -614,15 +614,20 @@ async function initClient(tenantId, force = false) {
       puppeteer: {
         headless: true,
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        // NOTE: do NOT use --single-process or --no-zygote here. On Linux servers
+        // those flags break WhatsApp Web's linking handshake and cause the phone
+        // to show "Couldn't link device, try again later" when scanning the QR.
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
           "--disable-dev-shm-usage",
           "--disable-accelerated-2d-canvas",
           "--no-first-run",
-          "--no-zygote",
-          "--single-process",
           "--disable-gpu",
+          "--disable-extensions",
+          "--disable-background-networking",
+          "--disable-default-apps",
+          "--disable-sync",
           "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
         ],
       },
