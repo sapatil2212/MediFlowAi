@@ -1,8 +1,12 @@
 import "./lib/error-capture";
 import { startWhatsAppServer } from "./lib/wa-launcher";
+import { startReminderScheduler } from "./lib/reminder-scheduler";
 
 // Start WhatsApp server
 startWhatsAppServer();
+
+// Start the appointment reminder scheduler (WhatsApp reminders: 1 day / day-of / 2h / 1h before)
+startReminderScheduler();
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";

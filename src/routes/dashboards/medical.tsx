@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import bmtLogo from "../../assets/bmt-logo.png";
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   HeartPulse,
@@ -302,6 +303,91 @@ const soapTemplates = {
     plan: "1. Initiate Escitalopram (Lexapro) 10mg PO daily for anxiety/insomnia.\n2. Provide prescription for Hydroxyzine pamoate 25mg PO Q6H PRN for acute panic/severe anxiety episodes (Max 3/day).\n3. Referral to outpatient Cognitive Behavioral Therapy (CBT) weekly.\n4. Follow-up in 2 weeks to monitor compliance, side effects, and therapeutic response."
   }
 };
+
+// ==========================================
+// FloatingMenu — portal-based dropdown that escapes modal overflow clipping.
+// Renders its children in a fixed-position layer attached to document.body,
+// anchored to a trigger element, and flips above/below based on viewport space.
+// Carries the `dropdown-container` class so existing outside-click logic that
+// checks `.closest('.dropdown-container')` continues to treat it as "inside".
+// ==========================================
+function FloatingMenu({
+  open,
+  anchorRef,
+  children,
+  align = "left",
+  matchWidth = true,
+  menuWidth,
+  estimatedHeight = 240,
+}: {
+  open: boolean;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  children: React.ReactNode;
+  align?: "left" | "right";
+  matchWidth?: boolean;
+  menuWidth?: number;
+  estimatedHeight?: number;
+}) {
+  const [style, setStyle] = useState<React.CSSProperties | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setStyle(null);
+      return;
+    }
+    const el = anchorRef.current;
+    if (!el) return;
+
+    const compute = () => {
+      const r = el.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const spaceAbove = r.top;
+      const openUp = spaceBelow < estimatedHeight + 16 && spaceAbove > spaceBelow;
+
+      const s: React.CSSProperties = { position: "fixed", zIndex: 9999 };
+      if (matchWidth) s.width = r.width;
+      else if (menuWidth) s.width = menuWidth;
+
+      // Horizontal anchoring (keep menu within the viewport).
+      if (align === "right") {
+        s.right = Math.max(8, window.innerWidth - r.right);
+      } else {
+        s.left = Math.min(r.left, window.innerWidth - (menuWidth || r.width) - 8);
+        s.left = Math.max(8, s.left as number);
+      }
+
+      // Vertical: flip above the trigger when there isn't room below.
+      if (openUp) s.bottom = window.innerHeight - r.top + 6;
+      else s.top = r.bottom + 6;
+
+      setStyle(s);
+    };
+
+    compute();
+    window.addEventListener("resize", compute);
+    window.addEventListener("scroll", compute, true);
+    return () => {
+      window.removeEventListener("resize", compute);
+      window.removeEventListener("scroll", compute, true);
+    };
+  }, [open, anchorRef, align, matchWidth, menuWidth, estimatedHeight]);
+
+  if (!open || !style || typeof document === "undefined") return null;
+
+  return createPortal(
+    <motion.div
+      className="dropdown-container"
+      style={style}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 6 }}
+      transition={{ duration: 0.12 }}
+    >
+      {children}
+    </motion.div>,
+    document.body
+  );
+}
 
 // ==========================================
 // DayScheduleCard — Per-day schedule row with multi-break support + copy-to-days
@@ -841,6 +927,19 @@ function MedicalDashboardPage() {
   const [vitalRespRate, setVitalRespRate] = useState("16");
 
   const recognitionRef = useRef<any>(null);
+  // Smart Voice (per-field AI dictation): accumulates the live transcript for the
+  // currently-recording field, then runs AI analysis on stop to auto-fill it.
+  const smartVoiceBufferRef = useRef("");
+  const [analyzingField, setAnalyzingField] = useState<string | null>(null);
+
+  // Anchor refs for the Book Appointment modal's portal-based dropdowns, so their
+  // menus can escape the modal's overflow clipping and flip above/below.
+  const aptBloodGroupBtnRef = useRef<HTMLButtonElement>(null);
+  const aptTypeBtnRef = useRef<HTMLButtonElement>(null);
+  const aptDeptBtnRef = useRef<HTMLButtonElement>(null);
+  const aptDocBtnRef = useRef<HTMLButtonElement>(null);
+  const aptCalendarBtnRef = useRef<HTMLButtonElement>(null);
+  const aptClockBtnRef = useRef<HTMLButtonElement>(null);
 
   // Consultation interactive list and action states
   const [selectedAptForConsultation, setSelectedAptForConsultation] = useState<any | null>(null);
@@ -1301,7 +1400,8 @@ function MedicalDashboardPage() {
   const handleStep2Next = async () => {
     setAptError("");
     const newErrs: Record<string, string> = {};
-    if (!aptEmail.trim() || !/\S+@\S+\.\S+/.test(aptEmail)) {
+    // Email is optional — only validate the format when a value is provided.
+    if (aptEmail.trim() && !/\S+@\S+\.\S+/.test(aptEmail)) {
       newErrs.email = "Please enter a valid email address.";
     }
     if (!aptPhone.trim() || !/^\+?[\d\s-]{10,15}$/.test(aptPhone)) {
@@ -1367,8 +1467,8 @@ function MedicalDashboardPage() {
     setBookingStep(4);
   };
 
-  const handleCreateOrUpdateAppointment = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateOrUpdateAppointment = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e && typeof (e as any).preventDefault === "function") (e as any).preventDefault();
     setAptError("");
     setAptSuccess("");
 
@@ -1376,7 +1476,8 @@ function MedicalDashboardPage() {
     if (!aptName.trim()) {
       newErrs.name = "Patient Name is required.";
     }
-    if (!aptEmail.trim() || !/\S+@\S+\.\S+/.test(aptEmail)) {
+    // Email is optional — only validate the format when a value is provided.
+    if (aptEmail.trim() && !/\S+@\S+\.\S+/.test(aptEmail)) {
       newErrs.email = "Please enter a valid email address.";
     }
     if (!aptPhone.trim() || !/^\+?[\d\s-]{10,15}$/.test(aptPhone)) {
@@ -1400,6 +1501,8 @@ function MedicalDashboardPage() {
 
     if (Object.keys(newErrs).length > 0) {
       setFieldErrors(newErrs);
+      // Jump back to the step that holds the first missing field so the
+      // highlighted error is visible in context (instead of a generic message).
       if (newErrs.name) {
         setBookingStep(1);
       } else if (newErrs.email || newErrs.phone) {
@@ -1407,6 +1510,7 @@ function MedicalDashboardPage() {
       } else {
         setBookingStep(3);
       }
+      setAptError("Please complete the highlighted required field to continue.");
       return;
     }
     setFieldErrors({});
@@ -3122,6 +3226,66 @@ function MedicalDashboardPage() {
       setRecordingField(fieldName);
       setRecordingSeconds(0);
       startSpeechRecognition(setter);
+    }
+  };
+
+  // ── Smart Voice: record → AI-analyze → auto-fill a single consultation field ──
+  // Unlike toggleRecordingForField (which dumps raw speech verbatim), this runs
+  // the doctor's dictation through the clinical AI so free-form speech like
+  // "Paracetamol for 5 days, 2 times a day" is parsed into structured data and
+  // written into the correct field (medications as rows, diagnosis/complaint/
+  // advice as clean text).
+  const analyzeSmartVoiceField = async (fieldName: string, transcript: string) => {
+    setAnalyzingField(fieldName);
+    try {
+      const res = await voiceRxAnalyzeServerFn({ data: { transcript } });
+      if (!res.success) throw new Error("AI analysis returned no result.");
+
+      if (fieldName === "chiefComplaint" && res.chiefComplaint) {
+        setConsultationChiefComplaint((prev) => (prev ? `${prev} ${res.chiefComplaint}` : res.chiefComplaint!));
+      } else if (fieldName === "diagnosis" && res.diagnosis) {
+        setConsultationDiagnosis((prev) => (prev ? `${prev} ${res.diagnosis}` : res.diagnosis!));
+      } else if (fieldName === "advice" && res.advice) {
+        setConsultationAdvice((prev) => (prev ? `${prev} ${res.advice}` : res.advice!));
+      } else if (fieldName === "medications" && Array.isArray(res.medications) && res.medications.length > 0) {
+        setPrescriptionMedications((prev) => {
+          // Drop any empty placeholder rows, then append the AI-parsed medicines.
+          const cleaned = prev.filter((m: any) => m && String(m.name || "").trim());
+          return [...cleaned, ...res.medications];
+        });
+      } else {
+        showToast("error", "Couldn't extract details for this field. Please try again.");
+        return;
+      }
+      showToast("success", "AI filled the field from your dictation.");
+    } catch (e: any) {
+      showToast("error", e.message || "Failed to analyze dictation.");
+    } finally {
+      setAnalyzingField(null);
+    }
+  };
+
+  const toggleSmartVoiceForField = (fieldName: "chiefComplaint" | "diagnosis" | "medications" | "advice") => {
+    if (recordingField === fieldName) {
+      // Stop recording and hand the captured transcript to the AI.
+      setIsRecording(false);
+      setRecordingField(null);
+      stopSpeechRecognition();
+      const transcript = smartVoiceBufferRef.current.trim();
+      smartVoiceBufferRef.current = "";
+      if (!transcript) {
+        showToast("error", "No speech captured. Please try speaking again.");
+        return;
+      }
+      analyzeSmartVoiceField(fieldName, transcript);
+    } else {
+      if (recordingField) stopSpeechRecognition();
+      smartVoiceBufferRef.current = "";
+      setIsRecording(true);
+      setRecordingField(fieldName);
+      setRecordingSeconds(0);
+      // Accumulate the live transcript into the buffer (not directly into the field).
+      startSpeechRecognition((text) => { smartVoiceBufferRef.current += text; });
     }
   };
 
@@ -5572,7 +5736,7 @@ function MedicalDashboardPage() {
                         {/* Patient History Accordion/Section */}
                         <div className="rounded-2xl border border-zinc-150 bg-gradient-to-br from-zinc-50/40 via-white to-zinc-50/20 p-5 space-y-4 shadow-none text-left transition-all hover:border-zinc-200/80 duration-300">
                           <h4 className="text-xs font-bold text-zinc-800 uppercase tracking-wide">
-                            Patient History ({patientChartData?.soapNotes?.length || 1})
+                            Patient History ({patientChartData?.soapNotes?.length || 0})
                           </h4>
                           
                           <div className="max-h-[300px] overflow-y-auto space-y-3 pr-1.5">
@@ -5603,33 +5767,13 @@ function MedicalDashboardPage() {
                                 </div>
                               ))
                             ) : (
-                              /* Default Placeholder History (as in prompt) */
-                              <div className="p-3.5 bg-zinc-50 border border-zinc-150 rounded-xl space-y-2 text-xs text-zinc-700">
-                                <div className="flex justify-between items-center text-[10px] font-bold text-zinc-400">
-                                  <span>RX-0007</span>
-                                  <span>6 Jun 2026, 01:05 pm</span>
-                                </div>
-                                <div className="text-[10px] text-zinc-500 font-semibold">
-                                  Dr. Rahul Patil · Same Consult
-                                </div>
-                                <div>
-                                  <span className="font-bold text-[9px] text-zinc-400 uppercase block">CC</span>
-                                  <p className="font-bold text-zinc-800">Tooth pain for the past 3 days with associated headache</p>
-                                </div>
-                                <div>
-                                  <span className="font-bold text-[9px] text-zinc-400 uppercase block">Diagnosis</span>
-                                  <p className="font-semibold text-zinc-700">Dental pain (possible dental caries/pulpitis) with headache</p>
-                                  <div className="flex gap-1.5 mt-1">
-                                    <span className="px-1.5 py-0.5 rounded bg-zinc-200/80 text-[8px] font-bold font-mono">K04.6</span>
-                                    <span className="px-1.5 py-0.5 rounded bg-zinc-200/80 text-[8px] font-bold font-mono">R51</span>
-                                  </div>
-                                </div>
-                                <div>
-                                  <span className="font-bold text-[9px] text-zinc-400 uppercase block">Advice</span>
-                                  <p className="text-[10px] text-zinc-500 font-medium">
-                                    Maintain oral hygiene, avoid hard or hot foods, use warm salt water rinses, stay hydrated, and consider seeing a dentist promptly.
-                                  </p>
-                                </div>
+                              /* Empty state — no prior consultation history for this patient. */
+                              <div className="flex flex-col items-center justify-center py-8 text-center border border-dashed border-zinc-200 rounded-xl bg-zinc-50/30">
+                                <ClipboardList className="h-6 w-6 text-zinc-300 mb-2" />
+                                <p className="text-xs font-bold text-zinc-500">No previous history</p>
+                                <p className="text-[10px] text-zinc-400 mt-0.5 max-w-[220px]">
+                                  This patient has no earlier consultation records. Saved consultations will appear here.
+                                </p>
                               </div>
                             )}
                           </div>
@@ -5736,15 +5880,21 @@ function MedicalDashboardPage() {
                             </h4>
                             <button
                               type="button"
-                              onClick={() => toggleRecordingForField("chiefComplaint", (text) => setConsultationChiefComplaint(prev => prev + text))}
-                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border border-zinc-200/80 shadow-none ${
+                              onClick={() => toggleSmartVoiceForField("chiefComplaint")}
+                              disabled={analyzingField === "chiefComplaint"}
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border border-zinc-200/80 shadow-none disabled:opacity-60 ${
                                 recordingField === "chiefComplaint"
                                   ? "bg-red-500 text-white animate-pulse border-red-500"
-                                  : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600"
+                                  : analyzingField === "chiefComplaint"
+                                    ? "bg-emerald-500 text-white border-emerald-500"
+                                    : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600"
                               }`}
                             >
-                              <Mic className="h-3 w-3" />
-                              {recordingField === "chiefComplaint" ? `Listening (${formatTime(recordingSeconds)})` : "Voice Type"}
+                              {analyzingField === "chiefComplaint"
+                                ? <><Loader2 className="h-3 w-3 animate-spin" /> Analyzing...</>
+                                : recordingField === "chiefComplaint"
+                                  ? <><Mic className="h-3 w-3" /> {`Listening (${formatTime(recordingSeconds)}) — tap to fill`}</>
+                                  : <><Mic className="h-3 w-3" /> Smart Voice</>}
                             </button>
                           </div>
 
@@ -5783,15 +5933,21 @@ function MedicalDashboardPage() {
                             </h4>
                             <button
                               type="button"
-                              onClick={() => toggleRecordingForField("diagnosis", (text) => setConsultationDiagnosis(prev => prev + text))}
-                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border border-zinc-200/80 shadow-none ${
+                              onClick={() => toggleSmartVoiceForField("diagnosis")}
+                              disabled={analyzingField === "diagnosis"}
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border border-zinc-200/80 shadow-none disabled:opacity-60 ${
                                 recordingField === "diagnosis"
                                   ? "bg-red-500 text-white animate-pulse border-red-500"
-                                  : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600"
+                                  : analyzingField === "diagnosis"
+                                    ? "bg-emerald-500 text-white border-emerald-500"
+                                    : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600"
                               }`}
                             >
-                              <Mic className="h-3 w-3" />
-                              {recordingField === "diagnosis" ? `Listening (${formatTime(recordingSeconds)})` : "Smart Voice"}
+                              {analyzingField === "diagnosis"
+                                ? <><Loader2 className="h-3 w-3 animate-spin" /> Analyzing...</>
+                                : recordingField === "diagnosis"
+                                  ? <><Mic className="h-3 w-3" /> {`Listening (${formatTime(recordingSeconds)}) — tap to fill`}</>
+                                  : <><Mic className="h-3 w-3" /> Smart Voice</>}
                             </button>
                           </div>
 
@@ -5812,25 +5968,21 @@ function MedicalDashboardPage() {
                             </h4>
                             <button
                               type="button"
-                              onClick={() => toggleRecordingForField("medications", (text) => {
-                                setPrescriptionMedications(prev => {
-                                  if (prev.length > 0) {
-                                    const updated = [...prev];
-                                    const last = updated[updated.length - 1];
-                                    last.name = last.name ? last.name + " " + text : text;
-                                    return updated;
-                                  }
-                                  return [{ name: text, dosage: "", frequency: "", route: "", duration: "", instructions: "" }];
-                                });
-                              })}
-                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border border-zinc-200/80 shadow-none ${
+                              onClick={() => toggleSmartVoiceForField("medications")}
+                              disabled={analyzingField === "medications"}
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border border-zinc-200/80 shadow-none disabled:opacity-60 ${
                                 recordingField === "medications"
                                   ? "bg-red-500 text-white animate-pulse border-red-500"
-                                  : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600"
+                                  : analyzingField === "medications"
+                                    ? "bg-emerald-500 text-white border-emerald-500"
+                                    : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600"
                               }`}
                             >
-                              <Mic className="h-3 w-3" />
-                              {recordingField === "medications" ? `Listening (${formatTime(recordingSeconds)})` : "Smart Voice"}
+                              {analyzingField === "medications"
+                                ? <><Loader2 className="h-3 w-3 animate-spin" /> Analyzing...</>
+                                : recordingField === "medications"
+                                  ? <><Mic className="h-3 w-3" /> {`Listening (${formatTime(recordingSeconds)}) — tap to fill`}</>
+                                  : <><Mic className="h-3 w-3" /> Smart Voice</>}
                             </button>
                           </div>
 
@@ -6054,15 +6206,21 @@ function MedicalDashboardPage() {
                             </h4>
                             <button
                               type="button"
-                              onClick={() => toggleRecordingForField("advice", (text) => setConsultationAdvice(prev => prev + text))}
-                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border border-zinc-200/80 shadow-none ${
+                              onClick={() => toggleSmartVoiceForField("advice")}
+                              disabled={analyzingField === "advice"}
+                              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all border border-zinc-200/80 shadow-none disabled:opacity-60 ${
                                 recordingField === "advice"
                                   ? "bg-red-500 text-white animate-pulse border-red-500"
-                                  : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600"
+                                  : analyzingField === "advice"
+                                    ? "bg-emerald-500 text-white border-emerald-500"
+                                    : "bg-zinc-50 hover:bg-zinc-100 text-zinc-600"
                               }`}
                             >
-                              <Mic className="h-3 w-3" />
-                              {recordingField === "advice" ? `Listening (${formatTime(recordingSeconds)})` : "Voice Type"}
+                              {analyzingField === "advice"
+                                ? <><Loader2 className="h-3 w-3 animate-spin" /> Analyzing...</>
+                                : recordingField === "advice"
+                                  ? <><Mic className="h-3 w-3" /> {`Listening (${formatTime(recordingSeconds)}) — tap to fill`}</>
+                                  : <><Mic className="h-3 w-3" /> Smart Voice</>}
                             </button>
                           </div>
 
@@ -10880,23 +11038,11 @@ function MedicalDashboardPage() {
               </div>
 
               {/* Modal Form */}
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                if (bookingStep === 1) {
-                  if (!aptName.trim()) {
-                    setFieldErrors({ name: "Patient Full Name is required." });
-                  } else {
-                    setFieldErrors({});
-                    setBookingStep(2);
-                  }
-                } else if (bookingStep === 2) {
-                  handleStep2Next();
-                } else if (bookingStep === 3) {
-                  handleStep3Next();
-                } else {
-                  handleCreateOrUpdateAppointment(e);
-                }
-              }} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              {/* The form never submits on its own — onSubmit is a hard no-op so a
+                  stray Enter key can't book. Booking happens ONLY when the user
+                  explicitly clicks the "Schedule Booking" button (type="button"
+                  with an onClick handler). Step navigation is via the Next buttons. */}
+              <form onSubmit={(e) => { e.preventDefault(); }} className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 <div className="flex-1 p-5 sm:p-6 space-y-4 text-left overflow-y-auto min-h-0">
                   
                   {/* Step 1: Personal Information */}
@@ -10973,6 +11119,7 @@ function MedicalDashboardPage() {
                           <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Blood Group</label>
                           <div className="relative">
                             <button
+                              ref={aptBloodGroupBtnRef}
                               type="button"
                               onClick={() => {
                                 setAptBloodGroupOpen(!aptBloodGroupOpen);
@@ -10993,30 +11140,27 @@ function MedicalDashboardPage() {
 
                             <AnimatePresence>
                               {aptBloodGroupOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
-                                >
-                                  {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"].map((bg) => (
-                                    <button
-                                      key={bg}
-                                      type="button"
-                                      onClick={() => {
-                                        setAptBloodGroup(bg);
-                                        setAptBloodGroupOpen(false);
-                                        if (fieldErrors.bloodGroup) setFieldErrors(prev => ({ ...prev, bloodGroup: "" }));
-                                      }}
-                                      className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                        aptBloodGroup === bg ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
-                                      }`}
-                                    >
-                                      <span>{bg}</span>
-                                      {aptBloodGroup === bg && <Check className="h-3.5 w-3.5 text-brand" />}
-                                    </button>
-                                  ))}
-                                </motion.div>
+                                <FloatingMenu open={aptBloodGroupOpen} anchorRef={aptBloodGroupBtnRef} estimatedHeight={280}>
+                                  <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                    {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"].map((bg) => (
+                                      <button
+                                        key={bg}
+                                        type="button"
+                                        onClick={() => {
+                                          setAptBloodGroup(bg);
+                                          setAptBloodGroupOpen(false);
+                                          if (fieldErrors.bloodGroup) setFieldErrors(prev => ({ ...prev, bloodGroup: "" }));
+                                        }}
+                                        className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                          aptBloodGroup === bg ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
+                                        }`}
+                                      >
+                                        <span>{bg}</span>
+                                        {aptBloodGroup === bg && <Check className="h-3.5 w-3.5 text-brand" />}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -11031,6 +11175,7 @@ function MedicalDashboardPage() {
                         <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Appointment Type</label>
                         <div className="relative">
                           <button
+                            ref={aptTypeBtnRef}
                             type="button"
                             onClick={() => {
                               setAptTypeOpen(!aptTypeOpen);
@@ -11051,30 +11196,27 @@ function MedicalDashboardPage() {
 
                           <AnimatePresence>
                             {aptTypeOpen && (
-                              <motion.div
-                                initial={{ opacity: 0, y: -10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -10 }}
-                                className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl p-1.5 space-y-0.5"
-                              >
-                                {["First Time", "Follow up"].map((type) => (
-                                  <button
-                                    key={type}
-                                    type="button"
-                                    onClick={() => {
-                                      setAptAppointmentType(type);
-                                      setAptTypeOpen(false);
-                                      if (fieldErrors.type) setFieldErrors(prev => ({ ...prev, type: "" }));
-                                    }}
-                                    className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                      aptAppointmentType === type ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
-                                    }`}
-                                  >
-                                    <span>{type}</span>
-                                    {aptAppointmentType === type && <Check className="h-3.5 w-3.5 text-brand" />}
-                                  </button>
-                                ))}
-                              </motion.div>
+                              <FloatingMenu open={aptTypeOpen} anchorRef={aptTypeBtnRef} estimatedHeight={120}>
+                                <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl p-1.5 space-y-0.5">
+                                  {["First Time", "Follow up"].map((type) => (
+                                    <button
+                                      key={type}
+                                      type="button"
+                                      onClick={() => {
+                                        setAptAppointmentType(type);
+                                        setAptTypeOpen(false);
+                                        if (fieldErrors.type) setFieldErrors(prev => ({ ...prev, type: "" }));
+                                      }}
+                                      className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                        aptAppointmentType === type ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
+                                      }`}
+                                    >
+                                      <span>{type}</span>
+                                      {aptAppointmentType === type && <Check className="h-3.5 w-3.5 text-brand" />}
+                                    </button>
+                                  ))}
+                                </div>
+                              </FloatingMenu>
                             )}
                           </AnimatePresence>
                         </div>
@@ -11092,12 +11234,12 @@ function MedicalDashboardPage() {
                       <div className="grid gap-4 sm:grid-cols-2">
                         {/* Email */}
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Email Address</label>
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Email Address <span className="text-zinc-300 normal-case font-medium">(optional)</span></label>
                           <div className="relative">
                             <Mail className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
                             <input
                               type="email"
-                              placeholder="jane@example.com"
+                              placeholder="jane@example.com (optional)"
                               value={aptEmail}
                               onChange={(e) => {
                                 setAptEmail(e.target.value);
@@ -11234,6 +11376,7 @@ function MedicalDashboardPage() {
                           <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Department</label>
                           <div className="relative">
                             <button
+                              ref={aptDeptBtnRef}
                               type="button"
                               onClick={() => {
                                 setAptDeptOpen(!aptDeptOpen);
@@ -11253,35 +11396,32 @@ function MedicalDashboardPage() {
 
                             <AnimatePresence>
                               {aptDeptOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
-                                >
-                                  {departments.map((dept) => (
-                                    <button
-                                      key={dept.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setAptDeptId(dept.id);
-                                        setAptDoctorId(""); // Reset doctor
-                                        setAptDateTime(""); // Reset date/time slot since doctor changed
-                                        setAptTimeSlot("");
-                                        setAptDeptOpen(false);
-                                        setDateError(null);
-                                        setTimeError(null);
-                                        if (fieldErrors.dept) setFieldErrors(prev => ({ ...prev, dept: "" }));
-                                      }}
-                                      className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                        aptDeptId === dept.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
-                                      }`}
-                                    >
-                                      <span>{dept.name}</span>
-                                      {aptDeptId === dept.id && <Check className="h-3.5 w-3.5 text-brand" />}
-                                    </button>
-                                  ))}
-                                </motion.div>
+                                <FloatingMenu open={aptDeptOpen} anchorRef={aptDeptBtnRef} estimatedHeight={240}>
+                                  <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                    {departments.map((dept) => (
+                                      <button
+                                        key={dept.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setAptDeptId(dept.id);
+                                          setAptDoctorId(""); // Reset doctor
+                                          setAptDateTime(""); // Reset date/time slot since doctor changed
+                                          setAptTimeSlot("");
+                                          setAptDeptOpen(false);
+                                          setDateError(null);
+                                          setTimeError(null);
+                                          if (fieldErrors.dept) setFieldErrors(prev => ({ ...prev, dept: "" }));
+                                        }}
+                                        className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                          aptDeptId === dept.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
+                                        }`}
+                                      >
+                                        <span>{dept.name}</span>
+                                        {aptDeptId === dept.id && <Check className="h-3.5 w-3.5 text-brand" />}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -11295,6 +11435,7 @@ function MedicalDashboardPage() {
                           <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Doctor</label>
                           <div className="relative">
                             <button
+                              ref={aptDocBtnRef}
                               type="button"
                               onClick={() => {
                                 setAptDocOpen(!aptDocOpen);
@@ -11314,43 +11455,40 @@ function MedicalDashboardPage() {
 
                             <AnimatePresence>
                               {aptDocOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
-                                >
-                                  {(aptDeptId ? doctors.filter((doc) => doc.departmentId === aptDeptId) : doctors).length > 0 ? (
-                                    (aptDeptId ? doctors.filter((doc) => doc.departmentId === aptDeptId) : doctors).map((doc) => (
-                                      <button
-                                        key={doc.id}
-                                        type="button"
-                                        onClick={() => {
-                                          setAptDoctorId(doc.id);
-                                          setAptDateTime(""); // Reset date/time slot since doctor changed
-                                          setAptTimeSlot("");
-                                          setAptDocOpen(false);
-                                          setDateError(null);
-                                          setTimeError(null);
-                                          if (fieldErrors.doctor) setFieldErrors(prev => ({ ...prev, doctor: "" }));
-                                        }}
-                                        className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                          aptDoctorId === doc.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
-                                        }`}
-                                      >
-                                        <div className="flex flex-col">
-                                          <span className="font-semibold">{doc.name}</span>
-                                          <span className="text-[9px] text-zinc-400 font-normal">{doc.qualifications}</span>
-                                        </div>
-                                        {aptDoctorId === doc.id && <Check className="h-3.5 w-3.5 text-brand" />}
-                                      </button>
-                                    ))
-                                  ) : (
-                                    <div className="px-3.5 py-3 text-xs text-zinc-455 italic text-center">
-                                      Please select a department first
-                                    </div>
-                                  )}
-                                </motion.div>
+                                <FloatingMenu open={aptDocOpen} anchorRef={aptDocBtnRef} estimatedHeight={240}>
+                                  <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                    {(aptDeptId ? doctors.filter((doc) => doc.departmentId === aptDeptId) : doctors).length > 0 ? (
+                                      (aptDeptId ? doctors.filter((doc) => doc.departmentId === aptDeptId) : doctors).map((doc) => (
+                                        <button
+                                          key={doc.id}
+                                          type="button"
+                                          onClick={() => {
+                                            setAptDoctorId(doc.id);
+                                            setAptDateTime(""); // Reset date/time slot since doctor changed
+                                            setAptTimeSlot("");
+                                            setAptDocOpen(false);
+                                            setDateError(null);
+                                            setTimeError(null);
+                                            if (fieldErrors.doctor) setFieldErrors(prev => ({ ...prev, doctor: "" }));
+                                          }}
+                                          className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                            aptDoctorId === doc.id ? "bg-brand/5 text-brand font-bold" : "text-zinc-700"
+                                          }`}
+                                        >
+                                          <div className="flex flex-col">
+                                            <span className="font-semibold">{doc.name}</span>
+                                            <span className="text-[9px] text-zinc-400 font-normal">{doc.qualifications}</span>
+                                          </div>
+                                          {aptDoctorId === doc.id && <Check className="h-3.5 w-3.5 text-brand" />}
+                                        </button>
+                                      ))
+                                    ) : (
+                                      <div className="px-3.5 py-3 text-xs text-zinc-455 italic text-center">
+                                        Please select a department first
+                                      </div>
+                                    )}
+                                  </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -11367,6 +11505,7 @@ function MedicalDashboardPage() {
                           <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Appointment Date</label>
                           <div className="relative">
                             <button
+                              ref={aptCalendarBtnRef}
                               type="button"
                               onClick={() => {
                                 if (!aptDeptId || !aptDoctorId) {
@@ -11407,11 +11546,9 @@ function MedicalDashboardPage() {
 
                             <AnimatePresence>
                               {aptCalendarOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 mt-1 left-0 bg-white border border-zinc-200 rounded-2xl shadow-xl p-4 w-[280px]"
+                                <FloatingMenu open={aptCalendarOpen} anchorRef={aptCalendarBtnRef} matchWidth={false} menuWidth={280} align="left" estimatedHeight={360}>
+                                <div
+                                  className="bg-white border border-zinc-200 rounded-2xl shadow-xl p-4 w-[280px]"
                                 >
                                   {/* Calendar Navigation */}
                                   <div className="flex justify-between items-center mb-3">
@@ -11492,7 +11629,8 @@ function MedicalDashboardPage() {
                                       );
                                     })}
                                   </div>
-                                </motion.div>
+                                </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -11506,6 +11644,7 @@ function MedicalDashboardPage() {
                           <label className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Select Available Time Slot</label>
                           <div className="relative">
                             <button
+                              ref={aptClockBtnRef}
                               type="button"
                               onClick={() => {
                                 if (!aptDeptId || !aptDoctorId) {
@@ -11543,11 +11682,9 @@ function MedicalDashboardPage() {
 
                             <AnimatePresence>
                               {aptClockOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 mt-1 right-0 bg-white border border-zinc-200 rounded-2xl shadow-xl p-3 w-[280px]"
+                                <FloatingMenu open={aptClockOpen} anchorRef={aptClockBtnRef} matchWidth={false} menuWidth={280} align="right" estimatedHeight={320}>
+                                <div
+                                  className="bg-white border border-zinc-200 rounded-2xl shadow-xl p-3 w-[280px]"
                                 >
                                   <div className="text-[9px] font-bold text-zinc-400 uppercase mb-2 px-1 flex items-center gap-1">
                                     <Clock className="h-3 w-3 text-brand" /> Available slots
@@ -11593,7 +11730,8 @@ function MedicalDashboardPage() {
                                       No slots available on this date.
                                     </div>
                                   )}
-                                </motion.div>
+                                </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -11728,6 +11866,7 @@ function MedicalDashboardPage() {
                   
                   {bookingStep < 4 ? (
                     <button
+                      key="apt-next-btn"
                       type="button"
                       onClick={() => {
                         if (bookingStep === 1) {
@@ -11751,7 +11890,9 @@ function MedicalDashboardPage() {
                     </button>
                   ) : (
                     <button
-                      type="submit"
+                      key="apt-submit-btn"
+                      type="button"
+                      onClick={() => handleCreateOrUpdateAppointment()}
                       disabled={savingApt}
                       className="rounded-full bg-black text-white px-5 py-2 text-xs font-semibold hover:bg-black/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:bg-zinc-150 disabled:text-zinc-400"
                     >

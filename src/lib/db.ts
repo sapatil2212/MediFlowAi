@@ -406,6 +406,24 @@ if (typeof window === "undefined") {
             await conn.query("ALTER TABLE Appointment ADD COLUMN locationId VARCHAR(255) NULL");
             console.log("[DB] ✅ Added locationId column to Appointment table");
           }
+          // Reminder-tracking flags (WhatsApp appointment reminders). Each is set
+          // to 1 once the corresponding reminder has been sent so it never repeats.
+          if (!colNames.includes("remDayBefore")) {
+            await conn.query("ALTER TABLE Appointment ADD COLUMN remDayBefore TINYINT(1) DEFAULT 0");
+            console.log("[DB] ✅ Added remDayBefore column to Appointment table");
+          }
+          if (!colNames.includes("remDayOf")) {
+            await conn.query("ALTER TABLE Appointment ADD COLUMN remDayOf TINYINT(1) DEFAULT 0");
+            console.log("[DB] ✅ Added remDayOf column to Appointment table");
+          }
+          if (!colNames.includes("rem2h")) {
+            await conn.query("ALTER TABLE Appointment ADD COLUMN rem2h TINYINT(1) DEFAULT 0");
+            console.log("[DB] ✅ Added rem2h column to Appointment table");
+          }
+          if (!colNames.includes("rem1h")) {
+            await conn.query("ALTER TABLE Appointment ADD COLUMN rem1h TINYINT(1) DEFAULT 0");
+            console.log("[DB] ✅ Added rem1h column to Appointment table");
+          }
         } catch (err: any) {
           console.warn("[DB] ⚠️ Could not verify/alter Appointment columns:", err.message);
         }

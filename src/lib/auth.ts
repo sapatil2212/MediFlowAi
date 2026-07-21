@@ -735,8 +735,9 @@ export const getClinicByTenantIdServerFn = createServerFn({ method: "GET" })
   });
 
 export const createAppointmentServerFn = createServerFn({ method: "POST" })
-  .validator((data: { tenantId: string; name: string; email: string; phone: string; dateTime: string; reason: string; doctorId?: string; timeSlot?: string; whatsapp?: string; appointmentType?: string; patientId?: string | null }) => {
-    if (!data.tenantId || !data.name || !data.email || !data.phone || !data.dateTime || !data.reason) {
+  .validator((data: { tenantId: string; name: string; email?: string; phone: string; dateTime: string; reason: string; doctorId?: string; timeSlot?: string; whatsapp?: string; appointmentType?: string; patientId?: string | null }) => {
+    // Email is optional; phone is the required contact channel.
+    if (!data.tenantId || !data.name || !data.phone || !data.dateTime || !data.reason) {
       throw new Error("Required booking fields missing");
     }
     return data;
@@ -771,36 +772,24 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
     await execute(
       `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, patientId, tokenNo, createdAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, NOW())`,
-      [id, data.tenantId, data.name, data.email, data.phone, dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo]
+      [id, data.tenantId, data.name, data.email || "", data.phone, dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo]
     );
 
-    // Queue WhatsApp notification on backend
+    // Queue the "appointment booked" WhatsApp notification (server-side only).
     if (typeof window === "undefined") {
-      try {
-        const waConfig = await queryOne<any>("SELECT isEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1", [data.tenantId]);
-        if (waConfig && waConfig.isEnabled) {
-          const waStatus = await getWAStatus(data.tenantId);
-          if (waStatus.state === "CONNECTED") {
-            const clinic = await queryOne<any>("SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1", [data.tenantId]);
-            const clinicName = clinic ? clinic.clinicName : "Clinic";
-
-            let docName = "";
-            if (docId) {
-              const doc = await queryOne<any>("SELECT name FROM Doctor WHERE id = ? LIMIT 1", [docId]);
-              if (doc) docName = doc.name;
-            }
-
-            const dateStr = dateVal.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-            const timeStr = tSlot || dateVal.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-            const docText = docName ? ` with *${docName}*` : "";
-
-            const waMessage = `Hello *${data.name}*,\n\nYour appointment at *${clinicName}*${docText} is confirmed for *${dateStr}* at *${timeStr}*.\n\n🎫 *Your Token No: #${tokenNo}*\n\nThank you for choosing HealthSync AI!\n\n_This is an automated notification message._`;
-            await enqueueWA(data.tenantId, data.phone, waMessage);
-          }
-        }
-      } catch (waErr: any) {
-        console.error("[WhatsApp] Failed to enqueue booking message:", waErr.message);
-      }
+      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } = await import("./appointment-notify");
+      const [clinicName, doctorName] = await Promise.all([
+        resolveClinicName(data.tenantId),
+        resolveDoctorName(docId),
+      ]);
+      await sendAppointmentNotification(data.tenantId, data.phone, "booked", {
+        name: data.name,
+        clinicName,
+        doctorName,
+        dateTime: dateVal,
+        timeSlot: tSlot,
+        tokenNo,
+      });
     }
 
     return { success: true, appointmentId: id, tokenNo };
@@ -974,6 +963,24 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [id, user.tenantId, data.name, data.email || "", data.phone || "", dateVal, data.reason, status, data.doctorId || null, data.timeSlot || null, data.phone || null, data.appointmentType || null, tokenNo, locationId]
     );
+
+    // Queue the "appointment booked" WhatsApp notification.
+    if (typeof window === "undefined" && data.phone) {
+      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } = await import("./appointment-notify");
+      const [clinicName, doctorName] = await Promise.all([
+        resolveClinicName(user.tenantId),
+        resolveDoctorName(data.doctorId),
+      ]);
+      await sendAppointmentNotification(user.tenantId, data.phone, "booked", {
+        name: data.name,
+        clinicName,
+        doctorName,
+        dateTime: dateVal,
+        timeSlot: data.timeSlot || null,
+        tokenNo,
+      });
+    }
+
     return { success: true, id, tokenNo };
   });
 
@@ -1063,8 +1070,9 @@ export const deleteSubLocationBookingServerFn = createServerFn({ method: "POST" 
   });
 
 export const updateAppointmentServerFn = createServerFn({ method: "POST" })
-  .validator((data: { id: string; name: string; email: string; phone: string; dateTime: string; reason: string; status: string; doctorId?: string; timeSlot?: string; whatsapp?: string; appointmentType?: string; patientId?: string | null }) => {
-    if (!data.id || !data.name || !data.email || !data.phone || !data.dateTime || !data.reason || !data.status) {
+  .validator((data: { id: string; name: string; email?: string; phone: string; dateTime: string; reason: string; status: string; doctorId?: string; timeSlot?: string; whatsapp?: string; appointmentType?: string; patientId?: string | null }) => {
+    // Email is optional; phone is the required contact channel.
+    if (!data.id || !data.name || !data.phone || !data.dateTime || !data.reason || !data.status) {
       throw new Error("Required fields missing");
     }
     return data;
@@ -1097,36 +1105,31 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
 
     await execute(
       `UPDATE Appointment SET name = ?, email = ?, phone = ?, dateTime = ?, reason = ?, status = ?, doctorId = ?, timeSlot = ?, whatsapp = ?, appointmentType = ?, patientId = ?, tokenNo = ? WHERE id = ?`,
-      [data.name, data.email, data.phone, dateVal, data.reason, data.status, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo, data.id]
+      [data.name, data.email || "", data.phone, dateVal, data.reason, data.status, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo, data.id]
     );
 
-    // Queue WhatsApp notification for status change
+    // Queue WhatsApp notification for status change (confirmed / cancelled / completed).
     if (typeof window === "undefined") {
-      try {
-        const waConfig = await queryOne<any>("SELECT isEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1", [user.tenantId]);
-        if (waConfig && waConfig.isEnabled) {
-          const status = await getWAStatus(user.tenantId);
-          if (status.state === "CONNECTED") {
-            const clinic = await queryOne<any>("SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1", [user.tenantId]);
-            const clinicName = clinic ? clinic.clinicName : "Clinic";
-            
-            let statusMessage = "";
-            if (data.status === "Confirmed") {
-              statusMessage = `Your appointment at *${clinicName}* has been *Confirmed*.`;
-            } else if (data.status === "Cancelled") {
-              statusMessage = `Your appointment at *${clinicName}* has been *Cancelled*.`;
-            } else if (data.status === "Completed") {
-              statusMessage = `Your visit at *${clinicName}* has been marked as *Completed*.`;
-            }
-
-            if (statusMessage) {
-              const waMessage = `Hello *${data.name}*,\n\n${statusMessage}\n\n_HealthSync AI Automated Update_`;
-              await enqueueWA(user.tenantId, data.phone, waMessage);
-            }
-          }
-        }
-      } catch (waErr: any) {
-        console.error("[WhatsApp] Failed to send update message:", waErr.message);
+      const kindMap: Record<string, "confirmed" | "cancelled" | "completed" | undefined> = {
+        Confirmed: "confirmed",
+        Cancelled: "cancelled",
+        Completed: "completed",
+      };
+      const kind = kindMap[data.status];
+      if (kind) {
+        const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } = await import("./appointment-notify");
+        const [clinicName, doctorName] = await Promise.all([
+          resolveClinicName(user.tenantId),
+          resolveDoctorName(docId),
+        ]);
+        await sendAppointmentNotification(user.tenantId, data.phone, kind, {
+          name: data.name,
+          clinicName,
+          doctorName,
+          dateTime: dateVal,
+          timeSlot: tSlot,
+          tokenNo,
+        });
       }
     }
 
@@ -2413,12 +2416,26 @@ Only return a valid JSON object matching this structure. Do not wrap the JSON in
         throw new Error("Empty response from Voice Rx model.");
       }
 
-      const parsed = JSON.parse(content.trim());
+      // Be resilient to models that wrap JSON in markdown code fences or add
+      // stray prose around the object despite instructions.
+      let cleaned = String(content).trim();
+      if (cleaned.startsWith("```")) {
+        cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      }
+      const firstBrace = cleaned.indexOf("{");
+      const lastBrace = cleaned.lastIndexOf("}");
+      if (firstBrace > 0 || lastBrace < cleaned.length - 1) {
+        if (firstBrace !== -1 && lastBrace !== -1) {
+          cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+        }
+      }
+
+      const parsed = JSON.parse(cleaned);
       return {
         success: true,
         chiefComplaint: parsed.chiefComplaint || "",
         diagnosis: parsed.diagnosis || "",
-        medications: parsed.medications || [],
+        medications: Array.isArray(parsed.medications) ? parsed.medications : [],
         advice: parsed.advice || ""
       };
     } catch (e: any) {
