@@ -62,7 +62,7 @@ const arbStatus = fc.oneof(
 );
 
 const arbExpiresAt = fc.oneof(
-  fc.date().map((d) => d.toISOString()),
+  fc.date({ noInvalidDate: true }).map((d) => d.toISOString()),
   fc.constant(null),
   fc.constant(undefined),
   fc.constant(""), // invalid
@@ -71,7 +71,11 @@ const arbExpiresAt = fc.oneof(
 const arbIsActive = fc.option(fc.boolean(), { nil: undefined });
 
 // Constrain date generation to avoid arithmetic overflow (JS Date range ±100,000,000 days from epoch)
-const arbNow = fc.date({ min: new Date("1970-01-01"), max: new Date("2100-12-31") });
+const arbNow = fc.date({
+  min: new Date("1970-01-01"),
+  max: new Date("2100-12-31"),
+  noInvalidDate: true,
+});
 
 const arbAccountContext: fc.Arbitrary<AccountContext> = fc.record({
   role: arbRole,
@@ -507,6 +511,433 @@ describe("Example-based tests", () => {
       };
       expect(canOperateFeature(ctx, "whatsapp")).toBe(true);
       expect(canUseFeature(ctx, "whatsapp")).toBe(true);
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Task 2.2 additions — the profession gating dimension (`video` feature)
+//
+// Everything below is ADDITIVE. The 19 tests above are the concrete regression
+// guard for Requirement 2.8 and are left byte-for-byte unchanged: their generic
+// loops over FEATURE_IDS now include `video`, which resolves unavailable in
+// every profession-less generated context.
+// ═══════════════════════════════════════════════════════════════════════════
+
+import {
+  HEALTHCARE_PROFESSION,
+  PROFESSION_FEATURES,
+  professionAllowsFeature,
+} from "./feature-access";
+
+// ───────────────────────────────────────────────────────────────────────────
+// Profession arbitraries
+// ───────────────────────────────────────────────────────────────────────────
+
+/** The four non-healthcare profession strings this codebase actually stores. */
+const NON_HEALTHCARE_PROFESSIONS = [
+  "Fitness Gym etc",
+  "Beauty and wellness",
+  "Professional services like law, consultant, real estate, CA",
+  "Education institutions",
+] as const;
+
+/**
+ * Near-miss values. The implementation matches EXACTLY after trimming, so
+ * whitespace padding is ALLOWED while any case or wording difference is DENIED.
+ */
+const PADDED_HEALTHCARE_PROFESSIONS = [
+  " Healthcare and medical ",
+  "\tHealthcare and medical",
+  "Healthcare and medical\n",
+] as const;
+
+const NEAR_MISS_PROFESSIONS = [
+  "healthcare and medical", // wrong case => denied
+  "HEALTHCARE AND MEDICAL",
+  "Healthcare & Medical",
+  "Healthcare and medical clinic", // superstring => denied
+  "Medical",
+  "unknown",
+] as const;
+
+const arbProfession: fc.Arbitrary<string | null | undefined> = fc.oneof(
+  fc.constant<string | null | undefined>(HEALTHCARE_PROFESSION),
+  fc.constantFrom<string | null | undefined>(...PADDED_HEALTHCARE_PROFESSIONS),
+  fc.constantFrom<string | null | undefined>(...NON_HEALTHCARE_PROFESSIONS),
+  fc.constantFrom<string | null | undefined>(...NEAR_MISS_PROFESSIONS),
+  fc.constant<string | null | undefined>(""),
+  fc.constant<string | null | undefined>(null),
+  fc.constant<string | null | undefined>(undefined),
+);
+
+/** Mirrors the implementation's rule: exact match after trimming. */
+const isHealthcare = (profession: string | null | undefined): boolean =>
+  (profession ?? "").trim() === HEALTHCARE_PROFESSION;
+
+/**
+ * Valid-only clock and expiry arbitraries for the tests below.
+ *
+ * `noInvalidDate: true` matters: fast-check can otherwise draw an Invalid Date,
+ * and `new Date(NaN).toISOString()` throws a RangeError inside the generator
+ * before any assertion runs. Every test here is still wall-clock independent —
+ * the instant is injected through `ctx.now`.
+ */
+const arbValidNow = fc.date({
+  min: new Date("1970-01-01"),
+  max: new Date("2100-12-31"),
+  noInvalidDate: true,
+});
+
+const arbValidExpiresAt = fc.oneof(
+  arbValidNow.map((d) => d.toISOString()),
+  fc.constant<string | null | undefined>(null),
+  fc.constant<string | null | undefined>(undefined),
+  fc.constant<string | null | undefined>(""), // invalid => treated as no expiry
+);
+
+/** Same shape as arbAccountContext, plus the new profession dimension. */
+const arbProfessionContext: fc.Arbitrary<AccountContext> = fc.record({
+  role: arbRole,
+  profession: arbProfession,
+  subscriptionPlan: arbRawPlan,
+  subscriptionStatus: arbStatus,
+  subscriptionExpiresAt: arbValidExpiresAt,
+  isActive: arbIsActive,
+  now: fc.option(arbValidNow, { nil: undefined }),
+});
+
+/** Plan strings (canonical + aliases) that normalize to Premium or Enterprise. */
+const arbVideoEntitledPlan = fc.constantFrom(
+  "Premium",
+  "Enterprise",
+  "Clinic",
+  "Pro",
+  "1499",
+  "Hospital",
+  "Custom",
+);
+
+// ───────────────────────────────────────────────────────────────────────────
+// Property 15.1: a non-healthcare profession always closes `video`
+// ───────────────────────────────────────────────────────────────────────────
+
+test("Property 15.1: video is unavailable whenever the trimmed profession is not healthcare", () => {
+  fc.assert(
+    fc.property(arbProfessionContext, (ctx) => {
+      const access = resolveFeatureAccess(ctx);
+
+      if (!isHealthcare(ctx.profession)) {
+        expect(access.video.available).toBe(false);
+        expect(access.video.permission).toBe("none");
+        expect(access.video.visible).toBe(false);
+      }
+    }),
+    { numRuns: 300 },
+  );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Property 15.2 (Requirement 2.8): the profession dimension is a strict no-op
+// for every pre-existing feature
+// ───────────────────────────────────────────────────────────────────────────
+
+test("Property 15.2: every feature except video resolves identically with the profession key omitted", () => {
+  fc.assert(
+    fc.property(arbProfessionContext, (ctx) => {
+      const { profession: _profession, ...ctxWithoutProfession } = ctx;
+      expect("profession" in ctxWithoutProfession).toBe(false);
+
+      const withProfession = resolveFeatureAccess(ctx);
+      const withoutProfession = resolveFeatureAccess(ctxWithoutProfession);
+
+      for (const feature of FEATURE_IDS) {
+        if (feature === "video") continue;
+        expect(withProfession[feature]).toEqual(withoutProfession[feature]);
+      }
+    }),
+    { numRuns: 300 },
+  );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Property 15.3: Property 4's invariant still holds, now covering `video`
+// ───────────────────────────────────────────────────────────────────────────
+
+test("Property 15.3: permission !== none implies available for every feature including video", () => {
+  fc.assert(
+    fc.property(arbProfessionContext, (ctx) => {
+      const access = resolveFeatureAccess(ctx);
+
+      for (const feature of FEATURE_IDS) {
+        const fa = access[feature];
+        if (fa.permission !== "none") {
+          expect(fa.available).toBe(true);
+        }
+        if (fa.visible) {
+          expect(fa.available).toBe(true);
+          expect(fa.permission).not.toBe("none");
+        }
+      }
+
+      if (access.video.permission !== "none") {
+        expect(access.video.available).toBe(true);
+        expect(isHealthcare(ctx.profession)).toBe(true);
+      }
+    }),
+    { numRuns: 300 },
+  );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Property 15.4: the positive direction
+// ───────────────────────────────────────────────────────────────────────────
+
+test("Property 15.4: healthcare + active Premium/Enterprise + admin/doctor => video operate", () => {
+  fc.assert(
+    fc.property(
+      arbVideoEntitledPlan,
+      fc.constantFrom<AccountRole>("admin", "doctor"),
+      fc.oneof(
+        fc.constant<string>(HEALTHCARE_PROFESSION),
+        fc.constantFrom<string>(...PADDED_HEALTHCARE_PROFESSIONS),
+      ),
+      arbValidNow,
+      (plan, role, profession, now) => {
+        const futureExpiry = new Date(now.getTime() + 86400000).toISOString();
+
+        const ctx: AccountContext = {
+          role,
+          profession,
+          subscriptionPlan: plan,
+          subscriptionStatus: "active",
+          subscriptionExpiresAt: futureExpiry,
+          isActive: true,
+          now,
+        };
+
+        const access = resolveFeatureAccess(ctx);
+        expect(access.video).toEqual({ available: true, permission: "operate", visible: true });
+        expect(canUseFeature(ctx, "video")).toBe(true);
+        expect(canOperateFeature(ctx, "video")).toBe(true);
+      },
+    ),
+    { numRuns: 200 },
+  );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Example-based tests for the video feature
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("Video consultation feature (profession-gated)", () => {
+  const now = new Date("2025-01-01T00:00:00Z");
+  const futureExpiry = "2025-12-31T23:59:59Z";
+  const allRoles: AccountRole[] = ["admin", "doctor", "reception", "location"];
+
+  /** Builds an ACTIVE-subscription context; profession and plan vary per case. */
+  const makeVideoCtx = (
+    role: AccountRole,
+    plan: string,
+    profession: string | null | undefined,
+  ): AccountContext => ({
+    role,
+    profession,
+    subscriptionPlan: plan,
+    subscriptionStatus: "active",
+    subscriptionExpiresAt: futureExpiry,
+    isActive: true,
+    now,
+  });
+
+  describe("video role matrix at Premium for a healthcare tenant", () => {
+    it("admin: operate + visible", () => {
+      const access = resolveFeatureAccess(makeVideoCtx("admin", "Premium", HEALTHCARE_PROFESSION));
+      expect(access.video.available).toBe(true);
+      expect(access.video.permission).toBe("operate");
+      expect(access.video.visible).toBe(true);
+    });
+
+    it("doctor: operate + visible", () => {
+      const access = resolveFeatureAccess(makeVideoCtx("doctor", "Premium", HEALTHCARE_PROFESSION));
+      expect(access.video.available).toBe(true);
+      expect(access.video.permission).toBe("operate");
+      expect(access.video.visible).toBe(true);
+    });
+
+    // Requirement 2.7: `none` refuses read-shaped requests too.
+    it("reception: none + hidden, and canUseFeature refuses reads", () => {
+      const ctx = makeVideoCtx("reception", "Premium", HEALTHCARE_PROFESSION);
+      const access = resolveFeatureAccess(ctx);
+      expect(access.video.available).toBe(true); // tenant is entitled…
+      expect(access.video.permission).toBe("none"); // …but the role is not
+      expect(access.video.visible).toBe(false);
+      expect(canUseFeature(ctx, "video")).toBe(false);
+      expect(canOperateFeature(ctx, "video")).toBe(false);
+    });
+
+    it("location: none + hidden, and canUseFeature refuses reads", () => {
+      const ctx = makeVideoCtx("location", "Premium", HEALTHCARE_PROFESSION);
+      const access = resolveFeatureAccess(ctx);
+      expect(access.video.available).toBe(true);
+      expect(access.video.permission).toBe("none");
+      expect(access.video.visible).toBe(false);
+      expect(canUseFeature(ctx, "video")).toBe(false);
+      expect(canOperateFeature(ctx, "video")).toBe(false);
+    });
+  });
+
+  describe("video hidden at Basic for all roles even for a healthcare tenant", () => {
+    allRoles.forEach((role) => {
+      it(`${role}: not available at Basic`, () => {
+        const ctx = makeVideoCtx(role, "Basic", HEALTHCARE_PROFESSION);
+        const access = resolveFeatureAccess(ctx);
+        expect(access.video.available).toBe(false);
+        expect(access.video.permission).toBe("none");
+        expect(access.video.visible).toBe(false);
+        expect(canUseFeature(ctx, "video")).toBe(false);
+      });
+    });
+  });
+
+  // Requirement 1.2: a non-healthcare tenant never sees video, whatever the plan.
+  describe("video unavailable for non-healthcare tenants on Premium", () => {
+    NON_HEALTHCARE_PROFESSIONS.forEach((profession) => {
+      allRoles.forEach((role) => {
+        it(`${profession} / ${role}: unavailable`, () => {
+          const ctx = makeVideoCtx(role, "Premium", profession);
+          const access = resolveFeatureAccess(ctx);
+          expect(access.video.available).toBe(false);
+          expect(access.video.permission).toBe("none");
+          expect(access.video.visible).toBe(false);
+          expect(canUseFeature(ctx, "video")).toBe(false);
+          expect(canOperateFeature(ctx, "video")).toBe(false);
+        });
+      });
+    });
+  });
+
+  describe("profession matching is exact after trimming", () => {
+    it("allows a whitespace-padded healthcare value", () => {
+      const access = resolveFeatureAccess(
+        makeVideoCtx("admin", "Enterprise", " Healthcare and medical "),
+      );
+      expect(access.video.available).toBe(true);
+      expect(access.video.permission).toBe("operate");
+    });
+
+    it("denies a lowercase healthcare value", () => {
+      const access = resolveFeatureAccess(
+        makeVideoCtx("admin", "Enterprise", "healthcare and medical"),
+      );
+      expect(access.video.available).toBe(false);
+      expect(access.video.visible).toBe(false);
+    });
+
+    it("denies a healthcare superstring", () => {
+      const access = resolveFeatureAccess(
+        makeVideoCtx("admin", "Enterprise", "Healthcare and medical clinic"),
+      );
+      expect(access.video.available).toBe(false);
+    });
+  });
+
+  describe("professionAllowsFeature", () => {
+    const unrestricted = FEATURE_IDS.filter((f) => !PROFESSION_FEATURES[f]);
+
+    it("PROFESSION_FEATURES restricts video and nothing else", () => {
+      expect(Object.keys(PROFESSION_FEATURES)).toEqual(["video"]);
+      expect(PROFESSION_FEATURES.video).toEqual([HEALTHCARE_PROFESSION]);
+      expect(unrestricted).not.toContain("video");
+    });
+
+    it("returns true for every unrestricted feature regardless of profession", () => {
+      const professions: Array<string | null | undefined> = [
+        HEALTHCARE_PROFESSION,
+        ...NON_HEALTHCARE_PROFESSIONS,
+        ...NEAR_MISS_PROFESSIONS,
+        "",
+        null,
+        undefined,
+      ];
+
+      for (const feature of unrestricted) {
+        for (const profession of professions) {
+          expect(professionAllowsFeature(profession, feature)).toBe(true);
+        }
+      }
+    });
+
+    it("fails closed for video on null, undefined, and empty string", () => {
+      expect(professionAllowsFeature(null, "video")).toBe(false);
+      expect(professionAllowsFeature(undefined, "video")).toBe(false);
+      expect(professionAllowsFeature("", "video")).toBe(false);
+      expect(professionAllowsFeature("   ", "video")).toBe(false);
+    });
+
+    it("allows video for the exact and trimmed healthcare profession only", () => {
+      expect(professionAllowsFeature(HEALTHCARE_PROFESSION, "video")).toBe(true);
+      expect(professionAllowsFeature(" Healthcare and medical ", "video")).toBe(true);
+      expect(professionAllowsFeature("healthcare and medical", "video")).toBe(false);
+      for (const profession of NON_HEALTHCARE_PROFESSIONS) {
+        expect(professionAllowsFeature(profession, "video")).toBe(false);
+      }
+    });
+  });
+
+  describe("Server guard helpers for video", () => {
+    it("canOperateFeature is false for a non-healthcare tenant on Enterprise as admin", () => {
+      for (const profession of NON_HEALTHCARE_PROFESSIONS) {
+        const ctx = makeVideoCtx("admin", "Enterprise", profession);
+        expect(canOperateFeature(ctx, "video")).toBe(false);
+        expect(canUseFeature(ctx, "video")).toBe(false);
+      }
+    });
+
+    it("canOperateFeature is false when the profession is absent from the context", () => {
+      const ctx: AccountContext = {
+        role: "admin",
+        subscriptionPlan: "Enterprise",
+        subscriptionStatus: "active",
+        subscriptionExpiresAt: futureExpiry,
+        isActive: true,
+        now,
+      };
+      expect(canOperateFeature(ctx, "video")).toBe(false);
+      expect(canUseFeature(ctx, "video")).toBe(false);
+      // …while a pre-existing feature is untouched by the new dimension.
+      expect(canOperateFeature(ctx, "whatsapp")).toBe(true);
+    });
+
+    it("canOperateFeature is true for a healthcare doctor on Premium", () => {
+      const ctx = makeVideoCtx("doctor", "Premium", HEALTHCARE_PROFESSION);
+      expect(canOperateFeature(ctx, "video")).toBe(true);
+      expect(canUseFeature(ctx, "video")).toBe(true);
+    });
+
+    // Requirement 2.5: an inactive/expired subscription closes video too.
+    it("canUseFeature is false for a healthcare admin whose subscription expired", () => {
+      const ctx: AccountContext = {
+        role: "admin",
+        profession: HEALTHCARE_PROFESSION,
+        subscriptionPlan: "Premium",
+        subscriptionStatus: "active",
+        subscriptionExpiresAt: "2024-12-31T23:59:59Z", // before `now`
+        isActive: true,
+        now,
+      };
+      expect(resolveFeatureAccess(ctx).video.available).toBe(false);
+      expect(canUseFeature(ctx, "video")).toBe(false);
+    });
+
+    // Requirement 1.3: a deactivated child account loses video regardless.
+    it("canUseFeature is false for a deactivated healthcare doctor", () => {
+      const ctx: AccountContext = {
+        ...makeVideoCtx("doctor", "Premium", HEALTHCARE_PROFESSION),
+        isActive: false,
+      };
+      expect(resolveFeatureAccess(ctx).video.available).toBe(false);
+      expect(canUseFeature(ctx, "video")).toBe(false);
     });
   });
 });

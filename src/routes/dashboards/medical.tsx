@@ -72,6 +72,7 @@ import {
   Sparkles,
   FileDown,
   Camera,
+  Video,
   Upload,
   MessageCircle,
   FileSpreadsheet
@@ -152,8 +153,9 @@ import {
   uploadProfilePhotoServerFn,
 } from "../../lib/auth";
 import WhatsAppHub from "../../components/WhatsAppHub";
-import WelcomeTrialModal from "../../components/WelcomeTrialModal";
+import WelcomeTrialModal, { getTrialExpiryMs } from "../../components/WelcomeTrialModal";
 import MultiLocationSettings from "../../components/settings/MultiLocationSettings";
+import { DoctorVideoConsultPanel } from "../../components/video/DoctorVideoConsultPanel";
 import { resolveFeatureAccess, type FeatureId } from "@/lib/feature-access";
 
 
@@ -805,7 +807,7 @@ function LeavesCalendarPanel({
 
 function MedicalDashboardPage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"overview" | "scribe" | "calendar" | "patients" | "analytics" | "settings" | "appointments" | "plans" | "whatsapp" | "subLocationBookings">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "scribe" | "calendar" | "patients" | "analytics" | "settings" | "appointments" | "plans" | "whatsapp" | "subLocationBookings" | "video">("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [calendarView, setCalendarView] = useState<"month" | "week" | "day">("week");
@@ -864,6 +866,7 @@ function MedicalDashboardPage() {
   // Resolved plan-gated feature access (single source of truth for tab/sub-tab gating).
   const featureAccess = useMemo(() => resolveFeatureAccess({
     role: (user?.role ?? "admin") as any,
+    profession: user?.profession,
     subscriptionPlan: user?.subscriptionPlan,
     subscriptionStatus: user?.subscriptionStatus,
     subscriptionExpiresAt: user?.subscriptionExpiresAt,
@@ -4310,6 +4313,11 @@ function MedicalDashboardPage() {
                               <div>
                                 <span className="text-zinc-400 block text-[8px] uppercase font-bold tracking-wider">Scheduled Time</span>
                                 <span className="text-zinc-700 font-bold">{formattedTime} ({apt.appointmentType || "Standard"})</span>
+                                {apt.consultationMode === "video" && (
+                                  <span className="ml-1 inline-flex items-center gap-0.5 rounded-full bg-blue-50 px-1.5 py-0.5 text-[8px] font-bold uppercase text-blue-600 align-middle">
+                                    <Video className="h-2.5 w-2.5" /> Video
+                                  </span>
+                                )}
                               </div>
                               <div>
                                 <span className="text-zinc-400 block text-[8px] uppercase font-bold tracking-wider">Assigned Doctor</span>
@@ -4515,6 +4523,7 @@ function MedicalDashboardPage() {
                     { id: "scribe", label: "Consultation", icon: ClipboardCheck },
                     { id: "calendar", label: "Calendar", icon: Calendar },
                     { id: "appointments", label: "Appointments List", icon: ClipboardList },
+                    { id: "video", label: "Video Consult", icon: Video },
                     { id: "subLocationBookings", label: "Sub Dep. Bookings", icon: MapPin },
                     { id: "patients", label: "Patient Records", icon: Users },
                     { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
@@ -4613,6 +4622,7 @@ function MedicalDashboardPage() {
               { id: "scribe", label: "Consultation", icon: ClipboardCheck },
               { id: "calendar", label: "Calendar", icon: Calendar },
               { id: "appointments", label: "Appointments List", icon: ClipboardList },
+              { id: "video", label: "Video Consult", icon: Video },
               { id: "subLocationBookings", label: "Sub Dep. Bookings", icon: MapPin },
               { id: "patients", label: "Patient Records", icon: Users },
               { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
@@ -8321,6 +8331,25 @@ function MedicalDashboardPage() {
         </motion.div>
       )}
 
+            {/* ──────────────────────────────────────────────
+                TAB: VIDEO CONSULTATION
+                ────────────────────────────────────────────── */}
+            {activeTab === "video" && (
+              <motion.div
+                key="video"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25 }}
+                className="p-4 sm:p-6"
+              >
+                <div className="mb-5">
+                  <h1 className="text-xl font-bold text-zinc-900">Video Consultations</h1>
+                  <p className="text-sm text-zinc-500">Start remote consultations, admit patients from the waiting room, and document the visit.</p>
+                </div>
+                <DoctorVideoConsultPanel appointments={appointments} />
+              </motion.div>
+            )}
+
             {activeTab === "calendar" && (
               <motion.div
                 key="calendar"
@@ -10451,11 +10480,7 @@ function MedicalDashboardPage() {
                 && paymentMethodRaw !== "trial";
               const isTrialing = !hasPaid;
 
-              const expiryTime = user?.subscriptionExpiresAt
-                ? new Date(user.subscriptionExpiresAt).getTime()
-                : user?.createdAt
-                  ? new Date(user.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000
-                  : Date.now() + 7 * 24 * 60 * 60 * 1000;
+              const expiryTime = getTrialExpiryMs(user);
               const trialEndsInDays = Math.max(0, Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)));
               const trialActive = isTrialing && expiryTime > Date.now();
               const expiryDateString = new Date(expiryTime).toLocaleDateString("en-US", {

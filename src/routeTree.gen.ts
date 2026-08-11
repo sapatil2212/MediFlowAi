@@ -33,6 +33,7 @@ import { Route as DashboardsMedicalRouteImport } from './routes/dashboards/medic
 import { Route as DashboardsGymRouteImport } from './routes/dashboards/gym'
 import { Route as DashboardsEducationRouteImport } from './routes/dashboards/education'
 import { Route as DashboardsBeautyRouteImport } from './routes/dashboards/beauty'
+import { Route as ConsultTokenRouteImport } from './routes/consult.$token'
 import { Route as BookTenantIdRouteImport } from './routes/book.$tenantId'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
@@ -158,6 +159,11 @@ const DashboardsBeautyRoute = DashboardsBeautyRouteImport.update({
   path: '/dashboards/beauty',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConsultTokenRoute = ConsultTokenRouteImport.update({
+  id: '/consult/$token',
+  path: '/consult/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BookTenantIdRoute = BookTenantIdRouteImport.update({
   id: '/book/$tenantId',
   path: '/book/$tenantId',
@@ -202,6 +208,7 @@ export interface FileRoutesByFullPath {
   '/admin/dashboard': typeof AdminDashboardRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
+  '/consult/$token': typeof ConsultTokenRoute
   '/dashboards/beauty': typeof DashboardsBeautyRoute
   '/dashboards/education': typeof DashboardsEducationRoute
   '/dashboards/gym': typeof DashboardsGymRoute
@@ -232,6 +239,7 @@ export interface FileRoutesByTo {
   '/admin/dashboard': typeof AdminDashboardRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
+  '/consult/$token': typeof ConsultTokenRoute
   '/dashboards/beauty': typeof DashboardsBeautyRoute
   '/dashboards/education': typeof DashboardsEducationRoute
   '/dashboards/gym': typeof DashboardsGymRoute
@@ -263,6 +271,7 @@ export interface FileRoutesById {
   '/admin/dashboard': typeof AdminDashboardRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
+  '/consult/$token': typeof ConsultTokenRoute
   '/dashboards/beauty': typeof DashboardsBeautyRoute
   '/dashboards/education': typeof DashboardsEducationRoute
   '/dashboards/gym': typeof DashboardsGymRoute
@@ -295,6 +304,7 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
+    | '/consult/$token'
     | '/dashboards/beauty'
     | '/dashboards/education'
     | '/dashboards/gym'
@@ -325,6 +335,7 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
+    | '/consult/$token'
     | '/dashboards/beauty'
     | '/dashboards/education'
     | '/dashboards/gym'
@@ -355,6 +366,7 @@ export interface FileRouteTypes {
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
+    | '/consult/$token'
     | '/dashboards/beauty'
     | '/dashboards/education'
     | '/dashboards/gym'
@@ -386,6 +398,7 @@ export interface RootRouteChildren {
   AdminDashboardRoute: typeof AdminDashboardRouteWithChildren
   AdminLoginRoute: typeof AdminLoginRoute
   BookTenantIdRoute: typeof BookTenantIdRoute
+  ConsultTokenRoute: typeof ConsultTokenRoute
   DashboardsBeautyRoute: typeof DashboardsBeautyRoute
   DashboardsEducationRoute: typeof DashboardsEducationRoute
   DashboardsGymRoute: typeof DashboardsGymRoute
@@ -563,6 +576,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardsBeautyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/consult/$token': {
+      id: '/consult/$token'
+      path: '/consult/$token'
+      fullPath: '/consult/$token'
+      preLoaderRoute: typeof ConsultTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/book/$tenantId': {
       id: '/book/$tenantId'
       path: '/book/$tenantId'
@@ -629,6 +649,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminDashboardRoute: AdminDashboardRouteWithChildren,
   AdminLoginRoute: AdminLoginRoute,
   BookTenantIdRoute: BookTenantIdRoute,
+  ConsultTokenRoute: ConsultTokenRoute,
   DashboardsBeautyRoute: DashboardsBeautyRoute,
   DashboardsEducationRoute: DashboardsEducationRoute,
   DashboardsGymRoute: DashboardsGymRoute,

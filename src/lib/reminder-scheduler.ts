@@ -54,9 +54,18 @@ async function runReminderCycle(): Promise<void> {
 
   try {
     // Pull appointments in the next ~26h that are still upcoming.
+    // Expire video rooms whose join window has closed, and prune stale signal
+    // rows. Runs once per cycle on the existing timer — no new infrastructure.
+    try {
+      const { sweepExpiredVideoRooms } = await import("./video.server");
+      await sweepExpiredVideoRooms();
+    } catch (sweepErr: any) {
+      console.error("[Reminder Scheduler] video sweep error:", sweepErr?.message);
+    }
+
     const rows = await query<any>(
       `SELECT a.id, a.tenantId, a.name, a.phone, a.whatsapp, a.dateTime, a.timeSlot, a.tokenNo,
-              a.doctorId, a.status,
+              a.doctorId, a.status, a.consultationMode,
               a.remDayBefore, a.remDayOf, a.rem2h, a.rem1h,
               u.clinicName, d.name AS doctorName
        FROM Appointment a
@@ -110,6 +119,23 @@ async function runReminderCycle(): Promise<void> {
 
         if (!(await canSend(apt.tenantId))) continue;
 
+        // For a video consultation, mint a fresh join link to carry in the
+        // reminder. Tokens are stored only as hashes, so a reminder cannot
+        // re-send a prior link; this issues an additional room-scoped token that
+        // sits alongside any previously issued ones (Req 13.3).
+        let joinLink: string | null = null;
+        if (apt.consultationMode === "video") {
+          try {
+            const { loadRoomByAppointment, issueJoinToken, ensureVideoRoom } = await import("./video.server");
+            let room = await loadRoomByAppointment(apt.id, apt.tenantId);
+            if (!room) room = await ensureVideoRoom(apt.id, apt.tenantId);
+            const issued = await issueJoinToken(room.id, apt.tenantId, "reminder");
+            joinLink = issued.link;
+          } catch (linkErr: any) {
+            console.error("[Reminder Scheduler] join link mint failed:", linkErr?.message);
+          }
+        }
+
         const body = buildAppointmentMessage(kind, {
           name: apt.name,
           clinicName: apt.clinicName,
@@ -117,6 +143,7 @@ async function runReminderCycle(): Promise<void> {
           dateTime: new Date(apt.dateTime),
           timeSlot: apt.timeSlot,
           tokenNo: apt.tokenNo,
+          joinLink,
         });
         if (!body) continue;
 

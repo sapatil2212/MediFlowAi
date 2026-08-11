@@ -8,11 +8,16 @@
  * identically on the client and the server, which makes it trivially unit- and
  * property-testable.
  *
- * It separates two distinct concepts:
- *   1. Feature availability — driven by the (inherited) subscription plan and
- *      subscription status. Independent of role.
+ * It separates three distinct concepts:
+ *   1. Feature availability — driven by the (inherited) subscription plan, the
+ *      subscription status, and — for features that opt in — the tenant's
+ *      profession. Independent of role.
  *   2. Action authorization — driven by the account role, layered on top of an
  *      available feature (operate | view_only | none).
+ *   3. Profession eligibility — an opt-in restriction map (PROFESSION_FEATURES)
+ *      that narrows a feature to specific business types. Features absent from
+ *      that map are unrestricted, so adding the dimension leaves every
+ *      pre-existing feature's resolution byte-for-byte identical.
  */
 
 // ---------------------------------------------------------------------------
@@ -32,13 +37,20 @@ export type FeatureId =
   | "scribe"
   | "users" // multi-user / sub-user management
   | "locations" // multi-location management
-  | "plans"; // billing/plan management
+  | "plans" // billing/plan management
+  | "video"; // first-party video consultation (healthcare professions only)
 
 /** Permission level for an available feature. */
 export type Permission = "operate" | "view_only" | "none";
 
 export interface AccountContext {
   role: AccountRole;
+  /**
+   * The profession of the tenant's PARENT account (User.profession). Optional so
+   * that every existing caller and test context stays valid; when absent, any
+   * profession-restricted feature resolves unavailable (fail closed).
+   */
+  profession?: string | null;
   subscriptionPlan?: string | null; // raw value, may be a legacy alias
   subscriptionStatus?: string | null; // e.g. "Active", "Cancelled", "expired"
   subscriptionExpiresAt?: string | null; // ISO string or null
@@ -66,6 +78,7 @@ export const FEATURE_IDS: FeatureId[] = [
   "users",
   "locations",
   "plans",
+  "video",
 ];
 
 /** All canonical plan tiers, ordered from least to most entitled. */
@@ -155,8 +168,12 @@ export function normalizePlan(plan?: string | null): PlanTier {
 
 /**
  * The single source of truth for which plan tier includes which feature.
- * WhatsApp and multi-location management are the only features gated off for
- * Basic; everything else is available on all tiers.
+ * WhatsApp, multi-location management, and video consultation are the only
+ * features gated off for Basic; everything else is available on all tiers.
+ *
+ * `video` mirrors the `whatsapp` shape (Premium and above). Plan entitlement is
+ * only one of the conjuncts for `video`: PROFESSION_FEATURES additionally
+ * restricts it to healthcare tenants.
  */
 export const PLAN_FEATURES: Record<PlanTier, Record<FeatureId, boolean>> = {
   Basic: {
@@ -166,6 +183,7 @@ export const PLAN_FEATURES: Record<PlanTier, Record<FeatureId, boolean>> = {
     users: true,
     locations: false,
     plans: true,
+    video: false,
   },
   Premium: {
     whatsapp: true,
@@ -174,6 +192,7 @@ export const PLAN_FEATURES: Record<PlanTier, Record<FeatureId, boolean>> = {
     users: true,
     locations: true,
     plans: true,
+    video: true,
   },
   Enterprise: {
     whatsapp: true,
@@ -182,6 +201,7 @@ export const PLAN_FEATURES: Record<PlanTier, Record<FeatureId, boolean>> = {
     users: true,
     locations: true,
     plans: true,
+    video: true,
   },
 };
 
@@ -236,11 +256,62 @@ export const ROLE_PERMISSIONS: Record<FeatureId, Record<AccountRole, Permission>
     reception: "none",
     location: "none",
   },
+  // Clinical staff only: the parent account and doctors run consultations.
+  // `none` for reception and sub-locations means the control never renders AND
+  // every server function refuses the caller, read-shaped ones included, since
+  // canUseFeature requires permission !== "none".
+  video: {
+    admin: "operate",
+    doctor: "operate",
+    reception: "none",
+    location: "none",
+  },
 };
 
 /** Returns the permission a role has for a given feature. */
 export function rolePermission(role: AccountRole, feature: FeatureId): Permission {
   return ROLE_PERMISSIONS[feature][role];
+}
+
+// ---------------------------------------------------------------------------
+// Profession restriction map
+// ---------------------------------------------------------------------------
+
+/** The one profession that identifies a healthcare (clinical) tenant. */
+export const HEALTHCARE_PROFESSION = "Healthcare and medical";
+
+/**
+ * Features restricted to specific professions, keyed by feature id.
+ *
+ * An ABSENT key means "unrestricted by profession" — that default is what keeps
+ * every pre-existing feature's resolution unchanged when this dimension is
+ * added. Only add a key here when a capability is genuinely meaningless or
+ * unsafe outside a set of business types.
+ */
+export const PROFESSION_FEATURES: Partial<Record<FeatureId, readonly string[]>> = {
+  // Remote clinical care is offered to healthcare workspaces only.
+  video: [HEALTHCARE_PROFESSION],
+};
+
+/**
+ * True when the tenant's profession is permitted to use the feature.
+ *
+ * Unrestricted features (no PROFESSION_FEATURES entry) always return true, which
+ * makes this a strict no-op for them. Restricted features require an EXACT match
+ * against the allowed list after trimming — so null, undefined, an empty string,
+ * and any unrecognised profession all fail CLOSED. The resolver is deliberately
+ * strict rather than defaulting a missing profession to healthcare, so that a
+ * context assembled without profession data can never open a clinical feature.
+ */
+export function professionAllowsFeature(
+  profession: string | null | undefined,
+  feature: FeatureId,
+): boolean {
+  const allowed = PROFESSION_FEATURES[feature];
+  if (!allowed) {
+    return true; // unrestricted feature => unchanged behaviour
+  }
+  return allowed.includes((profession ?? "").trim());
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +351,11 @@ export function isSubscriptionActive(ctx: AccountContext): boolean {
 /**
  * Resolves, for every plan-gated feature, its availability, the role's
  * permission, and whether the dashboard should render it.
+ *
+ * Availability is the conjunction of: an active subscription, an active child
+ * account, plan entitlement, and profession eligibility. The last conjunct is a
+ * no-op for every feature without a PROFESSION_FEATURES entry, which is how this
+ * resolver keeps all pre-existing features resolving exactly as before.
  */
 export function resolveFeatureAccess(ctx: AccountContext): ResolvedAccess {
   const plan = normalizePlan(ctx.subscriptionPlan);
@@ -289,7 +365,11 @@ export function resolveFeatureAccess(ctx: AccountContext): ResolvedAccess {
   const result = {} as ResolvedAccess;
 
   for (const feature of FEATURE_IDS) {
-    const available = active && childOk && planIncludesFeature(plan, feature);
+    const available =
+      active &&
+      childOk &&
+      planIncludesFeature(plan, feature) &&
+      professionAllowsFeature(ctx.profession, feature);
     const permission: Permission = available ? rolePermission(ctx.role, feature) : "none";
     const visible = available && permission !== "none";
 
