@@ -41,6 +41,35 @@ const PLAN_FEATURES: Record<string, string[]> = {
   ],
 };
 
+function parseDateToMs(val: any): number | null {
+  if (!val) return null;
+  if (val instanceof Date) return val.getTime();
+  if (typeof val === "number") return val;
+  if (typeof val === "string") {
+    let formatted = val.trim();
+    if (/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}/.test(formatted)) {
+      formatted = formatted.replace(" ", "T") + "Z";
+    }
+    const parsed = new Date(formatted).getTime();
+    return isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+export function getTrialExpiryMs(user: any): number {
+  const subExpiresMs = parseDateToMs(user?.subscriptionExpiresAt);
+  if (subExpiresMs && subExpiresMs > 0) {
+    return subExpiresMs;
+  }
+
+  const createdMs = parseDateToMs(user?.createdAt);
+  if (createdMs && createdMs > 0) {
+    return createdMs + 7 * 24 * 60 * 60 * 1000;
+  }
+
+  return Date.now() + 7 * 24 * 60 * 60 * 1000;
+}
+
 export default function WelcomeTrialModal({
   open,
   onClose,
@@ -59,11 +88,11 @@ export default function WelcomeTrialModal({
         ? "Premium"
         : "Basic";
 
-  // Trial days remaining (7-day trial from account creation).
-  const expiryTime = user?.createdAt
-    ? new Date(user.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000
-    : Date.now() + 7 * 24 * 60 * 60 * 1000;
-  const trialEndsInDays = Math.max(0, Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)));
+  // Trial days remaining (exact calculation from subscriptionExpiresAt or createdAt).
+  const expiryTime = getTrialExpiryMs(user);
+  const diffMs = expiryTime - Date.now();
+  const trialEndsInDays = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  const trialExpired = diffMs <= 0;
 
   // Which plans to present: the current one first, then the alternative.
   const sellable: Array<"Basic" | "Premium"> =
@@ -92,8 +121,14 @@ export default function WelcomeTrialModal({
           </h2>
           <p className="mt-1.5 text-xs text-zinc-500 font-medium max-w-md mx-auto leading-relaxed">
             Your account is ready. Your{" "}
-            <span className="font-bold text-amber-600">free trial of the {currentTier} plan is active</span>
-            {trialEndsInDays > 0 ? ` for ${trialEndsInDays} more day${trialEndsInDays === 1 ? "" : "s"}` : ""}.
+            {trialExpired ? (
+              <span className="font-bold text-red-600">free trial of the {currentTier} plan has ended</span>
+            ) : (
+              <>
+                <span className="font-bold text-amber-600">free trial of the {currentTier} plan is active</span>
+                {` for ${trialEndsInDays} more day${trialEndsInDays === 1 ? "" : "s"}`}
+              </>
+            )}.
             Activate anytime below to keep your workspace running without interruption.
           </p>
         </div>
