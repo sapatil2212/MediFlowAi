@@ -43,7 +43,7 @@ function createDbPool(): Pool {
     password: dbPassword,
     database: dbName,
     ssl: useSsl ? { rejectUnauthorized: false } : undefined,
-    connectionLimit: 5,
+    connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || "15"),
     connectTimeout: 30000,
     acquireTimeout: 30000,
     idleTimeout: 60000,
@@ -424,9 +424,24 @@ if (typeof window === "undefined") {
             await conn.query("ALTER TABLE Appointment ADD COLUMN rem1h TINYINT(1) DEFAULT 0");
             console.log("[DB] ✅ Added rem1h column to Appointment table");
           }
+          // Delivery channel of the consultation (in_person | video). This is a
+          // separate axis from appointmentType, which holds the clinical category
+          // ("First Time", "OPD") and is left untouched. NOT NULL DEFAULT
+          // 'in_person' backfills every pre-existing appointment row.
+          if (!colNames.includes("consultationMode")) {
+            await conn.query("ALTER TABLE Appointment ADD COLUMN consultationMode VARCHAR(32) NOT NULL DEFAULT 'in_person'");
+            console.log("[DB] ✅ Added consultationMode column to Appointment table");
+          }
         } catch (err: any) {
           console.warn("[DB] ⚠️ Could not verify/alter Appointment columns:", err.message);
         }
+
+        // Index for tenant-scoped consultation-mode lookups. SHOW COLUMNS cannot
+        // tell us whether an index exists, so this runs in its own try/catch.
+        try {
+          await conn.query("ALTER TABLE Appointment ADD INDEX idx_apt_tenant_mode (tenantId, consultationMode)");
+          console.log("[DB] ✅ Added idx_apt_tenant_mode index to Appointment table");
+        } catch (_) { /* index already exists */ }
 
         // Create Patient Table (production patient registry)
         try {
@@ -513,6 +528,229 @@ if (typeof window === "undefined") {
         } catch (err: any) {
           console.error("[DB] ❌ Failed to create Prescription table:", err.message);
         }
+
+        // ---------------------------------------------------------------
+        // Video consultation tables (first-party WebRTC video feature).
+        // These six tables hold only control-plane state: room lifecycle,
+        // hashed join tokens, participant presence, short-lived signalling
+        // messages, consent acknowledgements, and the audit trail.
+        // Media (audio/video) is peer-to-peer and is NEVER persisted here
+        // or anywhere else server-side.
+        // ---------------------------------------------------------------
+
+        // Create VideoRoom Table (one room per appointment)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoRoom (
+              id VARCHAR(255) PRIMARY KEY,
+              tenantId VARCHAR(255) NOT NULL,
+              appointmentId VARCHAR(255) NOT NULL,
+              doctorId VARCHAR(255) NULL,
+              state VARCHAR(32) NOT NULL DEFAULT 'scheduled',
+              joinOpensAt DATETIME(3) NULL,
+              joinClosesAt DATETIME(3) NULL,
+              tokenVersion INT NOT NULL DEFAULT 0,
+              signalSeq INT NOT NULL DEFAULT 0,
+              admittedParticipantId VARCHAR(255) NULL,
+              admissionDecisionAt DATETIME(3) NULL,
+              activatedAt DATETIME(3) NULL,
+              endedAt DATETIME(3) NULL,
+              endReason VARCHAR(64) NULL,
+              outcome VARCHAR(32) NULL,
+              connectedSeconds INT NOT NULL DEFAULT 0,
+              disconnectedSinceAt DATETIME(3) NULL,
+              disconnectedTotalMs INT NOT NULL DEFAULT 0,
+              noticeVersion VARCHAR(32) NOT NULL DEFAULT 'v1',
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_room_appointment (appointmentId),
+              KEY idx_room_tenant_state (tenantId, state),
+              KEY idx_room_sweep (state, joinClosesAt)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoRoom table:", err.message);
+        }
+
+        // Migrate VideoRoom for ad-hoc ("instant" / "scheduled link") meetings that
+        // are NOT tied to an Appointment row. appointmentId becomes nullable —
+        // MySQL/MariaDB UNIQUE keys permit multiple NULLs, so the one-room-per-
+        // appointment guarantee is preserved for real appointments while ad-hoc
+        // rooms simply carry NULL.
+        try {
+          const vrCols: any[] = await conn.query("SHOW COLUMNS FROM VideoRoom");
+          const vrColNames = vrCols.map((c: any) => c.Field || c.field || "");
+
+          // Relax NOT NULL on appointmentId (safe/idempotent).
+          try {
+            await conn.query("ALTER TABLE VideoRoom MODIFY COLUMN appointmentId VARCHAR(255) NULL");
+          } catch (_) { /* already nullable */ }
+
+          if (!vrColNames.includes("kind")) {
+            await conn.query("ALTER TABLE VideoRoom ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'appointment'");
+            console.log("[DB] ✅ Added kind column to VideoRoom table");
+          }
+          if (!vrColNames.includes("title")) {
+            await conn.query("ALTER TABLE VideoRoom ADD COLUMN title VARCHAR(255) NULL");
+          }
+          if (!vrColNames.includes("meetingCode")) {
+            await conn.query("ALTER TABLE VideoRoom ADD COLUMN meetingCode VARCHAR(32) NULL");
+            try {
+              await conn.query("ALTER TABLE VideoRoom ADD UNIQUE KEY uq_room_code (meetingCode)");
+            } catch (_) { /* key exists */ }
+            console.log("[DB] ✅ Added meetingCode column to VideoRoom table");
+          }
+          if (!vrColNames.includes("scheduledAt")) {
+            await conn.query("ALTER TABLE VideoRoom ADD COLUMN scheduledAt DATETIME(3) NULL");
+          }
+          if (!vrColNames.includes("hostAccountId")) {
+            await conn.query("ALTER TABLE VideoRoom ADD COLUMN hostAccountId VARCHAR(255) NULL");
+          }
+          if (!vrColNames.includes("guestName")) {
+            await conn.query("ALTER TABLE VideoRoom ADD COLUMN guestName VARCHAR(255) NULL");
+          }
+          if (!vrColNames.includes("guestPhone")) {
+            await conn.query("ALTER TABLE VideoRoom ADD COLUMN guestPhone VARCHAR(50) NULL");
+          }
+          if (!vrColNames.includes("guestEmail")) {
+            await conn.query("ALTER TABLE VideoRoom ADD COLUMN guestEmail VARCHAR(255) NULL");
+          }
+          // Instant meetings skip the waiting room when the host opts in.
+          if (!vrColNames.includes("autoAdmit")) {
+            await conn.query("ALTER TABLE VideoRoom ADD COLUMN autoAdmit TINYINT(1) NOT NULL DEFAULT 0");
+          }
+        } catch (err: any) {
+          console.warn("[DB] ⚠️ Could not verify/alter VideoRoom columns:", err.message);
+        }
+
+        // Create VideoJoinToken Table (join links, stored only as a one-way hash)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoJoinToken (
+              id VARCHAR(255) PRIMARY KEY,
+              tenantId VARCHAR(255) NOT NULL,
+              roomId VARCHAR(255) NOT NULL,
+              tokenHash VARCHAR(64) NOT NULL,
+              version INT NOT NULL DEFAULT 1,
+              purpose VARCHAR(32) NOT NULL DEFAULT 'created',
+              issuedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              revokedAt DATETIME(3) NULL,
+              lastUsedAt DATETIME(3) NULL,
+              useCount INT NOT NULL DEFAULT 0,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_token_hash (tokenHash),
+              KEY idx_token_room (roomId, revokedAt)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoJoinToken table:", err.message);
+        }
+
+        // Create VideoParticipant Table (presence as a set of rows, keeps multi-party open)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoParticipant (
+              id VARCHAR(255) PRIMARY KEY,
+              tenantId VARCHAR(255) NOT NULL,
+              roomId VARCHAR(255) NOT NULL,
+              role VARCHAR(32) NOT NULL,
+              participantKey VARCHAR(64) NOT NULL,
+              accountId VARCHAR(255) NULL,
+              displayName VARCHAR(255) NULL,
+              status VARCHAR(32) NOT NULL DEFAULT 'requested',
+              peerState VARCHAR(32) NULL,
+              micEnabled TINYINT(1) NOT NULL DEFAULT 1,
+              cameraEnabled TINYINT(1) NOT NULL DEFAULT 1,
+              quality VARCHAR(16) NULL,
+              joinedAt DATETIME(3) NULL,
+              admittedAt DATETIME(3) NULL,
+              leftAt DATETIME(3) NULL,
+              connectedMs INT NOT NULL DEFAULT 0,
+              lastSeenAt DATETIME(3) NULL,
+              lastPolledAt DATETIME(3) NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_participant_identity (roomId, participantKey),
+              KEY idx_participant_room_role (roomId, role),
+              KEY idx_participant_room_status (roomId, status)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoParticipant table:", err.message);
+        }
+
+        // Create VideoSignal Table (short-lived signalling mailbox, strict per-room total order)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoSignal (
+              id VARCHAR(255) PRIMARY KEY,
+              tenantId VARCHAR(255) NOT NULL,
+              roomId VARCHAR(255) NOT NULL,
+              seq INT NOT NULL,
+              senderRole VARCHAR(32) NOT NULL,
+              kind VARCHAR(32) NOT NULL,
+              payload TEXT NOT NULL,
+              createdAt TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
+              UNIQUE KEY uq_signal_room_seq (roomId, seq),
+              KEY idx_signal_room_seq (roomId, seq, senderRole)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoSignal table:", err.message);
+        }
+
+        // Create VideoConsent Table (recording/notice acknowledgement per room and notice version)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoConsent (
+              id VARCHAR(255) PRIMARY KEY,
+              tenantId VARCHAR(255) NOT NULL,
+              roomId VARCHAR(255) NOT NULL,
+              appointmentId VARCHAR(255) NOT NULL,
+              participantId VARCHAR(255) NULL,
+              noticeVersion VARCHAR(32) NOT NULL,
+              tokenVersion INT NOT NULL DEFAULT 1,
+              acknowledgedAt TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
+              userAgentHash VARCHAR(64) NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              KEY idx_consent_room (roomId),
+              UNIQUE KEY uq_consent_room_notice (roomId, noticeVersion, tokenVersion)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoConsent table:", err.message);
+        }
+
+        // Create VideoAuditEvent Table (append-only; detail is a short label, never SDP/ICE)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoAuditEvent (
+              id VARCHAR(255) PRIMARY KEY,
+              tenantId VARCHAR(255) NOT NULL,
+              roomId VARCHAR(255) NOT NULL,
+              appointmentId VARCHAR(255) NOT NULL,
+              participantRole VARCHAR(32) NULL,
+              kind VARCHAR(48) NOT NULL,
+              detail VARCHAR(255) NULL,
+              occurredAt TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              KEY idx_audit_room_time (roomId, occurredAt),
+              KEY idx_audit_tenant_apt (tenantId, appointmentId)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoAuditEvent table:", err.message);
+        }
+
+        // Ad-hoc (instant / share-link) rooms have no Appointment row, so the
+        // audit and consent appointment columns must tolerate NULL. Runs after
+        // both tables exist so it succeeds on a first boot too.
+        try {
+          await conn.query("ALTER TABLE VideoAuditEvent MODIFY COLUMN appointmentId VARCHAR(255) NULL");
+        } catch (_) { /* already nullable */ }
+        try {
+          await conn.query("ALTER TABLE VideoConsent MODIFY COLUMN appointmentId VARCHAR(255) NULL");
+        } catch (_) { /* already nullable */ }
 
         // Create SuperAdmin Table
         try {
@@ -1039,13 +1277,173 @@ if (typeof window === "undefined") {
           console.warn("[DB] ⚠️ Could not seed/sync default super admins:", adminErr.message);
         }
 
+        // ─────────────────────────────────────────────────────────────────
+        // Video consultation tables (Requirements 4, 6, 7, 12, 15).
+        //
+        // One room per appointment, first-party signalling, join tokens stored
+        // only as hashes, consent, and an append-only audit trail. No Prisma
+        // migration — created the same way every other table in this file is.
+        // ─────────────────────────────────────────────────────────────────
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoRoom (
+              id                    VARCHAR(255) PRIMARY KEY,
+              tenantId              VARCHAR(255) NOT NULL,
+              appointmentId         VARCHAR(255) NOT NULL,
+              doctorId              VARCHAR(255) NULL,
+              state                 VARCHAR(32)  NOT NULL DEFAULT 'scheduled',
+              joinOpensAt           DATETIME(3)  NULL,
+              joinClosesAt          DATETIME(3)  NULL,
+              tokenVersion          INT          NOT NULL DEFAULT 0,
+              signalSeq             INT          NOT NULL DEFAULT 0,
+              admittedParticipantId VARCHAR(255) NULL,
+              admissionDecisionAt   DATETIME(3)  NULL,
+              activatedAt           DATETIME(3)  NULL,
+              endedAt               DATETIME(3)  NULL,
+              endReason             VARCHAR(64)  NULL,
+              outcome               VARCHAR(32)  NULL,
+              connectedSeconds      INT          NOT NULL DEFAULT 0,
+              disconnectedSinceAt   DATETIME(3)  NULL,
+              disconnectedTotalMs   INT          NOT NULL DEFAULT 0,
+              noticeVersion         VARCHAR(32)  NOT NULL DEFAULT 'v1',
+              createdAt             TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+              updatedAt             TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_room_appointment (appointmentId),
+              KEY idx_room_tenant_state (tenantId, state),
+              KEY idx_room_sweep (state, joinClosesAt)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoRoom table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoJoinToken (
+              id           VARCHAR(255) PRIMARY KEY,
+              tenantId     VARCHAR(255) NOT NULL,
+              roomId       VARCHAR(255) NOT NULL,
+              tokenHash    VARCHAR(64)  NOT NULL,
+              version      INT          NOT NULL DEFAULT 1,
+              purpose      VARCHAR(32)  NOT NULL DEFAULT 'created',
+              issuedAt     TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+              revokedAt    DATETIME(3)  NULL,
+              lastUsedAt   DATETIME(3)  NULL,
+              useCount     INT          NOT NULL DEFAULT 0,
+              createdAt    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_token_hash (tokenHash),
+              KEY idx_token_room (roomId, revokedAt)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoJoinToken table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoParticipant (
+              id             VARCHAR(255) PRIMARY KEY,
+              tenantId       VARCHAR(255) NOT NULL,
+              roomId         VARCHAR(255) NOT NULL,
+              role           VARCHAR(32)  NOT NULL,
+              participantKey VARCHAR(64)  NOT NULL,
+              accountId      VARCHAR(255) NULL,
+              displayName    VARCHAR(255) NULL,
+              status         VARCHAR(32)  NOT NULL DEFAULT 'requested',
+              peerState      VARCHAR(32)  NULL,
+              micEnabled     TINYINT(1)   NOT NULL DEFAULT 1,
+              cameraEnabled  TINYINT(1)   NOT NULL DEFAULT 1,
+              quality        VARCHAR(16)  NULL,
+              joinedAt       DATETIME(3)  NULL,
+              admittedAt     DATETIME(3)  NULL,
+              leftAt         DATETIME(3)  NULL,
+              connectedMs    INT          NOT NULL DEFAULT 0,
+              lastSeenAt     DATETIME(3)  NULL,
+              lastPolledAt   DATETIME(3)  NULL,
+              createdAt      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+              updatedAt      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_participant_identity (roomId, participantKey),
+              KEY idx_participant_room_role (roomId, role),
+              KEY idx_participant_room_status (roomId, status)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoParticipant table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoSignal (
+              id          VARCHAR(255) PRIMARY KEY,
+              tenantId    VARCHAR(255) NOT NULL,
+              roomId      VARCHAR(255) NOT NULL,
+              seq         INT          NOT NULL,
+              senderRole  VARCHAR(32)  NOT NULL,
+              kind        VARCHAR(32)  NOT NULL,
+              payload     TEXT         NOT NULL,
+              createdAt   TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
+              UNIQUE KEY uq_signal_room_seq (roomId, seq),
+              KEY idx_signal_room_seq (roomId, seq, senderRole)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoSignal table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoConsent (
+              id              VARCHAR(255) PRIMARY KEY,
+              tenantId        VARCHAR(255) NOT NULL,
+              roomId          VARCHAR(255) NOT NULL,
+              appointmentId   VARCHAR(255) NOT NULL,
+              participantId   VARCHAR(255) NULL,
+              noticeVersion   VARCHAR(32)  NOT NULL,
+              tokenVersion    INT          NOT NULL DEFAULT 1,
+              acknowledgedAt  TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
+              userAgentHash   VARCHAR(64)  NULL,
+              createdAt       TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+              KEY idx_consent_room (roomId),
+              UNIQUE KEY uq_consent_room_notice (roomId, noticeVersion, tokenVersion)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoConsent table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS VideoAuditEvent (
+              id              VARCHAR(255) PRIMARY KEY,
+              tenantId        VARCHAR(255) NOT NULL,
+              roomId          VARCHAR(255) NOT NULL,
+              appointmentId   VARCHAR(255) NOT NULL,
+              participantRole VARCHAR(32)  NULL,
+              kind            VARCHAR(48)  NOT NULL,
+              detail          VARCHAR(255) NULL,
+              occurredAt      TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
+              createdAt       TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+              KEY idx_audit_room_time (roomId, occurredAt),
+              KEY idx_audit_tenant_apt (tenantId, appointmentId)
+            )
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create VideoAuditEvent table:", err.message);
+        }
+
         // Normalize characters and collations across all tables to avoid mixed collation JOIN / comparison errors
         const tablesToNormalize = [
           "User", "Session", "OtpCode", "Appointment", "DemoAppointment", "ClinicHours", "Department",
           "Doctor", "ClinicProfile", "WhatsAppConfig", "DoctorSchedule", "DoctorLeave",
           "Patient", "SoapNote", "Prescription", "SuperAdmin", "SuperAdminSession",
           "SubscriptionHistory", "SubUser", "SubUserSession", "WATemplate", "WACampaign",
-          "WACampaignRecipient", "WAAutoReply", "WAConversation"
+          "WACampaignRecipient", "WAAutoReply", "WAConversation",
+          // Video consultation tables — required, not cosmetic. These join to Appointment,
+          // Doctor, and Patient, and this codebase has a live mismatched-collation problem:
+          // queries in src/lib/auth.server.ts are forced to write explicit
+          // `COLLATE utf8mb4_unicode_ci` clauses in their JOIN conditions to work around it.
+          // Normalising these tables up front avoids adding to that debt.
+          "VideoRoom", "VideoJoinToken", "VideoParticipant", "VideoSignal", "VideoConsent", "VideoAuditEvent"
         ];
         for (const tbl of tablesToNormalize) {
           try {
@@ -1074,11 +1472,11 @@ if (typeof window === "undefined") {
         }
 
         console.log("[DB] ✅ Self-healing database tables verify completed");
-
       } catch (err: any) {
         console.error("[DB] ❌ Self-heal and schema setup failed:", err.message);
+      } finally {
+        if (conn) conn.release();
       }
-      conn.release();
     })
     .catch((err: any) => {
       console.error("[DB] ❌ Failed to connect:", err.message);

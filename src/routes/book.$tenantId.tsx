@@ -56,6 +56,9 @@ function PatientBookingPage() {
   const [dateTime, setDateTime] = useState("");
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
+  // Video consultation: only offered when the workspace is eligible.
+  const [videoAvailable, setVideoAvailable] = useState(false);
+  const [consultationMode, setConsultationMode] = useState<"in_person" | "video">("in_person");
 
   // Custom Popover/Dropdown Open States
   const [deptOpen, setDeptOpen] = useState(false);
@@ -115,6 +118,7 @@ function PatientBookingPage() {
         setProfession(resolvedProfession);
         setDepartments(res.departments || []);
         setDoctors(res.doctors || []);
+        setVideoAvailable(!!(res as any).videoAvailable);
         const locs = (res as any).locations || [];
         setLocations(locs);
 
@@ -276,6 +280,7 @@ function PatientBookingPage() {
           whatsapp,
           appointmentType: isEducation ? undefined : appointmentType,
           locationId: selectedLocationId && selectedLocationId !== MAIN_LOCATION_ID ? selectedLocationId : undefined,
+          consultationMode: videoAvailable ? consultationMode : undefined,
         },
       });
 
@@ -1072,6 +1077,35 @@ function PatientBookingPage() {
                     </div>
                     {errors.timeSlot && (
                       <p className="text-[10px] text-red-500 font-bold mt-0.5 pl-1">{errors.timeSlot}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Consultation mode — only when the clinic offers video */}
+                {videoAvailable && (
+                  <div className="space-y-1">
+                    <label className="text-[9px] sm:text-[10px] font-bold text-zinc-400 uppercase pl-1">How would you like to consult?</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {([
+                        { value: "in_person", label: "In person" },
+                        { value: "video", label: "Video call" },
+                      ] as const).map((opt) => (
+                        <button
+                          type="button"
+                          key={opt.value}
+                          onClick={() => setConsultationMode(opt.value)}
+                          className={`rounded-xl border px-3 py-2.5 text-xs font-bold transition-colors ${
+                            consultationMode === opt.value
+                              ? "border-brand bg-brand/5 text-brand"
+                              : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {consultationMode === "video" && (
+                      <p className="pl-1 text-[9px] text-zinc-400">A secure join link will be sent to you before the appointment.</p>
                     )}
                   </div>
                 )}

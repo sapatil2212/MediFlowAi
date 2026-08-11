@@ -16,6 +16,10 @@ import { canUseFeature, canOperateFeature, type AccountContext, type AccountRole
 function buildAccountContext(user: any): AccountContext {
   return {
     role: (user.role ?? "admin") as AccountRole,
+    // verifySession already resolves this from the PARENT User row for admin,
+    // sub-user, and sub-location sessions, so a child account's profession-gated
+    // eligibility derives from its tenant owner.
+    profession: user.profession,
     subscriptionPlan: user.subscriptionPlan,
     subscriptionStatus: user.subscriptionStatus,
     subscriptionExpiresAt: user.subscriptionExpiresAt,
@@ -735,7 +739,7 @@ export const getClinicByTenantIdServerFn = createServerFn({ method: "GET" })
   });
 
 export const createAppointmentServerFn = createServerFn({ method: "POST" })
-  .validator((data: { tenantId: string; name: string; email?: string; phone: string; dateTime: string; reason: string; doctorId?: string; timeSlot?: string; whatsapp?: string; appointmentType?: string; patientId?: string | null }) => {
+  .validator((data: { tenantId: string; name: string; email?: string; phone: string; dateTime: string; reason: string; doctorId?: string; timeSlot?: string; whatsapp?: string; appointmentType?: string; patientId?: string | null; consultationMode?: string }) => {
     // Email is optional; phone is the required contact channel.
     if (!data.tenantId || !data.name || !data.phone || !data.dateTime || !data.reason) {
       throw new Error("Required booking fields missing");
@@ -762,6 +766,18 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
     const docId = data.doctorId || null;
     const tSlot = data.timeSlot || null;
 
+    // Consultation mode: defaults to in_person; video requires an eligible tenant.
+    const { normalizeConsultationMode } = await import("./video-consultation");
+    const modeCheck = normalizeConsultationMode(data.consultationMode ?? "in_person");
+    if (!modeCheck.ok) throw new Error("Invalid consultation mode");
+    const consultationMode = modeCheck.mode;
+    if (consultationMode === "video") {
+      const { isTenantVideoEligible } = await import("./video.server");
+      if (!(await isTenantVideoEligible(data.tenantId))) {
+        throw new Error("Video consultation is not available on this workspace's plan.");
+      }
+    }
+
     // Auto-assign sequential token number per tenant + date
     const tokenRow = await queryOne<any>(
       "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?)",
@@ -770,9 +786,9 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
     const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
 
     await execute(
-      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, patientId, tokenNo, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, NOW())`,
-      [id, data.tenantId, data.name, data.email || "", data.phone, dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo]
+      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, patientId, tokenNo, consultationMode, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [id, data.tenantId, data.name, data.email || "", data.phone, dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo, consultationMode]
     );
 
     // Queue the "appointment booked" WhatsApp notification (server-side only).
@@ -790,6 +806,22 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
         timeSlot: tSlot,
         tokenNo,
       });
+    }
+
+    // Create the video room + join link when booked as a video consultation (Req 3.3).
+    if (typeof window === "undefined" && consultationMode === "video") {
+      try {
+        const { syncVideoRoomForAppointment } = await import("./video.server");
+        await syncVideoRoomForAppointment({
+          appointmentId: id,
+          tenantId: data.tenantId,
+          from: null,
+          to: "video",
+          notify: true,
+        });
+      } catch (e: any) {
+        console.error("[Video] room sync on create failed:", e?.message);
+      }
     }
 
     return { success: true, appointmentId: id, tokenNo };
@@ -830,6 +862,7 @@ export const getAppointmentsServerFn = createServerFn({ method: "GET" })
       appointmentType: apt.appointmentType || "",
       patientId: apt.patientId || "",
       tokenNo: apt.tokenNo || null,
+      consultationMode: apt.consultationMode || "in_person",
       createdAt: apt.createdAt instanceof Date ? apt.createdAt.toISOString() : new Date(apt.createdAt).toISOString()
     }));
   });
@@ -1070,7 +1103,7 @@ export const deleteSubLocationBookingServerFn = createServerFn({ method: "POST" 
   });
 
 export const updateAppointmentServerFn = createServerFn({ method: "POST" })
-  .validator((data: { id: string; name: string; email?: string; phone: string; dateTime: string; reason: string; status: string; doctorId?: string; timeSlot?: string; whatsapp?: string; appointmentType?: string; patientId?: string | null }) => {
+  .validator((data: { id: string; name: string; email?: string; phone: string; dateTime: string; reason: string; status: string; doctorId?: string; timeSlot?: string; whatsapp?: string; appointmentType?: string; patientId?: string | null; consultationMode?: string }) => {
     // Email is optional; phone is the required contact channel.
     if (!data.id || !data.name || !data.phone || !data.dateTime || !data.reason || !data.status) {
       throw new Error("Required fields missing");
@@ -1082,12 +1115,31 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     // Verify appointment belongs to the same tenantId
-    const existingApt = await queryOne<any>("SELECT id, dateTime, tokenNo FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1", [data.id, user.tenantId]);
+    const existingApt = await queryOne<any>("SELECT id, dateTime, tokenNo, consultationMode FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1", [data.id, user.tenantId]);
     if (!existingApt) throw new Error("Appointment not found or unauthorized");
 
     const dateVal = new Date(data.dateTime);
     const docId = data.doctorId || null;
     const tSlot = data.timeSlot || null;
+
+    // Resolve the target consultation mode (Req 3.5). When omitted, preserve the
+    // existing mode rather than silently reverting to in_person.
+    const { normalizeConsultationMode } = await import("./video-consultation");
+    const prevMode = existingApt.consultationMode === "video" ? "video" : "in_person";
+    let consultationMode: "in_person" | "video" = prevMode;
+    if (data.consultationMode !== undefined) {
+      const modeCheck = normalizeConsultationMode(data.consultationMode);
+      if (!modeCheck.ok) throw new Error("Invalid consultation mode");
+      consultationMode = modeCheck.mode;
+    }
+    if (consultationMode === "video" && prevMode !== "video") {
+      const { isTenantVideoEligible } = await import("./video.server");
+      if (!(await isTenantVideoEligible(user.tenantId))) {
+        throw new Error("Video consultation is not available on this workspace's plan.");
+      }
+    }
+    // Cancelling the appointment also cancels a video room.
+    const effectiveMode = data.status === "Cancelled" ? "in_person" : consultationMode;
 
     // Recalculate token number if the appointment date changed
     const oldDate = existingApt.dateTime instanceof Date ? existingApt.dateTime : new Date(existingApt.dateTime);
@@ -1104,8 +1156,8 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
     }
 
     await execute(
-      `UPDATE Appointment SET name = ?, email = ?, phone = ?, dateTime = ?, reason = ?, status = ?, doctorId = ?, timeSlot = ?, whatsapp = ?, appointmentType = ?, patientId = ?, tokenNo = ? WHERE id = ?`,
-      [data.name, data.email || "", data.phone, dateVal, data.reason, data.status, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo, data.id]
+      `UPDATE Appointment SET name = ?, email = ?, phone = ?, dateTime = ?, reason = ?, status = ?, doctorId = ?, timeSlot = ?, whatsapp = ?, appointmentType = ?, patientId = ?, tokenNo = ?, consultationMode = ? WHERE id = ?`,
+      [data.name, data.email || "", data.phone, dateVal, data.reason, data.status, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo, consultationMode, data.id]
     );
 
     // Queue WhatsApp notification for status change (confirmed / cancelled / completed).
@@ -1130,6 +1182,26 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
           timeSlot: tSlot,
           tokenNo,
         });
+      }
+
+      // Sync the video room to the (effective) consultation mode. Cancelling the
+      // appointment forces the room to cancel; switching to in_person cancels it;
+      // switching to video creates it. Never blocks the appointment write (Req 3.6-3.8).
+      try {
+        const { syncVideoRoomForAppointment, refreshRoomWindow } = await import("./video.server");
+        await syncVideoRoomForAppointment({
+          appointmentId: data.id,
+          tenantId: user.tenantId,
+          from: prevMode,
+          to: effectiveMode,
+          notify: true,
+        });
+        // Keep the join window honest if the appointment was rescheduled.
+        if (effectiveMode === "video") {
+          await refreshRoomWindow(data.id, user.tenantId);
+        }
+      } catch (e: any) {
+        console.error("[Video] room sync on update failed:", e?.message);
       }
     }
 

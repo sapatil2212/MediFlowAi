@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Self-hosted coturn — STUN + TURN for BookMyTime video consultations.
+#
+# This is the ONLY piece of video infrastructure, and it runs on YOUR server.
+# No third-party video, signalling, STUN, or TURN service is involved.
+#
+# Quick start (on your VPS, as root):
+#   1. cp .env.example .env  &&  edit .env
+#   2. docker compose up -d
+#   3. docker compose logs -f coturn      # confirm it started
+#
+# `network_mode: host` is deliberate: TURN allocates a wide UDP relay port range
+# and Docker's userland proxy cannot forward that efficiently. Host networking
+# also lets coturn see real client addresses, which matters for relay accounting.
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  coturn:
+    image: coturn/coturn:4.6-alpine
+    container_name: bmt-coturn
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+      # Uncomment when you have TLS certs (recommended — lets TURN traverse
+      # networks that only permit outbound 443/5349).
+      # - ./certs:/etc/coturn/certs:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

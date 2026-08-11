@@ -22,7 +22,9 @@ export type AptNotifyKind =
   | "reminderDayBefore"
   | "reminderDayOf"
   | "reminder2h"
-  | "reminder1h";
+  | "reminder1h"
+  | "videoLinkIssued"
+  | "videoLinkReissued";
 
 export interface AptNotifyContext {
   name: string;
@@ -31,6 +33,8 @@ export interface AptNotifyContext {
   dateTime: Date;
   timeSlot?: string | null;
   tokenNo?: number | null;
+  /** Absolute patient join link for video consultations (Req 13). */
+  joinLink?: string | null;
 }
 
 /**
@@ -70,8 +74,16 @@ export function buildAppointmentMessage(kind: AptNotifyKind, ctx: AptNotifyConte
   const docText = ctx.doctorName ? ` with *${ctx.doctorName}*` : "";
   const tokenText = ctx.tokenNo ? `\n\n🎫 *Your Token No: #${ctx.tokenNo}*` : "";
   const footer = "\n\n_This is an automated notification message._";
+  // Join-link line, appended to reminders and used by the two video kinds.
+  const linkText = ctx.joinLink ? `\n\n🎥 *Join your video consultation:*\n${ctx.joinLink}` : "";
 
   switch (kind) {
+    case "videoLinkIssued":
+      return `Hello *${ctx.name}*,\n\nYour *video consultation* at *${clinic}*${docText} is scheduled for *${dateStr}* at *${timeStr}*.${linkText}\n\nPlease open the link at your appointment time from a phone or computer with a camera and microphone. You will wait briefly until the doctor admits you.${footer}`;
+
+    case "videoLinkReissued":
+      return `Hello *${ctx.name}*,\n\nHere is your updated *video consultation* link for *${clinic}*${docText} on *${dateStr}* at *${timeStr}*.${linkText}\n\nThe previous link is no longer valid.${footer}`;
+
     case "booked":
       return `Hello *${ctx.name}*,\n\nYour appointment at *${clinic}*${docText} is booked for *${dateStr}* at *${timeStr}*.${tokenText}\n\nThank you for choosing us!${footer}`;
 
@@ -85,16 +97,16 @@ export function buildAppointmentMessage(kind: AptNotifyKind, ctx: AptNotifyConte
       return `Hello *${ctx.name}*,\n\nThank you for visiting *${clinic}*${docText} today. Your consultation is now *Complete* ✅.\n\nYour prescription and advice (if any) have been recorded. We wish you a speedy recovery — take care!${footer}`;
 
     case "reminderDayBefore":
-      return `Hello *${ctx.name}*,\n\n⏰ *Reminder:* You have an appointment at *${clinic}*${docText} *tomorrow*, *${dateStr}* at *${timeStr}*.${tokenText}\n\nPlease arrive 10 minutes early. See you soon!${footer}`;
+      return `Hello *${ctx.name}*,\n\n⏰ *Reminder:* You have an appointment at *${clinic}*${docText} *tomorrow*, *${dateStr}* at *${timeStr}*.${tokenText}${linkText}\n\n${ctx.joinLink ? "You can join online at your appointment time." : "Please arrive 10 minutes early."} See you soon!${footer}`;
 
     case "reminderDayOf":
-      return `Hello *${ctx.name}*,\n\n📅 *Reminder:* Your appointment at *${clinic}*${docText} is *today* at *${timeStr}*.${tokenText}\n\nPlease arrive 10 minutes early.${footer}`;
+      return `Hello *${ctx.name}*,\n\n📅 *Reminder:* Your appointment at *${clinic}*${docText} is *today* at *${timeStr}*.${tokenText}${linkText}\n\n${ctx.joinLink ? "Open the link at your appointment time to join." : "Please arrive 10 minutes early."}${footer}`;
 
     case "reminder2h":
-      return `Hello *${ctx.name}*,\n\n⏳ *Reminder:* Your appointment at *${clinic}*${docText} is in about *2 hours* — today at *${timeStr}*.${tokenText}\n\nSee you soon!${footer}`;
+      return `Hello *${ctx.name}*,\n\n⏳ *Reminder:* Your appointment at *${clinic}*${docText} is in about *2 hours* — today at *${timeStr}*.${tokenText}${linkText}\n\nSee you soon!${footer}`;
 
     case "reminder1h":
-      return `Hello *${ctx.name}*,\n\n🔔 *Reminder:* Your appointment at *${clinic}*${docText} is in about *1 hour* — today at *${timeStr}*.${tokenText}\n\nPlease start heading over. See you soon!${footer}`;
+      return `Hello *${ctx.name}*,\n\n🔔 *Reminder:* Your appointment at *${clinic}*${docText} is in about *1 hour* — today at *${timeStr}*.${tokenText}${linkText}\n\n${ctx.joinLink ? "Please be ready to join online." : "Please start heading over."} See you soon!${footer}`;
 
     default:
       return "";
@@ -151,4 +163,65 @@ export async function resolveClinicName(tenantId: string): Promise<string> {
   } catch {
     return "our clinic";
   }
+}
+
+
+/**
+ * Sends the patient video-consultation join link by email (Req 13.5), in
+ * addition to the WhatsApp message. Kept here so all video messaging shares one
+ * module. Throws on transport failure so the caller can record it; callers wrap
+ * this in a never-throw guard.
+ */
+export async function sendVideoLinkEmail(
+  email: string,
+  ctx: { name: string; clinicName?: string | null; doctorName?: string | null; dateTime: Date; joinLink: string },
+): Promise<void> {
+  const { transporter } = await import("./email");
+  const clinic = ctx.clinicName || "our clinic";
+  const dateStr = fmtDate(ctx.dateTime);
+  const timeStr = fmtTime(ctx.dateTime, null);
+  const docText = ctx.doctorName ? ` with ${ctx.doctorName}` : "";
+  const bcc = process.env.EMAIL_BCC || "";
+
+  await transporter.sendMail({
+    from: `"BookMyTime" <${process.env.EMAIL_USERNAME}>`,
+    to: email,
+    bcc: bcc || undefined,
+    subject: `Your video consultation link — ${clinic}`,
+    html: `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:520px;margin:0 auto;background:#fff;padding:24px 16px;color:#18181b;">
+        <h2 style="font-size:18px;margin:0 0 12px;">Your video consultation is ready</h2>
+        <p style="font-size:14px;line-height:1.6;color:#3f3f46;margin:0 0 8px;">Hello ${escapeHtml(ctx.name)},</p>
+        <p style="font-size:14px;line-height:1.6;color:#3f3f46;margin:0 0 16px;">
+          Your video consultation at <strong>${escapeHtml(clinic)}</strong>${escapeHtml(docText)} is scheduled for
+          <strong>${escapeHtml(dateStr)}</strong> at <strong>${escapeHtml(timeStr)}</strong>.
+        </p>
+        <p style="text-align:center;margin:24px 0;">
+          <a href="${ctx.joinLink}" style="background:#2563eb;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;display:inline-block;">
+            Join Consultation
+          </a>
+        </p>
+        <p style="font-size:12px;line-height:1.6;color:#71717a;margin:0 0 8px;">
+          Or paste this link into your browser at your appointment time:<br/>
+          <span style="word-break:break-all;color:#2563eb;">${ctx.joinLink}</span>
+        </p>
+        <p style="font-size:12px;line-height:1.6;color:#71717a;margin:16px 0 0;">
+          Use a device with a camera and microphone. You will wait briefly in a waiting room until the doctor admits you.
+        </p>
+        <hr style="border:none;border-top:1px solid #e4e4e7;margin:24px 0 12px;" />
+        <p style="color:#a1a1aa;font-size:10px;text-align:center;margin:0;">
+          &copy; ${new Date().getFullYear()} BookMyTime
+        </p>
+      </div>
+    `,
+  });
+}
+
+/** Minimal HTML escaping for interpolated values in the email body. */
+function escapeHtml(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

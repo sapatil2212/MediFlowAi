@@ -162,13 +162,24 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
       }
     }
 
+    // Whether this workspace can offer video consultations (healthcare + plan +
+    // active subscription). Drives the public in-person/video choice (Req 3.4).
+    let videoAvailable = false;
+    try {
+      const { isTenantVideoEligible } = await import("./video.server");
+      videoAvailable = await isTenantVideoEligible(data.tenantId);
+    } catch {
+      videoAvailable = false;
+    }
+
     return {
       clinicName: clinicName,
       profession: profession,
       departments,
       doctors,
       locations,
-      slots
+      slots,
+      videoAvailable
     };
   });
 
@@ -188,6 +199,7 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     whatsapp?: string;
     appointmentType?: string;
     locationId?: string;
+    consultationMode?: string;
   }) => {
     if (!data.tenantId || !data.name || !data.dateTime || !data.reason) {
       throw new Error("Required booking fields missing");
@@ -199,6 +211,20 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     const dateVal = new Date(data.dateTime);
     const docId = data.doctorId || null;
     const tSlot = data.timeSlot || null;
+
+    // Consultation mode (Req 3.2, 3.4, 3.5): default in_person; video requires
+    // an eligible tenant. A patient booking their own video visit is legitimate,
+    // so eligibility is a tenant-capability check, not a role check.
+    const { normalizeConsultationMode } = await import("./video-consultation");
+    const modeCheck = normalizeConsultationMode(data.consultationMode ?? "in_person");
+    if (!modeCheck.ok) throw new Error("Invalid consultation mode");
+    const consultationMode = modeCheck.mode;
+    if (consultationMode === "video") {
+      const { isTenantVideoEligible } = await import("./video.server");
+      if (!(await isTenantVideoEligible(data.tenantId))) {
+        throw new Error("Video consultation is not available for this clinic.");
+      }
+    }
 
     // Validate locationId if provided — must belong to this tenant and be active
     let locId: string | null = null;
@@ -223,9 +249,9 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
 
     await execute(
-      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, locationId, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, NOW())`,
-      [id, data.tenantId, data.name, data.email || "", data.phone || "", dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, tokenNo, locId]
+      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, locationId, consultationMode, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [id, data.tenantId, data.name, data.email || "", data.phone || "", dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, tokenNo, locId, consultationMode]
     );
 
     // Queue WhatsApp notification if WA microservice is connected
@@ -263,6 +289,22 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
         }
       } catch (waErr: any) {
         console.error("[WhatsApp] Failed to send booking message:", waErr.message);
+      }
+    }
+
+    // Create the video room + patient join link when booked as a video visit.
+    if (typeof window === "undefined" && consultationMode === "video") {
+      try {
+        const { syncVideoRoomForAppointment } = await import("./video.server");
+        await syncVideoRoomForAppointment({
+          appointmentId: id,
+          tenantId: data.tenantId,
+          from: null,
+          to: "video",
+          notify: true,
+        });
+      } catch (e: any) {
+        console.error("[Video] public room sync failed:", e?.message);
       }
     }
 
