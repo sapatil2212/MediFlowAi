@@ -57,6 +57,9 @@ interface DoctorVideoConsultPanelProps {
   appointments: VideoAppointment[];
 }
 
+/** Consecutive poll failures after which polling stops and prompts a refresh. */
+const MAX_POLL_ERRORS = 4;
+
 type Source =
   | { kind: "appointment"; appointmentId: string; label: string; when: string; patientId?: string }
   | { kind: "meeting"; roomId: string; label: string; when: string | null; state: string; meetingCode: string | null };
@@ -74,6 +77,7 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
   const [inCallRoomId, setInCallRoomId] = useState<string | null>(null);
   const [docsOpen, setDocsOpen] = useState(false);
   const [showTest, setShowTest] = useState(false);
+  const [pollError, setPollError] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadMeetings = useCallback(async () => {
@@ -134,9 +138,17 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
   }, [selected, loadDetail]);
 
   // Keep the waiting room fresh while not in a call.
+  //
+  // Failures back off and eventually stop rather than retrying forever: a tab
+  // left open across a redeploy would otherwise poll a dead endpoint
+  // indefinitely. `pollError` surfaces that state so the user can refresh.
   useEffect(() => {
     if (!selected || inCallRoomId) return;
+    let errors = 0;
+    let stopped = false;
+
     const tick = async () => {
+      if (stopped) return;
       try {
         if (selected.kind === "appointment") {
           const r = await getVideoRoomServerFn({ data: { appointmentId: selected.appointmentId } });
@@ -145,13 +157,23 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
           const r = await getMeetingServerFn({ data: { roomId: selected.roomId } });
           setDetail({ exists: true, ...r });
         }
+        errors = 0;
+        setPollError(false);
       } catch {
-        /* ignore */
+        errors++;
+        if (errors >= MAX_POLL_ERRORS) {
+          setPollError(true);
+          stopped = true;
+          return;
+        }
       }
-      pollRef.current = setTimeout(tick, 4000);
+      const delay = errors > 0 ? Math.min(4000 * 2 ** errors, 30000) : 4000;
+      pollRef.current = setTimeout(tick, delay);
     };
+
     pollRef.current = setTimeout(tick, 4000);
     return () => {
+      stopped = true;
       if (pollRef.current) clearTimeout(pollRef.current);
     };
   }, [selected, inCallRoomId]);
@@ -281,6 +303,20 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
   // ── Console ──────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
+      {pollError && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-zinc-100 p-3">
+          <p className="text-xs text-zinc-700">
+            Lost contact with the server — this page may be out of date.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="shrink-0 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800"
+          >
+            Refresh
+          </button>
+        </div>
+      )}
+
       <NewMeetingPanel onStartCall={(id) => void joinCall(id)} onCreated={loadMeetings} />
 
       {/* Relay status — actionable rather than a dead-end warning */}

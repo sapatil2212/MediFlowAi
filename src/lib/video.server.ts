@@ -468,6 +468,7 @@ import {
   classifyOutcome,
   computeJoinWindow,
   selectSignalsAfter,
+  shouldEndForDisconnect,
   validateSignalPayload,
   type CallOutcome,
   type ParticipantRole,
@@ -1519,4 +1520,404 @@ async function resolveDoctorNameSafe(doctorId: string): Promise<string> {
   } catch {
     return "";
   }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// View shaping and request helpers.
+//
+// These live here rather than in `video.ts` so that the server-function module
+// contains ONLY `createServerFn` declarations. The TanStack compiler extracts
+// every handler body into a separate split module, so keeping shared helpers
+// out of that file keeps the extraction trivial and the split module small.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** `DATETIME`/`Date` → ISO string, or null when absent/unparsable. */
+export function toIso(v: Date | string | null | undefined): string | null {
+  if (v === null || v === undefined) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Best-effort client key for rate limiting the patient token path (Req 6.12). */
+export async function clientKeyFromRequest(): Promise<string> {
+  try {
+    const mod: any = await import("@tanstack/react-start/server");
+    const h = typeof mod.getHeaders === "function" ? mod.getHeaders() : {};
+    const fwd = (h["x-forwarded-for"] || "").toString();
+    const ip = fwd.split(",")[0].trim() || (h["x-real-ip"] || "").toString().trim();
+    return ip || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Hash of the caller's user agent, for the consent record. Never the raw value. */
+export async function userAgentHash(): Promise<string | null> {
+  try {
+    const mod: any = await import("@tanstack/react-start/server");
+    const h = typeof mod.getHeaders === "function" ? mod.getHeaders() : {};
+    const ua = (h["user-agent"] || "").toString();
+    return ua ? createHash("sha256").update(ua).digest("hex") : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Number of live (unrevoked) join tokens for a room. */
+export async function activeLinkCount(roomId: string, tenantId: string): Promise<number> {
+  const row = await queryOne<any>(
+    `SELECT COUNT(*) AS c FROM VideoJoinToken WHERE roomId = ? AND tenantId = ? AND revokedAt IS NULL`,
+    [roomId, tenantId],
+  );
+  return Number(row?.c ?? 0);
+}
+
+/** Shapes a participant row for the doctor UI (no signalling internals). */
+export function publicParticipant(p: VideoParticipantRow) {
+  return {
+    id: p.id,
+    role: p.role,
+    displayName: p.displayName,
+    status: p.status,
+    peerState: p.peerState,
+    micEnabled: p.micEnabled === 1,
+    cameraEnabled: p.cameraEnabled === 1,
+    quality: p.quality,
+    joinedAt: toIso(p.joinedAt),
+    admittedAt: toIso(p.admittedAt),
+    leftAt: toIso(p.leftAt),
+  };
+}
+
+/** Full doctor-facing room view. */
+export async function buildDoctorRoomView(room: VideoRoomRow, user: SessionUser) {
+  const { readTurnConfig, isTurnConfigured } = await import("./video-turn.server");
+  const [participants, appt, linkCount] = await Promise.all([
+    loadParticipants(room.id, user.tenantId),
+    room.appointmentId ? loadAppointmentForVideo(room.appointmentId, user.tenantId) : Promise.resolve(null),
+    activeLinkCount(room.id, user.tenantId),
+  ]);
+  const waiting = participants.filter((p) => p.role === "patient" && p.status === "requested").map(publicParticipant);
+  const cfg = readTurnConfig();
+  return {
+    room: {
+      id: room.id,
+      appointmentId: room.appointmentId,
+      state: room.state,
+      joinOpensAt: toIso(room.joinOpensAt),
+      joinClosesAt: toIso(room.joinClosesAt),
+      admittedParticipantId: room.admittedParticipantId,
+      endReason: room.endReason,
+      outcome: room.outcome,
+      connectedSeconds: room.connectedSeconds,
+      noticeVersion: room.noticeVersion,
+    },
+    participants: participants.map(publicParticipant),
+    waiting,
+    appointment: appt
+      ? {
+          name: appt.name,
+          dateTime: toIso(appt.dateTime),
+          doctorName: appt.doctorName,
+          clinicName: appt.clinicName,
+          patientId: appt.patientId,
+          consultationMode: appt.consultationMode,
+        }
+      : null,
+    turnConfigured: isTurnConfigured(cfg),
+    linkActive: linkCount > 0,
+  };
+}
+
+/** Loads the patient participant row for a room, if one exists. */
+export async function loadPatientParticipant(
+  roomId: string,
+  tenantId: string,
+): Promise<VideoParticipantRow | null> {
+  const pKey = patientParticipantKey(roomId);
+  const row = await queryOne<any>(
+    `SELECT * FROM VideoParticipant WHERE roomId = ? AND tenantId = ? AND participantKey = ? LIMIT 1`,
+    [roomId, tenantId, pKey],
+  );
+  return row ? mapParticipantRow(row) : null;
+}
+
+/** Marks a participant admitted (idempotent). */
+export async function markAdmitted(participantId: string, tenantId: string): Promise<void> {
+  await execute(
+    `UPDATE VideoParticipant SET status = 'admitted', admittedAt = COALESCE(admittedAt, NOW(3)) WHERE id = ? AND tenantId = ?`,
+    [participantId, tenantId],
+  );
+}
+
+/** Derives the patient-facing status label from the room and participant. */
+export function patientStatusFrom(
+  room: VideoRoomRow,
+  participant: VideoParticipantRow | null,
+): "waiting" | "admitted" | "declined" | "active" | "ended" | "expired" {
+  if (room.state === "ended") return "ended";
+  if (room.state === "expired" || room.state === "cancelled") return "expired";
+  if (participant?.status === "removed") return "declined";
+  if (room.state === "active" && participant?.status === "admitted") return "active";
+  if (participant?.status === "admitted") return "admitted";
+  return "waiting";
+}
+
+/**
+ * The four facts a patient may see, resolved for either room kind.
+ *
+ * Appointment rooms read them from the booking; ad-hoc rooms have no
+ * Appointment row, so the clinic comes from the tenant and the time from the
+ * room's own `scheduledAt` (null for an instant meeting).
+ */
+export async function patientFactsFor(room: VideoRoomRow): Promise<{
+  clinicName: string | null;
+  doctorName: string | null;
+  appointmentAt: string | null;
+}> {
+  if (room.appointmentId) {
+    const appt = await loadAppointmentForVideo(room.appointmentId, room.tenantId);
+    return {
+      clinicName: appt?.clinicName ?? null,
+      doctorName: appt?.doctorName ?? null,
+      appointmentAt: toIso(appt?.dateTime ?? null),
+    };
+  }
+  const [extras, clinic, doctor] = await Promise.all([
+    loadRoomExtras(room.id, room.tenantId),
+    queryOne<any>(`SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1`, [room.tenantId]),
+    room.doctorId
+      ? queryOne<any>(`SELECT name FROM Doctor WHERE id = ? LIMIT 1`, [room.doctorId])
+      : Promise.resolve(null),
+  ]);
+  return {
+    clinicName: clinic?.clinicName ?? null,
+    doctorName: doctor?.name ?? null,
+    appointmentAt: toIso(extras?.scheduledAt ?? null),
+  };
+}
+
+/** Audit kinds a client may report. Anything else collapses to `state_change`. */
+const ALLOWED_EVENT_KINDS = new Set([
+  "joined",
+  "left",
+  "reconnecting",
+  "reconnected",
+  "ice_restart",
+  "connection_failed",
+  "connection_lost",
+  "quality",
+  "mic_toggle",
+  "camera_toggle",
+]);
+
+/** Whitelists the audit kind so arbitrary strings never reach the audit row. */
+export function sanitizeEventKind(kind: string): string {
+  return ALLOWED_EVENT_KINDS.has(kind) ? kind : "state_change";
+}
+
+/** True for the three terminal room states. */
+export function isTerminalStateName(s: string): boolean {
+  return s === "ended" || s === "expired" || s === "cancelled";
+}
+
+/** Extracts just host[:port] from a turn:/turns:/stun: URL, for display. */
+export function safeHostOf(url: string): string {
+  const m = /^(?:stun|stuns|turn|turns):([^?]+)/i.exec(url.trim());
+  return m ? m[1] : "";
+}
+
+/**
+ * Tracks the cumulative disconnected budget on a room and ends the call once it
+ * exceeds the 60s ceiling (Req 10.5). Returns the resulting room state.
+ */
+export async function maybeEndForDisconnect(
+  room: VideoRoomRow,
+  kind: string,
+  tenantId: string,
+): Promise<string> {
+  const now = Date.now();
+
+  if (kind === "reconnecting" || kind === "connection_lost" || kind === "connection_failed") {
+    const fresh = await loadRoomForRead(room.id, tenantId);
+    const since = fresh.disconnectedSinceAt ? new Date(fresh.disconnectedSinceAt as any).getTime() : null;
+    const total = fresh.disconnectedTotalMs + (since ? now - since : 0);
+    if (since === null) {
+      await execute(`UPDATE VideoRoom SET disconnectedSinceAt = NOW(3) WHERE id = ? AND tenantId = ?`, [
+        room.id,
+        tenantId,
+      ]);
+    }
+    if (shouldEndForDisconnect(total) && fresh.state === "active") {
+      const updated = await transitionRoom(room.id, "end", {
+        tenantId,
+        appointmentId: room.appointmentId,
+        endReason: "connection_lost",
+        detail: "disconnect_budget_exceeded",
+      });
+      return updated.state;
+    }
+    return fresh.state;
+  }
+
+  if (kind === "reconnected") {
+    const fresh = await loadRoomForRead(room.id, tenantId);
+    const since = fresh.disconnectedSinceAt ? new Date(fresh.disconnectedSinceAt as any).getTime() : null;
+    if (since !== null) {
+      await execute(
+        `UPDATE VideoRoom SET disconnectedTotalMs = disconnectedTotalMs + ?, disconnectedSinceAt = NULL WHERE id = ? AND tenantId = ?`,
+        [Math.max(0, now - since), room.id, tenantId],
+      );
+    }
+    return fresh.state;
+  }
+
+  return room.state;
+}
+
+/** Records a consent acknowledgement for a room (idempotent per notice version). */
+export async function recordConsent(room: VideoRoomRow): Promise<void> {
+  const uaHash = await userAgentHash();
+  await execute(
+    `INSERT INTO VideoConsent (id, tenantId, roomId, appointmentId, noticeVersion, tokenVersion, userAgentHash)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE acknowledgedAt = NOW(3), userAgentHash = VALUES(userAgentHash)`,
+    [randomUUID(), room.tenantId, room.id, room.appointmentId, room.noticeVersion, 1, uaHash],
+  );
+}
+
+/** True when a consent row exists for the room (Req 12.3). */
+export async function hasConsent(room: VideoRoomRow): Promise<boolean> {
+  const row = await queryOne<any>(
+    `SELECT id FROM VideoConsent WHERE roomId = ? AND tenantId = ? LIMIT 1`,
+    [room.id, room.tenantId],
+  );
+  return !!row;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Token resolution wrappers and small room operations used by the server
+// function surface. Keeping these here means `video.ts` holds only
+// `createServerFn` declarations.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Non-throwing token resolution, for read paths that return a redacted status. */
+export async function resolveJoinTokenSoft(
+  token: string,
+  clientKey: string,
+): Promise<{ ok: true; value: ResolvedToken } | { ok: false; status: ResolveTokenFailure }> {
+  return await resolveJoinToken(token, clientKey);
+}
+
+/**
+ * Throwing token resolution for write paths. The thrown messages are sentinels
+ * the patient UI maps onto its terminal states; none of them disclose any
+ * appointment, patient, or tenant detail (Req 6.6).
+ */
+export async function resolveJoinTokenOrThrow(token: string, clientKey: string): Promise<ResolvedToken> {
+  const res = await resolveJoinToken(token, clientKey);
+  if (!res.ok) {
+    if (res.status === "rate_limited") throw new Error("RATE_LIMITED");
+    if (res.status === "expired") throw new Error("EXPIRED_LINK");
+    throw new Error("INVALID_LINK");
+  }
+  return res.value;
+}
+
+/**
+ * Loads a participant either by id or by participant key, always tenant- and
+ * room-scoped.
+ */
+export async function loadParticipantById(
+  participantId: string | null,
+  roomId: string,
+  tenantId: string,
+  participantKey?: string,
+): Promise<VideoParticipantRow | null> {
+  const row = participantId
+    ? await queryOne<any>(
+        `SELECT * FROM VideoParticipant WHERE id = ? AND roomId = ? AND tenantId = ? LIMIT 1`,
+        [participantId, roomId, tenantId],
+      )
+    : participantKey
+      ? await queryOne<any>(
+          `SELECT * FROM VideoParticipant WHERE participantKey = ? AND roomId = ? AND tenantId = ? LIMIT 1`,
+          [participantKey, roomId, tenantId],
+        )
+      : null;
+  return row ? mapParticipantRow(row) : null;
+}
+
+/**
+ * Registers the host as the doctor participant and, for an auto-admit room,
+ * promotes a guest who is already waiting so they connect immediately.
+ * Returns the resulting room state.
+ */
+export async function registerHostParticipant(room: VideoRoomRow, user: SessionUser): Promise<string> {
+  await upsertParticipant({
+    tenantId: user.tenantId,
+    roomId: room.id,
+    role: "doctor",
+    participantKey: doctorParticipantKey(user.id),
+    accountId: user.id,
+    displayName: user.name ?? "Doctor",
+    status: "admitted",
+  });
+  await recordAudit(room.id, "joined", "host_joined", "doctor", user.tenantId, room.appointmentId);
+
+  const extras = await loadRoomExtras(room.id, user.tenantId);
+  if (!extras?.autoAdmit) return room.state;
+
+  const participants = await loadParticipants(room.id, user.tenantId);
+  const waitingGuest = participants.find((p) => p.role === "patient" && p.status === "requested");
+  if (!waitingGuest || room.state !== "waiting") return room.state;
+
+  try {
+    const updated = await transitionRoom(room.id, "admit", {
+      tenantId: user.tenantId,
+      appointmentId: room.appointmentId,
+      actorRole: "doctor",
+      detail: "auto_admitted",
+      participantId: waitingGuest.id,
+    });
+    await markAdmitted(waitingGuest.id, user.tenantId);
+    return updated.state;
+  } catch {
+    return room.state;
+  }
+}
+
+/** Ends an active/waiting room on the doctor's behalf. */
+export async function endRoomAsDoctor(
+  room: VideoRoomRow,
+  tenantId: string,
+  reason?: string,
+): Promise<{ roomState: string; connectedSeconds: number; outcome: string | null }> {
+  if (room.state !== "active" && room.state !== "waiting") {
+    return { roomState: room.state, connectedSeconds: room.connectedSeconds, outcome: room.outcome };
+  }
+  const endReason = reason === "connection_lost" ? "connection_lost" : "doctor_ended";
+  const updated = await transitionRoom(room.id, "end", {
+    tenantId,
+    appointmentId: room.appointmentId,
+    actorRole: "doctor",
+    endReason,
+    detail: endReason,
+  });
+  return { roomState: updated.state, connectedSeconds: updated.connectedSeconds, outcome: updated.outcome };
+}
+
+/** Cancels an ad-hoc meeting on the host's behalf. */
+export async function cancelRoomForHost(room: VideoRoomRow, tenantId: string): Promise<{ roomState: string }> {
+  if (isTerminalStateName(room.state)) return { roomState: room.state };
+  const updated = await transitionRoom(room.id, "cancel", {
+    tenantId,
+    appointmentId: room.appointmentId,
+    actorRole: "doctor",
+    endReason: "cancelled",
+    detail: "host_cancelled",
+  });
+  return { roomState: updated.state };
 }
