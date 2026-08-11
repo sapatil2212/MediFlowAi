@@ -293,20 +293,22 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     }
 
     // Create the video room + patient join link when booked as a video visit.
+    let joinLink: string | null = null;
     if (typeof window === "undefined" && consultationMode === "video") {
       try {
         const { syncVideoRoomForAppointment } = await import("./video.server");
-        await syncVideoRoomForAppointment({
+        const synced = await syncVideoRoomForAppointment({
           appointmentId: id,
           tenantId: data.tenantId,
           from: null,
           to: "video",
           notify: true,
         });
+        joinLink = synced.joinLink;
       } catch (e: any) {
         console.error("[Video] public room sync failed:", e?.message);
       }
     }
 
-    return { success: true, appointmentId: id, tokenNo };
+    return { success: true, appointmentId: id, tokenNo, joinLink, consultationMode };
   });

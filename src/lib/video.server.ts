@@ -217,6 +217,9 @@ function hashesMatch(a: string, b: string): boolean {
  * bumped atomically with MariaDB's `LAST_INSERT_ID(expr)` trick — the same
  * pattern the signal sequence uses — so two concurrent issuances can never
  * stamp the same version onto two rows.
+ *
+ * On localhost / 127.0.0.1 the request Host is preferred over APP_ORIGIN so
+ * local testing does not mint production URLs while developing.
  */
 export async function issueJoinToken(
   roomId: string,
@@ -252,9 +255,28 @@ export async function issueJoinToken(
     [randomUUID(), tenantId, roomId, hash, version, purpose],
   );
 
-  const { appOrigin } = readVideoConfig();
-
+  const appOrigin = await resolveJoinLinkOrigin();
   return { token, link: `${appOrigin}/consult/${token}` };
+}
+
+/** Prefer localhost request origin during local development; otherwise APP_ORIGIN. */
+export async function resolveJoinLinkOrigin(
+  env: Record<string, string | undefined> = process.env,
+): Promise<string> {
+  const configured = readVideoConfig(env).appOrigin;
+  try {
+    const mod: any = await import("@tanstack/react-start/server");
+    const h = typeof mod.getHeaders === "function" ? mod.getHeaders() : {};
+    const host = (h["x-forwarded-host"] || h["host"] || "").toString().trim().split(",")[0].trim();
+    if (host && (host.startsWith("localhost") || host.startsWith("127.0.0.1"))) {
+      const proto =
+        (h["x-forwarded-proto"] || "").toString().trim().split(",")[0].trim() || "http";
+      return `${proto}://${host}`.replace(/\/+$/, "");
+    }
+  } catch {
+    /* fall through */
+  }
+  return configured;
 }
 
 /**

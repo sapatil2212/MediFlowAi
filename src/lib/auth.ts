@@ -809,22 +809,24 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
     }
 
     // Create the video room + join link when booked as a video consultation (Req 3.3).
+    let joinLink: string | null = null;
     if (typeof window === "undefined" && consultationMode === "video") {
       try {
         const { syncVideoRoomForAppointment } = await import("./video.server");
-        await syncVideoRoomForAppointment({
+        const synced = await syncVideoRoomForAppointment({
           appointmentId: id,
           tenantId: data.tenantId,
           from: null,
           to: "video",
           notify: true,
         });
+        joinLink = synced.joinLink;
       } catch (e: any) {
         console.error("[Video] room sync on create failed:", e?.message);
       }
     }
 
-    return { success: true, appointmentId: id, tokenNo };
+    return { success: true, appointmentId: id, tokenNo, joinLink, consultationMode };
   });
 
 export const getAppointmentsServerFn = createServerFn({ method: "GET" })

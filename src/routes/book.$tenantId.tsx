@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { HeartPulse, Calendar, Clock, User, Mail, Phone, FileText, CheckCircle2, AlertCircle, Loader2, ChevronDown, Check, ChevronLeft, ChevronRight, MapPin } from "lucide-react";
+import { HeartPulse, Calendar, Clock, User, Mail, Phone, FileText, CheckCircle2, AlertCircle, Loader2, ChevronDown, Check, ChevronLeft, ChevronRight, MapPin, Copy, Video } from "lucide-react";
 import { getClinicInfoAndSlotsServerFn, createAppointmentPublicServerFn as createAppointmentServerFn } from "../lib/booking";
 
 export const Route = createFileRoute("/book/$tenantId")({
@@ -75,6 +75,8 @@ function PatientBookingPage() {
   // Success state
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [appointmentId, setAppointmentId] = useState("");
+  const [videoJoinLink, setVideoJoinLink] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Validation states
   const [validationError, setValidationError] = useState("");
@@ -286,6 +288,7 @@ function PatientBookingPage() {
 
       if (result.success) {
         setAppointmentId(result.appointmentId);
+        setVideoJoinLink((result as any).joinLink ?? null);
         setBookingSuccess(true);
       }
     } catch (err: any) {
@@ -421,6 +424,47 @@ function PatientBookingPage() {
                   );
                 })()}
               </div>
+
+              {videoJoinLink && (
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-left space-y-2">
+                  <div className="flex items-center gap-2 text-blue-800">
+                    <Video className="h-4 w-4" />
+                    <p className="text-xs font-bold">Your video consultation link</p>
+                  </div>
+                  <p className="text-[10px] text-blue-700/80">
+                    Open this link at any time before or during your appointment. Share it only with people who should join the call.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="min-w-0 flex-1 truncate rounded-lg bg-white px-2 py-1.5 text-[10px] text-zinc-700 ring-1 ring-blue-100">
+                      {videoJoinLink}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(videoJoinLink);
+                          setLinkCopied(true);
+                          setTimeout(() => setLinkCopied(false), 2000);
+                        } catch {
+                          /* clipboard unavailable */
+                        }
+                      }}
+                      className="flex shrink-0 items-center gap-1 rounded-lg bg-blue-700 px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-blue-800"
+                    >
+                      {linkCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      {linkCopied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <a
+                    href={videoJoinLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex text-[10px] font-semibold text-blue-700 underline"
+                  >
+                    Open consultation room
+                  </a>
+                </div>
+              )}
 
               <p className="text-[10px] text-zinc-400 px-6">
                 A confirmation has been sent to your registered contact details. {isGym ? "Please arrive 10 minutes before your scheduled session." : isEducation ? "Please arrive 5 minutes before your class." : isBeauty ? "Please arrive 10 minutes before your scheduled service." : isProfessional ? "Please arrive 5 minutes before your consultation." : "Please arrive 15 minutes before your scheduled slot."}
@@ -1105,7 +1149,9 @@ function PatientBookingPage() {
                       ))}
                     </div>
                     {consultationMode === "video" && (
-                      <p className="pl-1 text-[9px] text-zinc-400">A secure join link will be sent to you before the appointment.</p>
+                      <p className="pl-1 text-[9px] text-zinc-400">
+                        A secure join link is created instantly so you and the doctor can connect before or at the appointment time.
+                      </p>
                     )}
                   </div>
                 )}

@@ -219,7 +219,9 @@ export class VideoPeer {
     };
 
     this.emitPeerState();
-    this.startConnectDeadline();
+    // Do NOT start the connect deadline yet — Meet/Zoom wait indefinitely for the
+    // other participant. The deadline starts only once we have a remote SDP
+    // (negotiation with a peer has begun).
     this.startQualitySampling();
     this.startPolling();
   }
@@ -287,6 +289,8 @@ export class VideoPeer {
         if (this.ignoreOffer) return;
 
         await this.pc.setRemoteDescription(desc);
+        // Peer is present — now it's fair to expect ICE to complete soon.
+        this.startConnectDeadline();
         if (sig.kind === "offer") {
           await this.pc.setLocalDescription();
           await this.transport.publishSignal("answer", JSON.stringify(this.pc.localDescription));
@@ -416,6 +420,8 @@ export class VideoPeer {
   }
 
   private startConnectDeadline(): void {
+    // Idempotent — may be called again on renegotiation / ICE restart.
+    this.clearConnectDeadline();
     this.connectDeadlineTimer = setTimeout(() => {
       if (this.closed) return;
       if (this.currentPeerState() !== "connected") {

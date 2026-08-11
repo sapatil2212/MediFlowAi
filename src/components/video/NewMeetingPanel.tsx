@@ -21,10 +21,11 @@ import {
 import { createInstantMeetingServerFn } from "../../lib/video";
 import { cn } from "../../lib/utils";
 
-type Mode = "menu" | "instant" | "later" | "schedule";
+type Mode = "menu" | "later" | "schedule";
 
 interface NewMeetingPanelProps {
-  onStartCall: (roomId: string) => void;
+  /** Host joins immediately; joinLink is the shareable patient URL. */
+  onStartCall: (roomId: string, joinLink: string, meta?: { meetingCode?: string }) => void;
   onCreated?: () => void;
 }
 
@@ -35,7 +36,7 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
   const [created, setCreated] = useState<{ roomId: string; joinLink: string; meetingCode: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Shared form state
+  // Shared form state (Get a link / Schedule)
   const [title, setTitle] = useState("");
   const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
@@ -73,7 +74,7 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
         });
         onCreated?.();
         if (opts.startNow) {
-          onStartCall(res.roomId);
+          onStartCall(res.roomId, res.joinLink, { meetingCode: res.meetingCode });
           reset();
         } else {
           setCreated({ roomId: res.roomId, joinLink: res.joinLink, meetingCode: res.meetingCode });
@@ -86,6 +87,28 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
     },
     [title, guestName, guestPhone, guestEmail, onStartCall, onCreated],
   );
+
+  /** Google Meet style: one click → unique room + join immediately with shareable URL. */
+  const startInstantNow = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await createInstantMeetingServerFn({
+        data: {
+          autoAdmit: true,
+          notify: false,
+          scheduledAt: null,
+        },
+      });
+      onCreated?.();
+      onStartCall(res.roomId, res.joinLink, { meetingCode: res.meetingCode });
+      reset();
+    } catch (e: any) {
+      setError(e?.message ?? "Could not start the meeting.");
+    } finally {
+      setBusy(false);
+    }
+  }, [onStartCall, onCreated]);
 
   const copy = async () => {
     if (!created) return;
@@ -106,7 +129,7 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
           <div>
             <h3 className="text-sm font-bold text-zinc-900">Meeting ready</h3>
             <p className="mt-0.5 text-xs text-zinc-500">
-              Share this link with your patient. It works until the meeting window closes.
+              Share this link with your patient. Anyone with the link can join from any network.
             </p>
           </div>
           <button onClick={reset} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100" aria-label="Close">
@@ -132,7 +155,7 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
 
         <div className="mt-4 flex flex-wrap gap-2">
           <button
-            onClick={() => onStartCall(created.roomId)}
+            onClick={() => onStartCall(created.roomId, created.joinLink, { meetingCode: created.meetingCode })}
             className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
           >
             <Video className="h-4 w-4" /> Join now
@@ -155,13 +178,17 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
         <h3 className="text-sm font-bold text-zinc-900">New consultation</h3>
         <p className="mt-0.5 text-xs text-zinc-500">Start a call now, or share a link for later.</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <MenuCard
-            icon={<Video className="h-5 w-5" />}
-            title="Start now"
-            detail="Open a room and go straight in"
-            onClick={() => setMode("instant")}
-            accent
-          />
+          <button
+            onClick={() => void startInstantNow()}
+            disabled={busy}
+            className="rounded-xl border border-blue-200 bg-blue-50/50 p-3 text-left transition hover:bg-blue-50 disabled:opacity-60"
+          >
+            <span className="inline-flex text-blue-600">
+              {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Video className="h-5 w-5" />}
+            </span>
+            <p className="mt-2 text-sm font-bold text-zinc-900">Start now</p>
+            <p className="text-xs text-zinc-500">Instant meeting with a shareable link</p>
+          </button>
           <MenuCard
             icon={<Link2 className="h-5 w-5" />}
             title="Get a link"
@@ -180,7 +207,7 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
     );
   }
 
-  // ── Forms ────────────────────────────────────────────────────────────────
+  // ── Forms (Get a link / Schedule) ────────────────────────────────────────
   const isSchedule = mode === "schedule";
   const canSubmit = !isSchedule || (date && time);
 
@@ -194,7 +221,7 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
       </button>
 
       <h3 className="text-sm font-bold text-zinc-900">
-        {mode === "instant" ? "Start an instant consultation" : mode === "later" ? "Create a meeting link" : "Schedule a consultation"}
+        {mode === "later" ? "Create a meeting link" : "Schedule a consultation"}
       </h3>
 
       <div className="mt-4 space-y-3">
@@ -265,16 +292,6 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
         {error && <p className="text-sm text-red-500">{error}</p>}
 
         <div className="flex flex-wrap gap-2 pt-1">
-          {mode === "instant" && (
-            <button
-              onClick={() => create({ scheduledAt: null, autoAdmit: true, startNow: true, notify: true })}
-              disabled={busy}
-              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
-              Start meeting
-            </button>
-          )}
           {mode === "later" && (
             <button
               onClick={() => create({ scheduledAt: null, autoAdmit: false, startNow: false, notify: true })}
@@ -288,7 +305,6 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
           {mode === "schedule" && (
             <button
               onClick={() => {
-                // Local wall-clock date+time → ISO, preserving the host's timezone.
                 const dt = new Date(`${date}T${time}`);
                 create({ scheduledAt: dt.toISOString(), autoAdmit: false, startNow: false, notify: true });
               }}
@@ -310,23 +326,18 @@ function MenuCard({
   title,
   detail,
   onClick,
-  accent,
 }: {
   icon: React.ReactNode;
   title: string;
   detail: string;
   onClick: () => void;
-  accent?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className={cn(
-        "rounded-xl border p-3 text-left transition",
-        accent ? "border-blue-200 bg-blue-50/50 hover:bg-blue-50" : "border-zinc-200 hover:bg-zinc-50",
-      )}
+      className="rounded-xl border border-zinc-200 p-3 text-left transition hover:bg-zinc-50"
     >
-      <span className={cn("inline-flex", accent ? "text-blue-600" : "text-zinc-500")}>{icon}</span>
+      <span className="inline-flex text-zinc-500">{icon}</span>
       <p className="mt-2 text-sm font-bold text-zinc-900">{title}</p>
       <p className="text-xs text-zinc-500">{detail}</p>
     </button>

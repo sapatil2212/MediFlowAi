@@ -137,6 +137,30 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
     }
   }, [selected, loadDetail]);
 
+  // Auto-provision a room + link when a video appointment has none yet.
+  useEffect(() => {
+    if (!selected || selected.kind !== "appointment") return;
+    if (loading || detail == null) return;
+    if (detail.exists !== false) return;
+    let cancelled = false;
+    (async () => {
+      setBusy(true);
+      try {
+        const r = await createVideoRoomServerFn({ data: { appointmentId: selected.appointmentId } });
+        if (cancelled) return;
+        setDetail({ exists: true, ...(r as any) });
+        if ((r as any).joinLink) setShareLink((r as any).joinLink);
+      } catch {
+        /* leave the manual Create button available */
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, detail, loading]);
+
   // Keep the waiting room fresh while not in a call.
   //
   // Failures back off and eventually stop rather than retrying forever: a tab
@@ -237,7 +261,32 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
     }
   };
 
-  const joinCall = async (id: string) => {
+  const joinCall = async (id: string, link?: string | null, meta?: { meetingCode?: string }) => {
+    if (link) setShareLink(link);
+    if (meta?.meetingCode) {
+      setDetail((d: any) => ({
+        ...(d && typeof d === "object" ? d : {}),
+        exists: true,
+        meetingCode: meta.meetingCode,
+        room: { ...(d?.room ?? {}), id, state: d?.room?.state ?? "waiting" },
+      }));
+      setSelected({
+        kind: "meeting",
+        roomId: id,
+        label: "Instant consultation",
+        when: null,
+        state: "waiting",
+        meetingCode: meta.meetingCode,
+      });
+    }
+    if (!link && !shareLink) {
+      try {
+        const r = await getShareLinkServerFn({ data: { roomId: id } });
+        setShareLink(r.joinLink);
+      } catch {
+        /* non-fatal — call still proceeds */
+      }
+    }
     try {
       await startMeetingServerFn({ data: { roomId: id } });
     } catch {
@@ -317,9 +366,9 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
         </div>
       )}
 
-      <NewMeetingPanel onStartCall={(id) => void joinCall(id)} onCreated={loadMeetings} />
+      <NewMeetingPanel onStartCall={(id, link, meta) => void joinCall(id, link, meta)} onCreated={loadMeetings} />
 
-      {/* Relay status — actionable rather than a dead-end warning */}
+      {/* Relay status — only when no relay path at all (public fallback also counts) */}
       {detail?.turnConfigured === false && !showTest && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 p-3">
           <p className="flex items-start gap-2 text-xs text-amber-800">
@@ -431,14 +480,19 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
               </div>
 
               {selected.kind === "appointment" && detail?.exists === false ? (
-                <button
-                  onClick={createRoomForAppointment}
-                  disabled={busy}
-                  className="mt-5 flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <VideoIcon className="h-4 w-4" />}
-                  Create consultation room
-                </button>
+                <div className="mt-5 space-y-2">
+                  <p className="text-xs text-zinc-500">
+                    No meeting room yet. Creating one generates a unique join URL for this patient.
+                  </p>
+                  <button
+                    onClick={createRoomForAppointment}
+                    disabled={busy}
+                    className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <VideoIcon className="h-4 w-4" />}
+                    Create consultation room &amp; link
+                  </button>
+                </div>
               ) : (
                 <>
                   {/* Share link */}

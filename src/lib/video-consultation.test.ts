@@ -522,6 +522,17 @@ describe("Property 13: rate limiter honours its window", () => {
 
 describe("Property 14: the patient projection cannot leak", () => {
   const KEYS = ["status", "clinicName", "doctorName", "appointmentAt", "noticeVersion"].sort();
+
+  // `fc.string()` deliberately biases toward shared corner-case values (e.g.
+  // "toString", "constructor", ""). Drawing the disclosed fields and the
+  // "secret" fields from the same unconstrained generator lets them
+  // collide on one of those corner cases by pure chance, which would fail
+  // this test for a reason that has nothing to do with `projectForPatient`.
+  // Tagging every secret with a marker no generic string generator produces
+  // makes the two domains disjoint by construction, so a failure here can
+  // only mean a real leak.
+  const arbSecret = fc.string({ minLength: 5 }).map((s) => `secret-${s}`);
+
   it("has exactly the projection keys and no PII/internal values", () => {
     fc.assert(
       fc.property(
@@ -541,13 +552,13 @@ describe("Property 14: the patient projection cannot leak", () => {
           appointmentAt: fc.string(),
           noticeVersion: fc.string(),
           // secrets that must never appear:
-          phone: fc.string({ minLength: 5 }),
-          email: fc.string({ minLength: 5 }),
-          reason: fc.string({ minLength: 5 }),
-          patientId: fc.string({ minLength: 5 }),
-          tenantId: fc.string({ minLength: 5 }),
-          appointmentId: fc.string({ minLength: 5 }),
-          roomId: fc.string({ minLength: 5 }),
+          phone: arbSecret,
+          email: arbSecret,
+          reason: arbSecret,
+          patientId: arbSecret,
+          tenantId: arbSecret,
+          appointmentId: arbSecret,
+          roomId: arbSecret,
         }),
         (i) => {
           const p = projectForPatient(i as any);
