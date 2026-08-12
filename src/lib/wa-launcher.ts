@@ -6,8 +6,28 @@ const globalForWa = globalThis as unknown as {
   waServerProcess?: any;
 };
 
+/** Truthy values accepted for the opt-out flag. */
+function isTruthy(raw: string | undefined): boolean {
+  if (!raw) return false;
+  const v = raw.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
 export function startWhatsAppServer() {
   if (typeof window !== "undefined") return;
+
+  // Opt-out for local development. The WhatsApp service forks a Puppeteer
+  // browser per connected tenant, which on a machine with several linked
+  // tenants means dozens of Chrome processes competing with Vite. That CPU
+  // starvation is enough to push a single large-module transform past Vite's
+  // 60s transport timeout, surfacing as unrelated "transport invoke timed out"
+  // SSR errors. Set WA_DISABLE_AUTOSTART=true to develop without it.
+  //
+  // Default is unchanged (auto-start on), so production behaviour is identical.
+  if (isTruthy(process.env.WA_DISABLE_AUTOSTART)) {
+    console.log("[WA Launcher] Skipped — WA_DISABLE_AUTOSTART is set.");
+    return;
+  }
 
   if (globalForWa.waServerProcess) {
     return;
