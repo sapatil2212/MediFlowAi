@@ -414,8 +414,13 @@ export async function resolveJoinToken(
   const tokenHash = hashJoinToken(token);
 
   const row = await queryOne<any>(
+    // `t.version` MUST NOT be aliased `tokenVersion`: VIDEO_ROOM_COLUMNS already
+    // carries `r.tokenVersion`, and the MariaDB driver rejects a result set with
+    // two identically-named fields ("duplicate field name") before returning any
+    // row. That threw on EVERY patient link regardless of the token, which the
+    // caller then surfaced as an invalid link.
     `SELECT ${VIDEO_ROOM_COLUMNS},
-            t.id AS tokenId, t.tokenHash AS storedTokenHash, t.version AS tokenVersion,
+            t.id AS tokenId, t.tokenHash AS storedTokenHash, t.version AS joinTokenVersion,
             t.roomId AS tokenRoomId, t.revokedAt AS tokenRevokedAt
      FROM VideoJoinToken t
      JOIN VideoRoom r ON r.id = t.roomId AND r.tenantId = t.tenantId
@@ -476,7 +481,7 @@ export async function resolveJoinToken(
 
   return {
     ok: true,
-    value: { room, tokenId, tokenVersion: Number(row.tokenVersion ?? 0) },
+    value: { room, tokenId, tokenVersion: Number(row.joinTokenVersion ?? 0) },
   };
 }
 
@@ -1437,7 +1442,12 @@ export async function createInstantVideoRoom(
 /** Lists ad-hoc meetings for a tenant (most recent first). */
 export async function listInstantRooms(tenantId: string, hostAccountId: string | null, isAdmin: boolean): Promise<any[]> {
   const params: any[] = [tenantId];
-  let sql = `SELECT ${VIDEO_ROOM_COLUMNS} FROM VideoRoom r WHERE r.tenantId = ? AND r.kind = 'instant'`;
+  // The ad-hoc columns are NOT part of VIDEO_ROOM_COLUMNS, so they have to be
+  // selected explicitly — the row mapping below reads every one of them.
+  let sql = `SELECT ${VIDEO_ROOM_COLUMNS},
+                    r.kind, r.title, r.meetingCode, r.scheduledAt,
+                    r.guestName, r.guestPhone, r.guestEmail, r.autoAdmit
+             FROM VideoRoom r WHERE r.tenantId = ? AND r.kind = 'instant'`;
   if (!isAdmin && hostAccountId) {
     sql += ` AND r.hostAccountId = ?`;
     params.push(hostAccountId);
