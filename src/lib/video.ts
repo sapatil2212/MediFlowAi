@@ -518,6 +518,14 @@ export const getDiagnosticIceServerFn = createServerFn({ method: "POST" }).handl
 // PATIENT PATH — Join_Token only; verifySession is never called.
 // ═════════════════════════════════════════════════════════════════════════════
 
+/** Maps a token-resolution verdict onto the status the patient UI renders. */
+function patientStatusForFailure(status: "invalid" | "expired" | "rate_limited" | "ended"): PatientStatus {
+  if (status === "rate_limited") return "rate_limited";
+  if (status === "expired") return "expired";
+  if (status === "ended") return "ended";
+  return "invalid";
+}
+
 export const getJoinContextServerFn = createServerFn({ method: "GET" })
   .validator((data: { token: string }) => {
     if (!data?.token) throw new Error("token is required");
@@ -529,9 +537,7 @@ export const getJoinContextServerFn = createServerFn({ method: "GET" })
       // Log the verdict (never the token) so a rejected link is diagnosable from
       // pm2 logs instead of being indistinguishable from a server fault.
       console.warn(`[Video][join] token rejected: ${res.status}`);
-      const status: PatientStatus =
-        res.status === "rate_limited" ? "rate_limited" : res.status === "expired" ? "expired" : "invalid";
-      return projectForPatient({ status });
+      return projectForPatient({ status: patientStatusForFailure(res.status) });
     }
     const { room } = res.value;
 
@@ -647,10 +653,8 @@ export const getJoinStatusServerFn = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const res = await resolveJoinTokenSoft(data.token, await clientKeyFromRequest());
     if (!res.ok) {
-      const status: PatientStatus =
-        res.status === "rate_limited" ? "rate_limited" : res.status === "expired" ? "expired" : "invalid";
       return {
-        status,
+        status: patientStatusForFailure(res.status),
         signals: [],
         cursor: Number(data.afterSeq ?? 0),
         remotePresent: false,

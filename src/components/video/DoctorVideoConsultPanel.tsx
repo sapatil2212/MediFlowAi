@@ -550,7 +550,17 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
                 </div>
               ) : (
                 <>
-                  {/* Share link */}
+                  {/* Share link — pointless once the room is terminal: ending a
+                      room revokes its tokens, so a fresh link would resolve as a
+                      finished consultation. Start a new meeting instead. */}
+                  {isTerminalState(detail?.room?.state) ? (
+                    <div className="mt-4 rounded-xl border border-zinc-100 bg-zinc-50 p-3">
+                      <p className="text-xs text-zinc-600">
+                        This consultation has finished and its join links are no longer valid. Use
+                        <span className="font-semibold"> New consultation</span> above to start another one.
+                      </p>
+                    </div>
+                  ) : (
                   <div className="mt-4 rounded-xl border border-zinc-100 bg-zinc-50 p-3">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Patient join link</p>
                     {shareLink ? (
@@ -595,6 +605,7 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
                       Use "Reset" to invalidate everything shared previously.
                     </p>
                   </div>
+                  )}
 
                   {/* Waiting room */}
                   <div className="mt-4">

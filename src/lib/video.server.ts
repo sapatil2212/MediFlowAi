@@ -310,7 +310,7 @@ export interface ResolvedToken {
   tokenVersion: number;
 }
 
-export type ResolveTokenFailure = "invalid" | "expired" | "rate_limited";
+export type ResolveTokenFailure = "invalid" | "expired" | "rate_limited" | "ended";
 
 // ---- failed-attempt rate limiting (Req 6.12) ----
 //
@@ -434,20 +434,26 @@ export async function resolveJoinToken(
   }
 
   const room = mapVideoRoomRow(row);
+  const revoked = row.tokenRevokedAt !== null && row.tokenRevokedAt !== undefined;
+
+  // Terminal state is checked BEFORE revocation, because a terminal transition
+  // revokes every token for the room (Req 6.9) — so the revocation branch below
+  // used to swallow every finished consultation and report "invalid link".
+  //
+  // The token hash has already matched at this point, so the caller demonstrably
+  // holds the link we issued. Naming a finished consultation to them leaks
+  // nothing to anyone who does NOT hold it: an unknown or forged token still
+  // gets `invalid`, so this is not an oracle (Req 6.6). And "check the link the
+  // clinic sent you" is simply wrong for a patient whose call just ended.
+  if (isTerminalRoomState(room.state)) {
+    return fail("ended");
+  }
 
   // A token's authority is exactly one room. The requested room is the one the
   // join revealed, so this also catches a token whose room row went missing or
   // was replaced, and it folds revocation into the same verdict (Req 6.2, 6.10).
-  const revoked = row.tokenRevokedAt !== null && row.tokenRevokedAt !== undefined;
+  // Reaching it on a non-terminal room means the link was deliberately reissued.
   if (!isTokenScopedTo(String(row.tokenRoomId ?? ""), room.id, revoked)) {
-    return fail("invalid");
-  }
-
-  // A terminal room has already had its tokens revoked (Req 6.9), so reaching
-  // here means a race or a failed revocation. Answering `invalid` keeps terminal
-  // and revoked indistinguishable from unknown rather than confirming that a
-  // consultation existed.
-  if (isTerminalRoomState(room.state)) {
     return fail("invalid");
   }
 
@@ -1857,6 +1863,7 @@ export async function resolveJoinTokenOrThrow(token: string, clientKey: string):
   if (!res.ok) {
     if (res.status === "rate_limited") throw new Error("RATE_LIMITED");
     if (res.status === "expired") throw new Error("EXPIRED_LINK");
+    if (res.status === "ended") throw new Error("ENDED_LINK");
     throw new Error("INVALID_LINK");
   }
   return res.value;

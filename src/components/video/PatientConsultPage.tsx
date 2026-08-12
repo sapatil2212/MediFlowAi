@@ -110,6 +110,7 @@ export function PatientConsultPage({ token }: { token: string }) {
       } catch (e: any) {
         const msg = String(e?.message ?? "");
         if (msg.includes("CONSENT_REQUIRED")) setPhase("consent");
+        else if (msg.includes("ENDED_LINK")) setPhase("ended");
         else if (msg.includes("EXPIRED")) setPhase("expired");
         else if (msg.includes("RATE_LIMITED")) setPhase("rate_limited");
         else setPhase("invalid");
