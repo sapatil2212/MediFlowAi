@@ -203,7 +203,11 @@ export function VideoCallShell({
   // "Waiting" and "connecting" are genuinely different states: alone in the room
   // versus negotiating with someone who has arrived.
   const connecting = !waitingForPeer && peerState !== "connected" && !error;
-  const showLobby = waitingForPeer && !remoteConnected && !error;
+  const showLobby = waitingForPeer && peerState !== "connected" && !error;
+  // Once the peer connection is up the call IS live, even if a track is briefly
+  // muted or arrives late. Gating this on remote tracks alone put "Waiting for
+  // patient…" over a connected call.
+  const showRemoteStage = remoteConnected || peerState === "connected";
 
   return (
     <div className="relative flex h-full w-full flex-col bg-zinc-950 text-white">
@@ -213,9 +217,9 @@ export function VideoCallShell({
           ref={remoteRef}
           autoPlay
           playsInline
-          className={cn("h-full w-full object-cover", !remoteConnected && "opacity-0")}
+          className={cn("h-full w-full object-cover", !showRemoteStage && "opacity-0")}
         />
-        {!remoteConnected && !showLobby && (
+        {!showRemoteStage && !showLobby && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-zinc-400">
             <Loader2 className="h-8 w-8 animate-spin" />
             <p className="text-sm font-medium">

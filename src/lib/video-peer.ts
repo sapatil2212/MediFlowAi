@@ -209,6 +209,11 @@ export class VideoPeer {
     this.pc.ontrack = (ev) => {
       if (!this.remoteStream) this.remoteStream = new MediaStream();
       this.remoteStream.addTrack(ev.track);
+      this.log("remote track", {
+        kind: ev.track.kind,
+        muted: ev.track.muted,
+        total: this.remoteStream.getTracks().length,
+      });
       this.cb.onRemoteStream?.(this.remoteStream);
     };
 
@@ -251,15 +256,35 @@ export class VideoPeer {
     this.startPolling();
   }
 
+  /** Structured trace of the negotiation, so a stuck call is readable from the console. */
+  private log(event: string, detail?: Record<string, unknown>): void {
+    const base = {
+      role: this.role,
+      signalling: this.pc?.signalingState,
+      connection: this.pc?.connectionState,
+      ice: this.pc?.iceConnectionState,
+    };
+    console.info(`[video:${this.role}] ${event}`, { ...base, ...(detail ?? {}) });
+  }
+
   /** Creates and publishes an offer. Doctor-only; guarded by `remotePresent`. */
   private async negotiate(): Promise<void> {
     if (!this.pc || this.closed) return;
+    // Serialised: an implicit setLocalDescription() while an offer is still
+    // outstanding mints a second offer, and the answer to the superseded one
+    // then arrives in the wrong state.
+    if (this.makingOffer || this.pc.signalingState !== "stable") {
+      this.log("negotiate skipped, exchange already in flight");
+      return;
+    }
     this.negotiationPending = false;
     try {
       this.makingOffer = true;
       await this.pc.setLocalDescription();
       await this.transport.publishSignal("offer", JSON.stringify(this.pc.localDescription));
+      this.log("offer published");
     } catch (err: any) {
+      this.log("offer failed", { message: err?.message });
       this.cb.onError?.("negotiation", err?.message ?? "Negotiation failed");
     } finally {
       this.makingOffer = false;
@@ -274,6 +299,7 @@ export class VideoPeer {
   private setRemotePresent(present: boolean): void {
     if (present === this.remotePresent) return;
     this.remotePresent = present;
+    this.log("remote presence", { present, negotiationPending: this.negotiationPending });
     this.cb.onWaitingForPeer?.(!present);
     if (!present) return;
 
@@ -329,6 +355,9 @@ export class VideoPeer {
         if (result.cursor > this.cursor) this.cursor = result.cursor;
 
         if (result.stopPolling) {
+          this.log("polling stopped by server", {
+            remoteTracks: this.remoteStream?.getTracks().length ?? 0,
+          });
           this.stopPolling();
           return;
         }
@@ -382,9 +411,17 @@ export class VideoPeer {
         // `stable` there is nothing to answer, so this is a duplicate or a stale
         // answer to a superseded offer — applying it throws "Called in wrong
         // state: stable" and takes down a call that is otherwise fine.
-        if (this.pc.signalingState !== "have-local-offer") return;
+        if (this.pc.signalingState !== "have-local-offer") {
+          this.log("answer dropped, no offer outstanding", { seq: sig.seq });
+          return;
+        }
 
         await this.pc.setRemoteDescription(desc);
+        this.log("answer applied", {
+          seq: sig.seq,
+          receivers: this.pc.getReceivers().filter((r) => !!r.track).length,
+          directions: this.pc.getTransceivers().map((t) => `${t.receiver.track?.kind}:${t.currentDirection}`),
+        });
         await this.flushRemoteCandidates();
         this.startConnectDeadline();
         return;
@@ -454,6 +491,9 @@ export class VideoPeer {
 
   private handleConnectionState(): void {
     const state = this.currentPeerState();
+    this.log("connection state", {
+      remoteTracks: this.remoteStream?.getTracks().length ?? 0,
+    });
     this.emitPeerState();
 
     if (state === "connected") {
@@ -677,6 +717,10 @@ export class VideoPeer {
   /** Releases media, closes the connection, stops all timers (Req 9.6, 12.5). */
   destroy(): void {
     if (this.closed) return;
+    // Logged because a destroy nulls the remote stream: if the UI falls back to
+    // "waiting" while the call looked healthy, an unexpected teardown (effect
+    // re-run, remount) is the first thing to rule out.
+    this.log("destroy", { remoteTracks: this.remoteStream?.getTracks().length ?? 0 });
     this.closed = true;
     this.stopPolling();
     if (this.qualityTimer) clearInterval(this.qualityTimer);
