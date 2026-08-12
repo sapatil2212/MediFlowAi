@@ -156,7 +156,10 @@ export const pollVideoRoomServerFn = createServerFn({ method: "GET" })
     const cursor = Number(data.afterSeq ?? 0);
     let signals: Array<{ seq: number; kind: string; senderRole: string; payload: string }> = [];
     let newCursor = cursor;
-    if (room.state === "active") {
+    // The host may sit in the room before anyone else arrives (Meet-style
+    // lobby), so signalling is drained for every non-terminal state — not just
+    // `active`. Nothing is produced until a peer is actually present.
+    if (!isTerminalStateName(room.state)) {
       const recs = await readSignalsAfter(room.id, user.tenantId, cursor, "doctor");
       signals = recs;
       for (const s of recs) if (s.seq > newCursor) newCursor = s.seq;
@@ -170,6 +173,10 @@ export const pollVideoRoomServerFn = createServerFn({ method: "GET" })
       participants: participants.map(publicParticipant),
       signals,
       cursor: newCursor,
+      // True only once the other side is in the room AND allowed to signal.
+      // The client defers negotiation until this flips, so no offer or ICE
+      // candidate is ever generated against an empty room.
+      remotePresent: room.state === "active" && !!admittedPatient,
       stopPolling: shouldStopPolling(room.state, localPeer, remotePeer),
       nextPollMs: nextPollDelayMs({ roomState: room.state, localPeer, remotePeer, consecutiveErrors: 0 }),
       turnConfigured: isTurnConfigured(readTurnConfig()),
@@ -186,7 +193,9 @@ export const publishSignalServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await requireVideoOperator();
     const room = await requireRoomForDoctor(data.roomId, user);
-    if (room.state !== "active") throw new Error("The consultation is not active.");
+    // Any non-terminal room accepts host signalling: the host can be present
+    // and negotiating from the lobby, before the room reaches `active`.
+    if (isTerminalStateName(room.state)) throw new Error("The consultation has ended.");
     return await insertSignal(room.id, user.tenantId, "doctor", data.kind, data.payload);
   });
 
@@ -266,7 +275,11 @@ export const getIceConfigurationServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<IceConfiguration> => {
     const user = await requireVideoOperator();
     const room = await requireRoomForDoctor(data.roomId, user);
-    if (room.state !== "active") throw new Error("The consultation is not active.");
+    // The host builds its RTCPeerConnection the moment it enters the room, which
+    // is normally BEFORE the guest arrives (the room is still `scheduled` or
+    // `waiting`). Requiring `active` here is what made every "Start now" call
+    // fail instantly with "Could not connect".
+    if (isTerminalStateName(room.state)) throw new Error("The consultation has ended.");
     try {
       return buildIceConfiguration(readTurnConfig(), doctorParticipantKey(user.id), Date.now());
     } catch {
@@ -622,7 +635,15 @@ export const getJoinStatusServerFn = createServerFn({ method: "GET" })
     if (!res.ok) {
       const status: PatientStatus =
         res.status === "rate_limited" ? "rate_limited" : res.status === "expired" ? "expired" : "invalid";
-      return { status, signals: [], cursor: Number(data.afterSeq ?? 0), stopPolling: true, nextPollMs: null, noticeVersion: "v1" };
+      return {
+        status,
+        signals: [],
+        cursor: Number(data.afterSeq ?? 0),
+        remotePresent: false,
+        stopPolling: true,
+        nextPollMs: null,
+        noticeVersion: "v1",
+      };
     }
 
     const room = await loadRoomForRead(res.value.room.id, res.value.room.tenantId);
@@ -649,6 +670,7 @@ export const getJoinStatusServerFn = createServerFn({ method: "GET" })
       status,
       signals,
       cursor: newCursor,
+      remotePresent: room.state === "active" && participant?.status === "admitted" && !!doctor,
       stopPolling: shouldStopPolling(room.state, localPeer, remotePeer),
       nextPollMs: nextPollDelayMs({ roomState: room.state, localPeer, remotePeer, consecutiveErrors: 0 }),
       noticeVersion: room.noticeVersion,

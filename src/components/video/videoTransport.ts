@@ -34,6 +34,7 @@ export function buildDoctorTransport(roomId: string): VideoTransport {
         stopPolling: r.stopPolling,
         nextPollMs: r.nextPollMs,
         roomState: r.roomState,
+        remotePresent: r.remotePresent,
       };
     },
     async fetchIce(): Promise<IceConfigLike> {
@@ -63,6 +64,7 @@ export function buildPatientTransport(token: string): VideoTransport {
         stopPolling: r.stopPolling,
         nextPollMs: r.nextPollMs,
         status: r.status,
+        remotePresent: r.remotePresent,
       };
     },
     async fetchIce(): Promise<IceConfigLike> {

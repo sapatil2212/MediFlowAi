@@ -18,6 +18,8 @@ import {
   Wifi,
   ShieldCheck,
   Check,
+  Copy,
+  Users,
   Link as LinkIcon,
 } from "lucide-react";
 import { VideoPeer, type IceConfigLike, type VideoTransport } from "../../lib/video-peer";
@@ -74,6 +76,10 @@ export function VideoCallShell({
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [linkCopied, setLinkCopied] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  /** True until the server confirms the other participant is in the room. */
+  const [waitingForPeer, setWaitingForPeer] = useState(true);
+  /** Bumped by Retry to rebuild the peer in place instead of reloading the page. */
+  const [attempt, setAttempt] = useState(0);
 
   // Call timer, started once the peer connection is up.
   useEffect(() => {
@@ -112,6 +118,7 @@ export function VideoCallShell({
         onPeerState: setPeerState,
         onQuality: setQuality,
         onReconnecting: setReconnecting,
+        onWaitingForPeer: setWaitingForPeer,
         onEnded: (reason) => onEnded?.(reason),
         onError: (code, message) => setError({ code, message }),
       },
@@ -137,6 +144,16 @@ export function VideoCallShell({
       peerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempt]);
+
+  /** Rebuilds the peer connection without losing the surrounding dashboard. */
+  const retry = useCallback(() => {
+    setError(null);
+    setRemoteConnected(false);
+    setPeerState("new");
+    setWaitingForPeer(true);
+    setElapsed(0);
+    setAttempt((n) => n + 1);
   }, []);
 
   const toggleMic = useCallback(() => {
@@ -162,7 +179,10 @@ export function VideoCallShell({
     void peerRef.current?.switchDevice(kind, id);
   }, []);
 
-  const connecting = peerState !== "connected" && !error;
+  // "Waiting" and "connecting" are genuinely different states: alone in the room
+  // versus negotiating with someone who has arrived.
+  const connecting = !waitingForPeer && peerState !== "connected" && !error;
+  const showLobby = waitingForPeer && !remoteConnected && !error;
 
   return (
     <div className="relative flex h-full w-full flex-col bg-zinc-950 text-white">
@@ -174,12 +194,55 @@ export function VideoCallShell({
           playsInline
           className={cn("h-full w-full object-cover", !remoteConnected && "opacity-0")}
         />
-        {!remoteConnected && (
+        {!remoteConnected && !showLobby && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-zinc-400">
             <Loader2 className="h-8 w-8 animate-spin" />
             <p className="text-sm font-medium">
               {connecting ? `Connecting${peerName ? ` to ${peerName}` : ""}…` : `Waiting for ${peerName ?? "the other participant"}…`}
             </p>
+          </div>
+        )}
+
+        {/* Lobby — the host is in the room alone. Meet-style: stay here as long
+            as it takes and keep the invite one click away. */}
+        {showLobby && (
+          <div className="absolute inset-0 flex items-center justify-center p-6">
+            <div className="w-full max-w-md rounded-2xl bg-zinc-900/80 p-6 text-center backdrop-blur">
+              <Users className="mx-auto h-8 w-8 text-zinc-500" />
+              <p className="mt-3 text-base font-semibold text-white">
+                {role === "doctor" ? "You're the only one here" : "Waiting for the doctor to join"}
+              </p>
+              <p className="mt-1 text-sm text-zinc-400">
+                {role === "doctor"
+                  ? `Share the link below and the call starts as soon as ${peerName ?? "your patient"} joins.`
+                  : "This will connect automatically. Please keep this tab open."}
+              </p>
+
+              {role === "doctor" && shareLink && (
+                <div className="mt-5 text-left">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Patient join link</p>
+                  <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 p-2">
+                    <code className="min-w-0 flex-1 truncate text-xs text-zinc-300">{shareLink}</code>
+                    <button
+                      onClick={copyInvite}
+                      className="flex shrink-0 items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-zinc-200"
+                    >
+                      {linkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {linkCopied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  {meetingCode && (
+                    <p className="mt-2 text-xs text-zinc-500">
+                      Meeting code <span className="font-mono text-zinc-300">{meetingCode}</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <p className="mt-5 flex items-center justify-center gap-1.5 text-xs text-zinc-500">
+                <Loader2 className="h-3 w-3 animate-spin" /> Waiting…
+              </p>
+            </div>
           </div>
         )}
 
@@ -232,12 +295,20 @@ export function VideoCallShell({
             <div className="max-w-sm rounded-2xl bg-zinc-900 p-6 text-center shadow-xl">
               <p className="text-sm font-semibold text-red-400">{errorTitle(error.code)}</p>
               <p className="mt-2 text-sm text-zinc-300">{errorHelp(error.code, error.message)}</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="mt-4 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-200"
-              >
-                Retry
-              </button>
+              <div className="mt-4 flex justify-center gap-2">
+                <button
+                  onClick={retry}
+                  className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-200"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={endCall}
+                  className="rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-zinc-300 hover:bg-white/10"
+                >
+                  Leave
+                </button>
+              </div>
             </div>
           </div>
         )}

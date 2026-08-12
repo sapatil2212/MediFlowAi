@@ -166,8 +166,10 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
   // Failures back off and eventually stop rather than retrying forever: a tab
   // left open across a redeploy would otherwise poll a dead endpoint
   // indefinitely. `pollError` surfaces that state so the user can refresh.
+  // Polling continues DURING a call as well: the host waits in the call lobby,
+  // so the knock ("someone wants to join") has to reach them there.
   useEffect(() => {
-    if (!selected || inCallRoomId) return;
+    if (!selected) return;
     let errors = 0;
     let stopped = false;
 
@@ -254,7 +256,9 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
     setBusy(true);
     try {
       await admitParticipantServerFn({ data: { roomId, participantId, decision } });
-      if (decision === "admit") await joinCall(roomId);
+      // Already in the call (waiting in the lobby)? Admitting is enough — the
+      // peer controller picks the guest up on its next poll.
+      if (decision === "admit" && !inCallRoomId) await joinCall(roomId);
       else if (selected) await loadDetail(selected);
     } finally {
       setBusy(false);
@@ -334,6 +338,39 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
             >
               Notes
             </button>
+          )}
+
+          {/* Knock — a patient is in the waiting room while the host is in-call */}
+          {(detail?.waiting?.length ?? 0) > 0 && (
+            <div className="absolute left-1/2 top-16 z-20 w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 space-y-2">
+              {detail.waiting.map((p: any) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-white p-3 shadow-2xl"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-zinc-900">{p.displayName ?? "Patient"}</p>
+                    <p className="text-xs text-zinc-500">wants to join</p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      onClick={() => admit(p.id, "admit")}
+                      disabled={busy}
+                      className="flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      <UserCheck className="h-3.5 w-3.5" /> Admit
+                    </button>
+                    <button
+                      onClick={() => admit(p.id, "decline")}
+                      disabled={busy}
+                      className="flex items-center gap-1 rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 disabled:opacity-50"
+                    >
+                      <UserX className="h-3.5 w-3.5" /> Decline
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
         {selected?.kind === "appointment" && (

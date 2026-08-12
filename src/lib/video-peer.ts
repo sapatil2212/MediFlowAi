@@ -44,6 +44,13 @@ export interface PollResult {
   /** Room/patient status string; the controller only reacts to terminal values. */
   status?: string;
   roomState?: string;
+  /**
+   * True once the OTHER participant is in the room and permitted to signal.
+   * The controller holds back its offer and ICE candidates until this is true,
+   * so a host waiting alone in the lobby produces no wasted negotiation and no
+   * spurious connection failure.
+   */
+  remotePresent?: boolean;
 }
 
 /** The server calls the caller wires in; the controller stays transport-agnostic. */
@@ -65,6 +72,8 @@ export interface VideoPeerCallbacks {
   onEnded?(reason: string): void;
   onError?(code: string, message: string): void;
   onRoomStatus?(status: string): void;
+  /** true while we are alone in the room; false once the other side is present. */
+  onWaitingForPeer?(waiting: boolean): void;
 }
 
 export interface VideoPeerOptions {
@@ -94,6 +103,12 @@ export class VideoPeer {
 
   private makingOffer = false;
   private ignoreOffer = false;
+  /** Set once the server reports the other participant is in the room. */
+  private remotePresent = false;
+  /** A negotiation was requested while we were still alone; run it on arrival. */
+  private negotiationPending = false;
+  /** Local ICE candidates gathered before the peer arrived. */
+  private queuedLocalCandidates: string[] = [];
   private cursor = 0;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private qualityTimer: ReturnType<typeof setInterval> | null = null;
@@ -193,22 +208,27 @@ export class VideoPeer {
       this.cb.onRemoteStream?.(this.remoteStream);
     };
 
-    this.pc.onnegotiationneeded = async () => {
+    this.pc.onnegotiationneeded = () => {
       // Only the impolite offerer (doctor) drives offers.
       if (this.role !== "doctor") return;
-      try {
-        this.makingOffer = true;
-        await this.pc!.setLocalDescription();
-        await this.transport.publishSignal("offer", JSON.stringify(this.pc!.localDescription));
-      } catch (err: any) {
-        this.cb.onError?.("negotiation", err?.message ?? "Negotiation failed");
-      } finally {
-        this.makingOffer = false;
+      // Alone in the room: remember that an offer is owed and produce it the
+      // moment the guest arrives. Offering into an empty room would burn a TURN
+      // allocation and leave stale candidates behind for the guest to try.
+      if (!this.remotePresent) {
+        this.negotiationPending = true;
+        return;
       }
+      void this.negotiate();
     };
 
     this.pc.onicecandidate = ({ candidate }) => {
-      if (candidate) void this.transport.publishSignal("ice_candidate", JSON.stringify(candidate));
+      if (!candidate) return;
+      const payload = JSON.stringify(candidate);
+      if (!this.remotePresent) {
+        this.queuedLocalCandidates.push(payload);
+        return;
+      }
+      void this.transport.publishSignal("ice_candidate", payload);
     };
 
     this.pc.onconnectionstatechange = () => this.handleConnectionState();
@@ -219,11 +239,58 @@ export class VideoPeer {
     };
 
     this.emitPeerState();
+    this.cb.onWaitingForPeer?.(!this.remotePresent);
     // Do NOT start the connect deadline yet — Meet/Zoom wait indefinitely for the
     // other participant. The deadline starts only once we have a remote SDP
     // (negotiation with a peer has begun).
     this.startQualitySampling();
     this.startPolling();
+  }
+
+  /** Creates and publishes an offer. Doctor-only; guarded by `remotePresent`. */
+  private async negotiate(): Promise<void> {
+    if (!this.pc || this.closed) return;
+    this.negotiationPending = false;
+    try {
+      this.makingOffer = true;
+      await this.pc.setLocalDescription();
+      await this.transport.publishSignal("offer", JSON.stringify(this.pc.localDescription));
+    } catch (err: any) {
+      this.cb.onError?.("negotiation", err?.message ?? "Negotiation failed");
+    } finally {
+      this.makingOffer = false;
+    }
+  }
+
+  /**
+   * Reacts to the server's view of who is in the room. On the arrival edge the
+   * held-back offer is produced and any queued local candidates are flushed, so
+   * negotiation starts against a peer that can actually answer.
+   */
+  private setRemotePresent(present: boolean): void {
+    if (present === this.remotePresent) return;
+    this.remotePresent = present;
+    this.cb.onWaitingForPeer?.(!present);
+    if (!present) return;
+
+    const flushCandidates = () => {
+      const queued = this.queuedLocalCandidates;
+      this.queuedLocalCandidates = [];
+      for (const payload of queued) void this.transport.publishSignal("ice_candidate", payload);
+    };
+
+    // The doctor owes an offer when one was requested while alone, when no local
+    // description exists yet, or when a peer arrives into an unconnected but
+    // stable connection (a guest re-entering after leaving).
+    const owesOffer =
+      this.negotiationPending ||
+      !this.pc?.localDescription ||
+      (this.pc.signalingState === "stable" && this.currentPeerState() !== "connected");
+    if (this.role === "doctor" && owesOffer) {
+      void this.negotiate().then(flushCandidates);
+      return;
+    }
+    flushCandidates();
   }
 
   // ── Signalling ────────────────────────────────────────────────────────────
@@ -248,6 +315,9 @@ export class VideoPeer {
           this.stopPolling();
           return;
         }
+        // Presence is applied BEFORE the signal batch so a held-back offer goes
+        // out in the same tick that reveals the peer.
+        if (result.remotePresent !== undefined) this.setRemotePresent(result.remotePresent);
         for (const sig of result.signals) {
           await this.handleSignal(sig);
           if (sig.seq > this.cursor) this.cursor = sig.seq;
@@ -281,6 +351,9 @@ export class VideoPeer {
 
   private async handleSignal(sig: IncomingSignal): Promise<void> {
     if (!this.pc) return;
+    // Signals are role-filtered server-side, so receiving one is proof the peer
+    // is present even if the presence flag has not caught up yet.
+    if (!this.remotePresent) this.setRemotePresent(true);
     try {
       if (sig.kind === "offer" || sig.kind === "answer") {
         const desc = JSON.parse(sig.payload) as RTCSessionDescriptionInit;
@@ -397,6 +470,8 @@ export class VideoPeer {
 
   private async restartIce(): Promise<void> {
     if (!this.pc) return;
+    // Nothing to renegotiate with while we are alone in the room.
+    if (!this.remotePresent) return;
     try {
       await this.transport.reportEvent("ice_restart", { peerState: this.currentPeerState() });
       if (this.role === "doctor") {
@@ -441,6 +516,9 @@ export class VideoPeer {
   private startQualitySampling(): void {
     this.qualityTimer = setInterval(async () => {
       if (!this.pc || this.closed) return;
+      // No media flows while we are alone in the lobby — sampling then would only
+      // report a meaningless "good" and write an audit row every 5 seconds.
+      if (this.currentPeerState() !== "connected") return;
       try {
         const stats = await this.pc.getStats();
         let rtt: number | null = null;
