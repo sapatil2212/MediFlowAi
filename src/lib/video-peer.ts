@@ -106,10 +106,9 @@ export class VideoPeer {
   private pc: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
+  /** Kept in sync with the LIVE transceivers by `prepareLocalMedia`. */
   private audioSender: RTCRtpSender | null = null;
   private videoSender: RTCRtpSender | null = null;
-  private audioTx: RTCRtpTransceiver | null = null;
-  private videoTx: RTCRtpTransceiver | null = null;
 
   private makingOffer = false;
   private ignoreOffer = false;
@@ -203,18 +202,23 @@ export class VideoPeer {
     this.remoteStream = new MediaStream();
     this.cb.onRemoteStream?.(this.remoteStream);
 
-    // Transceivers up-front so an audio-only side still negotiates a video m-line
-    // and can enable a camera later without a fresh offer (Req 16.2).
-    const audioTrack = this.localStream?.getAudioTracks()[0] ?? null;
-    const videoTrack = this.localStream?.getVideoTracks()[0] ?? null;
-    const audioTx = this.pc.addTransceiver("audio", { direction: "sendrecv" });
-    const videoTx = this.pc.addTransceiver("video", { direction: "sendrecv" });
-    this.audioTx = audioTx;
-    this.videoTx = videoTx;
-    this.audioSender = audioTx.sender;
-    this.videoSender = videoTx.sender;
-    if (audioTrack) await this.audioSender.replaceTrack(audioTrack);
-    if (videoTrack) await this.videoSender.replaceTrack(videoTrack);
+    // ONLY the offerer pre-creates transceivers, to pin the m-line order (audio
+    // then video) and to guarantee a video m-line even when this side starts
+    // audio-only, so a camera can be enabled later without a fresh offer
+    // (Req 16.2).
+    //
+    // The ANSWERER must NOT pre-create them. Applying a remote offer creates a
+    // transceiver per offered m-line, and the browser does not reliably adopt
+    // pre-created ones: it makes fresh `recvonly` transceivers instead. The
+    // answer then goes out `recvonly` on every line while the local tracks stay
+    // stranded on transceivers that are never negotiated — and since the polite
+    // answerer never offers, they stay stranded. Result: the answerer sees the
+    // offerer, the offerer sees nothing, permanently.
+    if (this.role === "doctor") {
+      this.pc.addTransceiver("audio", { direction: "sendrecv" });
+      this.pc.addTransceiver("video", { direction: "sendrecv" });
+      await this.prepareLocalMedia();
+    }
 
     this.pc.ontrack = (ev) => {
       if (!this.remoteStream) this.remoteStream = new MediaStream();
@@ -290,10 +294,8 @@ export class VideoPeer {
     this.negotiationPending = false;
     try {
       this.makingOffer = true;
-      // Assert two-way intent on every offer. A transceiver that ends up
-      // send-only produces an answer of `recvonly`, so the remote never fires
-      // `ontrack` and one side sees nothing while the other sees video.
-      this.forceSendRecv();
+      // Assert tracks and two-way intent on every offer.
+      await this.prepareLocalMedia();
       await this.pc.setLocalDescription();
       await this.transport.publishSignal("offer", JSON.stringify(this.pc.localDescription));
       this.log("offer published", { directions: this.describeDirections() });
@@ -412,9 +414,11 @@ export class VideoPeer {
         await this.pc.setRemoteDescription(desc);
         await this.flushRemoteCandidates();
         this.startConnectDeadline();
-        // Answer sendrecv, never recvonly: a recvonly answer is precisely what
-        // leaves the offerer with no remote track.
-        this.forceSendRecv();
+        // Attach our tracks to the transceivers the offer just created, and set
+        // them sendrecv, BEFORE generating the answer. Doing this after
+        // setRemoteDescription is the whole point: these transceivers did not
+        // exist until a moment ago.
+        await this.prepareLocalMedia();
         await this.pc.setLocalDescription();
         await this.transport.publishSignal("answer", JSON.stringify(this.pc.localDescription));
         this.log("answer published", { seq: sig.seq, directions: this.describeDirections() });
@@ -468,14 +472,45 @@ export class VideoPeer {
     }
   }
 
-  /** Declares that we intend to both send and receive on both media lines. */
-  private forceSendRecv(): void {
-    for (const tx of [this.audioTx, this.videoTx]) {
-      if (!tx) continue;
+  /**
+   * Binds local tracks to the transceivers that will actually appear in the SDP,
+   * and declares two-way intent on each.
+   *
+   * Called immediately before every setLocalDescription, by BOTH roles, because
+   * the answerer's transceivers only come into existence when the remote offer is
+   * applied. Attaching tracks to transceivers created earlier is what stranded
+   * the answerer's media. Idempotent: a track already in place is left alone.
+   */
+  private async prepareLocalMedia(): Promise<void> {
+    if (!this.pc) return;
+    const wanted: Record<"audio" | "video", MediaStreamTrack | null> = {
+      audio: this.localStream?.getAudioTracks()[0] ?? null,
+      video: this.localStream?.getVideoTracks()[0] ?? null,
+    };
+
+    for (const tx of this.pc.getTransceivers()) {
+      // `receiver.track` exists from creation and is the reliable kind marker;
+      // `sender.track` is null until we attach one.
+      const kind = (tx.receiver.track?.kind ?? tx.sender.track?.kind) as "audio" | "video" | undefined;
+      if (kind !== "audio" && kind !== "video") continue;
+
       try {
         if (tx.direction !== "sendrecv") tx.direction = "sendrecv";
       } catch {
         /* a stopped transceiver cannot be redirected */
+      }
+
+      // Keep the sender references pointing at the LIVE transceivers, so device
+      // switching acts on the ones that are actually negotiated.
+      if (kind === "audio") this.audioSender = tx.sender;
+      else this.videoSender = tx.sender;
+
+      const track = wanted[kind];
+      if (!track || tx.sender.track?.id === track.id) continue;
+      try {
+        await tx.sender.replaceTrack(track);
+      } catch {
+        /* the peer connection may be closing */
       }
     }
   }
