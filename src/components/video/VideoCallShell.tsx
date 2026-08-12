@@ -43,6 +43,12 @@ interface VideoCallShellProps {
   shareLink?: string | null;
 }
 
+/**
+ * Codes that describe a recoverable blip rather than a dead call. Surfacing
+ * these as a blocking overlay tore down consultations whose media was fine.
+ */
+const TRANSIENT_ERROR_CODES = new Set(["signal", "negotiation", "ice_restart", "device_switch"]);
+
 const QUALITY_STYLES: Record<QualityLevel, string> = {
   good: "bg-emerald-500/15 text-emerald-600",
   fair: "bg-amber-500/15 text-amber-600",
@@ -112,7 +118,12 @@ export function VideoCallShell({
           if (localRef.current) localRef.current.srcObject = s;
         },
         onRemoteStream: (s) => {
-          if (remoteRef.current) remoteRef.current.srcObject = s;
+          if (remoteRef.current) {
+            remoteRef.current.srcObject = s;
+            // Autoplay of unmuted media can be refused; ask explicitly and
+            // ignore the rejection rather than leaving a silent black frame.
+            if (s) void remoteRef.current.play().catch(() => {});
+          }
           setRemoteConnected(!!s && s.getTracks().length > 0);
         },
         onPeerState: setPeerState,
@@ -120,7 +131,17 @@ export function VideoCallShell({
         onReconnecting: setReconnecting,
         onWaitingForPeer: setWaitingForPeer,
         onEnded: (reason) => onEnded?.(reason),
-        onError: (code, message) => setError({ code, message }),
+        onError: (code, message) => {
+          // Control-plane hiccups (a dropped stale answer, a renegotiation blip)
+          // must not replace a working call with a full-screen modal. The 45s
+          // connect deadline still raises a fatal `connection_failed` if the
+          // call genuinely never comes up.
+          if (TRANSIENT_ERROR_CODES.has(code)) {
+            console.warn(`[video] non-fatal ${code}: ${message}`);
+            return;
+          }
+          setError({ code, message });
+        },
       },
     });
     peerRef.current = peer;

@@ -87,6 +87,8 @@ export interface VideoPeerOptions {
 const QUALITY_SAMPLE_MS = 5000;
 const CONNECT_DEADLINE_MS = 45_000;
 const RECONNECT_SPACING_MS = [2000, 4000, 8000];
+/** Ceiling on ICE-restart attempts per disconnect episode. */
+const MAX_ICE_RESTARTS = 5;
 
 export class VideoPeer {
   private readonly role: ParticipantRole;
@@ -109,6 +111,8 @@ export class VideoPeer {
   private negotiationPending = false;
   /** Local ICE candidates gathered before the peer arrived. */
   private queuedLocalCandidates: string[] = [];
+  /** Remote candidates received before the description they belong to. */
+  private pendingRemoteCandidates: RTCIceCandidateInit[] = [];
   private cursor = 0;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private qualityTimer: ReturnType<typeof setInterval> | null = null;
@@ -355,32 +359,75 @@ export class VideoPeer {
     // is present even if the presence flag has not caught up yet.
     if (!this.remotePresent) this.setRemotePresent(true);
     try {
-      if (sig.kind === "offer" || sig.kind === "answer") {
+      if (sig.kind === "offer") {
         const desc = JSON.parse(sig.payload) as RTCSessionDescriptionInit;
-        const offerCollision = sig.kind === "offer" && (this.makingOffer || this.pc.signalingState !== "stable");
-        this.ignoreOffer = !this.polite && offerCollision;
+        // Glare: the impolite peer keeps its own offer and drops the incoming
+        // one. The polite peer yields — browsers perform the implicit rollback
+        // inside setRemoteDescription.
+        const collision = this.makingOffer || this.pc.signalingState !== "stable";
+        this.ignoreOffer = !this.polite && collision;
         if (this.ignoreOffer) return;
 
         await this.pc.setRemoteDescription(desc);
-        // Peer is present — now it's fair to expect ICE to complete soon.
+        await this.flushRemoteCandidates();
         this.startConnectDeadline();
-        if (sig.kind === "offer") {
-          await this.pc.setLocalDescription();
-          await this.transport.publishSignal("answer", JSON.stringify(this.pc.localDescription));
+        await this.pc.setLocalDescription();
+        await this.transport.publishSignal("answer", JSON.stringify(this.pc.localDescription));
+        return;
+      }
+
+      if (sig.kind === "answer") {
+        const desc = JSON.parse(sig.payload) as RTCSessionDescriptionInit;
+        // An answer is only meaningful while our own offer is outstanding. In
+        // `stable` there is nothing to answer, so this is a duplicate or a stale
+        // answer to a superseded offer — applying it throws "Called in wrong
+        // state: stable" and takes down a call that is otherwise fine.
+        if (this.pc.signalingState !== "have-local-offer") return;
+
+        await this.pc.setRemoteDescription(desc);
+        await this.flushRemoteCandidates();
+        this.startConnectDeadline();
+        return;
+      }
+
+      if (sig.kind === "ice_candidate") {
+        const cand = JSON.parse(sig.payload) as RTCIceCandidateInit;
+        // Candidates routinely arrive before the description they belong to.
+        // Buffering beats throwing: addIceCandidate with no remote description
+        // is an error, and the call would lose that candidate permanently.
+        if (!this.pc.remoteDescription) {
+          this.pendingRemoteCandidates.push(cand);
+          return;
         }
-      } else if (sig.kind === "ice_candidate") {
-        const cand = JSON.parse(sig.payload);
         try {
           await this.pc.addIceCandidate(cand);
         } catch (err) {
+          // Candidates for an offer we deliberately ignored are expected noise.
           if (!this.ignoreOffer) throw err;
         }
-      } else if (sig.kind === "renegotiate") {
+        return;
+      }
+
+      if (sig.kind === "renegotiate") {
         // The patient asks the doctor to re-offer (used on ICE restart).
         if (this.role === "doctor") await this.restartIce();
       }
     } catch (err: any) {
       this.cb.onError?.("signal", err?.message ?? "Signal handling failed");
+    }
+  }
+
+  /** Applies remote candidates buffered while no remote description existed. */
+  private async flushRemoteCandidates(): Promise<void> {
+    if (!this.pc || this.pendingRemoteCandidates.length === 0) return;
+    const queued = this.pendingRemoteCandidates;
+    this.pendingRemoteCandidates = [];
+    for (const cand of queued) {
+      try {
+        await this.pc.addIceCandidate(cand);
+      } catch {
+        /* a single unusable candidate must not fail the batch */
+      }
     }
   }
 
@@ -456,6 +503,10 @@ export class VideoPeer {
 
   private scheduleIceRestart(): void {
     if (this.reconnectTimer) return;
+    // Bounded. An unbounded loop published a fresh offer every few seconds, and
+    // each one drew another answer; the disconnect budget in `onDisconnected` is
+    // what ends a call that cannot recover.
+    if (this.reconnectAttempt >= MAX_ICE_RESTARTS) return;
     const spacing = RECONNECT_SPACING_MS[Math.min(this.reconnectAttempt, RECONNECT_SPACING_MS.length - 1)];
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
@@ -472,6 +523,10 @@ export class VideoPeer {
     if (!this.pc) return;
     // Nothing to renegotiate with while we are alone in the room.
     if (!this.remotePresent) return;
+    // An exchange is already outstanding. Publishing another offer now would
+    // draw a second answer, and whichever arrives after the first lands in
+    // `stable` and throws. Let the in-flight negotiation settle instead.
+    if (this.role === "doctor" && this.pc.signalingState !== "stable") return;
     try {
       await this.transport.reportEvent("ice_restart", { peerState: this.currentPeerState() });
       if (this.role === "doctor") {
