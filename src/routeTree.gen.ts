@@ -37,7 +37,6 @@ import { Route as ConsultTokenRouteImport } from './routes/consult.$token'
 import { Route as BookTenantIdRouteImport } from './routes/book.$tenantId'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
-import { Route as AdminDashboardBackupRouteImport } from './routes/admin.dashboard.backup'
 
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
@@ -179,11 +178,6 @@ const AdminDashboardRoute = AdminDashboardRouteImport.update({
   path: '/admin/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminDashboardBackupRoute = AdminDashboardBackupRouteImport.update({
-  id: '/backup',
-  path: '/backup',
-  getParentRoute: () => AdminDashboardRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -205,7 +199,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
   '/terms': typeof TermsRoute
-  '/admin/dashboard': typeof AdminDashboardRouteWithChildren
+  '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
   '/consult/$token': typeof ConsultTokenRoute
@@ -214,7 +208,6 @@ export interface FileRoutesByFullPath {
   '/dashboards/gym': typeof DashboardsGymRoute
   '/dashboards/medical': typeof DashboardsMedicalRoute
   '/dashboards/professional': typeof DashboardsProfessionalRoute
-  '/admin/dashboard/backup': typeof AdminDashboardBackupRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -236,7 +229,7 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
   '/terms': typeof TermsRoute
-  '/admin/dashboard': typeof AdminDashboardRouteWithChildren
+  '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
   '/consult/$token': typeof ConsultTokenRoute
@@ -245,7 +238,6 @@ export interface FileRoutesByTo {
   '/dashboards/gym': typeof DashboardsGymRoute
   '/dashboards/medical': typeof DashboardsMedicalRoute
   '/dashboards/professional': typeof DashboardsProfessionalRoute
-  '/admin/dashboard/backup': typeof AdminDashboardBackupRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -268,7 +260,7 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
   '/terms': typeof TermsRoute
-  '/admin/dashboard': typeof AdminDashboardRouteWithChildren
+  '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
   '/consult/$token': typeof ConsultTokenRoute
@@ -277,7 +269,6 @@ export interface FileRoutesById {
   '/dashboards/gym': typeof DashboardsGymRoute
   '/dashboards/medical': typeof DashboardsMedicalRoute
   '/dashboards/professional': typeof DashboardsProfessionalRoute
-  '/admin/dashboard/backup': typeof AdminDashboardBackupRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -310,7 +301,6 @@ export interface FileRouteTypes {
     | '/dashboards/gym'
     | '/dashboards/medical'
     | '/dashboards/professional'
-    | '/admin/dashboard/backup'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -341,7 +331,6 @@ export interface FileRouteTypes {
     | '/dashboards/gym'
     | '/dashboards/medical'
     | '/dashboards/professional'
-    | '/admin/dashboard/backup'
   id:
     | '__root__'
     | '/'
@@ -372,7 +361,6 @@ export interface FileRouteTypes {
     | '/dashboards/gym'
     | '/dashboards/medical'
     | '/dashboards/professional'
-    | '/admin/dashboard/backup'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -395,7 +383,7 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   SolutionsRoute: typeof SolutionsRoute
   TermsRoute: typeof TermsRoute
-  AdminDashboardRoute: typeof AdminDashboardRouteWithChildren
+  AdminDashboardRoute: typeof AdminDashboardRoute
   AdminLoginRoute: typeof AdminLoginRoute
   BookTenantIdRoute: typeof BookTenantIdRoute
   ConsultTokenRoute: typeof ConsultTokenRoute
@@ -604,27 +592,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/dashboard/backup': {
-      id: '/admin/dashboard/backup'
-      path: '/backup'
-      fullPath: '/admin/dashboard/backup'
-      preLoaderRoute: typeof AdminDashboardBackupRouteImport
-      parentRoute: typeof AdminDashboardRoute
-    }
   }
 }
-
-interface AdminDashboardRouteChildren {
-  AdminDashboardBackupRoute: typeof AdminDashboardBackupRoute
-}
-
-const AdminDashboardRouteChildren: AdminDashboardRouteChildren = {
-  AdminDashboardBackupRoute: AdminDashboardBackupRoute,
-}
-
-const AdminDashboardRouteWithChildren = AdminDashboardRoute._addFileChildren(
-  AdminDashboardRouteChildren,
-)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -646,7 +615,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignupRoute: SignupRoute,
   SolutionsRoute: SolutionsRoute,
   TermsRoute: TermsRoute,
-  AdminDashboardRoute: AdminDashboardRouteWithChildren,
+  AdminDashboardRoute: AdminDashboardRoute,
   AdminLoginRoute: AdminLoginRoute,
   BookTenantIdRoute: BookTenantIdRoute,
   ConsultTokenRoute: ConsultTokenRoute,
