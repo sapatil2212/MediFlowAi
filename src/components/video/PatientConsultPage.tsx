@@ -19,7 +19,19 @@ import { buildPatientTransport } from "./videoTransport";
 import { VideoCallShell } from "./VideoCallShell";
 import { patientIceConfigServerFn } from "../../lib/video";
 
-type Phase = "loading" | "consent" | "preflight" | "waiting" | "active" | "ended" | "declined" | "invalid" | "expired" | "rate_limited";
+type Phase =
+  | "loading"
+  | "consent"
+  | "preflight"
+  | "waiting"
+  | "active"
+  | "ended"
+  | "declined"
+  | "invalid"
+  | "expired"
+  | "rate_limited"
+  /** The server or network failed. Distinct from `invalid`: the link may be fine. */
+  | "unavailable";
 
 export function PatientConsultPage({ token }: { token: string }) {
   const [phase, setPhase] = useState<Phase>("loading");
@@ -37,8 +49,11 @@ export function PatientConsultPage({ token }: { token: string }) {
         if (cancelled) return;
         setCtx(c);
         mapStatusToPhase(c.status, setPhase, true);
-      } catch {
-        if (!cancelled) setPhase("invalid");
+      } catch (e: any) {
+        // A thrown call is a transport or server fault. Reporting it as an
+        // invalid link sent us chasing the wrong bug once already.
+        console.error("[consult] could not load join context:", e?.message);
+        if (!cancelled) setPhase("unavailable");
       }
     })();
     return () => {
@@ -180,6 +195,24 @@ export function PatientConsultPage({ token }: { token: string }) {
           <Terminal icon={<XCircle className="h-8 w-8 text-red-500" />} title="This link is not valid">
             We couldn't open this consultation. Please check the link the clinic sent you.
           </Terminal>
+        )}
+
+        {phase === "unavailable" && (
+          <div className="py-4 text-center">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-zinc-50">
+              <XCircle className="h-8 w-8 text-amber-500" />
+            </div>
+            <h2 className="text-lg font-bold text-zinc-900">We couldn't reach the clinic</h2>
+            <p className="mx-auto mt-2 max-w-xs text-sm text-zinc-500">
+              Your link looks fine — the service did not respond. Please retry in a moment.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mx-auto mt-4 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              Retry
+            </button>
+          </div>
         )}
       </div>
     </div>

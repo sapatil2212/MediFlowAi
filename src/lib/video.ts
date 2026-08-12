@@ -526,13 +526,27 @@ export const getJoinContextServerFn = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const res = await resolveJoinTokenSoft(data.token, await clientKeyFromRequest());
     if (!res.ok) {
+      // Log the verdict (never the token) so a rejected link is diagnosable from
+      // pm2 logs instead of being indistinguishable from a server fault.
+      console.warn(`[Video][join] token rejected: ${res.status}`);
       const status: PatientStatus =
         res.status === "rate_limited" ? "rate_limited" : res.status === "expired" ? "expired" : "invalid";
       return projectForPatient({ status });
     }
     const { room } = res.value;
-    const participant = await loadPatientParticipant(room.id, room.tenantId);
-    const facts = await patientFactsFor(room);
+
+    // The token is valid at this point. A failure to load the display facts is a
+    // server fault, NOT an invalid link, so it must not be reported as one —
+    // otherwise a broken query looks exactly like a bad token to the patient.
+    let participant = null;
+    let facts = { clinicName: null as string | null, doctorName: null as string | null, appointmentAt: null as string | null };
+    try {
+      participant = await loadPatientParticipant(room.id, room.tenantId);
+      facts = await patientFactsFor(room);
+    } catch (err: any) {
+      console.error(`[Video][join] room ${room.id} context load failed:`, err?.message);
+    }
+
     return projectForPatient({
       status: patientStatusFrom(room, participant),
       clinicName: facts.clinicName,
