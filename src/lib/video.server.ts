@@ -38,7 +38,8 @@ import {
 export interface VideoRoomRow {
   id: string;
   tenantId: string;
-  appointmentId: string;
+  /** NULL for ad-hoc ("instant" / share-link) rooms, which have no Appointment. */
+  appointmentId: string | null;
   doctorId: string | null;
   state: RoomState;
   joinOpensAt: Date | string | null;
@@ -116,7 +117,10 @@ function mapVideoRoomRow(row: any): VideoRoomRow {
   return {
     id: String(row.id),
     tenantId: String(row.tenantId),
-    appointmentId: String(row.appointmentId),
+    // Must NOT be String()-coerced: an ad-hoc room has a NULL appointmentId, and
+    // String(null) yields the truthy string "null", which sends every instant
+    // room down the appointment branch of patientFactsFor / requestEntry / audit.
+    appointmentId: row.appointmentId ?? null,
     doctorId: row.doctorId ?? null,
     state: row.state as RoomState,
     joinOpensAt: row.joinOpensAt ?? null,
