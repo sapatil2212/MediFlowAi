@@ -78,6 +78,8 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
   const [docsOpen, setDocsOpen] = useState(false);
   const [showTest, setShowTest] = useState(false);
   const [pollError, setPollError] = useState(false);
+  /** Explains why the last call ended, so a call never just vanishes. */
+  const [endedNotice, setEndedNotice] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadMeetings = useCallback(async () => {
@@ -324,8 +326,9 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
             peerName={detail?.appointment?.name ?? detail?.guestName ?? "patient"}
             meetingCode={detail?.meetingCode ?? null}
             shareLink={shareLink}
-            onEnded={() => {
+            onEnded={(reason) => {
               setInCallRoomId(null);
+              setEndedNotice(endedMessage(reason));
               if (selected?.kind === "appointment") setDocsOpen(true);
               void loadMeetings();
               if (selected) void loadDetail(selected);
@@ -389,6 +392,21 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
   // ── Console ──────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
+      {endedNotice && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-blue-50 p-3">
+          <p className="flex items-start gap-2 text-xs text-blue-900">
+            <PhoneCall className="mt-0.5 h-4 w-4 shrink-0" />
+            {endedNotice}
+          </p>
+          <button
+            onClick={() => setEndedNotice(null)}
+            className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {pollError && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-zinc-100 p-3">
           <p className="text-xs text-zinc-700">
@@ -669,6 +687,25 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
 
 function isTerminalState(s?: string): boolean {
   return s === "ended" || s === "expired" || s === "cancelled";
+}
+
+/** Turns an end reason into something a clinician can act on. */
+function endedMessage(reason: string): string {
+  switch (reason) {
+    case "patient_ended":
+    case "ended":
+      return "The consultation ended — the patient left the call.";
+    case "connection_lost":
+      return "The consultation ended because the connection was lost. You can start a new call or reissue the link.";
+    case "expired":
+      return "This consultation link expired and the room was closed.";
+    case "cancelled":
+      return "This consultation was cancelled.";
+    case "doctor_ended":
+      return "You ended the consultation.";
+    default:
+      return "The consultation ended.";
+  }
 }
 
 function formatDuration(seconds: number): string {

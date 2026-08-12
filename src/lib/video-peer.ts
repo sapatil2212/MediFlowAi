@@ -89,6 +89,12 @@ const CONNECT_DEADLINE_MS = 45_000;
 const RECONNECT_SPACING_MS = [2000, 4000, 8000];
 /** Ceiling on ICE-restart attempts per disconnect episode. */
 const MAX_ICE_RESTARTS = 5;
+/**
+ * Heartbeat cadence once the call is established. Polling never stops while the
+ * room is non-terminal: it is the only transport for "the other side left" and
+ * "the room ended", so going silent strands the remaining participant.
+ */
+const CONNECTED_POLL_INTERVAL_MS = 10_000;
 
 export class VideoPeer {
   private readonly role: ParticipantRole;
@@ -102,6 +108,8 @@ export class VideoPeer {
   private remoteStream: MediaStream | null = null;
   private audioSender: RTCRtpSender | null = null;
   private videoSender: RTCRtpSender | null = null;
+  private audioTx: RTCRtpTransceiver | null = null;
+  private videoTx: RTCRtpTransceiver | null = null;
 
   private makingOffer = false;
   private ignoreOffer = false;
@@ -201,6 +209,8 @@ export class VideoPeer {
     const videoTrack = this.localStream?.getVideoTracks()[0] ?? null;
     const audioTx = this.pc.addTransceiver("audio", { direction: "sendrecv" });
     const videoTx = this.pc.addTransceiver("video", { direction: "sendrecv" });
+    this.audioTx = audioTx;
+    this.videoTx = videoTx;
     this.audioSender = audioTx.sender;
     this.videoSender = videoTx.sender;
     if (audioTrack) await this.audioSender.replaceTrack(audioTrack);
@@ -280,9 +290,13 @@ export class VideoPeer {
     this.negotiationPending = false;
     try {
       this.makingOffer = true;
+      // Assert two-way intent on every offer. A transceiver that ends up
+      // send-only produces an answer of `recvonly`, so the remote never fires
+      // `ontrack` and one side sees nothing while the other sees video.
+      this.forceSendRecv();
       await this.pc.setLocalDescription();
       await this.transport.publishSignal("offer", JSON.stringify(this.pc.localDescription));
-      this.log("offer published");
+      this.log("offer published", { directions: this.describeDirections() });
     } catch (err: any) {
       this.log("offer failed", { message: err?.message });
       this.cb.onError?.("negotiation", err?.message ?? "Negotiation failed");
@@ -354,16 +368,14 @@ export class VideoPeer {
         }
         if (result.cursor > this.cursor) this.cursor = result.cursor;
 
-        if (result.stopPolling) {
-          this.log("polling stopped by server", {
-            remoteTracks: this.remoteStream?.getTracks().length ?? 0,
-          });
-          this.stopPolling();
-          return;
-        }
+        // `stopPolling` / a null `nextPollMs` mean "the call is up, stand down".
+        // We deliberately do NOT stop: this poll is the ONLY channel carrying the
+        // room's lifecycle. Stopping it left the doctor sitting in a dead call
+        // forever after the patient left, and dropped any late renegotiation.
+        // Back off to a heartbeat instead.
       }
 
-      const base = result?.nextPollMs ?? 2000;
+      const base = result ? result.nextPollMs ?? CONNECTED_POLL_INTERVAL_MS : 2000;
       const delay = this.consecutivePollErrors > 0 ? Math.min(base * Math.pow(2, Math.min(this.consecutivePollErrors, 3)), 15000) : base;
       this.pollTimer = setTimeout(tick, delay);
     };
@@ -400,8 +412,13 @@ export class VideoPeer {
         await this.pc.setRemoteDescription(desc);
         await this.flushRemoteCandidates();
         this.startConnectDeadline();
+        // Answer sendrecv, never recvonly: a recvonly answer is precisely what
+        // leaves the offerer with no remote track.
+        this.forceSendRecv();
         await this.pc.setLocalDescription();
         await this.transport.publishSignal("answer", JSON.stringify(this.pc.localDescription));
+        this.log("answer published", { seq: sig.seq, directions: this.describeDirections() });
+        this.syncRemoteTracksFromReceivers();
         return;
       }
 
@@ -417,11 +434,8 @@ export class VideoPeer {
         }
 
         await this.pc.setRemoteDescription(desc);
-        this.log("answer applied", {
-          seq: sig.seq,
-          receivers: this.pc.getReceivers().filter((r) => !!r.track).length,
-          directions: this.pc.getTransceivers().map((t) => `${t.receiver.track?.kind}:${t.currentDirection}`),
-        });
+        this.log("answer applied", { seq: sig.seq, directions: this.describeDirections() });
+        this.syncRemoteTracksFromReceivers();
         await this.flushRemoteCandidates();
         this.startConnectDeadline();
         return;
@@ -451,6 +465,51 @@ export class VideoPeer {
       }
     } catch (err: any) {
       this.cb.onError?.("signal", err?.message ?? "Signal handling failed");
+    }
+  }
+
+  /** Declares that we intend to both send and receive on both media lines. */
+  private forceSendRecv(): void {
+    for (const tx of [this.audioTx, this.videoTx]) {
+      if (!tx) continue;
+      try {
+        if (tx.direction !== "sendrecv") tx.direction = "sendrecv";
+      } catch {
+        /* a stopped transceiver cannot be redirected */
+      }
+    }
+  }
+
+  /** Flat, log-friendly view of the negotiated directions. */
+  private describeDirections(): string {
+    if (!this.pc) return "";
+    return this.pc
+      .getTransceivers()
+      .map((t, i) => `${i}:${t.receiver.track?.kind ?? "?"}=${t.direction}/${t.currentDirection ?? "-"}`)
+      .join(" ");
+  }
+
+  /**
+   * Rebuilds the remote stream from the receivers.
+   *
+   * `ontrack` is the normal path, but it is a single event: if it is missed, or
+   * fires before the stream is wired, the UI is left blank while media flows.
+   * Reconciling against `getReceivers()` is idempotent and cheap.
+   */
+  private syncRemoteTracksFromReceivers(): void {
+    if (!this.pc) return;
+    if (!this.remoteStream) this.remoteStream = new MediaStream();
+    let added = 0;
+    for (const receiver of this.pc.getReceivers()) {
+      const track = receiver.track;
+      if (!track) continue;
+      if (this.remoteStream.getTracks().some((t) => t.id === track.id)) continue;
+      this.remoteStream.addTrack(track);
+      added++;
+    }
+    if (added > 0) {
+      this.log("remote tracks reconciled", { added, total: this.remoteStream.getTracks().length });
+      this.cb.onRemoteStream?.(this.remoteStream);
     }
   }
 
@@ -498,6 +557,8 @@ export class VideoPeer {
 
     if (state === "connected") {
       this.clearConnectDeadline();
+      // Catch any receiver track that never surfaced through `ontrack`.
+      this.syncRemoteTracksFromReceivers();
       if (this.connectedSince === null) this.connectedSince = Date.now();
       // Recovered from a disconnect?
       if (this.disconnectedSince !== null) {
