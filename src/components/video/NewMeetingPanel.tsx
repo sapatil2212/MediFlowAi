@@ -95,7 +95,9 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
     try {
       const res = await createInstantMeetingServerFn({
         data: {
-          autoAdmit: true,
+          // The host admits the patient from the lobby. A join link is
+          // shareable, so nobody enters a consultation unapproved.
+          autoAdmit: false,
           notify: false,
           scheduledAt: null,
         },
@@ -188,6 +190,7 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
             </span>
             <p className="mt-2 text-sm font-bold text-zinc-900">Start now</p>
             <p className="text-xs text-zinc-500">Instant meeting with a shareable link</p>
+            <p className="mt-1 text-[10px] text-zinc-400">You approve each patient before they join</p>
           </button>
           <MenuCard
             icon={<Link2 className="h-5 w-5" />}

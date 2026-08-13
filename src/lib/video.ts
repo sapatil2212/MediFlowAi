@@ -372,9 +372,10 @@ export const createInstantMeetingServerFn = createServerFn({ method: "POST" })
       guestName: data.guestName?.trim() || null,
       guestPhone: data.guestPhone?.trim() || null,
       guestEmail: data.guestEmail?.trim() || null,
-      // Instant meetings default to auto-admit: the host is on the call now, so
-      // a waiting room is pure friction. Scheduled links keep the waiting room.
-      autoAdmit: data.autoAdmit ?? !scheduledAt,
+      // Approval is the default for every room, instant included: a join link is
+      // shareable, so the clinician must see who is knocking before anyone enters
+      // a consultation. Auto-admit is now strictly opt-in.
+      autoAdmit: data.autoAdmit === true,
     });
 
     if (data.notify !== false && (data.guestPhone || data.guestEmail)) {
@@ -575,7 +576,7 @@ export const acceptConsentServerFn = createServerFn({ method: "POST" })
   });
 
 export const requestEntryServerFn = createServerFn({ method: "POST" })
-  .validator((data: { token: string }) => {
+  .validator((data: { token: string; patientName?: string; patientAge?: number }) => {
     if (!data?.token) throw new Error("token is required");
     return data;
   })
@@ -583,16 +584,23 @@ export const requestEntryServerFn = createServerFn({ method: "POST" })
     const { room } = await resolveJoinTokenOrThrow(data.token, await clientKeyFromRequest());
     if (!(await hasConsent(room))) throw new Error("CONSENT_REQUIRED");
 
-    // Appointment rooms name the patient from the booking; ad-hoc rooms use the
-    // guest name the host supplied.
-    let displayName = "Patient";
-    if (room.appointmentId) {
-      const appt = await loadAppointmentForVideo(room.appointmentId, room.tenantId);
-      displayName = appt?.name ?? "Patient";
-    } else {
-      const extras = await loadRoomExtras(room.id, room.tenantId);
-      displayName = extras?.guestName ?? "Guest";
+    // What the patient typed on the join form wins: they are the authority on
+    // their own name. Fall back to the booking, then the host-supplied guest name.
+    let displayName = (data.patientName ?? "").trim();
+    if (!displayName) {
+      if (room.appointmentId) {
+        const appt = await loadAppointmentForVideo(room.appointmentId, room.tenantId);
+        displayName = appt?.name ?? "Patient";
+      } else {
+        const extras = await loadRoomExtras(room.id, room.tenantId);
+        displayName = extras?.guestName ?? "Guest";
+      }
     }
+    displayName = displayName.slice(0, 120);
+
+    // Ignore implausible ages rather than rejecting the join over a typo.
+    const rawAge = Number(data.patientAge);
+    const displayAge = Number.isInteger(rawAge) && rawAge > 0 && rawAge < 130 ? rawAge : null;
 
     await upsertParticipant({
       tenantId: room.tenantId,
@@ -600,6 +608,7 @@ export const requestEntryServerFn = createServerFn({ method: "POST" })
       role: "patient",
       participantKey: patientParticipantKey(room.id),
       displayName,
+      displayAge,
       status: "requested",
     });
     await recordAudit(room.id, "joined", "patient_requested_entry", "patient", room.tenantId, room.appointmentId);

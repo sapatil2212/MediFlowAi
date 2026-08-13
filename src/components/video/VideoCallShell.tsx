@@ -20,6 +20,9 @@ import {
   Check,
   Copy,
   Users,
+  Share2,
+  MessageCircle,
+  Mail,
   Link as LinkIcon,
 } from "lucide-react";
 import { VideoPeer, type IceConfigLike, type VideoTransport } from "../../lib/video-peer";
@@ -96,6 +99,11 @@ export function VideoCallShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [peerState]);
 
+  const inviteMessage = shareLink
+    ? `Join your video consultation: ${shareLink}${meetingCode ? `\n\nMeeting code: ${meetingCode}` : ""}`
+    : "";
+  const canNativeShare = typeof navigator !== "undefined" && typeof (navigator as any).share === "function";
+
   const copyInvite = async () => {
     if (!shareLink) return;
     try {
@@ -104,6 +112,20 @@ export function VideoCallShell({
       setTimeout(() => setLinkCopied(false), 2000);
     } catch {
       /* clipboard unavailable */
+    }
+  };
+
+  /** Native share sheet where available (mobile, some desktops). */
+  const shareInvite = async () => {
+    if (!shareLink) return;
+    try {
+      await (navigator as any).share({
+        title: "Video consultation",
+        text: inviteMessage,
+        url: shareLink,
+      });
+    } catch {
+      /* the user dismissed the sheet, or sharing is unavailable */
     }
   };
 
@@ -213,11 +235,15 @@ export function VideoCallShell({
     <div className="relative flex h-full w-full flex-col bg-zinc-950 text-white">
       {/* Remote video (main stage) */}
       <div className="relative flex-1 overflow-hidden">
+        {/* object-CONTAIN, not cover: the remote camera's aspect ratio rarely
+            matches the stage, and cover crops the sides off — the caller looked
+            zoomed in with their head cut off. Contain letterboxes instead, so the
+            whole frame is visible. */}
         <video
           ref={remoteRef}
           autoPlay
           playsInline
-          className={cn("h-full w-full object-cover", !showRemoteStage && "opacity-0")}
+          className={cn("h-full w-full bg-zinc-950 object-contain", !showRemoteStage && "opacity-0")}
         />
         {!showRemoteStage && !showLobby && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-zinc-400">
@@ -246,21 +272,48 @@ export function VideoCallShell({
               {role === "doctor" && shareLink && (
                 <div className="mt-5 text-left">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Patient join link</p>
-                  <div className="mt-1.5 flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 p-2">
-                    <code className="min-w-0 flex-1 truncate text-xs text-zinc-300">{shareLink}</code>
+                  <div className="mt-1.5 rounded-xl border border-white/10 bg-black/30 p-2">
+                    <code className="block break-all text-xs leading-relaxed text-zinc-300">{shareLink}</code>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
                     <button
                       onClick={copyInvite}
-                      className="flex shrink-0 items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-zinc-200"
+                      className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-zinc-200"
                     >
                       {linkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      {linkCopied ? "Copied" : "Copy"}
+                      {linkCopied ? "Copied" : "Copy link"}
                     </button>
+                    {canNativeShare && (
+                      <button
+                        onClick={shareInvite}
+                        className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-white/20"
+                      >
+                        <Share2 className="h-3.5 w-3.5" /> Share
+                      </button>
+                    )}
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(inviteMessage)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-white/20"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                    </a>
+                    <a
+                      href={`mailto:?subject=${encodeURIComponent("Your video consultation")}&body=${encodeURIComponent(inviteMessage)}`}
+                      className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-white/20"
+                    >
+                      <Mail className="h-3.5 w-3.5" /> Email
+                    </a>
                   </div>
                   {meetingCode && (
                     <p className="mt-2 text-xs text-zinc-500">
                       Meeting code <span className="font-mono text-zinc-300">{meetingCode}</span>
                     </p>
                   )}
+                  <p className="mt-3 text-xs text-zinc-500">
+                    You'll be asked to approve them before they can join.
+                  </p>
                 </div>
               )}
 

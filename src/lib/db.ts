@@ -752,6 +752,19 @@ if (typeof window === "undefined") {
           await conn.query("ALTER TABLE VideoConsent MODIFY COLUMN appointmentId VARCHAR(255) NULL");
         } catch (_) { /* already nullable */ }
 
+        // Patients identify themselves before entering the waiting room so the
+        // clinician knows who is knocking. Name reuses displayName; age is new.
+        try {
+          const vpCols: any[] = await conn.query("SHOW COLUMNS FROM VideoParticipant");
+          const vpColNames = vpCols.map((c: any) => c.Field || c.field || "");
+          if (!vpColNames.includes("displayAge")) {
+            await conn.query("ALTER TABLE VideoParticipant ADD COLUMN displayAge INT NULL");
+            console.log("[DB] ✅ Added displayAge column to VideoParticipant table");
+          }
+        } catch (err: any) {
+          console.warn("[DB] ⚠️ Could not verify/alter VideoParticipant columns:", err.message);
+        }
+
         // Create SuperAdmin Table
         try {
           await conn.query(`

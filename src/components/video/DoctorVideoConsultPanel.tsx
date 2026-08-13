@@ -352,7 +352,10 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
                   className="flex items-center justify-between gap-3 rounded-xl bg-white p-3 shadow-2xl"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-zinc-900">{p.displayName ?? "Patient"}</p>
+                    <p className="truncate text-sm font-bold text-zinc-900">
+                      {p.displayName ?? "Patient"}
+                      {p.displayAge ? <span className="font-medium text-zinc-500">, {p.displayAge}</span> : null}
+                    </p>
                     <p className="text-xs text-zinc-500">wants to join</p>
                   </div>
                   <div className="flex shrink-0 gap-2">
@@ -618,7 +621,10 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
                       <div className="mt-2 space-y-2">
                         {detail.waiting.map((p: any) => (
                           <div key={p.id} className="flex items-center justify-between rounded-xl border border-zinc-100 p-3">
-                            <span className="text-sm font-medium text-zinc-800">{p.displayName ?? "Patient"}</span>
+                            <span className="text-sm font-medium text-zinc-800">
+                              {p.displayName ?? "Patient"}
+                              {p.displayAge ? <span className="text-zinc-500">, {p.displayAge}</span> : null}
+                            </span>
                             <div className="flex gap-2">
                               <button
                                 onClick={() => admit(p.id, "admit")}

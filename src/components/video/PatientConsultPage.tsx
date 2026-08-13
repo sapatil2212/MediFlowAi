@@ -30,6 +30,8 @@ type Phase =
   | "invalid"
   | "expired"
   | "rate_limited"
+  /** Name and age, so the clinician knows who is asking to join. */
+  | "identity"
   /** The server or network failed. Distinct from `invalid`: the link may be fine. */
   | "unavailable";
 
@@ -38,6 +40,8 @@ export function PatientConsultPage({ token }: { token: string }) {
   const [ctx, setCtx] = useState<PatientRoomProjection | null>(null);
   const [audioOnly, setAudioOnly] = useState(false);
   const [preflightError, setPreflightError] = useState<string | null>(null);
+  const [patientName, setPatientName] = useState("");
+  const [patientAge, setPatientAge] = useState("");
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initial context load.
@@ -104,7 +108,14 @@ export function PatientConsultPage({ token }: { token: string }) {
     async (opts: { audioOnly: boolean }) => {
       setAudioOnly(opts.audioOnly);
       try {
-        const r = await requestEntryServerFn({ data: { token } });
+        const parsedAge = Number.parseInt(patientAge, 10);
+        const r = await requestEntryServerFn({
+          data: {
+            token,
+            patientName: patientName.trim() || undefined,
+            patientAge: Number.isFinite(parsedAge) ? parsedAge : undefined,
+          },
+        });
         if (r.status === "active" || r.status === "admitted") setPhase("active");
         else setPhase("waiting");
       } catch (e: any) {
@@ -116,7 +127,7 @@ export function PatientConsultPage({ token }: { token: string }) {
         else setPhase("invalid");
       }
     },
-    [token],
+    [token, patientName, patientAge],
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -145,6 +156,17 @@ export function PatientConsultPage({ token }: { token: string }) {
 
         {phase === "loading" && <Centered><Loader2 className="h-7 w-7 animate-spin text-blue-600" /></Centered>}
 
+        {phase === "identity" && ctx && (
+          <IdentityBody
+            ctx={ctx}
+            name={patientName}
+            age={patientAge}
+            onName={setPatientName}
+            onAge={setPatientAge}
+            onContinue={() => setPhase("consent")}
+          />
+        )}
+
         {phase === "consent" && ctx && (
           <ConsentBody ctx={ctx} onAccept={acceptConsent} error={preflightError} />
         )}
@@ -160,9 +182,12 @@ export function PatientConsultPage({ token }: { token: string }) {
         {phase === "waiting" && ctx && (
           <div className="text-center">
             <Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-600" />
-            <h2 className="mt-4 text-lg font-bold text-zinc-900">You're in the waiting room</h2>
+            <h2 className="mt-4 text-lg font-bold text-zinc-900">Waiting for approval</h2>
             <p className="mt-1 text-sm text-zinc-500">
-              {ctx.doctorName ? `${ctx.doctorName} will admit you shortly.` : "The doctor will admit you shortly."}
+              {ctx.doctorName
+                ? `${ctx.doctorName} has been notified and will admit you shortly.`
+                : "Your clinician has been notified and will admit you shortly."}{" "}
+              Please keep this page open.
             </p>
             <AppointmentMeta ctx={ctx} />
           </div>
@@ -236,10 +261,84 @@ function mapStatusToPhase(status: string, setPhase: (p: Phase) => void, initial:
     case "admitted":
       return setPhase("active");
     case "waiting":
-      return setPhase(initial ? "consent" : "waiting");
+      // A fresh visit starts by identifying the patient; a later poll means they
+      // are already in the waiting room.
+      return setPhase(initial ? "identity" : "waiting");
     default:
-      return setPhase("consent");
+      return setPhase("identity");
   }
+}
+
+/**
+ * First screen: who is joining. The clinician sees this on the admission prompt,
+ * so a shared link never produces an anonymous knock.
+ */
+function IdentityBody({
+  ctx,
+  name,
+  age,
+  onName,
+  onAge,
+  onContinue,
+}: {
+  ctx: PatientRoomProjection;
+  name: string;
+  age: string;
+  onName: (v: string) => void;
+  onAge: (v: string) => void;
+  onContinue: () => void;
+}) {
+  const parsedAge = Number.parseInt(age, 10);
+  const ageValid = age.trim().length > 0 && Number.isInteger(parsedAge) && parsedAge > 0 && parsedAge < 130;
+  const canContinue = name.trim().length > 1 && ageValid;
+
+  return (
+    <div>
+      <h2 className="text-lg font-bold text-zinc-900">Who's joining?</h2>
+      <p className="mt-1 text-sm text-zinc-500">
+        Your clinician will see this when approving your request to join.
+      </p>
+      <AppointmentMeta ctx={ctx} />
+
+      <div className="mt-4 space-y-3">
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+            Full name
+          </span>
+          <input
+            value={name}
+            onChange={(e) => onName(e.target.value)}
+            autoFocus
+            autoComplete="name"
+            placeholder="e.g. Priya Sharma"
+            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-400">Age</span>
+          <input
+            value={age}
+            onChange={(e) => onAge(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
+            inputMode="numeric"
+            placeholder="e.g. 34"
+            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          />
+          {age.trim().length > 0 && !ageValid && (
+            <span className="mt-1 block text-xs text-red-500">Please enter an age between 1 and 129.</span>
+          )}
+        </label>
+      </div>
+
+      <button
+        disabled={!canContinue}
+        onClick={onContinue}
+        className="mt-5 w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Continue
+      </button>
+    </div>
+  );
 }
 
 function ConsentBody({
@@ -367,7 +466,7 @@ function PreflightBody({
           }}
           className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {hasCamera ? "Join consultation" : "Join with audio only"}
+          {hasCamera ? "Ask to join" : "Ask to join with audio only"}
         </button>
         {error && (
           <button

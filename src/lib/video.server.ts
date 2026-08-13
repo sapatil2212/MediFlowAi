@@ -919,6 +919,8 @@ export interface VideoParticipantRow {
   participantKey: string;
   accountId: string | null;
   displayName: string | null;
+  /** Self-reported age, collected on the patient join form. */
+  displayAge: number | null;
   status: string;
   peerState: string | null;
   micEnabled: number;
@@ -958,6 +960,7 @@ function mapParticipantRow(r: any): VideoParticipantRow {
     participantKey: String(r.participantKey),
     accountId: r.accountId ?? null,
     displayName: r.displayName ?? null,
+    displayAge: r.displayAge === null || r.displayAge === undefined ? null : Number(r.displayAge),
     status: String(r.status ?? "requested"),
     peerState: r.peerState ?? null,
     micEnabled: Number(r.micEnabled ?? 1),
@@ -980,6 +983,7 @@ export async function upsertParticipant(input: {
   participantKey: string;
   accountId?: string | null;
   displayName?: string | null;
+  displayAge?: number | null;
   status?: string;
 }): Promise<VideoParticipantRow> {
   const existing = await queryOne<any>(
@@ -988,17 +992,22 @@ export async function upsertParticipant(input: {
   );
   if (existing) {
     await execute(
-      `UPDATE VideoParticipant SET lastSeenAt = NOW(3), displayName = COALESCE(?, displayName), status = COALESCE(?, status)
+      `UPDATE VideoParticipant
+         SET lastSeenAt = NOW(3),
+             displayName = COALESCE(?, displayName),
+             displayAge = COALESCE(?, displayAge),
+             status = COALESCE(?, status)
        WHERE id = ?`,
-      [input.displayName ?? null, input.status ?? null, existing.id],
+      [input.displayName ?? null, input.displayAge ?? null, input.status ?? null, existing.id],
     );
     const reloaded = await queryOne<any>(`SELECT * FROM VideoParticipant WHERE id = ? LIMIT 1`, [existing.id]);
     return mapParticipantRow(reloaded);
   }
   const id = randomUUID();
   await execute(
-    `INSERT INTO VideoParticipant (id, tenantId, roomId, role, participantKey, accountId, displayName, status, joinedAt, lastSeenAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+    `INSERT INTO VideoParticipant
+       (id, tenantId, roomId, role, participantKey, accountId, displayName, displayAge, status, joinedAt, lastSeenAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
     [
       id,
       input.tenantId,
@@ -1007,6 +1016,7 @@ export async function upsertParticipant(input: {
       input.participantKey,
       input.accountId ?? null,
       input.displayName ?? null,
+      input.displayAge ?? null,
       input.status ?? "requested",
     ],
   );
@@ -1392,6 +1402,8 @@ export async function createInstantVideoRoom(
   const now = Date.now();
   const startMs = input.scheduledAt ? input.scheduledAt.getTime() : now;
   const isInstant = !input.scheduledAt;
+  // Approval-by-default; auto-admit must be requested explicitly.
+  const autoAdmit = input.autoAdmit === true;
 
   // Instant meetings open right away; scheduled links honour the normal lead-in.
   const opensAt = isInstant ? now : startMs - cfg.beforeMinutes * 60_000;
@@ -1423,7 +1435,7 @@ export async function createInstantVideoRoom(
           input.guestName ?? null,
           input.guestPhone ?? null,
           input.guestEmail ?? null,
-          input.autoAdmit ? 1 : 0,
+          autoAdmit ? 1 : 0,
         ],
       );
       break;
@@ -1621,6 +1633,7 @@ export function publicParticipant(p: VideoParticipantRow) {
     id: p.id,
     role: p.role,
     displayName: p.displayName,
+    displayAge: p.displayAge,
     status: p.status,
     peerState: p.peerState,
     micEnabled: p.micEnabled === 1,
