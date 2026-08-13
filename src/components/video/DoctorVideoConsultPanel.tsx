@@ -72,7 +72,15 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
   const [detail, setDetail] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [shareLink, setShareLink] = useState<string | null>(null);
+  /**
+   * The last link we minted, tagged with the room it belongs to.
+   *
+   * Keyed rather than bare: `joinCall` sets the link and then updates `selected`,
+   * and a selection-scoped reset wiped it again before the lobby could render it.
+   * Tagging also makes it impossible to show one room's link while another is
+   * selected.
+   */
+  const [issuedLink, setIssuedLink] = useState<{ roomId: string; link: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [inCallRoomId, setInCallRoomId] = useState<string | null>(null);
   const [docsOpen, setDocsOpen] = useState(false);
@@ -133,10 +141,9 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
   }, []);
 
   useEffect(() => {
-    if (selected) {
-      setShareLink(null);
-      void loadDetail(selected);
-    }
+    // No link reset here: `issuedLink` is room-tagged, so switching consultations
+    // hides it automatically without discarding a link we just issued.
+    if (selected) void loadDetail(selected);
   }, [selected, loadDetail]);
 
   // Auto-provision a room + link when a video appointment has none yet.
@@ -151,7 +158,9 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
         const r = await createVideoRoomServerFn({ data: { appointmentId: selected.appointmentId } });
         if (cancelled) return;
         setDetail({ exists: true, ...(r as any) });
-        if ((r as any).joinLink) setShareLink((r as any).joinLink);
+        if ((r as any).joinLink && (r as any).room?.id) {
+          setIssuedLink({ roomId: (r as any).room.id, link: (r as any).joinLink });
+        }
       } catch {
         /* leave the manual Create button available */
       } finally {
@@ -207,6 +216,8 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
   }, [selected, inCallRoomId]);
 
   const roomId: string | null = detail?.room?.id ?? (selected?.kind === "meeting" ? selected.roomId : null);
+  /** The issued link, but only when it belongs to the room on screen. */
+  const shareLink = issuedLink && roomId && issuedLink.roomId === roomId ? issuedLink.link : null;
 
   const createRoomForAppointment = async () => {
     if (selected?.kind !== "appointment") return;
@@ -214,7 +225,9 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
     try {
       const r = await createVideoRoomServerFn({ data: { appointmentId: selected.appointmentId } });
       setDetail({ exists: true, ...(r as any) });
-      if ((r as any).joinLink) setShareLink((r as any).joinLink);
+      if ((r as any).joinLink && (r as any).room?.id) {
+        setIssuedLink({ roomId: (r as any).room.id, link: (r as any).joinLink });
+      }
     } finally {
       setBusy(false);
     }
@@ -225,7 +238,7 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
     setBusy(true);
     try {
       const r = await getShareLinkServerFn({ data: { roomId } });
-      setShareLink(r.joinLink);
+      setIssuedLink({ roomId, link: r.joinLink });
     } finally {
       setBusy(false);
     }
@@ -236,7 +249,7 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
     setBusy(true);
     try {
       const r = await regenerateJoinTokenServerFn({ data: { roomId } });
-      setShareLink(r.joinLink);
+      setIssuedLink({ roomId, link: r.joinLink });
     } finally {
       setBusy(false);
     }
@@ -268,7 +281,7 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
   };
 
   const joinCall = async (id: string, link?: string | null, meta?: { meetingCode?: string }) => {
-    if (link) setShareLink(link);
+    if (link) setIssuedLink({ roomId: id, link });
     if (meta?.meetingCode) {
       setDetail((d: any) => ({
         ...(d && typeof d === "object" ? d : {}),
@@ -285,10 +298,12 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
         meetingCode: meta.meetingCode,
       });
     }
-    if (!link && !shareLink) {
+    // The host waits in the lobby until they admit someone, so they must always
+    // have a link to hand there — mint one if we weren't given it.
+    if (!link && issuedLink?.roomId !== id) {
       try {
         const r = await getShareLinkServerFn({ data: { roomId: id } });
-        setShareLink(r.joinLink);
+        setIssuedLink({ roomId: id, link: r.joinLink });
       } catch {
         /* non-fatal — call still proceeds */
       }
@@ -324,8 +339,9 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
             transport={buildDoctorTransport(activeId)}
             fetchIce={async () => (await getIceConfigurationServerFn({ data: { roomId: activeId } })) as any}
             peerName={detail?.appointment?.name ?? detail?.guestName ?? "patient"}
-            meetingCode={detail?.meetingCode ?? null}
-            shareLink={shareLink}
+            meetingCode={detail?.meetingCode ?? (selected?.kind === "meeting" ? selected.meetingCode : null)}
+            // Matched against the room actually in the call, not the selection.
+            shareLink={issuedLink?.roomId === activeId ? issuedLink.link : null}
             onEnded={(reason) => {
               setInCallRoomId(null);
               setEndedNotice(endedMessage(reason));
@@ -582,7 +598,7 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
                     ) : (
                       <p className="mt-1 text-xs text-zinc-500">
                         {detail?.linkActive
-                          ? "A link has already been sent to the patient."
+                          ? "A link is active for this consultation. Links can't be read back, so use Get link to copy a fresh one."
                           : "No link has been issued yet."}
                       </p>
                     )}
@@ -791,6 +807,13 @@ function StateBadge({ state, small }: { state: string; small?: boolean }) {
     expired: "bg-zinc-100 text-zinc-500",
     cancelled: "bg-red-100 text-red-600",
   };
+  // "scheduled" is the internal name for a room nobody has entered yet. On an
+  // instant meeting that reads as though it were booked for later.
+  const labels: Record<string, string> = {
+    scheduled: "Ready to join",
+    waiting: "Someone waiting",
+    active: "In progress",
+  };
   return (
     <span
       className={cn(
@@ -799,7 +822,7 @@ function StateBadge({ state, small }: { state: string; small?: boolean }) {
         styles[state] ?? "bg-zinc-100 text-zinc-600",
       )}
     >
-      {state}
+      {labels[state] ?? state}
     </span>
   );
 }
