@@ -29,19 +29,27 @@ function PrivacyPage() {
             service-based businesses.
           </p>
           <p className="mb-4">
-            Your privacy is important to us. This Privacy Policy explains how we collect, use, store,
-            process, and protect your personal information when you access our website, mobile
-            applications, APIs, and services (collectively referred to as the "Platform").
+            Your privacy is important to us. This Privacy Policy explains how we collect, use,
+            store, process, and protect your personal information when you access our website,
+            mobile applications, APIs, and services (collectively referred to as the "Platform").
           </p>
           <p className="mb-6">
             By using BookMyTime, you agree to the practices described in this Privacy Policy.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">1. Information We Collect</h2>
-          <p className="mb-4">We collect information that helps us provide and improve our services.</p>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            1. Information We Collect
+          </h2>
+          <p className="mb-4">
+            We collect information that helps us provide and improve our services.
+          </p>
 
-          <h3 className="text-base font-semibold mt-6 mb-2 text-zinc-900">A. Personal Information</h3>
-          <p>When you register an account, subscribe to our services, or contact us, we may collect:</p>
+          <h3 className="text-base font-semibold mt-6 mb-2 text-zinc-900">
+            A. Personal Information
+          </h3>
+          <p>
+            When you register an account, subscribe to our services, or contact us, we may collect:
+          </p>
           <ul className="list-disc pl-5 space-y-1 mb-6">
             <li>Full Name</li>
             <li>Email Address</li>
@@ -55,7 +63,9 @@ function PrivacyPage() {
             <li>Designation</li>
           </ul>
 
-          <h3 className="text-base font-semibold mt-6 mb-2 text-zinc-900">B. Account Information</h3>
+          <h3 className="text-base font-semibold mt-6 mb-2 text-zinc-900">
+            B. Account Information
+          </h3>
           <p>We collect information related to your account, including:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Username</li>
@@ -67,7 +77,9 @@ function PrivacyPage() {
           </ul>
           <p className="mb-6">Passwords are never stored in plain text.</p>
 
-          <h3 className="text-base font-semibold mt-6 mb-2 text-zinc-900">C. Appointment &amp; Customer Data</h3>
+          <h3 className="text-base font-semibold mt-6 mb-2 text-zinc-900">
+            C. Appointment &amp; Customer Data
+          </h3>
           <p>Depending on how you use the Platform, BookMyTime may process:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Customer Name</li>
@@ -81,12 +93,16 @@ function PrivacyPage() {
             The data entered into BookMyTime remains under the control of the account owner.
           </p>
 
-          <h3 className="text-base font-semibold mt-6 mb-2 text-zinc-900">D. Payment Information</h3>
+          <h3 className="text-base font-semibold mt-6 mb-2 text-zinc-900">
+            D. Payment Information
+          </h3>
           <p className="mb-2">
             BookMyTime does not collect or store complete debit card numbers, credit card numbers,
             CVV, UPI PINs, or internet banking credentials.
           </p>
-          <p className="mb-2">Payments are securely processed through trusted third-party payment gateways.</p>
+          <p className="mb-2">
+            Payments are securely processed through trusted third-party payment gateways.
+          </p>
           <p>We may store:</p>
           <ul className="list-disc pl-5 space-y-1 mb-6">
             <li>Payment Status</li>
@@ -119,7 +135,9 @@ function PrivacyPage() {
           </ul>
           <p className="mb-6">This helps improve system performance and user experience.</p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">2. How We Use Your Information</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            2. How We Use Your Information
+          </h2>
           <p>Your information is used only for legitimate business purposes including:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Creating and managing your account</li>
@@ -136,18 +154,20 @@ function PrivacyPage() {
           </ul>
           <p className="mb-6">We never sell your personal information.</p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">3. Customer Data Ownership</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            3. Customer Data Ownership
+          </h2>
           <p className="mb-2">
-            All appointment information, customer records, and operational data uploaded by you remain
-            your property.
+            All appointment information, customer records, and operational data uploaded by you
+            remain your property.
           </p>
           <p className="mb-2">
-            BookMyTime acts only as a technology service provider and processes such information on your
-            behalf.
+            BookMyTime acts only as a technology service provider and processes such information on
+            your behalf.
           </p>
           <p className="mb-6">
-            You remain responsible for obtaining any legally required consent from your customers before
-            collecting or storing their information.
+            You remain responsible for obtaining any legally required consent from your customers
+            before collecting or storing their information.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">4. Payment Processing</h2>
@@ -164,8 +184,8 @@ function PrivacyPage() {
             <li>Internet Banking Passwords</li>
           </ul>
           <p className="mb-6">
-            Payment gateways independently process payment information according to applicable PCI-DSS
-            standards.
+            Payment gateways independently process payment information according to applicable
+            PCI-DSS standards.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">5. Cookies</h2>
@@ -216,12 +236,15 @@ function PrivacyPage() {
             <li>Enforce agreements</li>
           </ul>
           <p className="mb-6">
-            Upon account deletion, data may be retained for a limited period where required by applicable
-            law.
+            Upon account deletion, data may be retained for a limited period where required by
+            applicable law.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">9. Security Measures</h2>
-          <p>We implement reasonable administrative, technical, and organizational safeguards including:</p>
+          <p>
+            We implement reasonable administrative, technical, and organizational safeguards
+            including:
+          </p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>HTTPS Encryption</li>
             <li>SSL Security</li>
@@ -234,13 +257,17 @@ function PrivacyPage() {
             <li>Regular Software Updates</li>
           </ul>
           <p className="mb-6">
-            While we take appropriate precautions, no online platform can guarantee absolute security.
+            While we take appropriate precautions, no online platform can guarantee absolute
+            security.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">10. International Data Transfers</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            10. International Data Transfers
+          </h2>
           <p className="mb-6">
-            If you access BookMyTime from outside India, your information may be processed and stored on
-            servers located in India or other jurisdictions where our service providers operate.
+            If you access BookMyTime from outside India, your information may be processed and
+            stored on servers located in India or other jurisdictions where our service providers
+            operate.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">11. Children's Privacy</h2>
@@ -268,8 +295,8 @@ function PrivacyPage() {
             <li>Reporting suspicious activity immediately</li>
           </ul>
           <p className="mb-6">
-            BookMyTime shall not be responsible for losses resulting from unauthorized access caused by
-            failure to protect account credentials.
+            BookMyTime shall not be responsible for losses resulting from unauthorized access caused
+            by failure to protect account credentials.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">14. Third-Party Links</h2>
@@ -285,13 +312,15 @@ function PrivacyPage() {
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">15. Policy Updates</h2>
           <p className="mb-2">We may update this Privacy Policy periodically.</p>
           <p className="mb-2">
-            Changes become effective immediately upon publication on this page unless otherwise specified.
+            Changes become effective immediately upon publication on this page unless otherwise
+            specified.
           </p>
           <p className="mb-6">Users are encouraged to review this page regularly.</p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">16. Contact Information</h2>
           <p className="mb-2">
-            If you have questions regarding this Privacy Policy or our data practices, please contact:
+            If you have questions regarding this Privacy Policy or our data practices, please
+            contact:
           </p>
           <p className="mb-6">
             <strong className="text-zinc-900">BookMyTime Support</strong>
@@ -319,8 +348,8 @@ function PrivacyPage() {
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">17. Consent</h2>
           <p className="mb-6">
-            By accessing or using BookMyTime, you acknowledge that you have read, understood, and agree to
-            this Privacy Policy.
+            By accessing or using BookMyTime, you acknowledge that you have read, understood, and
+            agree to this Privacy Policy.
           </p>
         </div>
       </div>

@@ -52,3 +52,85 @@ model Appointment {
 
   @@index([tenantId])
 }
+
+model RestaurantDiningArea {
+  id           String   @id @db.VarChar(255)
+  tenantId     String   @db.VarChar(255)
+  locationId   String?  @db.VarChar(255)
+  name         String   @db.VarChar(30)
+  displayOrder Int      @default(1)
+  createdAt    DateTime @default(now()) @db.Timestamp(0)
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamp(0)
+
+  @@unique([tenantId, name], map: "uq_area_tenant_name")
+  @@index([tenantId, locationId, displayOrder, name], map: "idx_area_scope_order")
+  @@map("RestaurantDiningArea")
+}
+
+model RestaurantClosureDay {
+  id          String   @id @db.VarChar(255)
+  tenantId    String   @db.VarChar(255)
+  locationId  String?  @db.VarChar(255)
+  locationKey String   @db.VarChar(255)
+  closureDate DateTime @db.Date
+  scopeType   String   @db.VarChar(16)
+  tableId     String?  @db.VarChar(255)
+  scopeKey    String   @db.VarChar(255)
+  reason      String   @default("") @db.VarChar(100)
+  isHoliday   Boolean  @default(false)
+  createdAt   DateTime @default(now()) @db.Timestamp(0)
+  updatedAt   DateTime @default(now()) @updatedAt @db.Timestamp(0)
+
+  @@unique([tenantId, locationKey, closureDate, scopeKey], map: "uq_closure")
+  @@index([tenantId, locationId, closureDate], map: "idx_closure_month")
+  @@index([tenantId, locationId, tableId, closureDate], map: "idx_closure_table")
+  @@map("RestaurantClosureDay")
+}
+
+model RestaurantMenuCategory {
+  id           String   @id @db.VarChar(255)
+  tenantId     String   @db.VarChar(255)
+  locationId   String?  @db.VarChar(255)
+  name         String   @db.VarChar(40)
+  displayOrder Int      @default(1)
+  createdAt    DateTime @default(now()) @db.Timestamp(0)
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamp(0)
+
+  @@unique([tenantId, name], map: "uq_menu_category_name")
+  @@index([tenantId, locationId, displayOrder, name], map: "idx_menu_category_scope")
+  @@map("RestaurantMenuCategory")
+}
+
+model RestaurantMenuItem {
+  id           String   @id @db.VarChar(255)
+  tenantId     String   @db.VarChar(255)
+  locationId   String?  @db.VarChar(255)
+  categoryId   String   @db.VarChar(255)
+  name         String   @db.VarChar(80)
+  priceMinor   Int
+  description  String   @default("") @db.VarChar(300)
+  displayOrder Int      @default(1)
+  state        String   @default("available") @db.VarChar(16)
+  createdAt    DateTime @default(now()) @db.Timestamp(0)
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamp(0)
+
+  @@index([tenantId, locationId, categoryId], map: "idx_menu_item_category")
+  @@index([tenantId, locationId, state], map: "idx_menu_item_public")
+  @@map("RestaurantMenuItem")
+}
+
+model AccountEmailVerification {
+  id                String    @id @db.VarChar(255)
+  accountType       String    @db.VarChar(16)
+  accountId         String    @db.VarChar(255)
+  targetEmail       String    @db.VarChar(255)
+  codeHash          String    @db.VarChar(255)
+  expiresAt         DateTime  @db.Timestamp(0)
+  resendAvailableAt DateTime  @db.Timestamp(0)
+  consumedAt        DateTime? @db.Timestamp(0)
+  createdAt         DateTime  @default(now()) @db.Timestamp(0)
+
+  @@index([accountType, accountId, consumedAt, expiresAt], map: "idx_email_verify_account")
+  @@index([targetEmail], map: "idx_email_verify_target")
+  @@map("AccountEmailVerification")
+}

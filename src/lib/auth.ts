@@ -2,13 +2,30 @@ import { createServerFn } from "@tanstack/react-start";
 import { verifySession } from "./auth.server";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { query, queryOne, execute } from "./db";
+import { query, queryOne, execute, withTransaction } from "./db";
+import {
+  PROFESSION_RESTAURANT,
+  TENANT_PREFIX_RESTAURANT,
+  DEFAULT_SETTINGS,
+} from "./restaurant-availability";
 import { sendOtpEmail, sendBillingNotificationEmail } from "./email";
 
 // WhatsApp HTTP client — pure ESM, safe to import (no Puppeteer/CJS globals)
-import { enqueueWA, getWAStatus, disconnectWA, initializeWA, enqueueWABulk, sendWAMedia, pauseWACampaign } from "./whatsapp";
-import { canUseFeature, canOperateFeature, type AccountContext, type AccountRole } from "./feature-access";
-
+import {
+  enqueueWA,
+  getWAStatus,
+  disconnectWA,
+  initializeWA,
+  enqueueWABulk,
+  sendWAMedia,
+  pauseWACampaign,
+} from "./whatsapp";
+import {
+  canUseFeature,
+  canOperateFeature,
+  type AccountContext,
+  type AccountRole,
+} from "./feature-access";
 
 // Builds the AccountContext consumed by the pure feature-access resolver from a
 // verifySession result. Child sessions only exist while active (verifySession
@@ -46,10 +63,9 @@ export const checkEmailServerFn = createServerFn({ method: "POST" })
     return email;
   })
   .handler(async ({ data: email }) => {
-    const existingUser = await queryOne<any>(
-      "SELECT id FROM User WHERE email = ? LIMIT 1",
-      [email]
-    );
+    const existingUser = await queryOne<any>("SELECT id FROM User WHERE email = ? LIMIT 1", [
+      email,
+    ]);
     return { exists: !!existingUser };
   });
 
@@ -63,10 +79,9 @@ export const sendOtpServerFn = createServerFn({ method: "POST" })
   })
   .handler(async ({ data: email }) => {
     // Check if email already registered
-    const existingUser = await queryOne<any>(
-      "SELECT id FROM User WHERE email = ? LIMIT 1",
-      [email]
-    );
+    const existingUser = await queryOne<any>("SELECT id FROM User WHERE email = ? LIMIT 1", [
+      email,
+    ]);
 
     if (existingUser) {
       throw new Error("Email already registered");
@@ -84,7 +99,7 @@ export const sendOtpServerFn = createServerFn({ method: "POST" })
     // Create new OTP
     await execute(
       "INSERT INTO OtpCode (id, email, code, expiresAt, createdAt) VALUES (?, ?, ?, ?, NOW())",
-      [generateId(), email, code, expiresAt]
+      [generateId(), email, code, expiresAt],
     );
 
     // Send OTP via email in the background (non-blocking) to optimize performance
@@ -108,10 +123,9 @@ export const sendPasswordResetOtpServerFn = createServerFn({ method: "POST" })
     return email;
   })
   .handler(async ({ data: email }) => {
-    const existingUser = await queryOne<any>(
-      "SELECT id FROM User WHERE email = ? LIMIT 1",
-      [email]
-    );
+    const existingUser = await queryOne<any>("SELECT id FROM User WHERE email = ? LIMIT 1", [
+      email,
+    ]);
 
     if (!existingUser) {
       throw new Error("No account found with this email address");
@@ -129,7 +143,7 @@ export const sendPasswordResetOtpServerFn = createServerFn({ method: "POST" })
     // Create new OTP
     await execute(
       "INSERT INTO OtpCode (id, email, code, expiresAt, createdAt) VALUES (?, ?, ?, ?, NOW())",
-      [generateId(), email, code, expiresAt]
+      [generateId(), email, code, expiresAt],
     );
 
     // Send OTP via email in the background (non-blocking) to optimize performance
@@ -151,13 +165,16 @@ export const verifyOtpServerFn = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     // Allow test bypass for development domains
-    if (data.code === "1234" && (data.email.endsWith("@example.com") || data.email.endsWith("@bookmytime.com"))) {
+    if (
+      data.code === "1234" &&
+      (data.email.endsWith("@example.com") || data.email.endsWith("@bookmytime.com"))
+    ) {
       return { success: true };
     }
 
     const validCode = await queryOne<any>(
       "SELECT * FROM OtpCode WHERE email = ? AND code = ? AND expiresAt > ? ORDER BY createdAt DESC LIMIT 1",
-      [data.email, data.code, new Date()]
+      [data.email, data.code, new Date()],
     );
 
     if (!validCode) {
@@ -174,36 +191,36 @@ export const verifyOtpServerFn = createServerFn({ method: "POST" })
 // 3. Signup Server Function
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const signupServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    name: string;
-    phone: string;
-    email: string;
-    clinicName: string;
-    practiceSize: string;
-    password?: string;
-    plan?: string;
-    profession?: string;
-  }) => {
-    if (!data.name || !data.phone || !data.email || !data.clinicName || !data.practiceSize) {
-      throw new Error("Required fields missing");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      name: string;
+      phone: string;
+      email: string;
+      clinicName: string;
+      practiceSize: string;
+      password?: string;
+      plan?: string;
+      profession?: string;
+    }) => {
+      if (!data.name || !data.phone || !data.email || !data.clinicName || !data.practiceSize) {
+        throw new Error("Required fields missing");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     // Check if email already exists
-    const existingEmail = await queryOne<any>(
-      "SELECT id FROM User WHERE email = ? LIMIT 1",
-      [data.email]
-    );
+    const existingEmail = await queryOne<any>("SELECT id FROM User WHERE email = ? LIMIT 1", [
+      data.email,
+    ]);
     if (existingEmail) {
       throw new Error("Email already registered");
     }
 
     // Check if phone number already exists
-    const existingPhone = await queryOne<any>(
-      "SELECT id FROM User WHERE phone = ? LIMIT 1",
-      [data.phone]
-    );
+    const existingPhone = await queryOne<any>("SELECT id FROM User WHERE phone = ? LIMIT 1", [
+      data.phone,
+    ]);
     if (existingPhone) {
       throw new Error("Phone number already registered");
     }
@@ -221,21 +238,58 @@ export const signupServerFn = createServerFn({ method: "POST" })
       tenantPrefix = "advisory-";
     } else if (profession === "Education institutions") {
       tenantPrefix = "edu-";
+    } else if (profession === PROFESSION_RESTAURANT) {
+      tenantPrefix = TENANT_PREFIX_RESTAURANT;
     }
     const tenantId = tenantPrefix + Math.floor(100000 + Math.random() * 900000).toString();
     const selectedPlan = data.plan || "Basic";
 
-    await execute(
-      `INSERT INTO User (id, tenantId, name, email, phone, clinicName, practiceSize, password, subscriptionStatus, subscriptionPlan, subscriptionExpiresAt, createdAt, updatedAt, profession)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, DATE_ADD(NOW(), INTERVAL 7 DAY), NOW(), NOW(), ?)`,
-      [userId, tenantId, data.name, data.email, data.phone, data.clinicName, data.practiceSize, hashedPassword, selectedPlan, profession]
-    );
+    const ownerInsertSql = `INSERT INTO User (id, tenantId, name, email, phone, clinicName, practiceSize, password, subscriptionStatus, subscriptionPlan, subscriptionExpiresAt, createdAt, updatedAt, profession)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, DATE_ADD(NOW(), INTERVAL 7 DAY), NOW(), NOW(), ?)`;
+    const ownerInsertParams = [
+      userId,
+      tenantId,
+      data.name,
+      data.email,
+      data.phone,
+      data.clinicName,
+      data.practiceSize,
+      hashedPassword,
+      selectedPlan,
+      profession,
+    ];
+
+    if (profession === PROFESSION_RESTAURANT) {
+      // Restaurant signup: the Owner_Account row (which carries the tenant
+      // assignment) and the default Service_Settings row are created in one
+      // transaction, so a failure in either step leaves no partially created
+      // tenant and surfaces an error to the form (Req 1.5, 1.8).
+      await withTransaction(async (conn) => {
+        await conn.query(ownerInsertSql, ownerInsertParams);
+        await conn.query(
+          `INSERT INTO RestaurantSettings (id, tenantId, slotInterval, turnTime, maxPartySize, advanceBookingWindow, minLeadTime, timezone, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+          [
+            generateId(),
+            tenantId,
+            DEFAULT_SETTINGS.slotInterval,
+            DEFAULT_SETTINGS.turnTime,
+            DEFAULT_SETTINGS.maxPartySize,
+            DEFAULT_SETTINGS.advanceBookingWindow,
+            DEFAULT_SETTINGS.minLeadTime,
+            DEFAULT_SETTINGS.timezone,
+          ],
+        );
+      });
+    } else {
+      await execute(ownerInsertSql, ownerInsertParams);
+    }
 
     // Log initial Active subscription log
     await execute(
       `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
        VALUES (?, ?, 'None', 'Active', 'None', ?, 0.00, 'monthly', NOW(), 'System')`,
-      [generateId(), userId, selectedPlan]
+      [generateId(), userId, selectedPlan],
     );
 
     return { success: true, userId };
@@ -254,32 +308,36 @@ export const loginServerFn = createServerFn({ method: "POST" })
     const { setCookie } = await import("@tanstack/react-start/server");
 
     // ── 1. Try main clinic owner (User table) ──
-    const user = await queryOne<any>(
-      "SELECT * FROM User WHERE email = ? OR phone = ? LIMIT 1",
-      [data.username, data.username]
-    );
+    const user = await queryOne<any>("SELECT * FROM User WHERE email = ? OR phone = ? LIMIT 1", [
+      data.username,
+      data.username,
+    ]);
 
     if (user) {
       const passwordMatch = await bcrypt.compare(rawPassword, user.password);
       if (!passwordMatch) throw new Error("Incorrect password");
 
       if (user.subscriptionStatus === "Cancelled") {
-        throw new Error("Your clinic account is deactivated. Please contact BookMyTime support at bookmytime1355@gmail.com.");
+        throw new Error(
+          "Your clinic account is deactivated. Please contact BookMyTime support at bookmytime1355@gmail.com.",
+        );
       }
       if (user.subscriptionExpiresAt) {
         const expiry = new Date(user.subscriptionExpiresAt);
         if (expiry < new Date()) {
-          throw new Error("Your subscription or trial period has ended. Please contact support at bookmytime1355@gmail.com to renew.");
+          throw new Error(
+            "Your subscription or trial period has ended. Please contact support at bookmytime1355@gmail.com to renew.",
+          );
         }
       }
 
       const token = crypto.randomBytes(32).toString("hex");
       const expiresAt = new Date(
-        Date.now() + (data.rememberMe ? 30 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000)
+        Date.now() + (data.rememberMe ? 30 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000),
       );
       await execute(
         "INSERT INTO Session (id, userId, token, expiresAt, createdAt) VALUES (?, ?, ?, ?, NOW())",
-        [generateId(), user.id, token, expiresAt]
+        [generateId(), user.id, token, expiresAt],
       );
       setCookie("session_token", token, {
         httpOnly: true,
@@ -299,12 +357,14 @@ export const loginServerFn = createServerFn({ method: "POST" })
     // ── 2. Try sub-user (SubUser table — reception / doctor) ──
     const subUser = await queryOne<any>(
       "SELECT su.*, u.subscriptionStatus, u.subscriptionExpiresAt FROM SubUser su JOIN User u ON su.tenantId COLLATE utf8mb4_unicode_ci = u.tenantId COLLATE utf8mb4_unicode_ci WHERE su.email COLLATE utf8mb4_unicode_ci = ? OR su.phone COLLATE utf8mb4_unicode_ci = ? LIMIT 1",
-      [data.username, data.username]
+      [data.username, data.username],
     );
 
     if (subUser) {
       if (!subUser.isActive) {
-        throw new Error("Your staff account has been deactivated. Please contact your clinic administrator.");
+        throw new Error(
+          "Your staff account has been deactivated. Please contact your clinic administrator.",
+        );
       }
       const passwordMatch = await bcrypt.compare(rawPassword, subUser.password);
       if (!passwordMatch) throw new Error("Incorrect password");
@@ -316,7 +376,9 @@ export const loginServerFn = createServerFn({ method: "POST" })
       if (subUser.subscriptionExpiresAt) {
         const expiry = new Date(subUser.subscriptionExpiresAt);
         if (expiry < new Date()) {
-          throw new Error("Your clinic subscription has expired. Please contact your clinic admin.");
+          throw new Error(
+            "Your clinic subscription has expired. Please contact your clinic admin.",
+          );
         }
       }
 
@@ -324,7 +386,7 @@ export const loginServerFn = createServerFn({ method: "POST" })
       const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000); // 8 hours
       await execute(
         "INSERT INTO SubUserSession (id, subUserId, token, expiresAt) VALUES (?, ?, ?, ?)",
-        [crypto.randomUUID(), subUser.id, token, expiresAt]
+        [crypto.randomUUID(), subUser.id, token, expiresAt],
       );
       setCookie("sub_session_token", token, {
         httpOnly: true,
@@ -335,8 +397,8 @@ export const loginServerFn = createServerFn({ method: "POST" })
       });
       return {
         success: true,
-        role: subUser.role,          // "reception" | "doctor"
-        redirectTo: "/dashboard",    // both redirect to clinic dashboard for now
+        role: subUser.role, // "reception" | "doctor"
+        redirectTo: "/dashboard", // both redirect to clinic dashboard for now
         user: { id: subUser.id, name: subUser.name, email: subUser.email, clinicName: "" },
       };
     }
@@ -349,32 +411,40 @@ export const loginServerFn = createServerFn({ method: "POST" })
        WHERE l.email COLLATE utf8mb4_unicode_ci = ?
           OR l.phone COLLATE utf8mb4_unicode_ci = ?
        LIMIT 1`,
-      [data.username, data.username]
+      [data.username, data.username],
     );
 
     if (location) {
       if (!location.isActive) {
-        throw new Error("This location account has been deactivated. Please contact your workspace administrator.");
+        throw new Error(
+          "This location account has been deactivated. Please contact your workspace administrator.",
+        );
       }
       const passwordMatch = await bcrypt.compare(rawPassword, location.password);
       if (!passwordMatch) throw new Error("Incorrect password");
 
       // Check parent workspace subscription
       if (location.subscriptionStatus === "Cancelled") {
-        throw new Error("Your workspace account is deactivated. Please contact your workspace admin.");
+        throw new Error(
+          "Your workspace account is deactivated. Please contact your workspace admin.",
+        );
       }
       if (location.subscriptionExpiresAt) {
         const expiry = new Date(location.subscriptionExpiresAt);
         if (expiry < new Date()) {
-          throw new Error("Your workspace subscription has expired. Please contact your workspace admin.");
+          throw new Error(
+            "Your workspace subscription has expired. Please contact your workspace admin.",
+          );
         }
       }
 
       const token = crypto.randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + (data.rememberMe ? 30 * 24 * 60 * 60 * 1000 : 8 * 60 * 60 * 1000));
+      const expiresAt = new Date(
+        Date.now() + (data.rememberMe ? 30 * 24 * 60 * 60 * 1000 : 8 * 60 * 60 * 1000),
+      );
       await execute(
         "INSERT INTO LocationSession (id, locationId, token, expiresAt) VALUES (?, ?, ?, ?)",
-        [crypto.randomUUID(), location.id, token, expiresAt]
+        [crypto.randomUUID(), location.id, token, expiresAt],
       );
       setCookie("location_session_token", token, {
         httpOnly: true,
@@ -387,7 +457,12 @@ export const loginServerFn = createServerFn({ method: "POST" })
         success: true,
         role: "location" as const,
         redirectTo: "/dashboard",
-        user: { id: location.id, name: location.name, email: location.email, clinicName: location.name },
+        user: {
+          id: location.id,
+          name: location.name,
+          email: location.email,
+          clinicName: location.name,
+        },
       };
     }
 
@@ -395,40 +470,38 @@ export const loginServerFn = createServerFn({ method: "POST" })
     throw new Error("No account found with this email or phone number");
   });
 
-
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // 5. Logout Server Function
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export const logoutServerFn = createServerFn({ method: "POST" })
-  .handler(async () => {
-    const { getCookie, deleteCookie } = await import("@tanstack/react-start/server");
-    const token = getCookie("session_token");
-    const subToken = getCookie("sub_session_token");
-    const locToken = getCookie("location_session_token");
+export const logoutServerFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { getCookie, deleteCookie } = await import("@tanstack/react-start/server");
+  const token = getCookie("session_token");
+  const subToken = getCookie("sub_session_token");
+  const locToken = getCookie("location_session_token");
 
-    if (token) {
-      await execute("DELETE FROM Session WHERE token = ?", [token]);
-      deleteCookie("session_token", {
-        path: "/",
-      });
-    }
+  if (token) {
+    await execute("DELETE FROM Session WHERE token = ?", [token]);
+    deleteCookie("session_token", {
+      path: "/",
+    });
+  }
 
-    if (subToken) {
-      await execute("DELETE FROM SubUserSession WHERE token = ?", [subToken]);
-      deleteCookie("sub_session_token", {
-        path: "/",
-      });
-    }
+  if (subToken) {
+    await execute("DELETE FROM SubUserSession WHERE token = ?", [subToken]);
+    deleteCookie("sub_session_token", {
+      path: "/",
+    });
+  }
 
-    if (locToken) {
-      await execute("DELETE FROM LocationSession WHERE token = ?", [locToken]);
-      deleteCookie("location_session_token", {
-        path: "/",
-      });
-    }
+  if (locToken) {
+    await execute("DELETE FROM LocationSession WHERE token = ?", [locToken]);
+    deleteCookie("location_session_token", {
+      path: "/",
+    });
+  }
 
-    return { success: true };
-  });
+  return { success: true };
+});
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // 6. Reset Password Server Function
@@ -439,10 +512,7 @@ export const resetPasswordServerFn = createServerFn({ method: "POST" })
     return data;
   })
   .handler(async ({ data }) => {
-    const user = await queryOne<any>(
-      "SELECT id FROM User WHERE email = ? LIMIT 1",
-      [data.email]
-    );
+    const user = await queryOne<any>("SELECT id FROM User WHERE email = ? LIMIT 1", [data.email]);
 
     if (!user) {
       throw new Error("No user registered with this email address");
@@ -451,10 +521,10 @@ export const resetPasswordServerFn = createServerFn({ method: "POST" })
     const rawPassword = data.password || "BookMyTime123";
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
-    await execute(
-      "UPDATE User SET password = ?, updatedAt = NOW() WHERE email = ?",
-      [hashedPassword, data.email]
-    );
+    await execute("UPDATE User SET password = ?, updatedAt = NOW() WHERE email = ?", [
+      hashedPassword,
+      data.email,
+    ]);
 
     return { success: true };
   });
@@ -462,76 +532,75 @@ export const resetPasswordServerFn = createServerFn({ method: "POST" })
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // 7. Get Current User Server Function
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export const getCurrentUserServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const { getCookie, deleteCookie } = await import("@tanstack/react-start/server");
-    const token = getCookie("session_token");
-    const subToken = getCookie("sub_session_token");
-    const locToken = getCookie("location_session_token");
+export const getCurrentUserServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const { getCookie, deleteCookie } = await import("@tanstack/react-start/server");
+  const token = getCookie("session_token");
+  const subToken = getCookie("sub_session_token");
+  const locToken = getCookie("location_session_token");
 
-    if (!token && !subToken && !locToken) return null;
+  if (!token && !subToken && !locToken) return null;
 
-    const user = await verifySession();
-    if (!user) {
-      if (token) {
-        deleteCookie("session_token", {
-          path: "/",
-        });
-      }
-      if (subToken) {
-        deleteCookie("sub_session_token", {
-          path: "/",
-        });
-      }
-      if (locToken) {
-        deleteCookie("location_session_token", {
-          path: "/",
-        });
-      }
-      return null;
+  const user = await verifySession();
+  if (!user) {
+    if (token) {
+      deleteCookie("session_token", {
+        path: "/",
+      });
     }
+    if (subToken) {
+      deleteCookie("sub_session_token", {
+        path: "/",
+      });
+    }
+    if (locToken) {
+      deleteCookie("location_session_token", {
+        path: "/",
+      });
+    }
+    return null;
+  }
 
-    return user;
-  });
+  return user;
+});
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // 8. Settings & Profile CRUD Server Functions
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export const getClinicProfileServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
+export const getClinicProfileServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    const profile = await queryOne<any>(
-      "SELECT * FROM ClinicProfile WHERE tenantId = ? LIMIT 1",
-      [user.tenantId]
-    );
+  const profile = await queryOne<any>("SELECT * FROM ClinicProfile WHERE tenantId = ? LIMIT 1", [
+    user.tenantId,
+  ]);
 
-    return profile || null;
-  });
+  return profile || null;
+});
 
 export const updateProfileServerFn = createServerFn({ method: "POST" })
-  .validator((data: { 
-    name: string; 
-    phone: string; 
-    clinicName: string; 
-    practiceSize: string; 
-    address?: string;
-    contactDetails?: string;
-    shortDescription?: string;
-    services?: string;
-    email?: string;
-    contactNo?: string;
-    whatsappNo?: string;
-    landlineNo?: string;
-    profession?: string;
-  }) => {
-    if (!data.name || !data.phone || !data.clinicName || !data.practiceSize) {
-      throw new Error("Required fields missing");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      name: string;
+      phone: string;
+      clinicName: string;
+      practiceSize: string;
+      address?: string;
+      contactDetails?: string;
+      shortDescription?: string;
+      services?: string;
+      email?: string;
+      contactNo?: string;
+      whatsappNo?: string;
+      landlineNo?: string;
+      profession?: string;
+    }) => {
+      if (!data.name || !data.phone || !data.clinicName || !data.practiceSize) {
+        throw new Error("Required fields missing");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
@@ -539,7 +608,7 @@ export const updateProfileServerFn = createServerFn({ method: "POST" })
     // Check if phone number is already registered under another account
     const existingPhoneUser = await queryOne<any>(
       "SELECT id FROM User WHERE phone = ? AND id != ? LIMIT 1",
-      [data.phone, user.id]
+      [data.phone, user.id],
     );
     if (existingPhoneUser) {
       throw new Error("This phone number is already registered under another account.");
@@ -580,19 +649,18 @@ export const updateProfileServerFn = createServerFn({ method: "POST" })
         data.contactNo || null,
         data.whatsappNo || null,
         data.landlineNo || null,
-        profession
-      ]
+        profession,
+      ],
     );
 
     // Sync to User table for session/compatibility
     await execute(
       `UPDATE User SET name = ?, phone = ?, clinicName = ?, practiceSize = ?, profession = ?, updatedAt = NOW() WHERE id = ?`,
-      [data.name, data.phone, data.clinicName, data.practiceSize, profession, user.id]
+      [data.name, data.phone, data.clinicName, data.practiceSize, profession, user.id],
     );
 
     return { success: true };
   });
-
 
 export const uploadProfilePhotoServerFn = createServerFn({ method: "POST" })
   .validator((data: { base64: string; fileName: string }) => {
@@ -619,7 +687,10 @@ export const uploadProfilePhotoServerFn = createServerFn({ method: "POST" })
     });
 
     const photoUrl = result.secure_url;
-    await execute("UPDATE User SET profilePhoto = ?, updatedAt = NOW() WHERE id = ?", [photoUrl, user.id]);
+    await execute("UPDATE User SET profilePhoto = ?, updatedAt = NOW() WHERE id = ?", [
+      photoUrl,
+      user.id,
+    ]);
 
     return { success: true, url: photoUrl };
   });
@@ -636,14 +707,19 @@ export const updatePasswordServerFn = createServerFn({ method: "POST" })
     if (!user) throw new Error("Unauthorized");
 
     if (user.role === "reception" || user.role === "doctor") {
-      const dbSubUser = await queryOne<any>("SELECT password FROM SubUser WHERE id = ? LIMIT 1", [user.id]);
+      const dbSubUser = await queryOne<any>("SELECT password FROM SubUser WHERE id = ? LIMIT 1", [
+        user.id,
+      ]);
       if (!dbSubUser) throw new Error("User not found");
 
       const match = await bcrypt.compare(data.currentPass, dbSubUser.password);
       if (!match) throw new Error("Incorrect current password");
 
       const hashedNew = await bcrypt.hash(data.newPass, 10);
-      await execute("UPDATE SubUser SET password = ?, updatedAt = NOW() WHERE id = ?", [hashedNew, user.id]);
+      await execute("UPDATE SubUser SET password = ?, updatedAt = NOW() WHERE id = ?", [
+        hashedNew,
+        user.id,
+      ]);
       return { success: true };
     }
 
@@ -654,7 +730,10 @@ export const updatePasswordServerFn = createServerFn({ method: "POST" })
     if (!match) throw new Error("Incorrect current password");
 
     const hashedNew = await bcrypt.hash(data.newPass, 10);
-    await execute("UPDATE User SET password = ?, updatedAt = NOW() WHERE id = ?", [hashedNew, user.id]);
+    await execute("UPDATE User SET password = ?, updatedAt = NOW() WHERE id = ?", [
+      hashedNew,
+      user.id,
+    ]);
 
     return { success: true };
   });
@@ -678,7 +757,7 @@ export const sendEmailChangeOtpServerFn = createServerFn({ method: "POST" })
     await execute("DELETE FROM OtpCode WHERE email = ?", [newEmail]);
     await execute(
       "INSERT INTO OtpCode (id, email, code, expiresAt, createdAt) VALUES (?, ?, ?, ?, NOW())",
-      [crypto.randomUUID(), newEmail, code, expiresAt]
+      [crypto.randomUUID(), newEmail, code, expiresAt],
     );
 
     // Send OTP in background
@@ -701,12 +780,15 @@ export const updateEmailServerFn = createServerFn({ method: "POST" })
     // Verify OTP
     const valid = await queryOne<any>(
       "SELECT id FROM OtpCode WHERE email = ? AND code = ? AND expiresAt > ? LIMIT 1",
-      [data.newEmail, data.code, new Date()]
+      [data.newEmail, data.code, new Date()],
     );
     if (!valid) throw new Error("Invalid or expired verification code");
 
     // Perform Email update
-    await execute("UPDATE User SET email = ?, updatedAt = NOW() WHERE id = ?", [data.newEmail, user.id]);
+    await execute("UPDATE User SET email = ?, updatedAt = NOW() WHERE id = ?", [
+      data.newEmail,
+      user.id,
+    ]);
 
     // Cleanup OTP
     await execute("DELETE FROM OtpCode WHERE email = ?", [data.newEmail]);
@@ -726,12 +808,12 @@ export const getClinicByTenantIdServerFn = createServerFn({ method: "GET" })
   .handler(async ({ data: tenantId }) => {
     let clinic = await queryOne<any>(
       "SELECT clinicName, practiceSize FROM ClinicProfile WHERE tenantId = ? LIMIT 1",
-      [tenantId]
+      [tenantId],
     );
     if (!clinic) {
       clinic = await queryOne<any>(
         "SELECT clinicName, practiceSize FROM User WHERE tenantId = ? LIMIT 1",
-        [tenantId]
+        [tenantId],
       );
     }
     if (!clinic) throw new Error("Clinic not found");
@@ -739,25 +821,45 @@ export const getClinicByTenantIdServerFn = createServerFn({ method: "GET" })
   });
 
 export const createAppointmentServerFn = createServerFn({ method: "POST" })
-  .validator((data: { tenantId: string; name: string; email?: string; phone: string; dateTime: string; reason: string; doctorId?: string; timeSlot?: string; whatsapp?: string; appointmentType?: string; patientId?: string | null; consultationMode?: string }) => {
-    // Email is optional; phone is the required contact channel.
-    if (!data.tenantId || !data.name || !data.phone || !data.dateTime || !data.reason) {
-      throw new Error("Required booking fields missing");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      tenantId: string;
+      name: string;
+      email?: string;
+      phone: string;
+      dateTime: string;
+      reason: string;
+      doctorId?: string;
+      timeSlot?: string;
+      whatsapp?: string;
+      appointmentType?: string;
+      patientId?: string | null;
+      consultationMode?: string;
+    }) => {
+      // Email is optional; phone is the required contact channel.
+      if (!data.tenantId || !data.name || !data.phone || !data.dateTime || !data.reason) {
+        throw new Error("Required booking fields missing");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     // Plan check: Basic/Solo limit is 500 monthly appointments
-    const tenant = await queryOne<any>("SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1", [data.tenantId]);
+    const tenant = await queryOne<any>(
+      "SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
+      [data.tenantId],
+    );
     const plan = tenant?.subscriptionPlan || "Basic";
     if (plan === "Solo" || plan === "Basic") {
       const [monthCount] = await query<any>(
         "SELECT COUNT(*) as count FROM Appointment WHERE tenantId = ? AND dateTime >= DATE_FORMAT(NOW(), '%Y-%m-01')",
-        [data.tenantId]
+        [data.tenantId],
       );
       const count = monthCount?.count || monthCount?.COUNT || 0;
       if (Number(count) >= 500) {
-        throw new Error("This business has reached the monthly limit of 500 appointments under the Basic plan. Please contact the administrator to upgrade.");
+        throw new Error(
+          "This business has reached the monthly limit of 500 appointments under the Basic plan. Please contact the administrator to upgrade.",
+        );
       }
     }
 
@@ -781,19 +883,35 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
     // Auto-assign sequential token number per tenant + date
     const tokenRow = await queryOne<any>(
       "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?)",
-      [data.tenantId, dateVal]
+      [data.tenantId, dateVal],
     );
     const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
 
     await execute(
       `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, patientId, tokenNo, consultationMode, createdAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [id, data.tenantId, data.name, data.email || "", data.phone, dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo, consultationMode]
+      [
+        id,
+        data.tenantId,
+        data.name,
+        data.email || "",
+        data.phone,
+        dateVal,
+        data.reason,
+        docId,
+        tSlot,
+        data.whatsapp || null,
+        data.appointmentType || null,
+        data.patientId || null,
+        tokenNo,
+        consultationMode,
+      ],
     );
 
     // Queue the "appointment booked" WhatsApp notification (server-side only).
     if (typeof window === "undefined") {
-      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } = await import("./appointment-notify");
+      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
+        await import("./appointment-notify");
       const [clinicName, doctorName] = await Promise.all([
         resolveClinicName(data.tenantId),
         resolveDoctorName(docId),
@@ -829,45 +947,50 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
     return { success: true, appointmentId: id, tokenNo, joinLink, consultationMode };
   });
 
-export const getAppointmentsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
+export const getAppointmentsServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    const isDoctor = user.role === "doctor" && user.doctorId;
-    let sql = `SELECT apt.*, d.name as doctorName
+  const isDoctor = user.role === "doctor" && user.doctorId;
+  let sql = `SELECT apt.*, d.name as doctorName
        FROM Appointment apt
        LEFT JOIN Doctor d ON apt.doctorId = d.id
        WHERE apt.tenantId = ?`;
-    let params = [user.tenantId];
-    if (isDoctor) {
-      sql += ` AND apt.doctorId = ?`;
-      params.push(user.doctorId);
-    }
-    sql += ` ORDER BY apt.dateTime ASC`;
+  const params = [user.tenantId];
+  if (isDoctor) {
+    sql += ` AND apt.doctorId = ?`;
+    params.push(user.doctorId);
+  }
+  sql += ` ORDER BY apt.dateTime ASC`;
 
-    const appointments = await query<any>(sql, params);
+  const appointments = await query<any>(sql, params);
 
-    return appointments.map((apt) => ({
-      id: apt.id,
-      tenantId: apt.tenantId,
-      name: apt.name,
-      email: apt.email,
-      phone: apt.phone,
-      dateTime: apt.dateTime instanceof Date ? apt.dateTime.toISOString() : new Date(apt.dateTime).toISOString(),
-      reason: apt.reason,
-      status: apt.status,
-      doctorId: apt.doctorId,
-      doctorName: apt.doctorName || "",
-      timeSlot: apt.timeSlot,
-      whatsapp: apt.whatsapp || "",
-      appointmentType: apt.appointmentType || "",
-      patientId: apt.patientId || "",
-      tokenNo: apt.tokenNo || null,
-      consultationMode: apt.consultationMode || "in_person",
-      createdAt: apt.createdAt instanceof Date ? apt.createdAt.toISOString() : new Date(apt.createdAt).toISOString()
-    }));
-  });
+  return appointments.map((apt) => ({
+    id: apt.id,
+    tenantId: apt.tenantId,
+    name: apt.name,
+    email: apt.email,
+    phone: apt.phone,
+    dateTime:
+      apt.dateTime instanceof Date
+        ? apt.dateTime.toISOString()
+        : new Date(apt.dateTime).toISOString(),
+    reason: apt.reason,
+    status: apt.status,
+    doctorId: apt.doctorId,
+    doctorName: apt.doctorName || "",
+    timeSlot: apt.timeSlot,
+    whatsapp: apt.whatsapp || "",
+    appointmentType: apt.appointmentType || "",
+    patientId: apt.patientId || "",
+    tokenNo: apt.tokenNo || null,
+    consultationMode: apt.consultationMode || "in_person",
+    createdAt:
+      apt.createdAt instanceof Date
+        ? apt.createdAt.toISOString()
+        : new Date(apt.createdAt).toISOString(),
+  }));
+});
 
 // ──────────────────────────────────────────────
 // Sub-Location (Multi-Location) Bookings
@@ -875,8 +998,8 @@ export const getAppointmentsServerFn = createServerFn({ method: "GET" })
 //  • Admin: every booking tied to any sub-location (grouped/filterable by location)
 //  • Location user: only bookings tied to their own location
 // ──────────────────────────────────────────────
-export const getSubLocationBookingsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
+export const getSubLocationBookingsServerFn = createServerFn({ method: "GET" }).handler(
+  async () => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     if (user.role !== "admin" && user.role !== "location") throw new Error("Unauthorized");
@@ -886,7 +1009,7 @@ export const getSubLocationBookingsServerFn = createServerFn({ method: "GET" })
     try {
       locations = await query<any>(
         "SELECT id, name, city, address, isActive FROM Location WHERE tenantId = ? ORDER BY name ASC",
-        [user.tenantId]
+        [user.tenantId],
       );
     } catch {
       locations = [];
@@ -925,7 +1048,10 @@ export const getSubLocationBookingsServerFn = createServerFn({ method: "GET" })
         name: apt.name,
         email: apt.email,
         phone: apt.phone,
-        dateTime: apt.dateTime instanceof Date ? apt.dateTime.toISOString() : new Date(apt.dateTime).toISOString(),
+        dateTime:
+          apt.dateTime instanceof Date
+            ? apt.dateTime.toISOString()
+            : new Date(apt.dateTime).toISOString(),
         reason: apt.reason,
         status: apt.status,
         doctorId: apt.doctorId,
@@ -937,8 +1063,11 @@ export const getSubLocationBookingsServerFn = createServerFn({ method: "GET" })
         tokenNo: apt.tokenNo || null,
         locationId: apt.locationId,
         locationName: loc ? loc.name : "",
-        locationCity: loc ? (loc.city || "") : "",
-        createdAt: apt.createdAt instanceof Date ? apt.createdAt.toISOString() : new Date(apt.createdAt).toISOString()
+        locationCity: loc ? loc.city || "" : "",
+        createdAt:
+          apt.createdAt instanceof Date
+            ? apt.createdAt.toISOString()
+            : new Date(apt.createdAt).toISOString(),
       };
     });
 
@@ -948,39 +1077,43 @@ export const getSubLocationBookingsServerFn = createServerFn({ method: "GET" })
       isLocationUser: user.role === "location",
       currentLocationId: (user as any).locationId || null,
     };
-  });
+  },
+);
 
 // Create a booking tied to a sub-location (admin or location-scoped user)
 export const createSubLocationBookingServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    name: string;
-    phone?: string;
-    email?: string;
-    locationId: string;
-    doctorId?: string;
-    dateTime: string;
-    timeSlot?: string;
-    reason: string;
-    appointmentType?: string;
-    status?: string;
-  }) => {
-    if (!data.name || !data.dateTime || !data.reason || !data.locationId) {
-      throw new Error("Patient name, location, date and reason are required");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      name: string;
+      phone?: string;
+      email?: string;
+      locationId: string;
+      doctorId?: string;
+      dateTime: string;
+      timeSlot?: string;
+      reason: string;
+      appointmentType?: string;
+      status?: string;
+    }) => {
+      if (!data.name || !data.dateTime || !data.reason || !data.locationId) {
+        throw new Error("Patient name, location, date and reason are required");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     if (user.role !== "admin" && user.role !== "location") throw new Error("Unauthorized");
 
     // Location-scoped users can only create bookings for their own location
-    const locationId = user.role === "location" && user.locationId ? user.locationId : data.locationId;
+    const locationId =
+      user.role === "location" && user.locationId ? user.locationId : data.locationId;
 
     // Verify the location belongs to this tenant
     const loc = await queryOne<any>(
       "SELECT id FROM Location WHERE id = ? AND tenantId = ? LIMIT 1",
-      [locationId, user.tenantId]
+      [locationId, user.tenantId],
     );
     if (!loc) throw new Error("Invalid location");
 
@@ -988,7 +1121,7 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
     const dateVal = new Date(data.dateTime);
     const tokenRow = await queryOne<any>(
       "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?)",
-      [user.tenantId, dateVal]
+      [user.tenantId, dateVal],
     );
     const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
     const status = data.status || "Pending";
@@ -996,12 +1129,28 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
     await execute(
       `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, locationId, createdAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [id, user.tenantId, data.name, data.email || "", data.phone || "", dateVal, data.reason, status, data.doctorId || null, data.timeSlot || null, data.phone || null, data.appointmentType || null, tokenNo, locationId]
+      [
+        id,
+        user.tenantId,
+        data.name,
+        data.email || "",
+        data.phone || "",
+        dateVal,
+        data.reason,
+        status,
+        data.doctorId || null,
+        data.timeSlot || null,
+        data.phone || null,
+        data.appointmentType || null,
+        tokenNo,
+        locationId,
+      ],
     );
 
     // Queue the "appointment booked" WhatsApp notification.
     if (typeof window === "undefined" && data.phone) {
-      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } = await import("./appointment-notify");
+      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
+        await import("./appointment-notify");
       const [clinicName, doctorName] = await Promise.all([
         resolveClinicName(user.tenantId),
         resolveDoctorName(data.doctorId),
@@ -1021,22 +1170,24 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
 
 // Update a sub-location booking (lenient on email; preserves/updates locationId)
 export const updateSubLocationBookingServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    id: string;
-    name?: string;
-    phone?: string;
-    email?: string;
-    locationId?: string;
-    doctorId?: string;
-    dateTime?: string;
-    timeSlot?: string;
-    reason?: string;
-    appointmentType?: string;
-    status?: string;
-  }) => {
-    if (!data.id) throw new Error("Booking ID is required");
-    return data;
-  })
+  .validator(
+    (data: {
+      id: string;
+      name?: string;
+      phone?: string;
+      email?: string;
+      locationId?: string;
+      doctorId?: string;
+      dateTime?: string;
+      timeSlot?: string;
+      reason?: string;
+      appointmentType?: string;
+      status?: string;
+    }) => {
+      if (!data.id) throw new Error("Booking ID is required");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
@@ -1055,26 +1206,59 @@ export const updateSubLocationBookingServerFn = createServerFn({ method: "POST" 
 
     const fields: string[] = [];
     const params: any[] = [];
-    if (data.name !== undefined) { fields.push("name = ?"); params.push(data.name); }
-    if (data.email !== undefined) { fields.push("email = ?"); params.push(data.email || ""); }
-    if (data.phone !== undefined) { fields.push("phone = ?"); params.push(data.phone || ""); }
-    if (data.reason !== undefined) { fields.push("reason = ?"); params.push(data.reason); }
-    if (data.status !== undefined) { fields.push("status = ?"); params.push(data.status); }
-    if (data.doctorId !== undefined) { fields.push("doctorId = ?"); params.push(data.doctorId || null); }
-    if (data.timeSlot !== undefined) { fields.push("timeSlot = ?"); params.push(data.timeSlot || null); }
-    if (data.appointmentType !== undefined) { fields.push("appointmentType = ?"); params.push(data.appointmentType || null); }
-    if (data.dateTime !== undefined) { fields.push("dateTime = ?"); params.push(new Date(data.dateTime)); }
+    if (data.name !== undefined) {
+      fields.push("name = ?");
+      params.push(data.name);
+    }
+    if (data.email !== undefined) {
+      fields.push("email = ?");
+      params.push(data.email || "");
+    }
+    if (data.phone !== undefined) {
+      fields.push("phone = ?");
+      params.push(data.phone || "");
+    }
+    if (data.reason !== undefined) {
+      fields.push("reason = ?");
+      params.push(data.reason);
+    }
+    if (data.status !== undefined) {
+      fields.push("status = ?");
+      params.push(data.status);
+    }
+    if (data.doctorId !== undefined) {
+      fields.push("doctorId = ?");
+      params.push(data.doctorId || null);
+    }
+    if (data.timeSlot !== undefined) {
+      fields.push("timeSlot = ?");
+      params.push(data.timeSlot || null);
+    }
+    if (data.appointmentType !== undefined) {
+      fields.push("appointmentType = ?");
+      params.push(data.appointmentType || null);
+    }
+    if (data.dateTime !== undefined) {
+      fields.push("dateTime = ?");
+      params.push(new Date(data.dateTime));
+    }
     // Only an admin may move a booking to a different location
     if (data.locationId !== undefined && user.role === "admin") {
-      const loc = await queryOne<any>("SELECT id FROM Location WHERE id = ? AND tenantId = ? LIMIT 1", [data.locationId, user.tenantId]);
-      if (loc) { fields.push("locationId = ?"); params.push(data.locationId); }
+      const loc = await queryOne<any>(
+        "SELECT id FROM Location WHERE id = ? AND tenantId = ? LIMIT 1",
+        [data.locationId, user.tenantId],
+      );
+      if (loc) {
+        fields.push("locationId = ?");
+        params.push(data.locationId);
+      }
     }
 
     if (fields.length === 0) return { success: true };
     params.push(data.id, user.tenantId);
     await execute(
       `UPDATE Appointment SET ${fields.join(", ")} WHERE id = ? AND tenantId = ?`,
-      params
+      params,
     );
     return { success: true };
   });
@@ -1105,19 +1289,38 @@ export const deleteSubLocationBookingServerFn = createServerFn({ method: "POST" 
   });
 
 export const updateAppointmentServerFn = createServerFn({ method: "POST" })
-  .validator((data: { id: string; name: string; email?: string; phone: string; dateTime: string; reason: string; status: string; doctorId?: string; timeSlot?: string; whatsapp?: string; appointmentType?: string; patientId?: string | null; consultationMode?: string }) => {
-    // Email is optional; phone is the required contact channel.
-    if (!data.id || !data.name || !data.phone || !data.dateTime || !data.reason || !data.status) {
-      throw new Error("Required fields missing");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      id: string;
+      name: string;
+      email?: string;
+      phone: string;
+      dateTime: string;
+      reason: string;
+      status: string;
+      doctorId?: string;
+      timeSlot?: string;
+      whatsapp?: string;
+      appointmentType?: string;
+      patientId?: string | null;
+      consultationMode?: string;
+    }) => {
+      // Email is optional; phone is the required contact channel.
+      if (!data.id || !data.name || !data.phone || !data.dateTime || !data.reason || !data.status) {
+        throw new Error("Required fields missing");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     // Verify appointment belongs to the same tenantId
-    const existingApt = await queryOne<any>("SELECT id, dateTime, tokenNo, consultationMode FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1", [data.id, user.tenantId]);
+    const existingApt = await queryOne<any>(
+      "SELECT id, dateTime, tokenNo, consultationMode FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1",
+      [data.id, user.tenantId],
+    );
     if (!existingApt) throw new Error("Appointment not found or unauthorized");
 
     const dateVal = new Date(data.dateTime);
@@ -1144,7 +1347,8 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
     const effectiveMode = data.status === "Cancelled" ? "in_person" : consultationMode;
 
     // Recalculate token number if the appointment date changed
-    const oldDate = existingApt.dateTime instanceof Date ? existingApt.dateTime : new Date(existingApt.dateTime);
+    const oldDate =
+      existingApt.dateTime instanceof Date ? existingApt.dateTime : new Date(existingApt.dateTime);
     const oldDateStr = oldDate.toISOString().slice(0, 10);
     const newDateStr = dateVal.toISOString().slice(0, 10);
     let tokenNo = existingApt.tokenNo;
@@ -1152,14 +1356,29 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
     if (oldDateStr !== newDateStr) {
       const tokenRow = await queryOne<any>(
         "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?) AND id != ?",
-        [user.tenantId, dateVal, data.id]
+        [user.tenantId, dateVal, data.id],
       );
       tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
     }
 
     await execute(
       `UPDATE Appointment SET name = ?, email = ?, phone = ?, dateTime = ?, reason = ?, status = ?, doctorId = ?, timeSlot = ?, whatsapp = ?, appointmentType = ?, patientId = ?, tokenNo = ?, consultationMode = ? WHERE id = ?`,
-      [data.name, data.email || "", data.phone, dateVal, data.reason, data.status, docId, tSlot, data.whatsapp || null, data.appointmentType || null, data.patientId || null, tokenNo, consultationMode, data.id]
+      [
+        data.name,
+        data.email || "",
+        data.phone,
+        dateVal,
+        data.reason,
+        data.status,
+        docId,
+        tSlot,
+        data.whatsapp || null,
+        data.appointmentType || null,
+        data.patientId || null,
+        tokenNo,
+        consultationMode,
+        data.id,
+      ],
     );
 
     // Queue WhatsApp notification for status change (confirmed / cancelled / completed).
@@ -1171,7 +1390,8 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
       };
       const kind = kindMap[data.status];
       if (kind) {
-        const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } = await import("./appointment-notify");
+        const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
+          await import("./appointment-notify");
         const [clinicName, doctorName] = await Promise.all([
           resolveClinicName(user.tenantId),
           resolveDoctorName(docId),
@@ -1220,7 +1440,10 @@ export const deleteAppointmentServerFn = createServerFn({ method: "POST" })
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     // Verify appointment belongs to the same tenantId
-    const apt = await queryOne<any>("SELECT id FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1", [id, user.tenantId]);
+    const apt = await queryOne<any>(
+      "SELECT id FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1",
+      [id, user.tenantId],
+    );
     if (!apt) throw new Error("Appointment not found or unauthorized");
 
     await execute("DELETE FROM Appointment WHERE id = ?", [id]);
@@ -1232,27 +1455,33 @@ export const deleteAppointmentServerFn = createServerFn({ method: "POST" })
 // Clinic Timetable Settings Server Functions
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export const getClinicHoursServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
+export const getClinicHoursServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    const hours = await query<any>("SELECT * FROM ClinicHours WHERE tenantId = ? ORDER BY dayOfWeek ASC", [user.tenantId]);
+  const hours = await query<any>(
+    "SELECT * FROM ClinicHours WHERE tenantId = ? ORDER BY dayOfWeek ASC",
+    [user.tenantId],
+  );
 
-    return hours.map((h) => ({
-      id: h.id,
-      tenantId: h.tenantId,
-      dayOfWeek: h.dayOfWeek,
-      openTime: h.openTime,
-      closeTime: h.closeTime,
-      isClosed: !!h.isClosed
-    }));
-  });
+  return hours.map((h) => ({
+    id: h.id,
+    tenantId: h.tenantId,
+    dayOfWeek: h.dayOfWeek,
+    openTime: h.openTime,
+    closeTime: h.closeTime,
+    isClosed: !!h.isClosed,
+  }));
+});
 
 export const saveClinicHoursServerFn = createServerFn({ method: "POST" })
-  .validator((data: Array<{ dayOfWeek: number; openTime: string; closeTime: string; isClosed: boolean }>) => {
-    return data;
-  })
+  .validator(
+    (
+      data: Array<{ dayOfWeek: number; openTime: string; closeTime: string; isClosed: boolean }>,
+    ) => {
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
@@ -1262,7 +1491,17 @@ export const saveClinicHoursServerFn = createServerFn({ method: "POST" })
         `INSERT INTO ClinicHours (id, tenantId, dayOfWeek, openTime, closeTime, isClosed)
          VALUES (?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE openTime = ?, closeTime = ?, isClosed = ?`,
-        [crypto.randomUUID(), user.tenantId, h.dayOfWeek, h.openTime, h.closeTime, h.isClosed ? 1 : 0, h.openTime, h.closeTime, h.isClosed ? 1 : 0]
+        [
+          crypto.randomUUID(),
+          user.tenantId,
+          h.dayOfWeek,
+          h.openTime,
+          h.closeTime,
+          h.isClosed ? 1 : 0,
+          h.openTime,
+          h.closeTime,
+          h.isClosed ? 1 : 0,
+        ],
       );
     }
     return { success: true };
@@ -1272,14 +1511,15 @@ export const saveClinicHoursServerFn = createServerFn({ method: "POST" })
 // Departments Settings Server Functions
 // ──────────────────────────────────────────────
 
-export const getDepartmentsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
+export const getDepartmentsServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    const list = await query<any>("SELECT * FROM Department WHERE tenantId = ? ORDER BY name ASC", [user.tenantId]);
-    return list;
-  });
+  const list = await query<any>("SELECT * FROM Department WHERE tenantId = ? ORDER BY name ASC", [
+    user.tenantId,
+  ]);
+  return list;
+});
 
 export const createDepartmentServerFn = createServerFn({ method: "POST" })
   .validator((name: string) => {
@@ -1290,10 +1530,11 @@ export const createDepartmentServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
-    await execute(
-      "INSERT INTO Department (id, tenantId, name) VALUES (?, ?, ?)",
-      [crypto.randomUUID(), user.tenantId, name]
-    );
+    await execute("INSERT INTO Department (id, tenantId, name) VALUES (?, ?, ?)", [
+      crypto.randomUUID(),
+      user.tenantId,
+      name,
+    ]);
     return { success: true };
   });
 
@@ -1314,54 +1555,63 @@ export const deleteDepartmentServerFn = createServerFn({ method: "POST" })
 // Doctors Management Server Functions
 // ──────────────────────────────────────────────
 
-export const getDoctorsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
+export const getDoctorsServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    const doctors = await query<any>(
-      `SELECT d.*, dept.name as departmentName
+  const doctors = await query<any>(
+    `SELECT d.*, dept.name as departmentName
        FROM Doctor d
        LEFT JOIN Department dept ON d.departmentId = dept.id
        WHERE d.tenantId = ?
        ORDER BY d.name ASC`,
-      [user.tenantId]
-    );
+    [user.tenantId],
+  );
 
-    return doctors;
-  });
+  return doctors;
+});
 
 export const saveDoctorServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    id?: string;
-    name: string;
-    email: string;
-    phone: string;
-    qualifications: string;
-    departmentId: string;
-    designation?: string;
-    employeeId?: string;
-    joiningDate?: string;
-    subjectsTaught?: string;
-  }) => {
-    if (!data.name || !data.email || !data.phone || !data.qualifications || !data.departmentId) {
-      throw new Error("Missing required fields");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      id?: string;
+      name: string;
+      email: string;
+      phone: string;
+      qualifications: string;
+      departmentId: string;
+      designation?: string;
+      employeeId?: string;
+      joiningDate?: string;
+      subjectsTaught?: string;
+    }) => {
+      if (!data.name || !data.email || !data.phone || !data.qualifications || !data.departmentId) {
+        throw new Error("Missing required fields");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
     // Plan check: Basic/Solo limit is 1 doctor profile in directory
     if (!data.id) {
-      const tenant = await queryOne<any>("SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1", [user.tenantId]);
+      const tenant = await queryOne<any>(
+        "SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
+        [user.tenantId],
+      );
       const plan = tenant?.subscriptionPlan || "Basic";
       if (plan === "Solo" || plan === "Basic") {
-        const [docsCount] = await query<any>("SELECT COUNT(*) as count FROM Doctor WHERE tenantId = ?", [user.tenantId]);
+        const [docsCount] = await query<any>(
+          "SELECT COUNT(*) as count FROM Doctor WHERE tenantId = ?",
+          [user.tenantId],
+        );
         const count = docsCount?.count || docsCount?.COUNT || 0;
         if (Number(count) >= 1) {
-          throw new Error("Your current plan (Basic) only allows 1 Doctor Profile. Please upgrade your plan to add more doctors to the directory.");
+          throw new Error(
+            "Your current plan (Basic) only allows 1 Doctor Profile. Please upgrade your plan to add more doctors to the directory.",
+          );
         }
       }
     }
@@ -1381,8 +1631,8 @@ export const saveDoctorServerFn = createServerFn({ method: "POST" })
           data.joiningDate || null,
           data.subjectsTaught || null,
           data.id,
-          user.tenantId
-        ]
+          user.tenantId,
+        ],
       );
       return { success: true, doctorId: data.id };
     } else {
@@ -1401,8 +1651,8 @@ export const saveDoctorServerFn = createServerFn({ method: "POST" })
           data.designation || null,
           data.employeeId || null,
           data.joiningDate || null,
-          data.subjectsTaught || null
-        ]
+          data.subjectsTaught || null,
+        ],
       );
       return { success: true, doctorId: id };
     }
@@ -1417,7 +1667,10 @@ export const deleteDoctorServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
-    const doc = await queryOne("SELECT id FROM Doctor WHERE id = ? AND tenantId = ? LIMIT 1", [id, user.tenantId]);
+    const doc = await queryOne("SELECT id FROM Doctor WHERE id = ? AND tenantId = ? LIMIT 1", [
+      id,
+      user.tenantId,
+    ]);
     if (!doc) throw new Error("Doctor not found or unauthorized");
 
     await execute("DELETE FROM Doctor WHERE id = ?", [id]);
@@ -1439,7 +1692,10 @@ export const getDoctorScheduleServerFn = createServerFn({ method: "GET" })
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
-    const schedules = await query<any>("SELECT * FROM DoctorSchedule WHERE doctorId = ? ORDER BY dayOfWeek ASC", [doctorId]);
+    const schedules = await query<any>(
+      "SELECT * FROM DoctorSchedule WHERE doctorId = ? ORDER BY dayOfWeek ASC",
+      [doctorId],
+    );
     return schedules.map((s) => ({
       id: s.id,
       doctorId: s.doctorId,
@@ -1448,17 +1704,31 @@ export const getDoctorScheduleServerFn = createServerFn({ method: "GET" })
       endTime: s.endTime,
       slotDuration: s.slotDuration,
       breaks: (() => {
-        try { return s.breaks ? (typeof s.breaks === "string" ? JSON.parse(s.breaks) : s.breaks) : []; }
-        catch { return []; }
+        try {
+          return s.breaks ? (typeof s.breaks === "string" ? JSON.parse(s.breaks) : s.breaks) : [];
+        } catch {
+          return [];
+        }
       })(),
     }));
   });
 
 export const saveDoctorScheduleServerFn = createServerFn({ method: "POST" })
-  .validator((data: { doctorId: string; schedules: Array<{ dayOfWeek: number; startTime: string; endTime: string; slotDuration: number; breaks?: Array<{start:string;end:string;label:string}> }> }) => {
-    if (!data.doctorId || !data.schedules) throw new Error("Required parameters missing");
-    return data;
-  })
+  .validator(
+    (data: {
+      doctorId: string;
+      schedules: Array<{
+        dayOfWeek: number;
+        startTime: string;
+        endTime: string;
+        slotDuration: number;
+        breaks?: Array<{ start: string; end: string; label: string }>;
+      }>;
+    }) => {
+      if (!data.doctorId || !data.schedules) throw new Error("Required parameters missing");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
@@ -1469,7 +1739,15 @@ export const saveDoctorScheduleServerFn = createServerFn({ method: "POST" })
       await execute(
         `INSERT INTO DoctorSchedule (id, doctorId, dayOfWeek, startTime, endTime, slotDuration, breaks)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [crypto.randomUUID(), data.doctorId, s.dayOfWeek, s.startTime, s.endTime, s.slotDuration || 30, breaksJson]
+        [
+          crypto.randomUUID(),
+          data.doctorId,
+          s.dayOfWeek,
+          s.startTime,
+          s.endTime,
+          s.slotDuration || 30,
+          breaksJson,
+        ],
       );
     }
     return { success: true };
@@ -1484,21 +1762,29 @@ export const getDoctorLeavesServerFn = createServerFn({ method: "GET" })
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
-    const leaves = await query<any>("SELECT * FROM DoctorLeave WHERE doctorId = ? ORDER BY leaveDate ASC", [doctorId]);
+    const leaves = await query<any>(
+      "SELECT * FROM DoctorLeave WHERE doctorId = ? ORDER BY leaveDate ASC",
+      [doctorId],
+    );
     return leaves.map((l) => ({
       id: l.id,
       doctorId: l.doctorId,
-      leaveDate: l.leaveDate instanceof Date ? l.leaveDate.toISOString().split("T")[0] : new Date(l.leaveDate).toISOString().split("T")[0],
+      leaveDate:
+        l.leaveDate instanceof Date
+          ? l.leaveDate.toISOString().split("T")[0]
+          : new Date(l.leaveDate).toISOString().split("T")[0],
       reason: l.reason,
-      isHoliday: !!l.isHoliday
+      isHoliday: !!l.isHoliday,
     }));
   });
 
 export const addDoctorLeaveServerFn = createServerFn({ method: "POST" })
-  .validator((data: { doctorId: string; leaveDate: string; reason: string; isHoliday?: boolean }) => {
-    if (!data.doctorId || !data.leaveDate) throw new Error("Required leave details missing");
-    return data;
-  })
+  .validator(
+    (data: { doctorId: string; leaveDate: string; reason: string; isHoliday?: boolean }) => {
+      if (!data.doctorId || !data.leaveDate) throw new Error("Required leave details missing");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
@@ -1510,7 +1796,15 @@ export const addDoctorLeaveServerFn = createServerFn({ method: "POST" })
       `INSERT INTO DoctorLeave (id, doctorId, leaveDate, reason, isHoliday)
        VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE reason = ?, isHoliday = ?`,
-      [id, data.doctorId, dateVal, data.reason, data.isHoliday ? 1 : 0, data.reason, data.isHoliday ? 1 : 0]
+      [
+        id,
+        data.doctorId,
+        dateVal,
+        data.reason,
+        data.isHoliday ? 1 : 0,
+        data.reason,
+        data.isHoliday ? 1 : 0,
+      ],
     );
     return { success: true };
   });
@@ -1532,39 +1826,37 @@ export const deleteDoctorLeaveServerFn = createServerFn({ method: "POST" })
 // WhatsApp Management Server Functions
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export const getWhatsAppStatusServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
-    if (!canUseFeature(buildAccountContext(user), "whatsapp")) {
-      throw new Error("Your plan does not include WhatsApp alerts.");
-    }
-    
-    let status = await getWAStatus(user.tenantId);
-    // If the session is fully disconnected (and not currently initializing or paired),
-    // trigger initialization automatically so the user is immediately presented with a QR code.
-    if (status.state === "DISCONNECTED") {
-      await initializeWA(user.tenantId);
-      status = await getWAStatus(user.tenantId);
-    }
-    
-    return status;
-  });
+export const getWhatsAppStatusServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  if (!canUseFeature(buildAccountContext(user), "whatsapp")) {
+    throw new Error("Your plan does not include WhatsApp alerts.");
+  }
 
-export const disconnectWhatsAppServerFn = createServerFn({ method: "POST" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
-    const ctx = buildAccountContext(user);
-    if (!canUseFeature(ctx, "whatsapp")) {
-      throw new Error("Your plan does not include WhatsApp alerts.");
-    }
-    if (!canOperateFeature(ctx, "whatsapp")) {
-      throw new Error("You do not have permission to perform this action.");
-    }
-    await disconnectWA(user.tenantId);
-    return { success: true };
-  });
+  let status = await getWAStatus(user.tenantId);
+  // If the session is fully disconnected (and not currently initializing or paired),
+  // trigger initialization automatically so the user is immediately presented with a QR code.
+  if (status.state === "DISCONNECTED") {
+    await initializeWA(user.tenantId);
+    status = await getWAStatus(user.tenantId);
+  }
+
+  return status;
+});
+
+export const disconnectWhatsAppServerFn = createServerFn({ method: "POST" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  const ctx = buildAccountContext(user);
+  if (!canUseFeature(ctx, "whatsapp")) {
+    throw new Error("Your plan does not include WhatsApp alerts.");
+  }
+  if (!canOperateFeature(ctx, "whatsapp")) {
+    throw new Error("You do not have permission to perform this action.");
+  }
+  await disconnectWA(user.tenantId);
+  return { success: true };
+});
 
 export const sendTestWaServerFn = createServerFn({ method: "POST" })
   .validator((data: { phone: string; message: string }) => {
@@ -1589,21 +1881,19 @@ export const sendTestWaServerFn = createServerFn({ method: "POST" })
     return { success: true, queued: true };
   });
 
-export const getWhatsAppConfigServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
-    if (!canUseFeature(buildAccountContext(user), "whatsapp")) {
-      throw new Error("Your plan does not include WhatsApp alerts.");
-    }
+export const getWhatsAppConfigServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  if (!canUseFeature(buildAccountContext(user), "whatsapp")) {
+    throw new Error("Your plan does not include WhatsApp alerts.");
+  }
 
-    const config = await queryOne<any>(
-      "SELECT * FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1",
-      [user.tenantId]
-    );
+  const config = await queryOne<any>("SELECT * FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1", [
+    user.tenantId,
+  ]);
 
-    return config || null;
-  });
+  return config || null;
+});
 
 export const saveWhatsAppConfigServerFn = createServerFn({ method: "POST" })
   .validator((data: { phoneNumber: string; isEnabled: boolean }) => {
@@ -1630,13 +1920,12 @@ export const saveWhatsAppConfigServerFn = createServerFn({ method: "POST" })
         data.phoneNumber || null,
         data.isEnabled ? 1 : 0,
         data.phoneNumber || null,
-        data.isEnabled ? 1 : 0
-      ]
+        data.isEnabled ? 1 : 0,
+      ],
     );
 
     return { success: true };
   });
-
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Public Clinic Info & Slots Retrieval
@@ -1650,17 +1939,26 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     // 1. Resolve clinic details
     let clinicName = "";
-    const profile = await queryOne<any>("SELECT clinicName FROM ClinicProfile WHERE tenantId = ? LIMIT 1", [data.tenantId]);
+    const profile = await queryOne<any>(
+      "SELECT clinicName FROM ClinicProfile WHERE tenantId = ? LIMIT 1",
+      [data.tenantId],
+    );
     if (profile) {
       clinicName = profile.clinicName;
     } else {
-      const userClinic = await queryOne<any>("SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1", [data.tenantId]);
+      const userClinic = await queryOne<any>(
+        "SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1",
+        [data.tenantId],
+      );
       if (!userClinic) throw new Error("Clinic not found");
       clinicName = userClinic.clinicName;
     }
 
     // 2. Resolve active departments
-    const departments = await query<any>("SELECT * FROM Department WHERE tenantId = ? ORDER BY name ASC", [data.tenantId]);
+    const departments = await query<any>(
+      "SELECT * FROM Department WHERE tenantId = ? ORDER BY name ASC",
+      [data.tenantId],
+    );
 
     // 3. Resolve active doctors
     const doctors = await query<any>(
@@ -1669,11 +1967,11 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
        LEFT JOIN Department dept ON d.departmentId = dept.id
        WHERE d.tenantId = ?
        ORDER BY d.name ASC`,
-      [data.tenantId]
+      [data.tenantId],
     );
 
     // 4. If date and doctorId are selected, compute dynamic available slots
-    let slots: string[] = [];
+    const slots: string[] = [];
     if (data.date && data.doctorId) {
       const selectedDate = new Date(data.date);
       const dayOfWeek = selectedDate.getDay(); // 0 is Sunday, 6 is Saturday
@@ -1682,23 +1980,25 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
       // A. Check if the clinic is closed on this day
       const clinicHours = await queryOne<any>(
         "SELECT * FROM ClinicHours WHERE tenantId = ? AND dayOfWeek = ? LIMIT 1",
-        [data.tenantId, dayOfWeek]
+        [data.tenantId, dayOfWeek],
       );
-      
-      const clinicClosed = clinicHours ? !!clinicHours.isClosed : (dayOfWeek === 0 || dayOfWeek === 6); // fallback Sat/Sun closed
+
+      const clinicClosed = clinicHours
+        ? !!clinicHours.isClosed
+        : dayOfWeek === 0 || dayOfWeek === 6; // fallback Sat/Sun closed
 
       if (!clinicClosed) {
         // B. Check if the doctor is on holiday/leave on this date
         const leave = await queryOne<any>(
           "SELECT id FROM DoctorLeave WHERE doctorId = ? AND leaveDate = ? LIMIT 1",
-          [data.doctorId, dateStr]
+          [data.doctorId, dateStr],
         );
 
         if (!leave) {
           // C. Get doctor schedule for this day of the week
           const docSchedule = await queryOne<any>(
             "SELECT * FROM DoctorSchedule WHERE doctorId = ? AND dayOfWeek = ? LIMIT 1",
-            [data.doctorId, dayOfWeek]
+            [data.doctorId, dayOfWeek],
           );
 
           if (docSchedule) {
@@ -1720,9 +2020,9 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
             const existingBookings = await query<any>(
               `SELECT dateTime, timeSlot FROM Appointment
                WHERE doctorId = ? AND DATE(dateTime) = ? AND status != 'Cancelled'`,
-              [data.doctorId, dateStr]
+              [data.doctorId, dateStr],
             );
-            
+
             const bookedSlots = existingBookings.map((b) => b.timeSlot || "");
 
             // Generate time slots
@@ -1731,14 +2031,14 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
               const slotTimeStr = temp.toLocaleTimeString("en-US", {
                 hour: "2-digit",
                 minute: "2-digit",
-                hour12: true
+                hour12: true,
               });
-              
+
               // Only include if not already booked
               if (!bookedSlots.includes(slotTimeStr)) {
                 slots.push(slotTimeStr);
               }
-              
+
               temp.setMinutes(temp.getMinutes() + duration);
             }
           }
@@ -1750,7 +2050,7 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
       clinicName: clinicName,
       departments,
       doctors,
-      slots
+      slots,
     };
   });
 
@@ -1758,214 +2058,234 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
 // DASHBOARD OVERVIEW — Live Stats & Timeline
 // ══════════════════════════════════════════════════════════════
 
-export const getDashboardStatsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
-    const todayStr = new Date().toISOString().split("T")[0];
-    const isDoctor = user.role === "doctor" && user.doctorId;
+export const getDashboardStatsServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user) throw new Error("Unauthorized");
+  const todayStr = new Date().toISOString().split("T")[0];
+  const isDoctor = user.role === "doctor" && user.doctorId;
 
-    let todayAppointments: any[] = [];
-    try {
-      let todayAppointmentsQuery = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ? AND DATE(a.dateTime) = ?`;
-      let todayAppointmentsParams = [user.tenantId, todayStr];
-      if (isDoctor) {
-        todayAppointmentsQuery += ` AND a.doctorId = ?`;
-        todayAppointmentsParams.push(user.doctorId);
-      }
-      todayAppointmentsQuery += ` ORDER BY a.dateTime ASC`;
-      todayAppointments = await query<any>(todayAppointmentsQuery, todayAppointmentsParams);
-    } catch (e: any) {
-      console.error("[DB] getDashboardStats - todayAppointmentsQuery failed:", e.message);
+  let todayAppointments: any[] = [];
+  try {
+    let todayAppointmentsQuery = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ? AND DATE(a.dateTime) = ?`;
+    const todayAppointmentsParams = [user.tenantId, todayStr];
+    if (isDoctor) {
+      todayAppointmentsQuery += ` AND a.doctorId = ?`;
+      todayAppointmentsParams.push(user.doctorId);
     }
+    todayAppointmentsQuery += ` ORDER BY a.dateTime ASC`;
+    todayAppointments = await query<any>(todayAppointmentsQuery, todayAppointmentsParams);
+  } catch (e: any) {
+    console.error("[DB] getDashboardStats - todayAppointmentsQuery failed:", e.message);
+  }
 
-    let allCounts: any = { total: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0 };
-    try {
-      let allCountsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Confirmed' THEN 1 ELSE 0 END) as confirmed, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) as cancelled FROM Appointment WHERE tenantId = ?`;
-      let allCountsParams = [user.tenantId];
-      if (isDoctor) {
-        allCountsQuery += ` AND doctorId = ?`;
-        allCountsParams.push(user.doctorId);
-      }
-      const [resAllCounts] = await query<any>(allCountsQuery, allCountsParams);
-      if (resAllCounts) allCounts = resAllCounts;
-    } catch (e: any) {
-      console.error("[DB] getDashboardStats - allCountsQuery failed:", e.message);
+  let allCounts: any = { total: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0 };
+  try {
+    let allCountsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Confirmed' THEN 1 ELSE 0 END) as confirmed, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) as cancelled FROM Appointment WHERE tenantId = ?`;
+    const allCountsParams = [user.tenantId];
+    if (isDoctor) {
+      allCountsQuery += ` AND doctorId = ?`;
+      allCountsParams.push(user.doctorId);
     }
+    const [resAllCounts] = await query<any>(allCountsQuery, allCountsParams);
+    if (resAllCounts) allCounts = resAllCounts;
+  } catch (e: any) {
+    console.error("[DB] getDashboardStats - allCountsQuery failed:", e.message);
+  }
 
-    let todayCounts: any = { total: 0, pending: 0, confirmed: 0, completed: 0 };
-    try {
-      let todayCountsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Confirmed' THEN 1 ELSE 0 END) as confirmed, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = ?`;
-      let todayCountsParams = [user.tenantId, todayStr];
-      if (isDoctor) {
-        todayCountsQuery += ` AND doctorId = ?`;
-        todayCountsParams.push(user.doctorId);
-      }
-      const [resTodayCounts] = await query<any>(todayCountsQuery, todayCountsParams);
-      if (resTodayCounts) todayCounts = resTodayCounts;
-    } catch (e: any) {
-      console.error("[DB] getDashboardStats - todayCountsQuery failed:", e.message);
+  let todayCounts: any = { total: 0, pending: 0, confirmed: 0, completed: 0 };
+  try {
+    let todayCountsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Confirmed' THEN 1 ELSE 0 END) as confirmed, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = ?`;
+    const todayCountsParams = [user.tenantId, todayStr];
+    if (isDoctor) {
+      todayCountsQuery += ` AND doctorId = ?`;
+      todayCountsParams.push(user.doctorId);
     }
+    const [resTodayCounts] = await query<any>(todayCountsQuery, todayCountsParams);
+    if (resTodayCounts) todayCounts = resTodayCounts;
+  } catch (e: any) {
+    console.error("[DB] getDashboardStats - todayCountsQuery failed:", e.message);
+  }
 
-    let patientCount: any = { total: 0 };
-    try {
-      let patientCountQuery = "SELECT COUNT(*) as total FROM Patient WHERE tenantId = ?";
-      let patientCountParams = [user.tenantId];
-      if (isDoctor) {
-        patientCountQuery = "SELECT COUNT(DISTINCT patientId) as total FROM Appointment WHERE tenantId = ? AND doctorId = ?";
-        patientCountParams = [user.tenantId, user.doctorId];
-      }
-      const [resPatientCount] = await query<any>(patientCountQuery, patientCountParams);
-      if (resPatientCount) patientCount = resPatientCount;
-    } catch (e: any) {
-      console.error("[DB] getDashboardStats - patientCountQuery failed:", e.message);
+  let patientCount: any = { total: 0 };
+  try {
+    let patientCountQuery = "SELECT COUNT(*) as total FROM Patient WHERE tenantId = ?";
+    let patientCountParams = [user.tenantId];
+    if (isDoctor) {
+      patientCountQuery =
+        "SELECT COUNT(DISTINCT patientId) as total FROM Appointment WHERE tenantId = ? AND doctorId = ?";
+      patientCountParams = [user.tenantId, user.doctorId];
     }
+    const [resPatientCount] = await query<any>(patientCountQuery, patientCountParams);
+    if (resPatientCount) patientCount = resPatientCount;
+  } catch (e: any) {
+    console.error("[DB] getDashboardStats - patientCountQuery failed:", e.message);
+  }
 
-    let recentAppointments: any[] = [];
-    try {
-      let recentAppointmentsQuery = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ?`;
-      let recentAppointmentsParams = [user.tenantId];
-      if (isDoctor) {
-        recentAppointmentsQuery += ` AND a.doctorId = ?`;
-        recentAppointmentsParams.push(user.doctorId);
-      }
-      recentAppointmentsQuery += ` ORDER BY a.createdAt DESC LIMIT 5`;
-      recentAppointments = await query<any>(recentAppointmentsQuery, recentAppointmentsParams);
-    } catch (e: any) {
-      console.error("[DB] getDashboardStats - recentAppointmentsQuery failed:", e.message);
+  let recentAppointments: any[] = [];
+  try {
+    let recentAppointmentsQuery = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ?`;
+    const recentAppointmentsParams = [user.tenantId];
+    if (isDoctor) {
+      recentAppointmentsQuery += ` AND a.doctorId = ?`;
+      recentAppointmentsParams.push(user.doctorId);
     }
+    recentAppointmentsQuery += ` ORDER BY a.createdAt DESC LIMIT 5`;
+    recentAppointments = await query<any>(recentAppointmentsQuery, recentAppointmentsParams);
+  } catch (e: any) {
+    console.error("[DB] getDashboardStats - recentAppointmentsQuery failed:", e.message);
+  }
 
-    return {
-      todayAppointments,
-      allTimeCounts: {
-        total: Number(allCounts?.total || 0),
-        pending: Number(allCounts?.pending || 0),
-        confirmed: Number(allCounts?.confirmed || 0),
-        completed: Number(allCounts?.completed || 0),
-        cancelled: Number(allCounts?.cancelled || 0)
-      },
-      todayCounts: {
-        total: Number(todayCounts?.total || 0),
-        pending: Number(todayCounts?.pending || 0),
-        confirmed: Number(todayCounts?.confirmed || 0),
-        completed: Number(todayCounts?.completed || 0)
-      },
-      totalPatients: Number(patientCount?.total || 0),
-      recentAppointments,
-    };
-  });
+  return {
+    todayAppointments,
+    allTimeCounts: {
+      total: Number(allCounts?.total || 0),
+      pending: Number(allCounts?.pending || 0),
+      confirmed: Number(allCounts?.confirmed || 0),
+      completed: Number(allCounts?.completed || 0),
+      cancelled: Number(allCounts?.cancelled || 0),
+    },
+    todayCounts: {
+      total: Number(todayCounts?.total || 0),
+      pending: Number(todayCounts?.pending || 0),
+      confirmed: Number(todayCounts?.confirmed || 0),
+      completed: Number(todayCounts?.completed || 0),
+    },
+    totalPatients: Number(patientCount?.total || 0),
+    recentAppointments,
+  };
+});
 
 // ══════════════════════════════════════════════════════════════
 // ANALYTICS — Live Chart Data
 // ══════════════════════════════════════════════════════════════
 
-export const getAnalyticsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
-    const isDoctor = user.role === "doctor" && user.doctorId;
+export const getAnalyticsServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user) throw new Error("Unauthorized");
+  const isDoctor = user.role === "doctor" && user.doctorId;
 
-    let byDayOfWeek: any[] = [];
-    try {
-      let byDayOfWeekQuery = `SELECT DAYOFWEEK(dateTime) as dow, COUNT(*) as count FROM Appointment WHERE tenantId = ? AND dateTime >= DATE_SUB(NOW(), INTERVAL 30 DAY)`;
-      let byDayOfWeekParams = [user.tenantId];
-      if (isDoctor) {
-        byDayOfWeekQuery += ` AND doctorId = ?`;
-        byDayOfWeekParams.push(user.doctorId);
-      }
-      byDayOfWeekQuery += ` GROUP BY DAYOFWEEK(dateTime) ORDER BY dow`;
-      byDayOfWeek = await query<any>(byDayOfWeekQuery, byDayOfWeekParams);
-    } catch (e: any) {
-      console.error("[DB] getAnalytics - byDayOfWeekQuery failed:", e.message);
+  let byDayOfWeek: any[] = [];
+  try {
+    let byDayOfWeekQuery = `SELECT DAYOFWEEK(dateTime) as dow, COUNT(*) as count FROM Appointment WHERE tenantId = ? AND dateTime >= DATE_SUB(NOW(), INTERVAL 30 DAY)`;
+    const byDayOfWeekParams = [user.tenantId];
+    if (isDoctor) {
+      byDayOfWeekQuery += ` AND doctorId = ?`;
+      byDayOfWeekParams.push(user.doctorId);
     }
+    byDayOfWeekQuery += ` GROUP BY DAYOFWEEK(dateTime) ORDER BY dow`;
+    byDayOfWeek = await query<any>(byDayOfWeekQuery, byDayOfWeekParams);
+  } catch (e: any) {
+    console.error("[DB] getAnalytics - byDayOfWeekQuery failed:", e.message);
+  }
 
-    let monthlyTrend: any[] = [];
-    try {
-      let monthlyTrendQuery = `SELECT DATE_FORMAT(dateTime, '%Y-%m') as month, COUNT(*) as count FROM Appointment WHERE tenantId = ? AND dateTime >= DATE_SUB(NOW(), INTERVAL 6 MONTH)`;
-      let monthlyTrendParams = [user.tenantId];
-      if (isDoctor) {
-        monthlyTrendQuery += ` AND doctorId = ?`;
-        monthlyTrendParams.push(user.doctorId);
-      }
-      monthlyTrendQuery += ` GROUP BY DATE_FORMAT(dateTime, '%Y-%m') ORDER BY month`;
-      monthlyTrend = await query<any>(monthlyTrendQuery, monthlyTrendParams);
-    } catch (e: any) {
-      console.error("[DB] getAnalytics - monthlyTrendQuery failed:", e.message);
+  let monthlyTrend: any[] = [];
+  try {
+    let monthlyTrendQuery = `SELECT DATE_FORMAT(dateTime, '%Y-%m') as month, COUNT(*) as count FROM Appointment WHERE tenantId = ? AND dateTime >= DATE_SUB(NOW(), INTERVAL 6 MONTH)`;
+    const monthlyTrendParams = [user.tenantId];
+    if (isDoctor) {
+      monthlyTrendQuery += ` AND doctorId = ?`;
+      monthlyTrendParams.push(user.doctorId);
     }
+    monthlyTrendQuery += ` GROUP BY DATE_FORMAT(dateTime, '%Y-%m') ORDER BY month`;
+    monthlyTrend = await query<any>(monthlyTrendQuery, monthlyTrendParams);
+  } catch (e: any) {
+    console.error("[DB] getAnalytics - monthlyTrendQuery failed:", e.message);
+  }
 
-    let statusBreakdown: any[] = [];
-    try {
-      let statusBreakdownQuery = "SELECT status, COUNT(*) as count FROM Appointment WHERE tenantId = ?";
-      let statusBreakdownParams = [user.tenantId];
-      if (isDoctor) {
-        statusBreakdownQuery += ` AND doctorId = ?`;
-        statusBreakdownParams.push(user.doctorId);
-      }
-      statusBreakdownQuery += ` GROUP BY status`;
-      statusBreakdown = await query<any>(statusBreakdownQuery, statusBreakdownParams);
-    } catch (e: any) {
-      console.error("[DB] getAnalytics - statusBreakdownQuery failed:", e.message);
+  let statusBreakdown: any[] = [];
+  try {
+    let statusBreakdownQuery =
+      "SELECT status, COUNT(*) as count FROM Appointment WHERE tenantId = ?";
+    const statusBreakdownParams = [user.tenantId];
+    if (isDoctor) {
+      statusBreakdownQuery += ` AND doctorId = ?`;
+      statusBreakdownParams.push(user.doctorId);
     }
+    statusBreakdownQuery += ` GROUP BY status`;
+    statusBreakdown = await query<any>(statusBreakdownQuery, statusBreakdownParams);
+  } catch (e: any) {
+    console.error("[DB] getAnalytics - statusBreakdownQuery failed:", e.message);
+  }
 
-    let topDoctors: any[] = [];
-    try {
-      let topDoctorsQuery = `SELECT d.name, COUNT(a.id) as count FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ? AND d.name IS NOT NULL`;
-      let topDoctorsParams = [user.tenantId];
-      if (isDoctor) {
-        topDoctorsQuery += ` AND a.doctorId = ?`;
-        topDoctorsParams.push(user.doctorId);
-      }
-      topDoctorsQuery += ` GROUP BY a.doctorId, d.name ORDER BY count DESC LIMIT 5`;
-      topDoctors = await query<any>(topDoctorsQuery, topDoctorsParams);
-    } catch (e: any) {
-      console.error("[DB] getAnalytics - topDoctorsQuery failed:", e.message);
+  let topDoctors: any[] = [];
+  try {
+    let topDoctorsQuery = `SELECT d.name, COUNT(a.id) as count FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ? AND d.name IS NOT NULL`;
+    const topDoctorsParams = [user.tenantId];
+    if (isDoctor) {
+      topDoctorsQuery += ` AND a.doctorId = ?`;
+      topDoctorsParams.push(user.doctorId);
     }
+    topDoctorsQuery += ` GROUP BY a.doctorId, d.name ORDER BY count DESC LIMIT 5`;
+    topDoctors = await query<any>(topDoctorsQuery, topDoctorsParams);
+  } catch (e: any) {
+    console.error("[DB] getAnalytics - topDoctorsQuery failed:", e.message);
+  }
 
-    let patientCount: any = { total: 0 };
-    try {
-      let patientCountQuery = "SELECT COUNT(*) as total FROM Patient WHERE tenantId = ?";
-      let patientCountParams = [user.tenantId];
-      if (isDoctor) {
-        patientCountQuery = "SELECT COUNT(DISTINCT patientId) as total FROM Appointment WHERE tenantId = ? AND doctorId = ?";
-        patientCountParams = [user.tenantId, user.doctorId];
-      }
-      const [resPatientCount] = await query<any>(patientCountQuery, patientCountParams);
-      if (resPatientCount) patientCount = resPatientCount;
-    } catch (e: any) {
-      console.error("[DB] getAnalytics - patientCountQuery failed:", e.message);
+  let patientCount: any = { total: 0 };
+  try {
+    let patientCountQuery = "SELECT COUNT(*) as total FROM Patient WHERE tenantId = ?";
+    let patientCountParams = [user.tenantId];
+    if (isDoctor) {
+      patientCountQuery =
+        "SELECT COUNT(DISTINCT patientId) as total FROM Appointment WHERE tenantId = ? AND doctorId = ?";
+      patientCountParams = [user.tenantId, user.doctorId];
     }
+    const [resPatientCount] = await query<any>(patientCountQuery, patientCountParams);
+    if (resPatientCount) patientCount = resPatientCount;
+  } catch (e: any) {
+    console.error("[DB] getAnalytics - patientCountQuery failed:", e.message);
+  }
 
-    let total = 0;
-    let completed = 0;
-    let cancelled = 0;
-    try {
-      let totalsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) as cancelled FROM Appointment WHERE tenantId = ?`;
-      let totalsParams = [user.tenantId];
-      if (isDoctor) {
-        totalsQuery += ` AND doctorId = ?`;
-        totalsParams.push(user.doctorId);
-      }
-      const [totals] = await query<any>(totalsQuery, totalsParams);
-      if (totals) {
-        total = Number(totals.total || 0);
-        completed = Number(totals.completed || 0);
-        cancelled = Number(totals.cancelled || 0);
-      }
-    } catch (e: any) {
-      console.error("[DB] getAnalytics - totalsQuery failed:", e.message);
+  let total = 0;
+  let completed = 0;
+  let cancelled = 0;
+  try {
+    let totalsQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) as cancelled FROM Appointment WHERE tenantId = ?`;
+    const totalsParams = [user.tenantId];
+    if (isDoctor) {
+      totalsQuery += ` AND doctorId = ?`;
+      totalsParams.push(user.doctorId);
     }
+    const [totals] = await query<any>(totalsQuery, totalsParams);
+    if (totals) {
+      total = Number(totals.total || 0);
+      completed = Number(totals.completed || 0);
+      cancelled = Number(totals.cancelled || 0);
+    }
+  } catch (e: any) {
+    console.error("[DB] getAnalytics - totalsQuery failed:", e.message);
+  }
 
-    const completionRate = total - cancelled > 0 ? Math.round((completed / (total - cancelled)) * 100) : 0;
-    const dowMap: Record<number, string> = { 1: "Sun", 2: "Mon", 3: "Tue", 4: "Wed", 5: "Thu", 6: "Fri", 7: "Sat" };
+  const completionRate =
+    total - cancelled > 0 ? Math.round((completed / (total - cancelled)) * 100) : 0;
+  const dowMap: Record<number, string> = {
+    1: "Sun",
+    2: "Mon",
+    3: "Tue",
+    4: "Wed",
+    5: "Thu",
+    6: "Fri",
+    7: "Sat",
+  };
 
-    return {
-      byDayOfWeek: byDayOfWeek.map((r: any) => ({ day: dowMap[Number(r.dow)] || String(r.dow), count: Number(r.count) })),
-      monthlyTrend: monthlyTrend.map((r: any) => ({ month: r.month, count: Number(r.count) })),
-      statusBreakdown: statusBreakdown.map((r: any) => ({ status: r.status, count: Number(r.count) })),
-      topDoctors: topDoctors.map((r: any) => ({ name: r.name, count: Number(r.count) })),
-      scorecard: { totalPatients: Number(patientCount?.total || 0), totalAppointments: total, completionRate },
-    };
-  });
+  return {
+    byDayOfWeek: byDayOfWeek.map((r: any) => ({
+      day: dowMap[Number(r.dow)] || String(r.dow),
+      count: Number(r.count),
+    })),
+    monthlyTrend: monthlyTrend.map((r: any) => ({ month: r.month, count: Number(r.count) })),
+    statusBreakdown: statusBreakdown.map((r: any) => ({
+      status: r.status,
+      count: Number(r.count),
+    })),
+    topDoctors: topDoctors.map((r: any) => ({ name: r.name, count: Number(r.count) })),
+    scorecard: {
+      totalPatients: Number(patientCount?.total || 0),
+      totalAppointments: total,
+      completionRate,
+    },
+  };
+});
 
 // ══════════════════════════════════════════════════════════════
 // PATIENT CRUD
@@ -1976,14 +2296,19 @@ export const getPatientsServerFn = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
-    const page = data.page || 1; const pageSize = 20; const offset = (page-1)*pageSize;
+    const page = data.page || 1;
+    const pageSize = 20;
+    const offset = (page - 1) * pageSize;
     const search = data.search ? `%${data.search}%` : "%";
     const patients = await query<any>(
       `SELECT p.*, (SELECT MAX(a.dateTime) FROM Appointment a WHERE a.patientId = p.id OR (a.name = p.name AND a.tenantId = p.tenantId)) as lastVisit FROM Patient p WHERE p.tenantId = ? AND (p.name LIKE ? OR p.patientNo LIKE ? OR p.phone LIKE ? OR p.email LIKE ?) ORDER BY p.createdAt DESC LIMIT ? OFFSET ?`,
-      [user.tenantId, search, search, search, search, pageSize, offset]
+      [user.tenantId, search, search, search, search, pageSize, offset],
     );
-    const [countRow] = await query<any>(`SELECT COUNT(*) as total FROM Patient WHERE tenantId = ? AND (name LIKE ? OR patientNo LIKE ? OR phone LIKE ? OR email LIKE ?)`, [user.tenantId, search, search, search, search]);
-    return { patients, total: Number(countRow?.total||0), page, pageSize };
+    const [countRow] = await query<any>(
+      `SELECT COUNT(*) as total FROM Patient WHERE tenantId = ? AND (name LIKE ? OR patientNo LIKE ? OR phone LIKE ? OR email LIKE ?)`,
+      [user.tenantId, search, search, search, search],
+    );
+    return { patients, total: Number(countRow?.total || 0), page, pageSize };
   });
 
 export const checkPatientDuplicateServerFn = createServerFn({ method: "POST" })
@@ -1992,7 +2317,7 @@ export const checkPatientDuplicateServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
     if (!data.email && !data.phone) return { exists: false };
-    
+
     let sql = "SELECT * FROM Patient WHERE tenantId = ? AND (";
     const params: any[] = [user.tenantId];
     const subConds: string[] = [];
@@ -2005,7 +2330,7 @@ export const checkPatientDuplicateServerFn = createServerFn({ method: "POST" })
       params.push(data.phone);
     }
     sql += subConds.join(" OR ") + ") LIMIT 1";
-    
+
     const existing = await queryOne<any>(sql, params);
     if (existing) {
       return { exists: true, patient: existing };
@@ -2014,53 +2339,131 @@ export const checkPatientDuplicateServerFn = createServerFn({ method: "POST" })
   });
 
 export const createPatientServerFn = createServerFn({ method: "POST" })
-  .validator((data: { name: string; age?: number; gender?: string; phone?: string | null; email?: string | null; address?: string | null; chiefComplaint?: string; notes?: string | null; dob?: string | null; bloodGroup?: string | null; }) => {
-    if (!data.name) throw new Error("Patient name is required");
-    return data;
-  })
+  .validator(
+    (data: {
+      name: string;
+      age?: number;
+      gender?: string;
+      phone?: string | null;
+      email?: string | null;
+      address?: string | null;
+      chiefComplaint?: string;
+      notes?: string | null;
+      dob?: string | null;
+      bloodGroup?: string | null;
+    }) => {
+      if (!data.name) throw new Error("Patient name is required");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
     // Plan check: Basic/Solo limit is 500 patients
-    const tenant = await queryOne<any>("SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1", [user.tenantId]);
+    const tenant = await queryOne<any>(
+      "SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
+      [user.tenantId],
+    );
     const plan = tenant?.subscriptionPlan || "Basic";
     if (plan === "Solo" || plan === "Basic") {
-      const [patientCount] = await query<any>("SELECT COUNT(*) as total FROM Patient WHERE tenantId = ?", [user.tenantId]);
+      const [patientCount] = await query<any>(
+        "SELECT COUNT(*) as total FROM Patient WHERE tenantId = ?",
+        [user.tenantId],
+      );
       const total = patientCount?.total || patientCount?.TOTAL || 0;
       if (Number(total) >= 500) {
-        throw new Error("You have reached the maximum limit of 500 patient records under the Basic plan. Please upgrade your plan to add more patients.");
+        throw new Error(
+          "You have reached the maximum limit of 500 patient records under the Basic plan. Please upgrade your plan to add more patients.",
+        );
       }
     }
 
-    const [lastP] = await query<any>("SELECT patientNo FROM Patient WHERE tenantId = ? ORDER BY createdAt DESC LIMIT 1", [user.tenantId]);
+    const [lastP] = await query<any>(
+      "SELECT patientNo FROM Patient WHERE tenantId = ? ORDER BY createdAt DESC LIMIT 1",
+      [user.tenantId],
+    );
     let nextNum = 1;
-    if (lastP?.patientNo) { const m = String(lastP.patientNo).match(/P-(\d+)/); if (m) nextNum = parseInt(m[1])+1; }
-    const patientNo = `P-${String(nextNum).padStart(3,"0")}`;
+    if (lastP?.patientNo) {
+      const m = String(lastP.patientNo).match(/P-(\d+)/);
+      if (m) nextNum = parseInt(m[1]) + 1;
+    }
+    const patientNo = `P-${String(nextNum).padStart(3, "0")}`;
     const cryptoMod = await import("crypto");
     const id = cryptoMod.randomUUID();
-    await execute(`INSERT INTO Patient (id,tenantId,patientNo,name,age,gender,phone,email,address,chiefComplaint,notes,dob,bloodGroup,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
-      [id, user.tenantId, patientNo, data.name, data.age||null, data.gender||null, data.phone||null, data.email||null, data.address||null, data.chiefComplaint||null, data.notes||null, data.dob||null, data.bloodGroup||null]);
+    await execute(
+      `INSERT INTO Patient (id,tenantId,patientNo,name,age,gender,phone,email,address,chiefComplaint,notes,dob,bloodGroup,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
+      [
+        id,
+        user.tenantId,
+        patientNo,
+        data.name,
+        data.age || null,
+        data.gender || null,
+        data.phone || null,
+        data.email || null,
+        data.address || null,
+        data.chiefComplaint || null,
+        data.notes || null,
+        data.dob || null,
+        data.bloodGroup || null,
+      ],
+    );
     return { success: true, patientId: id, patientNo };
   });
 
 export const updatePatientServerFn = createServerFn({ method: "POST" })
-  .validator((data: { id: string; name?: string; age?: number; gender?: string; phone?: string | null; email?: string | null; address?: string | null; chiefComplaint?: string; notes?: string | null; dob?: string | null; bloodGroup?: string | null; }) => {
-    if (!data.id) throw new Error("Patient ID is required");
-    return data;
-  })
+  .validator(
+    (data: {
+      id: string;
+      name?: string;
+      age?: number;
+      gender?: string;
+      phone?: string | null;
+      email?: string | null;
+      address?: string | null;
+      chiefComplaint?: string;
+      notes?: string | null;
+      dob?: string | null;
+      bloodGroup?: string | null;
+    }) => {
+      if (!data.id) throw new Error("Patient ID is required");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
-    const existing = await queryOne<any>("SELECT * FROM Patient WHERE id = ? AND tenantId = ? LIMIT 1", [data.id, user.tenantId]);
+    const existing = await queryOne<any>(
+      "SELECT * FROM Patient WHERE id = ? AND tenantId = ? LIMIT 1",
+      [data.id, user.tenantId],
+    );
     if (!existing) throw new Error("Patient not found");
-    await execute(`UPDATE Patient SET name=?,age=?,gender=?,phone=?,email=?,address=?,chiefComplaint=?,notes=?,dob=?,bloodGroup=? WHERE id=? AND tenantId=?`,
-      [data.name??existing.name, data.age??existing.age, data.gender??existing.gender, data.phone??existing.phone, data.email??existing.email, data.address??existing.address, data.chiefComplaint??existing.chiefComplaint, data.notes??existing.notes, data.dob??existing.dob, data.bloodGroup??existing.bloodGroup, data.id, user.tenantId]);
+    await execute(
+      `UPDATE Patient SET name=?,age=?,gender=?,phone=?,email=?,address=?,chiefComplaint=?,notes=?,dob=?,bloodGroup=? WHERE id=? AND tenantId=?`,
+      [
+        data.name ?? existing.name,
+        data.age ?? existing.age,
+        data.gender ?? existing.gender,
+        data.phone ?? existing.phone,
+        data.email ?? existing.email,
+        data.address ?? existing.address,
+        data.chiefComplaint ?? existing.chiefComplaint,
+        data.notes ?? existing.notes,
+        data.dob ?? existing.dob,
+        data.bloodGroup ?? existing.bloodGroup,
+        data.id,
+        user.tenantId,
+      ],
+    );
     return { success: true };
   });
 
 export const deletePatientServerFn = createServerFn({ method: "POST" })
-  .validator((data: { id: string }) => { if (!data.id) throw new Error("Patient ID is required"); return data; })
+  .validator((data: { id: string }) => {
+    if (!data.id) throw new Error("Patient ID is required");
+    return data;
+  })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
@@ -2070,16 +2473,25 @@ export const deletePatientServerFn = createServerFn({ method: "POST" })
   });
 
 export const getPatientChartServerFn = createServerFn({ method: "GET" })
-  .validator((data: { patientId: string }) => { if (!data.patientId) throw new Error("Patient ID required"); return data; })
+  .validator((data: { patientId: string }) => {
+    if (!data.patientId) throw new Error("Patient ID required");
+    return data;
+  })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
-    
-    let patient = await queryOne<any>("SELECT * FROM Patient WHERE id = ? AND tenantId = ? LIMIT 1", [data.patientId, user.tenantId]);
-    
+
+    let patient = await queryOne<any>(
+      "SELECT * FROM Patient WHERE id = ? AND tenantId = ? LIMIT 1",
+      [data.patientId, user.tenantId],
+    );
+
     if (!patient) {
       // Try to resolve from Appointment table if it's an appointment ID or virtual
-      const apt = await queryOne<any>("SELECT * FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1", [data.patientId, user.tenantId]);
+      const apt = await queryOne<any>(
+        "SELECT * FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1",
+        [data.patientId, user.tenantId],
+      );
       if (apt) {
         patient = {
           id: data.patientId,
@@ -2095,7 +2507,7 @@ export const getPatientChartServerFn = createServerFn({ method: "GET" })
           address: "Walk-in / Online Booking",
           chiefComplaint: apt.reason,
           notes: "",
-          createdAt: apt.createdAt
+          createdAt: apt.createdAt,
         };
       } else {
         // Ultimate fallback
@@ -2113,29 +2525,38 @@ export const getPatientChartServerFn = createServerFn({ method: "GET" })
           address: "None Provided",
           chiefComplaint: "",
           notes: "",
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
         };
       }
     }
 
-    const soapNotes = await query<any>("SELECT * FROM SoapNote WHERE patientId = ? AND tenantId = ? ORDER BY createdAt DESC LIMIT 20", [data.patientId, user.tenantId]);
+    const soapNotes = await query<any>(
+      "SELECT * FROM SoapNote WHERE patientId = ? AND tenantId = ? ORDER BY createdAt DESC LIMIT 20",
+      [data.patientId, user.tenantId],
+    );
 
     // Fetch prescriptions for this patient
-    const prescriptionsRaw = await query<any>("SELECT * FROM Prescription WHERE patientId = ? ORDER BY createdAt DESC LIMIT 20", [data.patientId]);
+    const prescriptionsRaw = await query<any>(
+      "SELECT * FROM Prescription WHERE patientId = ? ORDER BY createdAt DESC LIMIT 20",
+      [data.patientId],
+    );
     const prescriptions = prescriptionsRaw.map((r: any) => ({
       id: r.id,
       patientId: r.patientId,
       medications: (() => {
-        try { return typeof r.medications === "string" ? JSON.parse(r.medications) : r.medications; }
-        catch { return []; }
+        try {
+          return typeof r.medications === "string" ? JSON.parse(r.medications) : r.medications;
+        } catch {
+          return [];
+        }
       })(),
       notes: r.notes,
-      createdAt: r.createdAt
+      createdAt: r.createdAt,
     }));
 
     const isDoctor = user.role === "doctor" && user.doctorId;
     let aptSql = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE (a.patientId = ? OR a.id = ? OR (a.name = ? AND a.tenantId = ?))`;
-    let aptParams = [data.patientId, data.patientId, patient.name, user.tenantId];
+    const aptParams = [data.patientId, data.patientId, patient.name, user.tenantId];
     if (isDoctor) {
       aptSql += ` AND a.doctorId = ?`;
       aptParams.push(user.doctorId);
@@ -2180,19 +2601,23 @@ Transcript:
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
           "HTTP-Referer": "http://localhost:8080",
-          "X-Title": "HealthSync AI"
+          "X-Title": "HealthSync AI",
         },
         body: JSON.stringify({
           model: "google/gemini-2.5-flash",
           messages: [
-            { role: "system", content: "You are an accurate, secure clinical note generator. You output only clean JSON." },
-            { role: "user", content: specialtyPrompt }
+            {
+              role: "system",
+              content:
+                "You are an accurate, secure clinical note generator. You output only clean JSON.",
+            },
+            { role: "user", content: specialtyPrompt },
           ],
-          response_format: { type: "json_object" }
-        })
+          response_format: { type: "json_object" },
+        }),
       });
 
       if (!response.ok) {
@@ -2213,7 +2638,7 @@ Transcript:
         subjective: soapNote.subjective || "",
         objective: soapNote.objective || "",
         assessment: soapNote.assessment || "",
-        plan: soapNote.plan || ""
+        plan: soapNote.plan || "",
       };
     } catch (e: any) {
       console.error("Failed to generate SOAP note via OpenRouter:", e);
@@ -2222,17 +2647,41 @@ Transcript:
   });
 
 export const saveSoapNoteServerFn = createServerFn({ method: "POST" })
-  .validator((data: { patientId: string; appointmentId?: string; specialty?: string; subjective: string; objective: string; assessment: string; plan: string; rawTranscript?: string; }) => {
-    if (!data.patientId) throw new Error("Patient ID is required");
-    return data;
-  })
+  .validator(
+    (data: {
+      patientId: string;
+      appointmentId?: string;
+      specialty?: string;
+      subjective: string;
+      objective: string;
+      assessment: string;
+      plan: string;
+      rawTranscript?: string;
+    }) => {
+      if (!data.patientId) throw new Error("Patient ID is required");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
     const cryptoMod = await import("crypto");
     const id = cryptoMod.randomUUID();
-    await execute(`INSERT INTO SoapNote (id,tenantId,patientId,appointmentId,specialty,subjective,objective,assessment,plan,rawTranscript,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,NOW())`,
-      [id, user.tenantId, data.patientId, data.appointmentId||null, data.specialty||null, data.subjective, data.objective, data.assessment, data.plan, data.rawTranscript||null]);
+    await execute(
+      `INSERT INTO SoapNote (id,tenantId,patientId,appointmentId,specialty,subjective,objective,assessment,plan,rawTranscript,createdAt) VALUES (?,?,?,?,?,?,?,?,?,?,NOW())`,
+      [
+        id,
+        user.tenantId,
+        data.patientId,
+        data.appointmentId || null,
+        data.specialty || null,
+        data.subjective,
+        data.objective,
+        data.assessment,
+        data.plan,
+        data.rawTranscript || null,
+      ],
+    );
     return { success: true, soapNoteId: id };
   });
 
@@ -2283,20 +2732,20 @@ Voice Instructions:
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
           "HTTP-Referer": "http://localhost:8080",
-          "X-Title": "HealthSync AI"
+          "X-Title": "HealthSync AI",
         },
         body: JSON.stringify({
           model: "google/gemini-2.5-flash",
           messages: [
             { role: "system", content: "You output only clean JSON." },
-            { role: "user", content: prompt }
+            { role: "user", content: prompt },
           ],
           response_format: { type: "json_object" },
-          max_tokens: 1500
-        })
+          max_tokens: 1500,
+        }),
       });
 
       if (!response.ok) {
@@ -2315,7 +2764,7 @@ Voice Instructions:
       return {
         success: true,
         medications: prescription.medications || [],
-        notes: prescription.notes || ""
+        notes: prescription.notes || "",
       };
     } catch (e: any) {
       console.error("Failed to generate prescription via OpenRouter:", e);
@@ -2366,20 +2815,20 @@ Only return a valid JSON object matching this structure. Do not wrap the JSON in
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
           "HTTP-Referer": "http://localhost:8080",
-          "X-Title": "HealthSync AI"
+          "X-Title": "HealthSync AI",
         },
         body: JSON.stringify({
           model: "google/gemini-2.5-flash",
           messages: [
             { role: "system", content: "You output only clean JSON." },
-            { role: "user", content: prompt }
+            { role: "user", content: prompt },
           ],
           response_format: { type: "json_object" },
-          max_tokens: 1500
-        })
+          max_tokens: 1500,
+        }),
       });
 
       if (!response.ok) {
@@ -2399,7 +2848,7 @@ Only return a valid JSON object matching this structure. Do not wrap the JSON in
         success: true,
         diagnosis: parsed.diagnosis || "",
         medications: parsed.medications || [],
-        advice: parsed.advice || ""
+        advice: parsed.advice || "",
       };
     } catch (e: any) {
       console.error("Failed to generate AI Assist suggestions:", e);
@@ -2462,20 +2911,20 @@ Only return a valid JSON object matching this structure. Do not wrap the JSON in
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
           "HTTP-Referer": "http://localhost:8080",
-          "X-Title": "HealthSync AI"
+          "X-Title": "HealthSync AI",
         },
         body: JSON.stringify({
           model: "google/gemini-2.5-flash",
           messages: [
             { role: "system", content: "You output only clean JSON." },
-            { role: "user", content: prompt }
+            { role: "user", content: prompt },
           ],
           response_format: { type: "json_object" },
-          max_tokens: 1500
-        })
+          max_tokens: 1500,
+        }),
       });
 
       if (!response.ok) {
@@ -2494,7 +2943,10 @@ Only return a valid JSON object matching this structure. Do not wrap the JSON in
       // stray prose around the object despite instructions.
       let cleaned = String(content).trim();
       if (cleaned.startsWith("```")) {
-        cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+        cleaned = cleaned
+          .replace(/^```(?:json)?\s*/i, "")
+          .replace(/\s*```$/i, "")
+          .trim();
       }
       const firstBrace = cleaned.indexOf("{");
       const lastBrace = cleaned.lastIndexOf("}");
@@ -2510,7 +2962,7 @@ Only return a valid JSON object matching this structure. Do not wrap the JSON in
         chiefComplaint: parsed.chiefComplaint || "",
         diagnosis: parsed.diagnosis || "",
         medications: Array.isArray(parsed.medications) ? parsed.medications : [],
-        advice: parsed.advice || ""
+        advice: parsed.advice || "",
       };
     } catch (e: any) {
       console.error("Failed to analyze Voice Rx transcript:", e);
@@ -2529,18 +2981,23 @@ export const savePrescriptionServerFn = createServerFn({ method: "POST" })
     const cryptoMod = await import("crypto");
     const id = cryptoMod.randomUUID();
     const medsJson = JSON.stringify(data.medications);
-    await execute(`INSERT INTO Prescription (id, tenantId, patientId, medications, notes, createdAt) VALUES (?, ?, ?, ?, ?, NOW())`,
-      [id, user.tenantId, data.patientId, medsJson, data.notes || null]);
+    await execute(
+      `INSERT INTO Prescription (id, tenantId, patientId, medications, notes, createdAt) VALUES (?, ?, ?, ?, ?, NOW())`,
+      [id, user.tenantId, data.patientId, medsJson, data.notes || null],
+    );
     return { success: true, prescriptionId: id };
   });
 
-
 export const getAppointmentsPagedServerFn = createServerFn({ method: "GET" })
-  .validator((data: { search?: string; status?: string; dateFilter?: string; page?: number }) => data)
+  .validator(
+    (data: { search?: string; status?: string; dateFilter?: string; page?: number }) => data,
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
-    const page = data.page||1; const pageSize = 20; const offset = (page-1)*pageSize;
+    const page = data.page || 1;
+    const pageSize = 20;
+    const offset = (page - 1) * pageSize;
     const conditions: string[] = ["a.tenantId = ?"];
     const params: any[] = [user.tenantId];
 
@@ -2550,76 +3007,124 @@ export const getAppointmentsPagedServerFn = createServerFn({ method: "GET" })
       params.push(user.doctorId);
     }
 
-    if (data.search) { conditions.push("(a.name LIKE ? OR a.email LIKE ? OR a.phone LIKE ?)"); const s = `%${data.search}%`; params.push(s,s,s); }
-    if (data.status && data.status !== "All") { conditions.push("a.status = ?"); params.push(data.status); }
+    if (data.search) {
+      conditions.push("(a.name LIKE ? OR a.email LIKE ? OR a.phone LIKE ?)");
+      const s = `%${data.search}%`;
+      params.push(s, s, s);
+    }
+    if (data.status && data.status !== "All") {
+      conditions.push("a.status = ?");
+      params.push(data.status);
+    }
     if (data.dateFilter === "today") conditions.push("DATE(a.dateTime) = CURDATE()");
-    else if (data.dateFilter === "week") conditions.push("a.dateTime >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
-    else if (data.dateFilter === "month") conditions.push("a.dateTime >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
+    else if (data.dateFilter === "week")
+      conditions.push("a.dateTime >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+    else if (data.dateFilter === "month")
+      conditions.push("a.dateTime >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
     const where = `WHERE ${conditions.join(" AND ")}`;
-    const appointments = await query<any>(`SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id ${where} ORDER BY a.dateTime DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]);
-    const [countRow] = await query<any>(`SELECT COUNT(*) as total FROM Appointment a ${where}`, params);
+    const appointments = await query<any>(
+      `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id ${where} ORDER BY a.dateTime DESC LIMIT ? OFFSET ?`,
+      [...params, pageSize, offset],
+    );
+    const [countRow] = await query<any>(
+      `SELECT COUNT(*) as total FROM Appointment a ${where}`,
+      params,
+    );
 
     let summaryQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Confirmed' THEN 1 ELSE 0 END) as confirmed, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) as cancelled FROM Appointment WHERE tenantId = ?`;
-    let summaryParams = [user.tenantId];
+    const summaryParams = [user.tenantId];
     if (isDoctor) {
       summaryQuery += " AND doctorId = ?";
       summaryParams.push(user.doctorId);
     }
     const [summary] = await query<any>(summaryQuery, summaryParams);
 
-    return { appointments, total: Number(countRow?.total||0), page, pageSize, summary: { total: Number(summary?.total||0), pending: Number(summary?.pending||0), confirmed: Number(summary?.confirmed||0), completed: Number(summary?.completed||0), cancelled: Number(summary?.cancelled||0) } };
+    return {
+      appointments,
+      total: Number(countRow?.total || 0),
+      page,
+      pageSize,
+      summary: {
+        total: Number(summary?.total || 0),
+        pending: Number(summary?.pending || 0),
+        confirmed: Number(summary?.confirmed || 0),
+        completed: Number(summary?.completed || 0),
+        cancelled: Number(summary?.cancelled || 0),
+      },
+    };
   });
 
 // ─────────────────────────────────────────────────────────────
 // Sub-User Management (Reception / Doctor accounts per tenant)
 // ─────────────────────────────────────────────────────────────
 
-export const getSubUsersServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
-    const rows = await query<any>(
-      "SELECT id, name, email, phone, role, doctorId, isActive, createdAt FROM SubUser WHERE tenantId = ? ORDER BY createdAt DESC",
-      [user.tenantId]
-    );
-    return rows;
-  });
+export const getSubUsersServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  const rows = await query<any>(
+    "SELECT id, name, email, phone, role, doctorId, isActive, createdAt FROM SubUser WHERE tenantId = ? ORDER BY createdAt DESC",
+    [user.tenantId],
+  );
+  return rows;
+});
 
 export const createSubUserServerFn = createServerFn({ method: "POST" })
-  .validator((data: { name: string; email: string; phone?: string; role: "reception" | "doctor"; doctorId?: string; password: string }) => {
-    if (!data.name || !data.email || !data.role || !data.password) throw new Error("Name, email, role, and password are required");
-    return data;
-  })
+  .validator(
+    (data: {
+      name: string;
+      email: string;
+      phone?: string;
+      role: "reception" | "doctor";
+      doctorId?: string;
+      password: string;
+    }) => {
+      if (!data.name || !data.email || !data.role || !data.password)
+        throw new Error("Name, email, role, and password are required");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     // Plan check for user limits
-    const tenant = await queryOne<any>("SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1", [user.tenantId]);
+    const tenant = await queryOne<any>(
+      "SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
+      [user.tenantId],
+    );
     const plan = tenant?.subscriptionPlan || "Trial";
-    
+
     if (plan !== "Enterprise" && plan !== "Hospital") {
       const isBasic = plan === "Trial" || plan === "Basic" || plan === "Solo";
-      
+
       if (data.role === "doctor") {
-        const [docsCount] = await query<any>("SELECT COUNT(*) as count FROM SubUser WHERE tenantId = ? AND role = 'doctor'", [user.tenantId]);
+        const [docsCount] = await query<any>(
+          "SELECT COUNT(*) as count FROM SubUser WHERE tenantId = ? AND role = 'doctor'",
+          [user.tenantId],
+        );
         const count = docsCount?.count || docsCount?.COUNT || 0;
-        
+
         if (isBasic && Number(count) >= 1) {
-          throw new Error("Your current plan (Basic) allows only 1 Professional Dashboard. Please upgrade your plan.");
+          throw new Error(
+            "Your current plan (Basic) allows only 1 Professional Dashboard. Please upgrade your plan.",
+          );
         } else if (!isBasic && Number(count) >= 5) {
-          throw new Error("Your current plan (Premium) allows a maximum of 5 Professional Dashboards. Upgrade to Enterprise for unlimited.");
+          throw new Error(
+            "Your current plan (Premium) allows a maximum of 5 Professional Dashboards. Upgrade to Enterprise for unlimited.",
+          );
         }
       } else if (data.role === "reception") {
         if (isBasic) {
-          throw new Error("Receptionist dashboards are only available on the Premium plan. Please upgrade your plan.");
+          throw new Error(
+            "Receptionist dashboards are only available on the Premium plan. Please upgrade your plan.",
+          );
         }
       }
     }
 
     const existing = await queryOne<any>(
       "SELECT id FROM SubUser WHERE tenantId = ? AND email = ? LIMIT 1",
-      [user.tenantId, data.email]
+      [user.tenantId, data.email],
     );
     if (existing) throw new Error("A sub-user with this email already exists in your clinic");
 
@@ -2628,42 +3133,76 @@ export const createSubUserServerFn = createServerFn({ method: "POST" })
     await execute(
       `INSERT INTO SubUser (id, tenantId, name, email, phone, role, doctorId, password, isActive)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-      [id, user.tenantId, data.name, data.email, data.phone || null, data.role, data.doctorId || null, hashed]
+      [
+        id,
+        user.tenantId,
+        data.name,
+        data.email,
+        data.phone || null,
+        data.role,
+        data.doctorId || null,
+        hashed,
+      ],
     );
     return { success: true, id };
   });
 
 export const updateSubUserServerFn = createServerFn({ method: "POST" })
-  .validator((data: { id: string; name?: string; phone?: string; role?: string; doctorId?: string; password?: string; isActive?: number }) => {
-    if (!data.id) throw new Error("Sub-user ID required");
-    return data;
-  })
+  .validator(
+    (data: {
+      id: string;
+      name?: string;
+      phone?: string;
+      role?: string;
+      doctorId?: string;
+      password?: string;
+      isActive?: number;
+    }) => {
+      if (!data.id) throw new Error("Sub-user ID required");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     // Plan check for role updates
     if (data.role) {
-      const existingSub = await queryOne<any>("SELECT role FROM SubUser WHERE id = ? AND tenantId = ? LIMIT 1", [data.id, user.tenantId]);
+      const existingSub = await queryOne<any>(
+        "SELECT role FROM SubUser WHERE id = ? AND tenantId = ? LIMIT 1",
+        [data.id, user.tenantId],
+      );
       if (existingSub && existingSub.role !== data.role) {
-        const tenant = await queryOne<any>("SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1", [user.tenantId]);
+        const tenant = await queryOne<any>(
+          "SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
+          [user.tenantId],
+        );
         const plan = tenant?.subscriptionPlan || "Trial";
-        
+
         if (plan !== "Enterprise" && plan !== "Hospital") {
           const isBasic = plan === "Trial" || plan === "Basic" || plan === "Solo";
-          
+
           if (data.role === "doctor") {
-            const [docsCount] = await query<any>("SELECT COUNT(*) as count FROM SubUser WHERE tenantId = ? AND role = 'doctor'", [user.tenantId]);
+            const [docsCount] = await query<any>(
+              "SELECT COUNT(*) as count FROM SubUser WHERE tenantId = ? AND role = 'doctor'",
+              [user.tenantId],
+            );
             const count = docsCount?.count || docsCount?.COUNT || 0;
-            
+
             if (isBasic && Number(count) >= 1) {
-              throw new Error("Your current plan (Basic) allows only 1 Professional Dashboard. Please upgrade your plan.");
+              throw new Error(
+                "Your current plan (Basic) allows only 1 Professional Dashboard. Please upgrade your plan.",
+              );
             } else if (!isBasic && Number(count) >= 5) {
-              throw new Error("Your current plan (Premium) allows a maximum of 5 Professional Dashboards.");
+              throw new Error(
+                "Your current plan (Premium) allows a maximum of 5 Professional Dashboards.",
+              );
             }
           } else if (data.role === "reception") {
             if (isBasic) {
-              throw new Error("Receptionist dashboards are only available on the Premium plan. Please upgrade your plan.");
+              throw new Error(
+                "Receptionist dashboards are only available on the Premium plan. Please upgrade your plan.",
+              );
             }
           }
         }
@@ -2673,11 +3212,26 @@ export const updateSubUserServerFn = createServerFn({ method: "POST" })
     const fields: string[] = [];
     const params: any[] = [];
 
-    if (data.name)     { fields.push("name = ?");     params.push(data.name); }
-    if (data.phone !== undefined) { fields.push("phone = ?"); params.push(data.phone || null); }
-    if (data.role)     { fields.push("role = ?");     params.push(data.role); }
-    if (data.doctorId !== undefined) { fields.push("doctorId = ?"); params.push(data.doctorId || null); }
-    if (data.isActive !== undefined) { fields.push("isActive = ?"); params.push(data.isActive); }
+    if (data.name) {
+      fields.push("name = ?");
+      params.push(data.name);
+    }
+    if (data.phone !== undefined) {
+      fields.push("phone = ?");
+      params.push(data.phone || null);
+    }
+    if (data.role) {
+      fields.push("role = ?");
+      params.push(data.role);
+    }
+    if (data.doctorId !== undefined) {
+      fields.push("doctorId = ?");
+      params.push(data.doctorId || null);
+    }
+    if (data.isActive !== undefined) {
+      fields.push("isActive = ?");
+      params.push(data.isActive);
+    }
     if (data.password) {
       const hashed = await bcrypt.hash(data.password, 10);
       fields.push("password = ?");
@@ -2687,10 +3241,7 @@ export const updateSubUserServerFn = createServerFn({ method: "POST" })
     if (fields.length === 0) return { success: true };
 
     params.push(data.id, user.tenantId);
-    await execute(
-      `UPDATE SubUser SET ${fields.join(", ")} WHERE id = ? AND tenantId = ?`,
-      params
-    );
+    await execute(`UPDATE SubUser SET ${fields.join(", ")} WHERE id = ? AND tenantId = ?`, params);
     return { success: true };
   });
 
@@ -2708,16 +3259,18 @@ export const deleteSubUserServerFn = createServerFn({ method: "POST" })
   });
 export const subUserLoginServerFn = createServerFn({ method: "POST" })
   .validator((data: { email: string; password: string; tenantId: string }) => {
-    if (!data.email || !data.password || !data.tenantId) throw new Error("Email, password, and clinic ID are required");
+    if (!data.email || !data.password || !data.tenantId)
+      throw new Error("Email, password, and clinic ID are required");
     return data;
   })
   .handler(async ({ data }) => {
     const subUser = await queryOne<any>(
       "SELECT * FROM SubUser WHERE email = ? AND tenantId = ? LIMIT 1",
-      [data.email, data.tenantId]
+      [data.email, data.tenantId],
     );
     if (!subUser) throw new Error("No account found with this email in this clinic");
-    if (!subUser.isActive) throw new Error("This account has been deactivated. Please contact your clinic admin.");
+    if (!subUser.isActive)
+      throw new Error("This account has been deactivated. Please contact your clinic admin.");
 
     const match = await bcrypt.compare(data.password, subUser.password);
     if (!match) throw new Error("Incorrect password");
@@ -2726,7 +3279,7 @@ export const subUserLoginServerFn = createServerFn({ method: "POST" })
     const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000); // 8 hrs
     await execute(
       "INSERT INTO SubUserSession (id, subUserId, token, expiresAt) VALUES (?, ?, ?, ?)",
-      [crypto.randomUUID(), subUser.id, token, expiresAt]
+      [crypto.randomUUID(), subUser.id, token, expiresAt],
     );
 
     const { setCookie } = await import("@tanstack/react-start/server");
@@ -2740,7 +3293,13 @@ export const subUserLoginServerFn = createServerFn({ method: "POST" })
 
     return {
       success: true,
-      user: { id: subUser.id, name: subUser.name, email: subUser.email, role: subUser.role, tenantId: subUser.tenantId },
+      user: {
+        id: subUser.id,
+        name: subUser.name,
+        email: subUser.email,
+        role: subUser.role,
+        tenantId: subUser.tenantId,
+      },
     };
   });
 
@@ -2756,59 +3315,59 @@ function getLocationPlanTier(plan: string | null | undefined): "basic" | "premiu
   return "basic";
 }
 
-export const getLocationsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
-    const rows = await query<any>(
-      `SELECT id, name, address, city, state, pincode, phone, email, managerName, isActive, createdAt
+export const getLocationsServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  const rows = await query<any>(
+    `SELECT id, name, address, city, state, pincode, phone, email, managerName, isActive, createdAt
        FROM Location WHERE tenantId = ? ORDER BY createdAt DESC`,
-      [user.tenantId]
-    );
-    return rows;
-  });
+    [user.tenantId],
+  );
+  return rows;
+});
 
-export const getLocationLimitsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
-    const tenant = await queryOne<any>(
-      "SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
-      [user.tenantId]
-    );
-    const plan = tenant?.subscriptionPlan || "Trial";
-    const tier = getLocationPlanTier(plan);
-    const [countRow] = await query<any>(
-      "SELECT COUNT(*) as count FROM Location WHERE tenantId = ?",
-      [user.tenantId]
-    );
-    const count = Number(countRow?.count || countRow?.COUNT || 0);
-    let max: number | null;
-    if (tier === "enterprise") max = null; // unlimited
-    else if (tier === "premium") max = 1;
-    else max = 0;
-    return { plan, tier, count, max };
-  });
+export const getLocationLimitsServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  const tenant = await queryOne<any>(
+    "SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
+    [user.tenantId],
+  );
+  const plan = tenant?.subscriptionPlan || "Trial";
+  const tier = getLocationPlanTier(plan);
+  const [countRow] = await query<any>("SELECT COUNT(*) as count FROM Location WHERE tenantId = ?", [
+    user.tenantId,
+  ]);
+  const count = Number(countRow?.count || countRow?.COUNT || 0);
+  let max: number | null;
+  if (tier === "enterprise")
+    max = null; // unlimited
+  else if (tier === "premium") max = 1;
+  else max = 0;
+  return { plan, tier, count, max };
+});
 
 export const createLocationServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    name: string;
-    email: string;
-    password: string;
-    phone?: string;
-    address?: string;
-    city?: string;
-    state?: string;
-    pincode?: string;
-    managerName?: string;
-  }) => {
-    if (!data.name || !data.email || !data.password) {
-      throw new Error("Location name, login email, and password are required");
-    }
-    if (!/\S+@\S+\.\S+/.test(data.email)) throw new Error("Please enter a valid email address");
-    if (data.password.length < 8) throw new Error("Password must be at least 8 characters long");
-    return data;
-  })
+  .validator(
+    (data: {
+      name: string;
+      email: string;
+      password: string;
+      phone?: string;
+      address?: string;
+      city?: string;
+      state?: string;
+      pincode?: string;
+      managerName?: string;
+    }) => {
+      if (!data.name || !data.email || !data.password) {
+        throw new Error("Location name, login email, and password are required");
+      }
+      if (!/\S+@\S+\.\S+/.test(data.email)) throw new Error("Please enter a valid email address");
+      if (data.password.length < 8) throw new Error("Password must be at least 8 characters long");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
@@ -2817,33 +3376,41 @@ export const createLocationServerFn = createServerFn({ method: "POST" })
     // Plan gating
     const tenant = await queryOne<any>(
       "SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
-      [user.tenantId]
+      [user.tenantId],
     );
     const plan = tenant?.subscriptionPlan || "Trial";
     const tier = getLocationPlanTier(plan);
 
     if (tier === "basic") {
-      throw new Error("Multi-Location is not available on the Basic plan. Please upgrade to Premium or Enterprise.");
+      throw new Error(
+        "Multi-Location is not available on the Basic plan. Please upgrade to Premium or Enterprise.",
+      );
     }
 
     const [countRow] = await query<any>(
       "SELECT COUNT(*) as count FROM Location WHERE tenantId = ?",
-      [user.tenantId]
+      [user.tenantId],
     );
     const count = Number(countRow?.count || countRow?.COUNT || 0);
 
     if (tier === "premium" && count >= 1) {
-      throw new Error("Your current plan (Premium) allows only 1 sub-location. Please upgrade to Enterprise to add more.");
+      throw new Error(
+        "Your current plan (Premium) allows only 1 sub-location. Please upgrade to Enterprise to add more.",
+      );
     }
 
     // Email must be globally unique across User and SubUser too, so login routing is unambiguous
-    const existingUser = await queryOne<any>("SELECT id FROM User WHERE email = ? LIMIT 1", [data.email]);
+    const existingUser = await queryOne<any>("SELECT id FROM User WHERE email = ? LIMIT 1", [
+      data.email,
+    ]);
     if (existingUser) throw new Error("This email is already in use by another account");
-    const existingSub = await queryOne<any>("SELECT id FROM SubUser WHERE email = ? LIMIT 1", [data.email]);
+    const existingSub = await queryOne<any>("SELECT id FROM SubUser WHERE email = ? LIMIT 1", [
+      data.email,
+    ]);
     if (existingSub) throw new Error("This email is already in use by another sub-user");
     const existingLoc = await queryOne<any>(
       "SELECT id FROM Location WHERE tenantId = ? AND email = ? LIMIT 1",
-      [user.tenantId, data.email]
+      [user.tenantId, data.email],
     );
     if (existingLoc) throw new Error("A location with this login email already exists");
 
@@ -2864,28 +3431,31 @@ export const createLocationServerFn = createServerFn({ method: "POST" })
         data.email,
         hashed,
         data.managerName || null,
-      ]
+      ],
     );
     return { success: true, id };
   });
 
 export const updateLocationServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    id: string;
-    name?: string;
-    phone?: string;
-    address?: string;
-    city?: string;
-    state?: string;
-    pincode?: string;
-    managerName?: string;
-    password?: string;
-    isActive?: number;
-  }) => {
-    if (!data.id) throw new Error("Location ID is required");
-    if (data.password && data.password.length < 8) throw new Error("Password must be at least 8 characters long");
-    return data;
-  })
+  .validator(
+    (data: {
+      id: string;
+      name?: string;
+      phone?: string;
+      address?: string;
+      city?: string;
+      state?: string;
+      pincode?: string;
+      managerName?: string;
+      password?: string;
+      isActive?: number;
+    }) => {
+      if (!data.id) throw new Error("Location ID is required");
+      if (data.password && data.password.length < 8)
+        throw new Error("Password must be at least 8 characters long");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
@@ -2893,14 +3463,38 @@ export const updateLocationServerFn = createServerFn({ method: "POST" })
 
     const fields: string[] = [];
     const params: any[] = [];
-    if (data.name !== undefined) { fields.push("name = ?"); params.push(data.name); }
-    if (data.phone !== undefined) { fields.push("phone = ?"); params.push(data.phone || null); }
-    if (data.address !== undefined) { fields.push("address = ?"); params.push(data.address || null); }
-    if (data.city !== undefined) { fields.push("city = ?"); params.push(data.city || null); }
-    if (data.state !== undefined) { fields.push("state = ?"); params.push(data.state || null); }
-    if (data.pincode !== undefined) { fields.push("pincode = ?"); params.push(data.pincode || null); }
-    if (data.managerName !== undefined) { fields.push("managerName = ?"); params.push(data.managerName || null); }
-    if (data.isActive !== undefined) { fields.push("isActive = ?"); params.push(data.isActive); }
+    if (data.name !== undefined) {
+      fields.push("name = ?");
+      params.push(data.name);
+    }
+    if (data.phone !== undefined) {
+      fields.push("phone = ?");
+      params.push(data.phone || null);
+    }
+    if (data.address !== undefined) {
+      fields.push("address = ?");
+      params.push(data.address || null);
+    }
+    if (data.city !== undefined) {
+      fields.push("city = ?");
+      params.push(data.city || null);
+    }
+    if (data.state !== undefined) {
+      fields.push("state = ?");
+      params.push(data.state || null);
+    }
+    if (data.pincode !== undefined) {
+      fields.push("pincode = ?");
+      params.push(data.pincode || null);
+    }
+    if (data.managerName !== undefined) {
+      fields.push("managerName = ?");
+      params.push(data.managerName || null);
+    }
+    if (data.isActive !== undefined) {
+      fields.push("isActive = ?");
+      params.push(data.isActive);
+    }
     if (data.password) {
       const hashed = await bcrypt.hash(data.password, 10);
       fields.push("password = ?");
@@ -2908,10 +3502,7 @@ export const updateLocationServerFn = createServerFn({ method: "POST" })
     }
     if (fields.length === 0) return { success: true };
     params.push(data.id, user.tenantId);
-    await execute(
-      `UPDATE Location SET ${fields.join(", ")} WHERE id = ? AND tenantId = ?`,
-      params
-    );
+    await execute(`UPDATE Location SET ${fields.join(", ")} WHERE id = ? AND tenantId = ?`, params);
     return { success: true };
   });
 
@@ -2933,31 +3524,34 @@ export const deleteLocationServerFn = createServerFn({ method: "POST" })
 // WhatsApp Hub Server Functions
 // ──────────────────────────────────────────────
 
-export const getWATemplatesServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
-    return query("SELECT * FROM WATemplate WHERE tenantId = ? ORDER BY createdAt DESC", [user.tenantId]);
-  });
+export const getWATemplatesServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  return query("SELECT * FROM WATemplate WHERE tenantId = ? ORDER BY createdAt DESC", [
+    user.tenantId,
+  ]);
+});
 
 export const saveWATemplateServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    id?: string;
-    name: string;
-    category: string;
-    headerType: string;
-    headerText?: string | null;
-    headerImageUrl?: string | null;
-    bodyText: string;
-    footerText?: string | null;
-    ctaButtons?: any;
-    quickReplyButtons?: any;
-    variables?: any;
-  }) => data)
+  .validator(
+    (data: {
+      id?: string;
+      name: string;
+      category: string;
+      headerType: string;
+      headerText?: string | null;
+      headerImageUrl?: string | null;
+      bodyText: string;
+      footerText?: string | null;
+      ctaButtons?: any;
+      quickReplyButtons?: any;
+      variables?: any;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
-    
+
     const id = data.id || crypto.randomUUID();
     const ctaJson = data.ctaButtons ? JSON.stringify(data.ctaButtons) : null;
     const qrJson = data.quickReplyButtons ? JSON.stringify(data.quickReplyButtons) : null;
@@ -2970,9 +3564,19 @@ export const saveWATemplateServerFn = createServerFn({ method: "POST" })
           bodyText = ?, footerText = ?, ctaButtons = ?, quickReplyButtons = ?, variables = ? 
          WHERE id = ? AND tenantId = ?`,
         [
-          data.name, data.category, data.headerType, data.headerText || null, data.headerImageUrl || null,
-          data.bodyText, data.footerText || null, ctaJson, qrJson, varsJson, id, user.tenantId
-        ]
+          data.name,
+          data.category,
+          data.headerType,
+          data.headerText || null,
+          data.headerImageUrl || null,
+          data.bodyText,
+          data.footerText || null,
+          ctaJson,
+          qrJson,
+          varsJson,
+          id,
+          user.tenantId,
+        ],
       );
     } else {
       await execute(
@@ -2981,9 +3585,19 @@ export const saveWATemplateServerFn = createServerFn({ method: "POST" })
           bodyText, footerText, ctaButtons, quickReplyButtons, variables
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          id, user.tenantId, data.name, data.category, data.headerType, data.headerText || null, data.headerImageUrl || null,
-          data.bodyText, data.footerText || null, ctaJson, qrJson, varsJson
-        ]
+          id,
+          user.tenantId,
+          data.name,
+          data.category,
+          data.headerType,
+          data.headerText || null,
+          data.headerImageUrl || null,
+          data.bodyText,
+          data.footerText || null,
+          ctaJson,
+          qrJson,
+          varsJson,
+        ],
       );
     }
     return { success: true, id };
@@ -2998,38 +3612,51 @@ export const deleteWATemplateServerFn = createServerFn({ method: "POST" })
     return { success: true };
   });
 
-export const getWACampaignsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
-    return query(`
+export const getWACampaignsServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  return query(
+    `
       SELECT c.*, t.name as templateName 
       FROM WACampaign c
       LEFT JOIN WATemplate t ON c.templateId = t.id
       WHERE c.tenantId = ? ORDER BY c.createdAt DESC
-    `, [user.tenantId]);
-  });
+    `,
+    [user.tenantId],
+  );
+});
 
 export const createWACampaignServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    name: string;
-    templateId: string | null;
-    minDelaySec: number;
-    maxDelaySec: number;
-    dailyLimit: number;
-    recipients: { phone: string; name?: string | null; variables?: any }[];
-  }) => data)
+  .validator(
+    (data: {
+      name: string;
+      templateId: string | null;
+      minDelaySec: number;
+      maxDelaySec: number;
+      dailyLimit: number;
+      recipients: { phone: string; name?: string | null; variables?: any }[];
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     const campaignId = crypto.randomUUID();
-    
+
     await execute(
       `INSERT INTO WACampaign (
         id, tenantId, name, templateId, status, totalRecipients, sentCount, failedCount, minDelaySec, maxDelaySec, dailyLimit
        ) VALUES (?, ?, ?, ?, 'draft', ?, 0, 0, ?, ?, ?)`,
-      [campaignId, user.tenantId, data.name, data.templateId, data.recipients.length, data.minDelaySec, data.maxDelaySec, data.dailyLimit]
+      [
+        campaignId,
+        user.tenantId,
+        data.name,
+        data.templateId,
+        data.recipients.length,
+        data.minDelaySec,
+        data.maxDelaySec,
+        data.dailyLimit,
+      ],
     );
 
     for (const r of data.recipients) {
@@ -3037,7 +3664,7 @@ export const createWACampaignServerFn = createServerFn({ method: "POST" })
       const varsJson = r.variables ? JSON.stringify(r.variables) : null;
       await execute(
         `INSERT INTO WACampaignRecipient (id, campaignId, phone, name, variables, status) VALUES (?, ?, ?, ?, ?, 'pending')`,
-        [recipientId, campaignId, r.phone, r.name || null, varsJson]
+        [recipientId, campaignId, r.phone, r.name || null, varsJson],
       );
     }
 
@@ -3050,23 +3677,23 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    const campaign = await queryOne<any>(
-      "SELECT * FROM WACampaign WHERE id = ? AND tenantId = ?",
-      [campaignId, user.tenantId]
-    );
+    const campaign = await queryOne<any>("SELECT * FROM WACampaign WHERE id = ? AND tenantId = ?", [
+      campaignId,
+      user.tenantId,
+    ]);
     if (!campaign) throw new Error("Campaign not found");
 
     let template: any = null;
     if (campaign.templateId) {
-      template = await queryOne<any>(
-        "SELECT * FROM WATemplate WHERE id = ? AND tenantId = ?",
-        [campaign.templateId, user.tenantId]
-      );
+      template = await queryOne<any>("SELECT * FROM WATemplate WHERE id = ? AND tenantId = ?", [
+        campaign.templateId,
+        user.tenantId,
+      ]);
     }
 
     const recipients = await query<any>(
       "SELECT * FROM WACampaignRecipient WHERE campaignId = ? AND status = 'pending'",
-      [campaignId]
+      [campaignId],
     );
 
     if (recipients.length === 0) {
@@ -3076,9 +3703,10 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
     const messages = [];
     for (const r of recipients) {
       let body = template ? template.bodyText : "Hello";
-      
+
       if (r.variables) {
-        const variablesObj = typeof r.variables === "string" ? JSON.parse(r.variables) : r.variables;
+        const variablesObj =
+          typeof r.variables === "string" ? JSON.parse(r.variables) : r.variables;
         if (variablesObj && typeof variablesObj === "object") {
           for (const key of Object.keys(variablesObj)) {
             const replacement = String(variablesObj[key]);
@@ -3097,7 +3725,10 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
 
       if (template && template.ctaButtons) {
         try {
-          const ctas = typeof template.ctaButtons === "string" ? JSON.parse(template.ctaButtons) : template.ctaButtons;
+          const ctas =
+            typeof template.ctaButtons === "string"
+              ? JSON.parse(template.ctaButtons)
+              : template.ctaButtons;
           if (Array.isArray(ctas) && ctas.length > 0) {
             body += "\n\n-------------------";
             for (const btn of ctas) {
@@ -3115,7 +3746,10 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
 
       if (template && template.quickReplyButtons) {
         try {
-          const qrs = typeof template.quickReplyButtons === "string" ? JSON.parse(template.quickReplyButtons) : template.quickReplyButtons;
+          const qrs =
+            typeof template.quickReplyButtons === "string"
+              ? JSON.parse(template.quickReplyButtons)
+              : template.quickReplyButtons;
           if (Array.isArray(qrs) && qrs.length > 0) {
             body += `\n\n💡 *Replies*: ` + qrs.map((q: string) => `"${q}"`).join(" | ");
           }
@@ -3130,7 +3764,7 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
         recipientId: r.id,
         phone: r.phone,
         body,
-        mediaUrl: headerUrl
+        mediaUrl: headerUrl,
       });
     }
 
@@ -3139,7 +3773,7 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
       campaignId,
       messages,
       campaign.minDelaySec,
-      campaign.maxDelaySec
+      campaign.maxDelaySec,
     );
 
     return { success: true };
@@ -3167,12 +3801,15 @@ export const deleteWACampaignServerFn = createServerFn({ method: "POST" })
 
     const campaign = await queryOne<any>(
       "SELECT id FROM WACampaign WHERE id = ? AND tenantId = ? LIMIT 1",
-      [campaignId, user.tenantId]
+      [campaignId, user.tenantId],
     );
     if (!campaign) throw new Error("Campaign not found or unauthorized");
 
     await execute("DELETE FROM WACampaignRecipient WHERE campaignId = ?", [campaignId]);
-    await execute("DELETE FROM WACampaign WHERE id = ? AND tenantId = ?", [campaignId, user.tenantId]);
+    await execute("DELETE FROM WACampaign WHERE id = ? AND tenantId = ?", [
+      campaignId,
+      user.tenantId,
+    ]);
 
     return { success: true };
   });
@@ -3182,32 +3819,36 @@ export const getCampaignRecipientsServerFn = createServerFn({ method: "GET" })
   .handler(async ({ data: campaignId }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
-    
+
     const campaign = await queryOne<any>(
       "SELECT id FROM WACampaign WHERE id = ? AND tenantId = ? LIMIT 1",
-      [campaignId, user.tenantId]
+      [campaignId, user.tenantId],
     );
     if (!campaign) throw new Error("Campaign not found or unauthorized");
 
     return query("SELECT * FROM WACampaignRecipient WHERE campaignId = ?", [campaignId]);
   });
 
-export const getWAAutoRepliesServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
-    return query("SELECT * FROM WAAutoReply WHERE tenantId = ? ORDER BY priority DESC, createdAt DESC", [user.tenantId]);
-  });
+export const getWAAutoRepliesServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  return query(
+    "SELECT * FROM WAAutoReply WHERE tenantId = ? ORDER BY priority DESC, createdAt DESC",
+    [user.tenantId],
+  );
+});
 
 export const saveWAAutoReplyServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    id?: string;
-    triggerKeyword: string;
-    matchType: string;
-    replyMessage: string;
-    isActive: number;
-    priority: number;
-  }) => data)
+  .validator(
+    (data: {
+      id?: string;
+      triggerKeyword: string;
+      matchType: string;
+      replyMessage: string;
+      isActive: number;
+      priority: number;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
@@ -3217,13 +3858,29 @@ export const saveWAAutoReplyServerFn = createServerFn({ method: "POST" })
       await execute(
         `UPDATE WAAutoReply SET triggerKeyword = ?, matchType = ?, replyMessage = ?, isActive = ?, priority = ? 
          WHERE id = ? AND tenantId = ?`,
-        [data.triggerKeyword, data.matchType, data.replyMessage, data.isActive, data.priority, id, user.tenantId]
+        [
+          data.triggerKeyword,
+          data.matchType,
+          data.replyMessage,
+          data.isActive,
+          data.priority,
+          id,
+          user.tenantId,
+        ],
       );
     } else {
       await execute(
         `INSERT INTO WAAutoReply (id, tenantId, triggerKeyword, matchType, replyMessage, isActive, priority) 
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [id, user.tenantId, data.triggerKeyword, data.matchType, data.replyMessage, data.isActive, data.priority]
+        [
+          id,
+          user.tenantId,
+          data.triggerKeyword,
+          data.matchType,
+          data.replyMessage,
+          data.isActive,
+          data.priority,
+        ],
       );
     }
     return { success: true, id };
@@ -3239,12 +3896,9 @@ export const deleteWAAutoReplyServerFn = createServerFn({ method: "POST" })
   });
 
 export const sendBulkWAServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    numbers: string[];
-    message: string;
-    minDelay: number;
-    maxDelay: number;
-  }) => data)
+  .validator(
+    (data: { numbers: string[]; message: string; minDelay: number; maxDelay: number }) => data,
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
@@ -3252,35 +3906,37 @@ export const sendBulkWAServerFn = createServerFn({ method: "POST" })
     const formattedMessages = data.numbers.map((num) => ({
       recipientId: crypto.randomUUID(),
       phone: num,
-      body: data.message
+      body: data.message,
     }));
 
     await enqueueWABulk(user.tenantId, null, formattedMessages, data.minDelay, data.maxDelay);
     return { success: true, count: formattedMessages.length };
   });
 
-export const getWACampaignStatsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
+export const getWACampaignStatsServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    const totalCampaignsResult = await queryOne<any>(
-      "SELECT COUNT(*) as count FROM WACampaign WHERE tenantId = ?", [user.tenantId]
-    );
-    const totalSentResult = await queryOne<any>(
-      "SELECT SUM(sentCount) as sent, SUM(failedCount) as failed FROM WACampaign WHERE tenantId = ?", [user.tenantId]
-    );
-    const activeRulesResult = await queryOne<any>(
-      "SELECT COUNT(*) as count FROM WAAutoReply WHERE tenantId = ? AND isActive = 1", [user.tenantId]
-    );
+  const totalCampaignsResult = await queryOne<any>(
+    "SELECT COUNT(*) as count FROM WACampaign WHERE tenantId = ?",
+    [user.tenantId],
+  );
+  const totalSentResult = await queryOne<any>(
+    "SELECT SUM(sentCount) as sent, SUM(failedCount) as failed FROM WACampaign WHERE tenantId = ?",
+    [user.tenantId],
+  );
+  const activeRulesResult = await queryOne<any>(
+    "SELECT COUNT(*) as count FROM WAAutoReply WHERE tenantId = ? AND isActive = 1",
+    [user.tenantId],
+  );
 
-    return {
-      totalCampaigns: totalCampaignsResult?.count || totalCampaignsResult?.COUNT || 0,
-      totalSent: totalSentResult?.sent || totalSentResult?.SENT || 0,
-      totalFailed: totalSentResult?.failed || totalSentResult?.FAILED || 0,
-      activeAutoReplies: activeRulesResult?.count || activeRulesResult?.COUNT || 0,
-    };
-  });
+  return {
+    totalCampaigns: totalCampaignsResult?.count || totalCampaignsResult?.COUNT || 0,
+    totalSent: totalSentResult?.sent || totalSentResult?.SENT || 0,
+    totalFailed: totalSentResult?.failed || totalSentResult?.FAILED || 0,
+    activeAutoReplies: activeRulesResult?.count || activeRulesResult?.COUNT || 0,
+  };
+});
 
 export const uploadWATemplateHeaderImageServerFn = createServerFn({ method: "POST" })
   .validator((data: { base64: string }) => {
@@ -3342,70 +3998,76 @@ Provide the response in raw JSON format with the following keys:
 Only return a valid JSON object matching this structure. Do not wrap the JSON in markdown code blocks or add any other text outside the JSON object.`;
 
     try {
-    const modelsToTry = [
-      "google/gemini-2.5-flash",
-      "openrouter/free",
-      "deepseek/deepseek-r1:free",
-      "meta-llama/llama-3.3-70b-instruct:free",
-      "qwen/qwen-2.5-72b-instruct:free"
-    ];
+      const modelsToTry = [
+        "google/gemini-2.5-flash",
+        "openrouter/free",
+        "deepseek/deepseek-r1:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "qwen/qwen-2.5-72b-instruct:free",
+      ];
 
-    let response: any = null;
-    let resJson: any = null;
-    let lastError: Error | null = null;
+      let response: any = null;
+      let resJson: any = null;
+      let lastError: Error | null = null;
 
-    for (let i = 0; i < modelsToTry.length; i++) {
-      const model = modelsToTry[i];
-      try {
-        if (i > 0) {
-          console.warn(`[AI Template Copilot] Trying fallback model: ${model}`);
-        }
-        const currentResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8080",
-            "X-Title": "HealthSync AI"
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: [
-              { role: "system", content: "You are a professional copywriting assistant that outputs only clean JSON." },
-              { role: "user", content: aiPrompt }
-            ],
-            response_format: { type: "json_object" },
-            max_tokens: 1000
-          })
-        });
-
-        if (currentResponse.ok) {
-          const bodyJson = await currentResponse.clone().json();
-          if (bodyJson.error) {
-            throw new Error(bodyJson.error.message || JSON.stringify(bodyJson.error));
+      for (let i = 0; i < modelsToTry.length; i++) {
+        const model = modelsToTry[i];
+        try {
+          if (i > 0) {
+            console.warn(`[AI Template Copilot] Trying fallback model: ${model}`);
           }
-          response = currentResponse;
-          resJson = bodyJson;
-          break;
-        } else {
-          let errMsg = `Status ${currentResponse.status} ${currentResponse.statusText}`;
-          try {
-            const errJson = await currentResponse.clone().json();
-            if (errJson?.error?.message) {
-              errMsg = errJson.error.message;
-            }
-          } catch (_) {}
-          throw new Error(errMsg);
-        }
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`[AI Template Copilot] Model ${model} failed:`, err.message);
-      }
-    }
+          const currentResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": "http://localhost:8080",
+              "X-Title": "HealthSync AI",
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "You are a professional copywriting assistant that outputs only clean JSON.",
+                },
+                { role: "user", content: aiPrompt },
+              ],
+              response_format: { type: "json_object" },
+              max_tokens: 1000,
+            }),
+          });
 
-    if (!response || !resJson) {
-      throw lastError || new Error("Failed to generate template via AI with all available models.");
-    }
+          if (currentResponse.ok) {
+            const bodyJson = await currentResponse.clone().json();
+            if (bodyJson.error) {
+              throw new Error(bodyJson.error.message || JSON.stringify(bodyJson.error));
+            }
+            response = currentResponse;
+            resJson = bodyJson;
+            break;
+          } else {
+            let errMsg = `Status ${currentResponse.status} ${currentResponse.statusText}`;
+            try {
+              const errJson = await currentResponse.clone().json();
+              if (errJson?.error?.message) {
+                errMsg = errJson.error.message;
+              }
+            } catch (_) {}
+            throw new Error(errMsg);
+          }
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`[AI Template Copilot] Model ${model} failed:`, err.message);
+        }
+      }
+
+      if (!response || !resJson) {
+        throw (
+          lastError || new Error("Failed to generate template via AI with all available models.")
+        );
+      }
       const content = resJson.choices?.[0]?.message?.content;
       if (!content) {
         throw new Error("Empty response from AI model.");
@@ -3422,8 +4084,10 @@ Only return a valid JSON object matching this structure. Do not wrap the JSON in
           bodyText: generated.bodyText || "",
           footerText: generated.footerText || null,
           ctaButtons: Array.isArray(generated.ctaButtons) ? generated.ctaButtons : [],
-          quickReplyButtons: Array.isArray(generated.quickReplyButtons) ? generated.quickReplyButtons : [],
-        }
+          quickReplyButtons: Array.isArray(generated.quickReplyButtons)
+            ? generated.quickReplyButtons
+            : [],
+        },
       };
     } catch (e: any) {
       console.error("Failed to generate WhatsApp template via AI:", e);
@@ -3435,16 +4099,15 @@ Only return a valid JSON object matching this structure. Do not wrap the JSON in
 // AI SMART REPLY SERVER FUNCTIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const getWAAIStatusServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
-    const config = await queryOne<any>(
-      "SELECT aiEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1",
-      [user.tenantId]
-    );
-    return { aiEnabled: config?.aiEnabled === 1 || config?.aiEnabled === "1" };
-  });
+export const getWAAIStatusServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  const config = await queryOne<any>(
+    "SELECT aiEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1",
+    [user.tenantId],
+  );
+  return { aiEnabled: config?.aiEnabled === 1 || config?.aiEnabled === "1" };
+});
 
 export const toggleWAAIReplyServerFn = createServerFn({ method: "POST" })
   .validator((data: { enable: boolean }) => data)
@@ -3454,29 +4117,28 @@ export const toggleWAAIReplyServerFn = createServerFn({ method: "POST" })
     // Upsert the WhatsAppConfig row
     const existing = await queryOne<any>(
       "SELECT id FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1",
-      [user.tenantId]
+      [user.tenantId],
     );
     if (existing) {
-      await execute(
-        "UPDATE WhatsAppConfig SET aiEnabled = ? WHERE tenantId = ?",
-        [data.enable ? 1 : 0, user.tenantId]
-      );
+      await execute("UPDATE WhatsAppConfig SET aiEnabled = ? WHERE tenantId = ?", [
+        data.enable ? 1 : 0,
+        user.tenantId,
+      ]);
     } else {
       await execute(
         "INSERT INTO WhatsAppConfig (id, tenantId, isEnabled, aiEnabled) VALUES (?, ?, 0, ?)",
-        [crypto.randomUUID(), user.tenantId, data.enable ? 1 : 0]
+        [crypto.randomUUID(), user.tenantId, data.enable ? 1 : 0],
       );
     }
     return { success: true, aiEnabled: data.enable };
   });
 
-export const getWAConversationsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
-    // Get distinct senders with the latest message snippet per sender
-    const rows = await query<any>(
-      `SELECT 
+export const getWAConversationsServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  // Get distinct senders with the latest message snippet per sender
+  const rows = await query<any>(
+    `SELECT 
         senderPhone,
         MAX(senderName) as senderName,
         MAX(createdAt) as lastActivity,
@@ -3497,10 +4159,10 @@ export const getWAConversationsServerFn = createServerFn({ method: "GET" })
       GROUP BY senderPhone
       ORDER BY lastActivity DESC
       LIMIT 50`,
-      [user.tenantId]
-    );
-    return rows;
-  });
+    [user.tenantId],
+  );
+  return rows;
+});
 
 export const getWAConversationHistoryServerFn = createServerFn({ method: "POST" })
   .validator((data: { phone: string }) => data)
@@ -3513,7 +4175,7 @@ export const getWAConversationHistoryServerFn = createServerFn({ method: "POST" 
        WHERE tenantId = ? AND senderPhone = ?
        ORDER BY createdAt ASC
        LIMIT 200`,
-      [user.tenantId, data.phone]
+      [user.tenantId, data.phone],
     );
     return rows;
   });
@@ -3527,7 +4189,7 @@ export const getExpiredUserPlanDetailsServerFn = createServerFn({ method: "POST"
   .handler(async ({ data }) => {
     const user = await queryOne<any>(
       "SELECT id, name, email, phone, tenantId, subscriptionPlan, subscriptionExpiresAt, subscriptionStatus FROM User WHERE email = ? OR phone = ? LIMIT 1",
-      [data.username, data.username]
+      [data.username, data.username],
     );
     if (!user) throw new Error("Account not found");
     return {
@@ -3584,26 +4246,54 @@ async function upsertPaymentHistory(fields: {
          customerPhone = COALESCE(?, customerPhone),
          updatedAt = NOW()`,
       [
-        crypto.randomUUID(), fields.userId ?? null, fields.tenantId ?? null, fields.orderId, fields.cfPaymentId ?? null,
-        fields.plan ?? null, fields.amount, fields.currency || "INR", fields.status, fields.orderStatus ?? null,
-        fields.paymentMode ?? null, fields.failureReason ?? null, fields.customerName ?? null, fields.customerEmail ?? null, fields.customerPhone ?? null,
+        crypto.randomUUID(),
+        fields.userId ?? null,
+        fields.tenantId ?? null,
+        fields.orderId,
+        fields.cfPaymentId ?? null,
+        fields.plan ?? null,
+        fields.amount,
+        fields.currency || "INR",
+        fields.status,
+        fields.orderStatus ?? null,
+        fields.paymentMode ?? null,
+        fields.failureReason ?? null,
+        fields.customerName ?? null,
+        fields.customerEmail ?? null,
+        fields.customerPhone ?? null,
         // ON DUPLICATE KEY UPDATE params
-        fields.userId ?? null, fields.tenantId ?? null, fields.cfPaymentId ?? null, fields.plan ?? null,
-        fields.amount, fields.status, fields.orderStatus ?? null, fields.paymentMode ?? null, fields.failureReason ?? null,
-        fields.customerName ?? null, fields.customerEmail ?? null, fields.customerPhone ?? null,
-      ]
+        fields.userId ?? null,
+        fields.tenantId ?? null,
+        fields.cfPaymentId ?? null,
+        fields.plan ?? null,
+        fields.amount,
+        fields.status,
+        fields.orderStatus ?? null,
+        fields.paymentMode ?? null,
+        fields.failureReason ?? null,
+        fields.customerName ?? null,
+        fields.customerEmail ?? null,
+        fields.customerPhone ?? null,
+      ],
     );
   } catch (err: any) {
-    console.warn("[PaymentHistory] Failed to upsert record for order", fields.orderId, ":", err.message);
+    console.warn(
+      "[PaymentHistory] Failed to upsert record for order",
+      fields.orderId,
+      ":",
+      err.message,
+    );
   }
 }
 
 export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
-  .validator((data: { username: string; planName: "Basic" | "Premium"; returnPath?: string }) => data)
+  .validator(
+    (data: { username: string; planName: "Basic" | "Premium"; returnPath?: string }) => data,
+  )
   .handler(async ({ data }) => {
     const user = await queryOne<any>(
       "SELECT id, name, email, phone, tenantId FROM User WHERE email = ? OR phone = ? LIMIT 1",
-      [data.username, data.username]
+      [data.username, data.username],
     );
     if (!user) throw new Error("Account not found");
 
@@ -3619,19 +4309,28 @@ export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
     // redirect returns to the same host/port — e.g. localhost:8080 in dev,
     // https://bookmytime.tech in prod) instead of a hardcoded value. Falls back
     // to env/production defaults when no request headers are available.
-    let origin = process.env.APP_ORIGIN || (environment === "production" ? "https://bookmytime.tech" : "http://localhost:3000");
+    let origin =
+      process.env.APP_ORIGIN ||
+      (environment === "production" ? "https://bookmytime.tech" : "http://localhost:3000");
     try {
-      const { getHeaders } = await import("@tanstack/react-start/server");
-      const headers = getHeaders();
-      const originHeader = (headers.origin as string) || (headers.referer ? new URL(headers.referer as string).origin : null);
+      const { getRequestHeaders } = await import("@tanstack/react-start/server");
+      const headers = getRequestHeaders();
+      const referer = headers.get("referer");
+      const originHeader = headers.get("origin") || (referer ? new URL(referer).origin : null);
       if (originHeader) origin = originHeader;
-    } catch { /* no request context — keep fallback */ }
+    } catch {
+      /* no request context — keep fallback */
+    }
 
     // Callers may specify where the user should land after payment (e.g. their
     // dashboard). Default preserves the original /login renewal flow. Only
     // relative, same-origin paths are accepted to prevent open-redirects.
     let basePath = "/login";
-    if (typeof data.returnPath === "string" && data.returnPath.startsWith("/") && !data.returnPath.startsWith("//")) {
+    if (
+      typeof data.returnPath === "string" &&
+      data.returnPath.startsWith("/") &&
+      !data.returnPath.startsWith("//")
+    ) {
       basePath = data.returnPath;
     }
     const returnUrl = `${origin}${basePath}${basePath.includes("?") ? "&" : "?"}order_id=${orderId}`;
@@ -3658,8 +4357,8 @@ export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-client-id": appId,
-          "x-client-secret": secretKey,
+          "x-client-id": appId ?? "",
+          "x-client-secret": secretKey ?? "",
           "x-api-version": "2023-08-01",
         },
         body: JSON.stringify(payload),
@@ -3672,7 +4371,9 @@ export const createCashfreeOrderServerFn = createServerFn({ method: "POST" })
       }
 
       const orderData = await response.json();
-      console.log(`[CASHFREE] Order ${orderId} created successfully. Session ID: ${orderData.payment_session_id}`);
+      console.log(
+        `[CASHFREE] Order ${orderId} created successfully. Session ID: ${orderData.payment_session_id}`,
+      );
 
       // Record the attempt immediately so it shows up in the admin ledger even
       // if the user abandons checkout before Cashfree ever reports a terminal
@@ -3757,7 +4458,7 @@ async function getLatestCashfreePaymentAttempt(
   host: string,
   appId: string | undefined,
   secretKey: string | undefined,
-  orderId: string
+  orderId: string,
 ): Promise<any | null> {
   try {
     const response = await fetch(`https://${host}/pg/orders/${orderId}/payments`, {
@@ -3776,7 +4477,11 @@ async function getLatestCashfreePaymentAttempt(
 
     return payments
       .slice()
-      .sort((a: any, b: any) => new Date(b.payment_completion_time || b.payment_time).getTime() - new Date(a.payment_completion_time || a.payment_time).getTime())[0];
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.payment_completion_time || b.payment_time).getTime() -
+          new Date(a.payment_completion_time || a.payment_time).getTime(),
+      )[0];
   } catch (err: any) {
     console.warn("[CASHFREE] Could not fetch payment attempts:", err.message);
     return null;
@@ -3798,8 +4503,8 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          "x-client-id": appId,
-          "x-client-secret": secretKey,
+          "x-client-id": appId ?? "",
+          "x-client-secret": secretKey ?? "",
           "x-api-version": "2023-08-01",
         },
       });
@@ -3814,7 +4519,9 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
       const orderStatus = orderData.order_status;
       const orderAmount = Number(orderData.order_amount);
 
-      console.log(`[CASHFREE] Order ${data.orderId} status: ${orderStatus}, amount: ${orderAmount}`);
+      console.log(
+        `[CASHFREE] Order ${data.orderId} status: ${orderStatus}, amount: ${orderAmount}`,
+      );
 
       if (orderStatus === "PAID") {
         const parts = data.orderId.split("_");
@@ -3829,7 +4536,7 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
 
         const user = await queryOne<any>(
           "SELECT id, name, email, clinicName, subscriptionStatus, subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
-          [tenantId]
+          [tenantId],
         );
         if (!user) {
           throw new Error(`User not found for tenantId: ${tenantId}`);
@@ -3841,7 +4548,12 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
         // etc.) by looking up the order's payment attempts. Falls back to a
         // generic "Cashfree" label if the lookup fails for any reason — this
         // must never block activation of a already-confirmed PAID order.
-        const latestAttempt = await getLatestCashfreePaymentAttempt(host, appId, secretKey, data.orderId);
+        const latestAttempt = await getLatestCashfreePaymentAttempt(
+          host,
+          appId,
+          secretKey,
+          data.orderId,
+        );
         const paymentMethodLabel = latestAttempt
           ? formatCashfreePaymentMode(latestAttempt.payment_group, latestAttempt.payment_method)
           : "Cashfree";
@@ -3856,16 +4568,25 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
                billingInterval = 'monthly',
                updatedAt = NOW() 
            WHERE id = ?`,
-          [selectedPlan, orderAmount, paymentMethodLabel, user.id]
+          [selectedPlan, orderAmount, paymentMethodLabel, user.id],
         );
 
-        console.log(`[CASHFREE] Updated User table for user ${user.id} to active plan ${selectedPlan}`);
+        console.log(
+          `[CASHFREE] Updated User table for user ${user.id} to active plan ${selectedPlan}`,
+        );
 
         // Insert SubscriptionHistory log
         await execute(
           `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
            VALUES (?, ?, ?, 'Active', ?, ?, ?, 'monthly', NOW(), 'Cashfree')`,
-          [crypto.randomUUID(), user.id, user.subscriptionStatus || "Expired", user.subscriptionPlan || "Trial", selectedPlan, orderAmount]
+          [
+            crypto.randomUUID(),
+            user.id,
+            user.subscriptionStatus || "Expired",
+            user.subscriptionPlan || "Trial",
+            selectedPlan,
+            orderAmount,
+          ],
         );
 
         // Record the successful (received) payment in the ledger.
@@ -3888,7 +4609,11 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
         if (user.email) {
           try {
             const paidOn = new Date().toLocaleString("en-IN", {
-              day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
             });
             await sendBillingNotificationEmail({
               email: user.email,
@@ -3898,10 +4623,15 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
               tone: "success",
               details: [
                 { label: "Plan", value: `${selectedPlan}` },
-                { label: "Amount Paid", value: `Rs ${orderAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+                {
+                  label: "Amount Paid",
+                  value: `Rs ${orderAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                },
                 { label: "Payment Mode", value: paymentMethodLabel },
                 { label: "Order ID", value: data.orderId },
-                ...(latestAttempt?.cf_payment_id ? [{ label: "Transaction ID", value: String(latestAttempt.cf_payment_id) }] : []),
+                ...(latestAttempt?.cf_payment_id
+                  ? [{ label: "Transaction ID", value: String(latestAttempt.cf_payment_id) }]
+                  : []),
                 { label: "Paid On", value: paidOn },
                 { label: "Valid Till", value: "1 month from today" },
               ],
@@ -3929,7 +4659,12 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
           ? await queryOne<any>("SELECT id FROM User WHERE tenantId = ? LIMIT 1", [tenantId])
           : null;
 
-        const latestAttempt = await getLatestCashfreePaymentAttempt(host, appId, secretKey, data.orderId);
+        const latestAttempt = await getLatestCashfreePaymentAttempt(
+          host,
+          appId,
+          secretKey,
+          data.orderId,
+        );
         const paymentMode = latestAttempt
           ? formatCashfreePaymentMode(latestAttempt.payment_group, latestAttempt.payment_method)
           : null;
@@ -3940,11 +4675,19 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
         // checkouts are distinguished from genuine failures.
         const attemptStatus = (latestAttempt?.payment_status || "").toUpperCase();
         let ledgerStatus: string;
-        if (attemptStatus === "USER_DROPPED" || attemptStatus === "CANCELLED" || attemptStatus === "VOID") {
+        if (
+          attemptStatus === "USER_DROPPED" ||
+          attemptStatus === "CANCELLED" ||
+          attemptStatus === "VOID"
+        ) {
           ledgerStatus = "CANCELLED";
         } else if (attemptStatus === "FAILED") {
           ledgerStatus = "FAILED";
-        } else if (attemptStatus === "PENDING" || attemptStatus === "NOT_ATTEMPTED" || orderStatus === "ACTIVE") {
+        } else if (
+          attemptStatus === "PENDING" ||
+          attemptStatus === "NOT_ATTEMPTED" ||
+          orderStatus === "ACTIVE"
+        ) {
           ledgerStatus = "PENDING";
         } else if (orderStatus === "EXPIRED" || orderStatus === "TERMINATED") {
           ledgerStatus = "CANCELLED";
@@ -3952,9 +4695,10 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
           ledgerStatus = "FAILED";
         }
 
-        const failureReason = latestAttempt?.payment_message
-          || latestAttempt?.error_details?.error_description
-          || `Order status: ${orderStatus}`;
+        const failureReason =
+          latestAttempt?.payment_message ||
+          latestAttempt?.error_details?.error_description ||
+          `Order status: ${orderStatus}`;
 
         await upsertPaymentHistory({
           userId: user?.id ?? null,
@@ -3986,21 +4730,20 @@ export const verifyAndProcessPaymentServerFn = createServerFn({ method: "POST" }
  * offer a downloadable/viewable invoice for each — including single-rupee
  * mandate/auth charges. Scoped strictly to the caller's tenant.
  */
-export const getMyPaymentHistoryServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
+export const getMyPaymentHistoryServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    const rows = await query<any>(
-      `SELECT id, orderId, cfPaymentId, plan, amount, currency, status, orderStatus,
+  const rows = await query<any>(
+    `SELECT id, orderId, cfPaymentId, plan, amount, currency, status, orderStatus,
               paymentMode, failureReason, customerName, customerEmail, customerPhone,
               gateway, createdAt, updatedAt
        FROM PaymentHistory
        WHERE tenantId = ?
        ORDER BY createdAt DESC
        LIMIT 100`,
-      [user.tenantId]
-    );
+    [user.tenantId],
+  );
 
-    return { rows };
-  });
+  return { rows };
+});

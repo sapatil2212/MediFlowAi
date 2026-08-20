@@ -58,7 +58,12 @@ export async function isWhatsAppReady(tenantId: string): Promise<boolean> {
 }
 
 function fmtDate(d: Date): string {
-  return d.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  return d.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 }
 
 function fmtTime(d: Date, slot?: string | null): string {
@@ -122,7 +127,7 @@ export async function sendAppointmentNotification(
   tenantId: string,
   phone: string | null | undefined,
   kind: AptNotifyKind,
-  ctx: AptNotifyContext
+  ctx: AptNotifyContext,
 ): Promise<boolean> {
   try {
     if (!phone) {
@@ -158,13 +163,14 @@ export async function resolveDoctorName(doctorId?: string | null): Promise<strin
 /** Resolves a tenant's clinic/business name (or "our clinic" fallback). */
 export async function resolveClinicName(tenantId: string): Promise<string> {
   try {
-    const clinic = await queryOne<any>("SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1", [tenantId]);
+    const clinic = await queryOne<any>("SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1", [
+      tenantId,
+    ]);
     return clinic?.clinicName || "our clinic";
   } catch {
     return "our clinic";
   }
 }
-
 
 /**
  * Sends the patient video-consultation join link by email (Req 13.5), in
@@ -174,7 +180,13 @@ export async function resolveClinicName(tenantId: string): Promise<string> {
  */
 export async function sendVideoLinkEmail(
   email: string,
-  ctx: { name: string; clinicName?: string | null; doctorName?: string | null; dateTime: Date; joinLink: string },
+  ctx: {
+    name: string;
+    clinicName?: string | null;
+    doctorName?: string | null;
+    dateTime: Date;
+    joinLink: string;
+  },
 ): Promise<void> {
   const { transporter } = await import("./email");
   const clinic = ctx.clinicName || "our clinic";

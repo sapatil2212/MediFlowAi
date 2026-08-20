@@ -24,8 +24,11 @@ function AdminLoginPage() {
   const [securityKey, setSecurityKey] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showSecurityKey, setShowSecurityKey] = useState(false);
-  
-  const [config, setConfig] = useState({ adminEmail: "admin@bookmytime.ai", hasSecurityKey: false });
+
+  const [config, setConfig] = useState({
+    adminEmail: "admin@bookmytime.ai",
+    hasSecurityKey: false,
+  });
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -50,10 +53,10 @@ function AdminLoginPage() {
     setLoading(true);
     try {
       const result = await loginSuperAdminServerFn({
-        data: { 
-          email, 
-          password, 
-          securityKey: config.hasSecurityKey ? securityKey : undefined 
+        data: {
+          email,
+          password,
+          securityKey: config.hasSecurityKey ? securityKey : undefined,
         },
       });
       if (result.success) {
@@ -71,10 +74,12 @@ function AdminLoginPage() {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-12 md:px-6 overflow-hidden select-none font-sans">
-      
       {/* Floating Back Button */}
       <div className="absolute top-6 left-6 z-10">
-        <Link to="/" className="group flex items-center gap-2 text-zinc-500 hover:text-zinc-900 text-xs font-bold transition-all px-3.5 py-2 rounded-xl bg-white border border-zinc-200/80 shadow-sm active:scale-[0.98]">
+        <Link
+          to="/"
+          className="group flex items-center gap-2 text-zinc-500 hover:text-zinc-900 text-xs font-bold transition-all px-3.5 py-2 rounded-xl bg-white border border-zinc-200/80 shadow-sm active:scale-[0.98]"
+        >
           <ArrowLeft className="size-4 group-hover:-translate-x-0.5 transition-transform text-zinc-400" />
           <span>Back to Home</span>
         </Link>
@@ -87,7 +92,6 @@ function AdminLoginPage() {
         className="w-full max-w-md z-10"
       >
         <div className="overflow-hidden rounded-[2rem] border border-zinc-200 bg-white p-8 md:p-10 shadow-lg relative">
-          
           {/* Header */}
           <div className="flex flex-col items-center text-center space-y-4 mb-8">
             <div className="flex size-14 items-center justify-center rounded-2xl bg-zinc-900 shadow-sm border border-zinc-800 ring-4 ring-zinc-100">
@@ -105,7 +109,6 @@ function AdminLoginPage() {
 
           {/* Form */}
           <form className="space-y-4" onSubmit={handleLoginSubmit}>
-            
             {/* Email Field */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-zinc-450 uppercase tracking-widest pl-1">
@@ -152,7 +155,7 @@ function AdminLoginPage() {
             </div>
 
             {/* Security Key Field */}
-            {(!loadingConfig && config.hasSecurityKey) && (
+            {!loadingConfig && config.hasSecurityKey && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
@@ -182,8 +185,6 @@ function AdminLoginPage() {
                 </div>
               </motion.div>
             )}
-
-
 
             {/* Login Action Button */}
             <button

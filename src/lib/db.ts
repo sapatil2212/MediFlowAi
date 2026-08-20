@@ -171,10 +171,12 @@ if (typeof window === "undefined") {
 
         try {
           const result = await conn.query(
-            "UPDATE User SET tenantId = CONCAT('clinic-', SUBSTRING(MD5(id), 1, 6)) WHERE tenantId IS NULL"
+            "UPDATE User SET tenantId = CONCAT('clinic-', SUBSTRING(MD5(id), 1, 6)) WHERE tenantId IS NULL",
           );
           if (result.affectedRows > 0) {
-            console.log(`[DB] ✅ Self-healed ${result.affectedRows} user records with missing tenantId`);
+            console.log(
+              `[DB] ✅ Self-healed ${result.affectedRows} user records with missing tenantId`,
+            );
           }
         } catch (tenantErr: any) {
           console.warn("[DB] ⚠️ Could not self-heal tenantId for User:", tenantErr.message);
@@ -270,48 +272,68 @@ if (typeof window === "undefined") {
         try {
           await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN address VARCHAR(500) NULL`);
           console.log("[DB] ✅ Added address column to ClinicProfile table");
-        } catch (_) { /* column already exists */ }
+        } catch (_) {
+          /* column already exists */
+        }
 
         // Migrate: add rich info columns to ClinicProfile if they don't exist
         try {
           await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN contactDetails VARCHAR(500) NULL`);
           console.log("[DB] ✅ Added contactDetails column to ClinicProfile table");
-        } catch (_) { /* column already exists */ }
+        } catch (_) {
+          /* column already exists */
+        }
 
         try {
           await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN shortDescription TEXT NULL`);
           console.log("[DB] ✅ Added shortDescription column to ClinicProfile table");
-        } catch (_) { /* column already exists */ }
+        } catch (_) {
+          /* column already exists */
+        }
 
         try {
           await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN services TEXT NULL`);
           console.log("[DB] ✅ Added services column to ClinicProfile table");
-        } catch (_) { /* column already exists */ }
+        } catch (_) {
+          /* column already exists */
+        }
 
         try {
           await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN email VARCHAR(255) NULL`);
           console.log("[DB] ✅ Added email column to ClinicProfile table");
-        } catch (_) { /* column already exists */ }
+        } catch (_) {
+          /* column already exists */
+        }
 
         try {
           await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN contactNo VARCHAR(50) NULL`);
           console.log("[DB] ✅ Added contactNo column to ClinicProfile table");
-        } catch (_) { /* column already exists */ }
+        } catch (_) {
+          /* column already exists */
+        }
 
         try {
           await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN whatsappNo VARCHAR(50) NULL`);
           console.log("[DB] ✅ Added whatsappNo column to ClinicProfile table");
-        } catch (_) { /* column already exists */ }
+        } catch (_) {
+          /* column already exists */
+        }
 
         try {
           await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN landlineNo VARCHAR(50) NULL`);
           console.log("[DB] ✅ Added landlineNo column to ClinicProfile table");
-        } catch (_) { /* column already exists */ }
+        } catch (_) {
+          /* column already exists */
+        }
 
         try {
-          await conn.query(`ALTER TABLE ClinicProfile ADD COLUMN profession VARCHAR(100) DEFAULT 'Healthcare and medical' NULL`);
+          await conn.query(
+            `ALTER TABLE ClinicProfile ADD COLUMN profession VARCHAR(100) DEFAULT 'Healthcare and medical' NULL`,
+          );
           console.log("[DB] ✅ Added profession column to ClinicProfile table");
-        } catch (_) { /* column already exists */ }
+        } catch (_) {
+          /* column already exists */
+        }
 
         // Create WhatsAppConfig Table
         try {
@@ -328,7 +350,6 @@ if (typeof window === "undefined") {
         } catch (err: any) {
           console.error("[DB] ❌ Failed to create WhatsAppConfig table:", err.message);
         }
-
 
         // Create DoctorSchedule Table
         try {
@@ -352,7 +373,9 @@ if (typeof window === "undefined") {
         // Migrate: add breaks column if it doesn't exist
         try {
           await conn.query(`ALTER TABLE DoctorSchedule ADD COLUMN breaks JSON DEFAULT NULL`);
-        } catch (_) { /* column already exists */ }
+        } catch (_) {
+          /* column already exists */
+        }
 
         // Create DoctorLeave Table
         try {
@@ -373,11 +396,9 @@ if (typeof window === "undefined") {
 
         // Check and add columns to Appointment
         try {
-          const apptCols: any[] = await conn.query(
-            "SHOW COLUMNS FROM Appointment"
-          );
+          const apptCols: any[] = await conn.query("SHOW COLUMNS FROM Appointment");
           const colNames = apptCols.map((c: any) => c.Field || c.field || c.ColumnName || "");
-          
+
           if (!colNames.includes("doctorId")) {
             await conn.query("ALTER TABLE Appointment ADD COLUMN doctorId VARCHAR(255) NULL");
             console.log("[DB] ✅ Added doctorId column to Appointment table");
@@ -409,7 +430,9 @@ if (typeof window === "undefined") {
           // Reminder-tracking flags (WhatsApp appointment reminders). Each is set
           // to 1 once the corresponding reminder has been sent so it never repeats.
           if (!colNames.includes("remDayBefore")) {
-            await conn.query("ALTER TABLE Appointment ADD COLUMN remDayBefore TINYINT(1) DEFAULT 0");
+            await conn.query(
+              "ALTER TABLE Appointment ADD COLUMN remDayBefore TINYINT(1) DEFAULT 0",
+            );
             console.log("[DB] ✅ Added remDayBefore column to Appointment table");
           }
           if (!colNames.includes("remDayOf")) {
@@ -429,7 +452,9 @@ if (typeof window === "undefined") {
           // ("First Time", "OPD") and is left untouched. NOT NULL DEFAULT
           // 'in_person' backfills every pre-existing appointment row.
           if (!colNames.includes("consultationMode")) {
-            await conn.query("ALTER TABLE Appointment ADD COLUMN consultationMode VARCHAR(32) NOT NULL DEFAULT 'in_person'");
+            await conn.query(
+              "ALTER TABLE Appointment ADD COLUMN consultationMode VARCHAR(32) NOT NULL DEFAULT 'in_person'",
+            );
             console.log("[DB] ✅ Added consultationMode column to Appointment table");
           }
         } catch (err: any) {
@@ -439,9 +464,13 @@ if (typeof window === "undefined") {
         // Index for tenant-scoped consultation-mode lookups. SHOW COLUMNS cannot
         // tell us whether an index exists, so this runs in its own try/catch.
         try {
-          await conn.query("ALTER TABLE Appointment ADD INDEX idx_apt_tenant_mode (tenantId, consultationMode)");
+          await conn.query(
+            "ALTER TABLE Appointment ADD INDEX idx_apt_tenant_mode (tenantId, consultationMode)",
+          );
           console.log("[DB] ✅ Added idx_apt_tenant_mode index to Appointment table");
-        } catch (_) { /* index already exists */ }
+        } catch (_) {
+          /* index already exists */
+        }
 
         // Create Patient Table (production patient registry)
         try {
@@ -471,11 +500,9 @@ if (typeof window === "undefined") {
 
         // Check and add columns to Patient
         try {
-          const patCols: any[] = await conn.query(
-            "SHOW COLUMNS FROM Patient"
-          );
+          const patCols: any[] = await conn.query("SHOW COLUMNS FROM Patient");
           const patColNames = patCols.map((c: any) => c.Field || c.field || c.ColumnName || "");
-          
+
           if (!patColNames.includes("dob")) {
             await conn.query("ALTER TABLE Patient ADD COLUMN dob VARCHAR(50) NULL");
             console.log("[DB] ✅ Added dob column to Patient table");
@@ -584,10 +611,14 @@ if (typeof window === "undefined") {
           // Relax NOT NULL on appointmentId (safe/idempotent).
           try {
             await conn.query("ALTER TABLE VideoRoom MODIFY COLUMN appointmentId VARCHAR(255) NULL");
-          } catch (_) { /* already nullable */ }
+          } catch (_) {
+            /* already nullable */
+          }
 
           if (!vrColNames.includes("kind")) {
-            await conn.query("ALTER TABLE VideoRoom ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'appointment'");
+            await conn.query(
+              "ALTER TABLE VideoRoom ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'appointment'",
+            );
             console.log("[DB] ✅ Added kind column to VideoRoom table");
           }
           if (!vrColNames.includes("title")) {
@@ -597,7 +628,9 @@ if (typeof window === "undefined") {
             await conn.query("ALTER TABLE VideoRoom ADD COLUMN meetingCode VARCHAR(32) NULL");
             try {
               await conn.query("ALTER TABLE VideoRoom ADD UNIQUE KEY uq_room_code (meetingCode)");
-            } catch (_) { /* key exists */ }
+            } catch (_) {
+              /* key exists */
+            }
             console.log("[DB] ✅ Added meetingCode column to VideoRoom table");
           }
           if (!vrColNames.includes("scheduledAt")) {
@@ -617,7 +650,9 @@ if (typeof window === "undefined") {
           }
           // Instant meetings skip the waiting room when the host opts in.
           if (!vrColNames.includes("autoAdmit")) {
-            await conn.query("ALTER TABLE VideoRoom ADD COLUMN autoAdmit TINYINT(1) NOT NULL DEFAULT 0");
+            await conn.query(
+              "ALTER TABLE VideoRoom ADD COLUMN autoAdmit TINYINT(1) NOT NULL DEFAULT 0",
+            );
           }
         } catch (err: any) {
           console.warn("[DB] ⚠️ Could not verify/alter VideoRoom columns:", err.message);
@@ -746,11 +781,19 @@ if (typeof window === "undefined") {
         // audit and consent appointment columns must tolerate NULL. Runs after
         // both tables exist so it succeeds on a first boot too.
         try {
-          await conn.query("ALTER TABLE VideoAuditEvent MODIFY COLUMN appointmentId VARCHAR(255) NULL");
-        } catch (_) { /* already nullable */ }
+          await conn.query(
+            "ALTER TABLE VideoAuditEvent MODIFY COLUMN appointmentId VARCHAR(255) NULL",
+          );
+        } catch (_) {
+          /* already nullable */
+        }
         try {
-          await conn.query("ALTER TABLE VideoConsent MODIFY COLUMN appointmentId VARCHAR(255) NULL");
-        } catch (_) { /* already nullable */ }
+          await conn.query(
+            "ALTER TABLE VideoConsent MODIFY COLUMN appointmentId VARCHAR(255) NULL",
+          );
+        } catch (_) {
+          /* already nullable */
+        }
 
         // Patients identify themselves before entering the waiting room so the
         // clinician knows who is knocking. Name reuses displayName; age is new.
@@ -763,6 +806,386 @@ if (typeof window === "undefined") {
           }
         } catch (err: any) {
           console.warn("[DB] ⚠️ Could not verify/alter VideoParticipant columns:", err.message);
+        }
+
+        // ---------------------------------------------------------------
+        // Restaurant & dining tables (sixth business category).
+        // Additive only: four new tables plus four nullable Appointment
+        // columns. Nothing existing is dropped, retyped, or tightened, and
+        // ClinicHours is neither read nor written here — restaurant
+        // operating hours live in their own RestaurantHours table so the
+        // five existing categories keep computing slots exactly as before.
+        // Charset/collation is pinned to utf8mb4 / utf8mb4_unicode_ci to
+        // match the surrounding tables, which also makes table-name
+        // uniqueness case-insensitive.
+        // ---------------------------------------------------------------
+
+        // Create RestaurantTable Table (dining tables; locationId NULL = primary location)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS RestaurantTable (
+              id            VARCHAR(255) PRIMARY KEY,
+              tenantId      VARCHAR(255) NOT NULL,
+              locationId    VARCHAR(255) NULL,
+              name          VARCHAR(40)  NOT NULL,
+              seatCapacity  INT          NOT NULL,
+              area          VARCHAR(30)  NOT NULL DEFAULT 'Main',
+              displayOrder  INT          NOT NULL DEFAULT 1,
+              state         VARCHAR(16)  NOT NULL DEFAULT 'active',
+              createdAt     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_resto_table_name (tenantId, name),
+              KEY idx_resto_table_tenant (tenantId, state),
+              KEY idx_resto_table_loc (tenantId, locationId)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create RestaurantTable table:", err.message);
+        }
+
+        // Create RestaurantSettings Table (one row per tenant; defaults carry the spec defaults)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS RestaurantSettings (
+              id                   VARCHAR(255) PRIMARY KEY,
+              tenantId             VARCHAR(255) NOT NULL UNIQUE,
+              slotInterval         INT NOT NULL DEFAULT 30,
+              turnTime             INT NOT NULL DEFAULT 90,
+              maxPartySize         INT NOT NULL DEFAULT 12,
+              advanceBookingWindow INT NOT NULL DEFAULT 60,
+              minLeadTime          INT NOT NULL DEFAULT 30,
+              timezone             VARCHAR(64) NOT NULL DEFAULT 'Asia/Kolkata',
+              createdAt            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create RestaurantSettings table:", err.message);
+        }
+
+        // Create RestaurantHours Table (dayOfWeek 0 = Sunday, matching ClinicHours)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS RestaurantHours (
+              id        VARCHAR(255) PRIMARY KEY,
+              tenantId  VARCHAR(255) NOT NULL,
+              dayOfWeek INT NOT NULL,
+              openTime  VARCHAR(5) NOT NULL,
+              closeTime VARCHAR(5) NOT NULL,
+              isClosed  TINYINT(1) NOT NULL DEFAULT 0,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_resto_hours (tenantId, dayOfWeek)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create RestaurantHours table:", err.message);
+        }
+
+        // Create RestaurantTokenCounter Table. The (tenantId, bookingDate)
+        // primary key is the concurrency guarantee: INSERT ... ON DUPLICATE KEY
+        // UPDATE lastToken = lastToken + 1 is atomic, so two concurrent bookings
+        // on the same tenant and date can never read the same token.
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS RestaurantTokenCounter (
+              tenantId    VARCHAR(255) NOT NULL,
+              bookingDate DATE NOT NULL,
+              lastToken   INT NOT NULL DEFAULT 0,
+              PRIMARY KEY (tenantId, bookingDate)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create RestaurantTokenCounter table:", err.message);
+        }
+
+        // Restaurant settings parity tables. Each statement is isolated so one
+        // unavailable record type cannot hide failures for the remaining types.
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS RestaurantDiningArea (
+              id           VARCHAR(255) PRIMARY KEY,
+              tenantId     VARCHAR(255) NOT NULL,
+              locationId   VARCHAR(255) NULL,
+              name         VARCHAR(30) NOT NULL,
+              displayOrder INT NOT NULL DEFAULT 1,
+              createdAt    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_area_tenant_name (tenantId, name),
+              KEY idx_area_scope_order (tenantId, locationId, displayOrder, name)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create RestaurantDiningArea table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS RestaurantClosureDay (
+              id           VARCHAR(255) PRIMARY KEY,
+              tenantId     VARCHAR(255) NOT NULL,
+              locationId   VARCHAR(255) NULL,
+              locationKey  VARCHAR(255) NOT NULL,
+              closureDate  DATE NOT NULL,
+              scopeType    VARCHAR(16) NOT NULL,
+              tableId      VARCHAR(255) NULL,
+              scopeKey     VARCHAR(255) NOT NULL,
+              reason       VARCHAR(100) NOT NULL DEFAULT '',
+              isHoliday    TINYINT(1) NOT NULL DEFAULT 0,
+              createdAt    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_closure (tenantId, locationKey, closureDate, scopeKey),
+              KEY idx_closure_month (tenantId, locationId, closureDate),
+              KEY idx_closure_table (tenantId, locationId, tableId, closureDate)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create RestaurantClosureDay table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS RestaurantMenuCategory (
+              id           VARCHAR(255) PRIMARY KEY,
+              tenantId     VARCHAR(255) NOT NULL,
+              locationId   VARCHAR(255) NULL,
+              name         VARCHAR(40) NOT NULL,
+              displayOrder INT NOT NULL DEFAULT 1,
+              createdAt    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_menu_category_name (tenantId, name),
+              KEY idx_menu_category_scope (tenantId, locationId, displayOrder, name)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create RestaurantMenuCategory table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS RestaurantMenuItem (
+              id           VARCHAR(255) PRIMARY KEY,
+              tenantId     VARCHAR(255) NOT NULL,
+              locationId   VARCHAR(255) NULL,
+              categoryId   VARCHAR(255) NOT NULL,
+              name         VARCHAR(80) NOT NULL,
+              priceMinor   INT NOT NULL,
+              description  VARCHAR(300) NOT NULL DEFAULT '',
+              displayOrder INT NOT NULL DEFAULT 1,
+              state        VARCHAR(16) NOT NULL DEFAULT 'available',
+              createdAt    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              -- Index budget: InnoDB caps a key at 3072 bytes and utf8mb4 costs
+              -- 4 bytes per character, so three VARCHAR(255) identifier columns
+              -- (3 x 1020 = 3060) is the whole budget. displayOrder/name are
+              -- deliberately excluded: listMenu sorts on LOWER(item.name), which
+              -- no index can satisfy, so the tail only overflowed the limit and
+              -- left the table uncreated.
+              KEY idx_menu_item_category (tenantId, locationId, categoryId),
+              KEY idx_menu_item_public (tenantId, locationId, state)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create RestaurantMenuItem table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS AccountEmailVerification (
+              id                VARCHAR(255) PRIMARY KEY,
+              accountType       VARCHAR(16) NOT NULL,
+              accountId         VARCHAR(255) NOT NULL,
+              targetEmail       VARCHAR(255) NOT NULL,
+              codeHash          VARCHAR(255) NOT NULL,
+              expiresAt         TIMESTAMP NOT NULL,
+              resendAvailableAt TIMESTAMP NOT NULL,
+              consumedAt        TIMESTAMP NULL,
+              createdAt         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              KEY idx_email_verify_account (accountType, accountId, consumedAt, expiresAt),
+              KEY idx_email_verify_target (targetEmail)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create AccountEmailVerification table:", err.message);
+        }
+
+        // Existing tables receive nullable compatibility columns without
+        // rewriting legacy area strings or any booking data.
+        try {
+          const tableCols: any[] = await conn.query("SHOW COLUMNS FROM RestaurantTable");
+          const tableColNames = tableCols.map((c: any) => c.Field || c.field || c.ColumnName || "");
+          if (!tableColNames.includes("areaId")) {
+            await conn.query("ALTER TABLE RestaurantTable ADD COLUMN areaId VARCHAR(255) NULL");
+            console.log("[DB] ✅ Added areaId column to RestaurantTable table");
+          }
+        } catch (err: any) {
+          console.error("[DB] ❌ Could not verify/add RestaurantTable.areaId:", err.message);
+        }
+
+        try {
+          const areaIndexes: any[] = await conn.query(
+            "SHOW INDEX FROM RestaurantTable WHERE Key_name = 'idx_resto_table_area'",
+          );
+          if (!areaIndexes || areaIndexes.length === 0) {
+            await conn.query(
+              "ALTER TABLE RestaurantTable ADD INDEX idx_resto_table_area (tenantId, locationId, areaId)",
+            );
+            console.log("[DB] ✅ Added idx_resto_table_area index to RestaurantTable table");
+          }
+        } catch (err: any) {
+          console.error("[DB] ❌ Could not verify/add RestaurantTable area index:", err.message);
+        }
+
+        // Backfill one canonical registry row for every non-blank legacy area in
+        // its original tenant/location scope. IDs and display orders depend only
+        // on canonical source values, while INSERT IGNORE makes retries harmless
+        // when an earlier startup completed all or part of this step. The binary
+        // tie-breaker makes casing deterministic after case-insensitive grouping.
+        try {
+          const areaBackfillResult = await conn.query(`
+            INSERT IGNORE INTO RestaurantDiningArea
+              (id, tenantId, locationId, name, displayOrder)
+            SELECT
+              CONCAT(
+                'legacy-area-',
+                LEFT(
+                  SHA2(
+                    CONCAT(
+                      ranked.tenantId,
+                      ':',
+                      COALESCE(ranked.locationId, '__primary__'),
+                      ':',
+                      LOWER(ranked.name)
+                    ),
+                    256
+                  ),
+                  48
+                )
+              ) AS id,
+              ranked.tenantId,
+              ranked.locationId,
+              ranked.name,
+              ranked.displayOrder
+            FROM (
+              SELECT
+                canonical.tenantId,
+                canonical.locationId,
+                canonical.name,
+                ROW_NUMBER() OVER (
+                  PARTITION BY canonical.tenantId, canonical.locationId
+                  ORDER BY LOWER(canonical.name), BINARY canonical.name
+                ) AS displayOrder
+              FROM (
+                SELECT
+                  tenantId,
+                  locationId,
+                  CAST(MIN(BINARY TRIM(area)) AS CHAR CHARACTER SET utf8mb4) AS name
+                FROM RestaurantTable
+                WHERE NULLIF(TRIM(area), '') IS NOT NULL
+                GROUP BY tenantId, locationId, LOWER(TRIM(area))
+              ) AS canonical
+            ) AS ranked
+            ORDER BY
+              ranked.tenantId,
+              LOWER(ranked.name),
+              ranked.locationId IS NOT NULL,
+              ranked.locationId,
+              BINARY ranked.name
+          `);
+          console.log(
+            `[DB] ✅ Backfilled ${areaBackfillResult.affectedRows || 0} legacy dining areas`,
+          );
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to backfill RestaurantDiningArea rows:", err.message);
+        }
+
+        // Resolve only previously-unresolved tables against a canonical row in
+        // the exact same tenant/location scope. The compatibility `area` string
+        // is deliberately never assigned here; blanks and unmatched values keep
+        // a NULL areaId and are surfaced later through the effective Main area.
+        try {
+          const areaResolutionResult = await conn.query(`
+            UPDATE RestaurantTable AS restaurantTable
+            INNER JOIN RestaurantDiningArea AS diningArea
+              ON diningArea.tenantId = restaurantTable.tenantId
+             AND diningArea.locationId <=> restaurantTable.locationId
+             AND diningArea.name = TRIM(restaurantTable.area)
+            SET restaurantTable.areaId = diningArea.id
+            WHERE restaurantTable.areaId IS NULL
+              AND NULLIF(TRIM(restaurantTable.area), '') IS NOT NULL
+          `);
+          console.log(
+            `[DB] ✅ Resolved ${areaResolutionResult.affectedRows || 0} legacy table dining areas`,
+          );
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to resolve RestaurantTable.areaId:", err.message);
+        }
+
+        // Restaurant booking columns on Appointment. All four are nullable and
+        // stay NULL for the five existing categories. turnTimeMinutes is the
+        // turn-time snapshot taken at creation, so changing the setting later
+        // cannot retroactively move an existing occupancy; tableNameAtBooking
+        // is why a deleted table's bookings still show the name booked against.
+        try {
+          const restoApptCols: any[] = await conn.query("SHOW COLUMNS FROM Appointment");
+          const colNames = restoApptCols.map((c: any) => c.Field || c.field || c.ColumnName || "");
+
+          if (!colNames.includes("tableId")) {
+            await conn.query("ALTER TABLE Appointment ADD COLUMN tableId VARCHAR(255) NULL");
+            console.log("[DB] ✅ Added tableId column to Appointment table");
+          }
+          if (!colNames.includes("partySize")) {
+            await conn.query("ALTER TABLE Appointment ADD COLUMN partySize INT NULL");
+            console.log("[DB] ✅ Added partySize column to Appointment table");
+          }
+          if (!colNames.includes("turnTimeMinutes")) {
+            await conn.query("ALTER TABLE Appointment ADD COLUMN turnTimeMinutes INT NULL");
+            console.log("[DB] ✅ Added turnTimeMinutes column to Appointment table");
+          }
+          if (!colNames.includes("tableNameAtBooking")) {
+            await conn.query(
+              "ALTER TABLE Appointment ADD COLUMN tableNameAtBooking VARCHAR(40) NULL",
+            );
+            console.log("[DB] ✅ Added tableNameAtBooking column to Appointment table");
+          }
+          // A reservation may span several Dining_Tables (a Table_Group). Each
+          // table keeps its own row, so per-table occupancy and the availability
+          // scan are unchanged; the rows of one reservation share a
+          // bookingGroupId. For a single-table booking the group id equals the
+          // row's own id, which is why existing rows backfill to `id`.
+          if (!colNames.includes("bookingGroupId")) {
+            await conn.query("ALTER TABLE Appointment ADD COLUMN bookingGroupId VARCHAR(255) NULL");
+            await conn.query(
+              "UPDATE Appointment SET bookingGroupId = id WHERE bookingGroupId IS NULL",
+            );
+            console.log("[DB] ✅ Added bookingGroupId column to Appointment table");
+          }
+        } catch (err: any) {
+          console.warn(
+            "[DB] ⚠️ Could not verify/alter Appointment restaurant columns:",
+            err.message,
+          );
+        }
+
+        // Index for the per-table availability window scan. SHOW COLUMNS cannot
+        // tell us whether an index exists, so this runs in its own try/catch.
+        try {
+          await conn.query(
+            "ALTER TABLE Appointment ADD INDEX idx_apt_table_window (tenantId, tableId, dateTime)",
+          );
+          console.log("[DB] ✅ Added idx_apt_table_window index to Appointment table");
+        } catch (_) {
+          /* index already exists */
+        }
+
+        // Reads that collapse a Table_Group back into one reservation.
+        try {
+          await conn.query(
+            "ALTER TABLE Appointment ADD INDEX idx_apt_booking_group (tenantId, bookingGroupId)",
+          );
+          console.log("[DB] ✅ Added idx_apt_booking_group index to Appointment table");
+        } catch (_) {
+          /* index already exists */
         }
 
         // Create SuperAdmin Table
@@ -854,16 +1277,24 @@ if (typeof window === "undefined") {
           const phCols: any[] = await conn.query("SHOW COLUMNS FROM PaymentHistory");
           const phColNames = phCols.map((c: any) => c.Field || c.field || c.ColumnName || "");
           if (!phColNames.includes("failureReason")) {
-            await conn.query("ALTER TABLE PaymentHistory ADD COLUMN failureReason VARCHAR(500) NULL");
+            await conn.query(
+              "ALTER TABLE PaymentHistory ADD COLUMN failureReason VARCHAR(500) NULL",
+            );
           }
           if (!phColNames.includes("customerName")) {
-            await conn.query("ALTER TABLE PaymentHistory ADD COLUMN customerName VARCHAR(255) NULL");
+            await conn.query(
+              "ALTER TABLE PaymentHistory ADD COLUMN customerName VARCHAR(255) NULL",
+            );
           }
           if (!phColNames.includes("customerEmail")) {
-            await conn.query("ALTER TABLE PaymentHistory ADD COLUMN customerEmail VARCHAR(255) NULL");
+            await conn.query(
+              "ALTER TABLE PaymentHistory ADD COLUMN customerEmail VARCHAR(255) NULL",
+            );
           }
           if (!phColNames.includes("customerPhone")) {
-            await conn.query("ALTER TABLE PaymentHistory ADD COLUMN customerPhone VARCHAR(50) NULL");
+            await conn.query(
+              "ALTER TABLE PaymentHistory ADD COLUMN customerPhone VARCHAR(50) NULL",
+            );
           }
         } catch (err: any) {
           console.warn("[DB] ⚠️ Could not verify/alter PaymentHistory columns:", err.message);
@@ -875,7 +1306,9 @@ if (typeof window === "undefined") {
         // instead of updating). De-duplicate first (keep the SUCCESS row, else
         // the most-recently-updated), then add the unique key.
         try {
-          const phIdx: any[] = await conn.query("SHOW INDEX FROM PaymentHistory WHERE Key_name = 'uniq_payment_order'");
+          const phIdx: any[] = await conn.query(
+            "SHOW INDEX FROM PaymentHistory WHERE Key_name = 'uniq_payment_order'",
+          );
           if (!phIdx || phIdx.length === 0) {
             await conn.query("SET SESSION group_concat_max_len = 1000000");
             await conn.query(`
@@ -891,7 +1324,9 @@ if (typeof window === "undefined") {
                 HAVING COUNT(*) > 1
               ) dup ON ph.orderId = dup.orderId AND ph.id <> dup.keepId
             `);
-            await conn.query("ALTER TABLE PaymentHistory ADD UNIQUE KEY uniq_payment_order (orderId)");
+            await conn.query(
+              "ALTER TABLE PaymentHistory ADD UNIQUE KEY uniq_payment_order (orderId)",
+            );
             console.log("[DB] ✅ De-duplicated PaymentHistory and added UNIQUE(orderId) key");
           }
         } catch (err: any) {
@@ -974,10 +1409,22 @@ if (typeof window === "undefined") {
         try {
           const spCols: any[] = await conn.query("SHOW COLUMNS FROM SubscriptionPayment");
           const spNames = spCols.map((c: any) => c.Field || c.field || c.ColumnName || "");
-          if (!spNames.includes("cfTxnId")) await conn.query("ALTER TABLE SubscriptionPayment ADD COLUMN cfTxnId VARCHAR(255) NULL");
-          if (!spNames.includes("cfOrderId")) await conn.query("ALTER TABLE SubscriptionPayment ADD COLUMN cfOrderId VARCHAR(255) NULL");
-          if (!spNames.includes("paymentType")) await conn.query("ALTER TABLE SubscriptionPayment ADD COLUMN paymentType VARCHAR(40) NULL");
-          if (!spNames.includes("remarks")) await conn.query("ALTER TABLE SubscriptionPayment ADD COLUMN remarks VARCHAR(500) NULL");
+          if (!spNames.includes("cfTxnId"))
+            await conn.query(
+              "ALTER TABLE SubscriptionPayment ADD COLUMN cfTxnId VARCHAR(255) NULL",
+            );
+          if (!spNames.includes("cfOrderId"))
+            await conn.query(
+              "ALTER TABLE SubscriptionPayment ADD COLUMN cfOrderId VARCHAR(255) NULL",
+            );
+          if (!spNames.includes("paymentType"))
+            await conn.query(
+              "ALTER TABLE SubscriptionPayment ADD COLUMN paymentType VARCHAR(40) NULL",
+            );
+          if (!spNames.includes("remarks"))
+            await conn.query(
+              "ALTER TABLE SubscriptionPayment ADD COLUMN remarks VARCHAR(500) NULL",
+            );
         } catch (err: any) {
           console.warn("[DB] ⚠️ Could not verify/alter SubscriptionPayment columns:", err.message);
         }
@@ -1065,6 +1512,35 @@ if (typeof window === "undefined") {
           `);
         } catch (err: any) {
           console.error("[DB] ❌ Failed to create Location table:", err.message);
+        }
+
+        // Profile photos are self-service account data for every account type.
+        // Keep these migrations independent so failure in one account table does
+        // not prevent the other table from being checked on the same startup.
+        try {
+          const subUserCols: any[] = await conn.query("SHOW COLUMNS FROM SubUser");
+          const subUserColNames = subUserCols.map(
+            (c: any) => c.Field || c.field || c.ColumnName || "",
+          );
+          if (!subUserColNames.includes("profilePhoto")) {
+            await conn.query("ALTER TABLE SubUser ADD COLUMN profilePhoto VARCHAR(500) NULL");
+            console.log("[DB] ✅ Added profilePhoto column to SubUser table");
+          }
+        } catch (err: any) {
+          console.error("[DB] ❌ Could not verify/add SubUser.profilePhoto:", err.message);
+        }
+
+        try {
+          const locationCols: any[] = await conn.query("SHOW COLUMNS FROM Location");
+          const locationColNames = locationCols.map(
+            (c: any) => c.Field || c.field || c.ColumnName || "",
+          );
+          if (!locationColNames.includes("profilePhoto")) {
+            await conn.query("ALTER TABLE Location ADD COLUMN profilePhoto VARCHAR(500) NULL");
+            console.log("[DB] ✅ Added profilePhoto column to Location table");
+          }
+        } catch (err: any) {
+          console.error("[DB] ❌ Could not verify/add Location.profilePhoto:", err.message);
         }
 
         // Create LocationSession Table (auth tokens for location logins)
@@ -1195,19 +1671,25 @@ if (typeof window === "undefined") {
         try {
           await conn.query(`ALTER TABLE WhatsAppConfig ADD COLUMN aiEnabled TINYINT(1) DEFAULT 0`);
           console.log("[DB] ✅ Added aiEnabled column to WhatsAppConfig table");
-        } catch (_) { /* column already exists */ }
+        } catch (_) {
+          /* column already exists */
+        }
 
         // Check and add SaaS columns to User (Tenant) table
         try {
           const userCols: any[] = await conn.query("SHOW COLUMNS FROM User");
           const userColNames = userCols.map((c: any) => c.Field || c.field || c.ColumnName || "");
-          
+
           if (!userColNames.includes("subscriptionStatus")) {
-            await conn.query("ALTER TABLE User ADD COLUMN subscriptionStatus VARCHAR(50) DEFAULT 'Trialing'");
+            await conn.query(
+              "ALTER TABLE User ADD COLUMN subscriptionStatus VARCHAR(50) DEFAULT 'Trialing'",
+            );
             console.log("[DB] ✅ Added subscriptionStatus column to User table");
           }
           if (!userColNames.includes("subscriptionPlan")) {
-            await conn.query("ALTER TABLE User ADD COLUMN subscriptionPlan VARCHAR(50) DEFAULT 'Trial'");
+            await conn.query(
+              "ALTER TABLE User ADD COLUMN subscriptionPlan VARCHAR(50) DEFAULT 'Trial'",
+            );
             console.log("[DB] ✅ Added subscriptionPlan column to User table");
           }
           if (!userColNames.includes("subscriptionExpiresAt")) {
@@ -1215,19 +1697,27 @@ if (typeof window === "undefined") {
             console.log("[DB] ✅ Added subscriptionExpiresAt column to User table");
           }
           if (!userColNames.includes("paymentMethod")) {
-            await conn.query("ALTER TABLE User ADD COLUMN paymentMethod VARCHAR(100) DEFAULT 'None'");
+            await conn.query(
+              "ALTER TABLE User ADD COLUMN paymentMethod VARCHAR(100) DEFAULT 'None'",
+            );
             console.log("[DB] ✅ Added paymentMethod column to User table");
           }
           if (!userColNames.includes("paymentAmount")) {
-            await conn.query("ALTER TABLE User ADD COLUMN paymentAmount DECIMAL(10,2) DEFAULT 0.00");
+            await conn.query(
+              "ALTER TABLE User ADD COLUMN paymentAmount DECIMAL(10,2) DEFAULT 0.00",
+            );
             console.log("[DB] ✅ Added paymentAmount column to User table");
           }
           if (!userColNames.includes("billingInterval")) {
-            await conn.query("ALTER TABLE User ADD COLUMN billingInterval VARCHAR(50) DEFAULT 'monthly'");
+            await conn.query(
+              "ALTER TABLE User ADD COLUMN billingInterval VARCHAR(50) DEFAULT 'monthly'",
+            );
             console.log("[DB] ✅ Added billingInterval column to User table");
           }
           if (!userColNames.includes("virtualPhoneNumber")) {
-            await conn.query("ALTER TABLE User ADD COLUMN virtualPhoneNumber VARCHAR(50) DEFAULT '+91 98765 43210'");
+            await conn.query(
+              "ALTER TABLE User ADD COLUMN virtualPhoneNumber VARCHAR(50) DEFAULT '+91 98765 43210'",
+            );
             console.log("[DB] ✅ Added virtualPhoneNumber column to User table");
           }
           if (!userColNames.includes("callLimit")) {
@@ -1243,7 +1733,9 @@ if (typeof window === "undefined") {
             console.log("[DB] ✅ Added profilePhoto column to User table");
           }
           if (!userColNames.includes("profession")) {
-            await conn.query("ALTER TABLE User ADD COLUMN profession VARCHAR(100) DEFAULT 'Healthcare and medical'");
+            await conn.query(
+              "ALTER TABLE User ADD COLUMN profession VARCHAR(100) DEFAULT 'Healthcare and medical'",
+            );
             console.log("[DB] ✅ Added profession column to User table");
           }
         } catch (err: any) {
@@ -1262,7 +1754,7 @@ if (typeof window === "undefined") {
             const adminId = cryptoModule.randomUUID();
             await conn.query(
               "INSERT INTO SuperAdmin (id, name, email, password) VALUES (?, ?, ?, ?)",
-              [adminId, "SaaS Owner", "admin@bookmytime.ai", hashedPassword]
+              [adminId, "SaaS Owner", "admin@bookmytime.ai", hashedPassword],
             );
             console.log("[DB] ✅ Seeded default super admin: admin@bookmytime.ai / admin123");
           }
@@ -1271,18 +1763,24 @@ if (typeof window === "undefined") {
           const envEmail = process.env.SUPER_ADMIN_EMAIL;
           const envPassword = process.env.SUPER_ADMIN_PASSWORD;
           if (envEmail && envPassword) {
-            const customAdmin = await conn.query("SELECT id FROM SuperAdmin WHERE email = ? LIMIT 1", [envEmail]);
+            const customAdmin = await conn.query(
+              "SELECT id FROM SuperAdmin WHERE email = ? LIMIT 1",
+              [envEmail],
+            );
             const hashedEnvPassword = await (bcrypt.default || bcrypt).hash(envPassword, 10);
             if (customAdmin.length === 0) {
               const adminId = cryptoModule.randomUUID();
               await conn.query(
                 "INSERT INTO SuperAdmin (id, name, email, password) VALUES (?, ?, ?, ?)",
-                [adminId, "BookMyTime Admin", envEmail, hashedEnvPassword]
+                [adminId, "BookMyTime Admin", envEmail, hashedEnvPassword],
               );
               console.log(`[DB] ✅ Seeded custom super admin from .env: ${envEmail}`);
             } else {
               // Update password to match env just in case it changed
-              await conn.query("UPDATE SuperAdmin SET password = ? WHERE email = ?", [hashedEnvPassword, envEmail]);
+              await conn.query("UPDATE SuperAdmin SET password = ? WHERE email = ?", [
+                hashedEnvPassword,
+                envEmail,
+              ]);
               console.log(`[DB] ✅ Synced password for custom super admin from .env: ${envEmail}`);
             }
           }
@@ -1446,26 +1944,67 @@ if (typeof window === "undefined") {
 
         // Normalize characters and collations across all tables to avoid mixed collation JOIN / comparison errors
         const tablesToNormalize = [
-          "User", "Session", "OtpCode", "Appointment", "DemoAppointment", "ClinicHours", "Department",
-          "Doctor", "ClinicProfile", "WhatsAppConfig", "DoctorSchedule", "DoctorLeave",
-          "Patient", "SoapNote", "Prescription", "SuperAdmin", "SuperAdminSession",
-          "SubscriptionHistory", "SubUser", "SubUserSession", "WATemplate", "WACampaign",
-          "WACampaignRecipient", "WAAutoReply", "WAConversation",
+          "User",
+          "Session",
+          "OtpCode",
+          "Appointment",
+          "DemoAppointment",
+          "ClinicHours",
+          "Department",
+          "Doctor",
+          "ClinicProfile",
+          "WhatsAppConfig",
+          "DoctorSchedule",
+          "DoctorLeave",
+          "Patient",
+          "SoapNote",
+          "Prescription",
+          "SuperAdmin",
+          "SuperAdminSession",
+          "SubscriptionHistory",
+          "SubUser",
+          "SubUserSession",
+          "WATemplate",
+          "WACampaign",
+          "WACampaignRecipient",
+          "WAAutoReply",
+          "WAConversation",
           // Video consultation tables — required, not cosmetic. These join to Appointment,
           // Doctor, and Patient, and this codebase has a live mismatched-collation problem:
           // queries in src/lib/auth.server.ts are forced to write explicit
           // `COLLATE utf8mb4_unicode_ci` clauses in their JOIN conditions to work around it.
           // Normalising these tables up front avoids adding to that debt.
-          "VideoRoom", "VideoJoinToken", "VideoParticipant", "VideoSignal", "VideoConsent", "VideoAuditEvent"
+          "VideoRoom",
+          "VideoJoinToken",
+          "VideoParticipant",
+          "VideoSignal",
+          "VideoConsent",
+          "VideoAuditEvent",
+          // Restaurant tables. RestaurantTable.name uniqueness relies on
+          // utf8mb4_unicode_ci being case-insensitive, and these rows join to
+          // Appointment and Patient, so the collation has to match.
+          "RestaurantTable",
+          "RestaurantSettings",
+          "RestaurantHours",
+          "RestaurantTokenCounter",
+          "RestaurantDiningArea",
+          "RestaurantClosureDay",
+          "RestaurantMenuCategory",
+          "RestaurantMenuItem",
+          "AccountEmailVerification",
         ];
         for (const tbl of tablesToNormalize) {
           try {
-            await conn.query(`ALTER TABLE \`${tbl}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+            await conn.query(
+              `ALTER TABLE \`${tbl}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+            );
           } catch (colErr: any) {
             console.warn(`[DB] ⚠️ Could not normalize collation for table ${tbl}:`, colErr.message);
           }
         }
-        console.log("[DB] ✅ Normalized database character set and collation to utf8mb4_unicode_ci for all tables");
+        console.log(
+          "[DB] ✅ Normalized database character set and collation to utf8mb4_unicode_ci for all tables",
+        );
 
         // Migrate WhatsApp tables from user.id to user.tenantId
         try {
@@ -1474,10 +2013,12 @@ if (typeof window === "undefined") {
             const migRes = await conn.query(
               `UPDATE \`${tbl}\` t
                JOIN User u ON t.tenantId COLLATE utf8mb4_unicode_ci = u.id COLLATE utf8mb4_unicode_ci
-               SET t.tenantId = u.tenantId`
+               SET t.tenantId = u.tenantId`,
             );
             if (migRes.affectedRows > 0) {
-              console.log(`[DB] ✅ Migrated ${migRes.affectedRows} records in ${tbl} from user.id to user.tenantId`);
+              console.log(
+                `[DB] ✅ Migrated ${migRes.affectedRows} records in ${tbl} from user.id to user.tenantId`,
+              );
             }
           }
         } catch (migErr: any) {
@@ -1522,7 +2063,10 @@ export async function queryOne<T = any>(sql: string, params?: any[]): Promise<T 
 /**
  * Execute an INSERT/UPDATE/DELETE and return the result metadata.
  */
-export async function execute(sql: string, params?: any[]): Promise<{ affectedRows: number; insertId: any }> {
+export async function execute(
+  sql: string,
+  params?: any[],
+): Promise<{ affectedRows: number; insertId: any }> {
   let conn: PoolConnection | undefined;
   try {
     conn = await pool.getConnection();
@@ -1533,5 +2077,49 @@ export async function execute(sql: string, params?: any[]): Promise<{ affectedRo
   }
 }
 
+/**
+ * Run a callback inside a single database transaction.
+ *
+ * Acquires one pooled connection, begins a transaction, hands that connection
+ * to the callback, and commits when it resolves. Any throw rolls back and
+ * rethrows, and the connection is always released in `finally`.
+ *
+ * Every statement in a transactional flow must go through the passed `conn`.
+ * Calling the pool-level `query()` / `execute()` helpers inside the callback
+ * runs outside the transaction and defeats the point.
+ *
+ * `opts.isolationLevel` applies to THIS transaction only: `SET TRANSACTION
+ * ISOLATION LEVEL ...` without a scope keyword affects the next transaction on
+ * the session and then reverts, so a pooled connection cannot leak the level to
+ * the next borrower. Omitted, the server default (REPEATABLE READ) is used.
+ */
+export async function withTransaction<T>(
+  fn: (conn: PoolConnection) => Promise<T>,
+  opts?: { isolationLevel?: "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE" },
+): Promise<T> {
+  let conn: PoolConnection | undefined;
+  try {
+    conn = await pool.getConnection();
+    if (opts?.isolationLevel) {
+      await conn!.query(`SET TRANSACTION ISOLATION LEVEL ${opts.isolationLevel}`);
+    }
+    await conn!.beginTransaction();
+    try {
+      const result = await fn(conn!);
+      await conn!.commit();
+      return result;
+    } catch (err) {
+      try {
+        await conn!.rollback();
+      } catch (_) {
+        /* connection already gone; the original error is what matters */
+      }
+      throw err;
+    }
+  } finally {
+    if (conn) conn.release();
+  }
+}
+
 export { pool };
-export default { query, queryOne, execute, pool };
+export default { query, queryOne, execute, withTransaction, pool };

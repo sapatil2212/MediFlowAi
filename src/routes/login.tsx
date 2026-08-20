@@ -1,7 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { HeartPulse, Home, X, Check, Loader2, AlertCircle, Eye, EyeOff, RefreshCw } from "lucide-react";
+import {
+  HeartPulse,
+  Home,
+  X,
+  Check,
+  Loader2,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  RefreshCw,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   loginServerFn,
@@ -10,10 +20,9 @@ import {
   resetPasswordServerFn,
   getExpiredUserPlanDetailsServerFn,
   createCashfreeOrderServerFn,
-  verifyAndProcessPaymentServerFn
+  verifyAndProcessPaymentServerFn,
 } from "../lib/auth";
 import bmtLogo from "../assets/bmt-logo.png";
-
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -95,7 +104,9 @@ function LoginPage() {
       setRenewUserPlanDetails(details);
       setIsRenewModalOpen(true);
     } catch (err: any) {
-      toast.error(err.message || "Failed to fetch account details. Please ensure your username is correct.");
+      toast.error(
+        err.message || "Failed to fetch account details. Please ensure your username is correct.",
+      );
     } finally {
       setLoading(false);
     }
@@ -106,23 +117,23 @@ function LoginPage() {
     setRenewLoading(true);
     try {
       const res = await createCashfreeOrderServerFn({
-        data: { username, planName: plan }
+        data: { username, planName: plan },
       });
-      
+
       if (res.success && res.payment_session_id) {
         toast.success("Initiating Cashfree Payment Gateway...");
-        
+
         if (!(window as any).Cashfree) {
           throw new Error("Cashfree payment gateway SDK failed to load. Please refresh the page.");
         }
-        
+
         const cashfree = (window as any).Cashfree({
-          mode: res.environment === "production" ? "production" : "sandbox"
+          mode: res.environment === "production" ? "production" : "sandbox",
         });
-        
+
         await cashfree.checkout({
           paymentSessionId: res.payment_session_id,
-          returnUrl: `${window.location.origin}/login?order_id=${res.order_id}`
+          returnUrl: `${window.location.origin}/login?order_id=${res.order_id}`,
         });
       } else {
         toast.error("Failed to generate payment session. Please try again.");
@@ -184,10 +195,13 @@ function LoginPage() {
       const { verifyRenewalSubscriptionServerFn } = await import("../lib/subscription");
       const res = await verifyRenewalSubscriptionServerFn({ data: { subscriptionRef } });
       if (res.success) {
-        toast.success(`AutoPay is active! Your ${res.plan} subscription will renew automatically.`, {
-          id: loadingToastId,
-          duration: 6000,
-        });
+        toast.success(
+          `AutoPay is active! Your ${res.plan} subscription will renew automatically.`,
+          {
+            id: loadingToastId,
+            duration: 6000,
+          },
+        );
       } else {
         toast.dismiss(loadingToastId);
         console.log(`[AutoPay] Renewal verification not completed:`, res.message);
@@ -211,10 +225,13 @@ function LoginPage() {
     try {
       const res = await verifyAndProcessPaymentServerFn({ data: { orderId } });
       if (res.success) {
-        toast.success(`Payment verified successfully! Your ${res.plan} subscription is now Active.`, {
-          id: loadingToastId,
-          duration: 6000,
-        });
+        toast.success(
+          `Payment verified successfully! Your ${res.plan} subscription is now Active.`,
+          {
+            id: loadingToastId,
+            duration: 6000,
+          },
+        );
       } else {
         // Silently dismiss the loading toast if payment is not completed/cancelled
         toast.dismiss(loadingToastId);
@@ -406,7 +423,10 @@ function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-8 md:px-6">
       {/* Back button/Logo at top left with Home icon */}
       <div className="absolute top-6 left-6">
-        <Link to="/" className="group flex items-center gap-1.5 text-zinc-600 hover:text-zinc-950 transition-colors">
+        <Link
+          to="/"
+          className="group flex items-center gap-1.5 text-zinc-600 hover:text-zinc-950 transition-colors"
+        >
           <img src={bmtLogo} alt="Book MyTime Logo" className="h-12 w-auto object-contain" />
           <span className="mx-1.5 text-zinc-300">|</span>
           <Home className="size-3.5 text-zinc-400 group-hover:text-zinc-600 transition-colors" />
@@ -421,12 +441,8 @@ function LoginPage() {
           <div className="my-auto space-y-5">
             {/* Header */}
             <div className="text-center">
-              <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
-                Welcome Back!
-              </h1>
-              <p className="mt-1 text-xs text-zinc-400">
-                Sign in with your Username and Password.
-              </p>
+              <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Welcome Back!</h1>
+              <p className="mt-1 text-xs text-zinc-400">Sign in with your Username and Password.</p>
             </div>
 
             {/* Form */}
@@ -442,14 +458,19 @@ function LoginPage() {
                       <span key={index}>
                         {part}
                         {index < arr.length - 1 && (
-                          <a href="mailto:bookmytime1355@gmail.com" className="font-bold underline hover:text-red-900 transition-colors">
+                          <a
+                            href="mailto:bookmytime1355@gmail.com"
+                            className="font-bold underline hover:text-red-900 transition-colors"
+                          >
                             bookmytime1355@gmail.com
                           </a>
                         )}
                       </span>
                     ))}
                   </p>
-                  {(errorMsg.toLowerCase().includes("ended") || errorMsg.toLowerCase().includes("expired") || errorMsg.toLowerCase().includes("deactivated")) && (
+                  {(errorMsg.toLowerCase().includes("ended") ||
+                    errorMsg.toLowerCase().includes("expired") ||
+                    errorMsg.toLowerCase().includes("deactivated")) && (
                     <button
                       type="button"
                       onClick={handleRenewClick}
@@ -496,7 +517,11 @@ function LoginPage() {
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 transition-colors"
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
-                    {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    {showPassword ? (
+                      <EyeOff className="h-3.5 w-3.5" />
+                    ) : (
+                      <Eye className="h-3.5 w-3.5" />
+                    )}
                   </button>
                 </div>
               </div>
@@ -568,10 +593,7 @@ function LoginPage() {
           {/* Footer Toggle */}
           <div className="pt-4 text-center text-xs text-zinc-400">
             Did not have any account?{" "}
-            <Link
-              to="/signup"
-              className="font-semibold text-zinc-850 hover:underline"
-            >
+            <Link to="/signup" className="font-semibold text-zinc-850 hover:underline">
               Register Now
             </Link>
           </div>
@@ -643,7 +665,9 @@ function LoginPage() {
               {/* Common inline error displaying inside the modal */}
               {errorMsg && (
                 <div className="mb-4 rounded-2xl bg-red-50 border border-red-100 p-3.5 text-center">
-                  <p className="text-[10px] text-red-650 font-bold leading-normal text-red-700">{errorMsg}</p>
+                  <p className="text-[10px] text-red-650 font-bold leading-normal text-red-700">
+                    {errorMsg}
+                  </p>
                 </div>
               )}
 
@@ -716,7 +740,12 @@ function LoginPage() {
 
                       <p className="text-[10px] text-zinc-400">
                         Didn't receive the code?{" "}
-                        <button type="button" onClick={handleSendForgotOtp} disabled={loading} className="text-brand font-bold hover:underline cursor-pointer disabled:no-underline">
+                        <button
+                          type="button"
+                          onClick={handleSendForgotOtp}
+                          disabled={loading}
+                          className="text-brand font-bold hover:underline cursor-pointer disabled:no-underline"
+                        >
                           Resend
                         </button>
                       </p>
@@ -746,7 +775,9 @@ function LoginPage() {
                           />
                         </svg>
                       </motion.div>
-                      <span className="text-xs font-bold text-emerald-600">Email Verified Successfully!</span>
+                      <span className="text-xs font-bold text-emerald-600">
+                        Email Verified Successfully!
+                      </span>
                     </div>
                   )}
                 </div>
@@ -780,7 +811,11 @@ function LoginPage() {
                               className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 transition-colors"
                               aria-label={showNewPassword ? "Hide password" : "Show password"}
                             >
-                              {showNewPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              {showNewPassword ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
                             </button>
                           </div>
                         </div>
@@ -802,7 +837,11 @@ function LoginPage() {
                               className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 transition-colors"
                               aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                             >
-                              {showConfirmPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              {showConfirmPassword ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
                             </button>
                           </div>
                         </div>
@@ -842,7 +881,9 @@ function LoginPage() {
                           />
                         </svg>
                       </motion.div>
-                      <span className="text-xs font-bold text-emerald-600">Password Reset Successfully!</span>
+                      <span className="text-xs font-bold text-emerald-600">
+                        Password Reset Successfully!
+                      </span>
                     </div>
                   )}
                 </div>
@@ -878,18 +919,19 @@ function LoginPage() {
               <div className="text-center mb-6">
                 <h3 className="text-xl font-black text-zinc-900">Renew Workspace Subscription</h3>
                 <p className="text-xs text-zinc-500 mt-1">
-                  Choose a subscription plan to reactivate your BookMyTime account for tenant: <span className="font-bold text-brand">{renewUserPlanDetails?.tenantId}</span>
+                  Choose a subscription plan to reactivate your BookMyTime account for tenant:{" "}
+                  <span className="font-bold text-brand">{renewUserPlanDetails?.tenantId}</span>
                 </p>
               </div>
 
               {/* Plans Comparison */}
               <div className="grid sm:grid-cols-2 gap-4 my-2">
                 {/* Basic Plan */}
-                <div 
+                <div
                   onClick={() => !renewLoading && setSelectedRenewPlan("Basic")}
                   className={`relative flex flex-col rounded-2xl p-5 border-2 cursor-pointer transition-all ${
-                    selectedRenewPlan === "Basic" 
-                      ? "border-[#0059C6] bg-[#0059C6]/[0.02] shadow-md animate-pulse-subtle" 
+                    selectedRenewPlan === "Basic"
+                      ? "border-[#0059C6] bg-[#0059C6]/[0.02] shadow-md animate-pulse-subtle"
                       : "border-zinc-200 hover:border-zinc-300"
                   }`}
                 >
@@ -899,8 +941,12 @@ function LoginPage() {
                     </div>
                   )}
                   <h4 className="text-sm font-bold text-zinc-900">Basic Plan</h4>
-                  <p className="text-2xl font-black text-zinc-900 mt-2">₹999<span className="text-xs font-normal text-zinc-500">/month</span></p>
-                  <p className="text-[10px] text-zinc-500 mt-1">Perfect for solo practitioners and small businesses.</p>
+                  <p className="text-2xl font-black text-zinc-900 mt-2">
+                    ₹999<span className="text-xs font-normal text-zinc-500">/month</span>
+                  </p>
+                  <p className="text-[10px] text-zinc-500 mt-1">
+                    Perfect for solo practitioners and small businesses.
+                  </p>
                   <ul className="mt-4 space-y-2 border-t border-zinc-100 pt-4 flex-1">
                     {[
                       "1 Dashboard",
@@ -908,7 +954,7 @@ function LoginPage() {
                       "Up to 500 Customers",
                       "QR Code Booking",
                       "Standard AI Assistant",
-                      "Standard Support"
+                      "Standard Support",
                     ].map((f) => (
                       <li key={f} className="flex items-center gap-1.5 text-[11px] text-zinc-650">
                         <Check className="h-3 w-3 text-[#0059C6] shrink-0" />
@@ -919,11 +965,11 @@ function LoginPage() {
                 </div>
 
                 {/* Premium Plan */}
-                <div 
+                <div
                   onClick={() => !renewLoading && setSelectedRenewPlan("Premium")}
                   className={`relative flex flex-col rounded-2xl p-5 border-2 cursor-pointer transition-all ${
-                    selectedRenewPlan === "Premium" 
-                      ? "border-[#0059C6] bg-[#0059C6]/[0.02] shadow-md" 
+                    selectedRenewPlan === "Premium"
+                      ? "border-[#0059C6] bg-[#0059C6]/[0.02] shadow-md"
                       : "border-zinc-200 hover:border-zinc-300"
                   }`}
                 >
@@ -936,8 +982,12 @@ function LoginPage() {
                     </div>
                   )}
                   <h4 className="text-sm font-bold text-zinc-900 mt-2 sm:mt-0">Premium Plan</h4>
-                  <p className="text-2xl font-black text-zinc-900 mt-2">₹1,499<span className="text-xs font-normal text-zinc-500">/month</span></p>
-                  <p className="text-[10px] text-zinc-500 mt-1">For growing multi-professional networks & groups.</p>
+                  <p className="text-2xl font-black text-zinc-900 mt-2">
+                    ₹1,499<span className="text-xs font-normal text-zinc-500">/month</span>
+                  </p>
+                  <p className="text-[10px] text-zinc-500 mt-1">
+                    For growing multi-professional networks & groups.
+                  </p>
                   <ul className="mt-4 space-y-2 border-t border-zinc-100 pt-4 flex-1">
                     {[
                       "1 Dashboard + 1 sub location",
@@ -945,7 +995,7 @@ function LoginPage() {
                       "Up to 5,000 Customers",
                       "WhatsApp alerts included",
                       "Advanced AI Scribe & bot",
-                      "Priority Support"
+                      "Priority Support",
                     ].map((f) => (
                       <li key={f} className="flex items-center gap-1.5 text-[11px] text-zinc-650">
                         <Check className="h-3 w-3 text-[#0059C6] shrink-0" />
@@ -995,7 +1045,9 @@ function LoginPage() {
                   )}
                 </button>
                 <p className="text-[9px] text-zinc-400 text-center">
-                  Payments are processed securely via Cashfree Payments. AutoPay renews your plan automatically every month — you can cancel anytime. You will be redirected to complete the transaction.
+                  Payments are processed securely via Cashfree Payments. AutoPay renews your plan
+                  automatically every month — you can cancel anytime. You will be redirected to
+                  complete the transaction.
                 </p>
               </div>
             </motion.div>
@@ -1008,7 +1060,9 @@ function LoginPage() {
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md text-white">
           <Loader2 className="h-10 w-10 animate-spin text-[#0D83FF]" />
           <p className="mt-4 text-sm font-bold tracking-wide">Confirming your AutoPay mandate...</p>
-          <p className="text-xs text-zinc-450 mt-1">Please do not refresh the page or click back.</p>
+          <p className="text-xs text-zinc-450 mt-1">
+            Please do not refresh the page or click back.
+          </p>
         </div>
       )}
 
@@ -1016,8 +1070,12 @@ function LoginPage() {
       {isVerifyingPayment && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md text-white">
           <Loader2 className="h-10 w-10 animate-spin text-[#0D83FF]" />
-          <p className="mt-4 text-sm font-bold tracking-wide">Verifying your payment with Cashfree...</p>
-          <p className="text-xs text-zinc-450 mt-1">Please do not refresh the page or click back.</p>
+          <p className="mt-4 text-sm font-bold tracking-wide">
+            Verifying your payment with Cashfree...
+          </p>
+          <p className="text-xs text-zinc-450 mt-1">
+            Please do not refresh the page or click back.
+          </p>
         </div>
       )}
     </div>

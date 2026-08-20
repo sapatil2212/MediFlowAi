@@ -56,7 +56,13 @@ function fmtDate(value?: string | null): string {
   if (!value) return "-";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function fmtInr(amount: number): string {
@@ -66,20 +72,35 @@ function fmtInr(amount: number): string {
 /** Deterministic invoice number derived from the strongest available reference. */
 function deriveInvoiceNo(d: InvoiceData): string {
   if (d.invoiceNo) return String(d.invoiceNo);
-  const seed = d.cfPaymentId || d.cfTxnId || d.cfOrderId || d.subscriptionRef || d.transactionRef || Date.now().toString();
-  return `BMT-${seed.toString().replace(/[^A-Za-z0-9]/g, "").slice(-12).toUpperCase()}`;
+  const seed =
+    d.cfPaymentId ||
+    d.cfTxnId ||
+    d.cfOrderId ||
+    d.subscriptionRef ||
+    d.transactionRef ||
+    Date.now().toString();
+  return `BMT-${seed
+    .toString()
+    .replace(/[^A-Za-z0-9]/g, "")
+    .slice(-12)
+    .toUpperCase()}`;
 }
 
 /** Unique internal transaction reference for our records (stable per payment). */
 function deriveTransactionRef(d: InvoiceData): string {
   if (d.transactionRef) return String(d.transactionRef);
   const seed = d.cfPaymentId || d.cfTxnId || d.cfOrderId || d.subscriptionRef || "";
-  const base = seed.toString().replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const base = seed
+    .toString()
+    .replace(/[^A-Za-z0-9]/g, "")
+    .toUpperCase();
   return `TXN-${base || Math.random().toString(36).slice(2, 10).toUpperCase()}`;
 }
 
 /** Loads an image URL into a data URL so jsPDF can embed it. Never throws. */
-async function loadImageDataUrl(url: string): Promise<{ dataUrl: string; width: number; height: number } | null> {
+async function loadImageDataUrl(
+  url: string,
+): Promise<{ dataUrl: string; width: number; height: number } | null> {
   try {
     const res = await fetch(url);
     const blob = await res.blob();
@@ -121,7 +142,11 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
   if (logo) {
     const targetH = 14; // mm
     const targetW = Math.min(60, (logo.width / logo.height) * targetH);
-    try { doc.addImage(logo.dataUrl, "PNG", 14, 10, targetW, targetH); } catch { /* ignore */ }
+    try {
+      doc.addImage(logo.dataUrl, "PNG", 14, 10, targetW, targetH);
+    } catch {
+      /* ignore */
+    }
   } else {
     doc.setFont("Helvetica", "bold");
     doc.setFontSize(22);
@@ -160,24 +185,43 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
   doc.setFontSize(9.5);
   doc.setTextColor(...gray);
   let y = 60;
-  if (d.clinicName) { doc.setFont("Helvetica", "bold"); doc.setTextColor(...dark); doc.text(String(d.clinicName), 14, y); doc.setFont("Helvetica", "normal"); doc.setTextColor(...gray); y += 5; }
-  if (d.customerName) { doc.text(String(d.customerName), 14, y); y += 5; }
+  if (d.clinicName) {
+    doc.setFont("Helvetica", "bold");
+    doc.setTextColor(...dark);
+    doc.text(String(d.clinicName), 14, y);
+    doc.setFont("Helvetica", "normal");
+    doc.setTextColor(...gray);
+    y += 5;
+  }
+  if (d.customerName) {
+    doc.text(String(d.customerName), 14, y);
+    y += 5;
+  }
   if (d.address) {
     const lines = doc.splitTextToSize(String(d.address), 90);
     doc.text(lines, 14, y);
     y += 5 * lines.length;
   }
-  if (d.customerEmail) { doc.text(String(d.customerEmail), 14, y); y += 5; }
-  if (d.customerPhone) { doc.text(String(d.customerPhone), 14, y); y += 5; }
+  if (d.customerEmail) {
+    doc.text(String(d.customerEmail), 14, y);
+    y += 5;
+  }
+  if (d.customerPhone) {
+    doc.text(String(d.customerPhone), 14, y);
+    y += 5;
+  }
 
   // Status badge (right)
   doc.setFont("Helvetica", "bold");
   doc.setFontSize(10);
   const statusColor: [number, number, number] =
-    statusLabel === "SUCCESS" ? [5, 150, 105] :
-    statusLabel === "FAILED" ? [220, 38, 38] :
-    statusLabel === "CANCELLED" ? [113, 113, 122] :
-    [217, 119, 6];
+    statusLabel === "SUCCESS"
+      ? [5, 150, 105]
+      : statusLabel === "FAILED"
+        ? [220, 38, 38]
+        : statusLabel === "CANCELLED"
+          ? [113, 113, 122]
+          : [217, 119, 6];
   doc.setTextColor(...statusColor);
   doc.text(`Status: ${statusLabel}`, 196, 54, { align: "right" });
 
@@ -185,7 +229,7 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
   // Build descriptive line item based on payment type and context.
   let planLabel = d.plan ? `BookMyTime ${d.plan} Plan` : "BookMyTime Subscription";
   let billingLabel = d.transactionType || "Monthly";
-  
+
   if (d.paymentType === "AUTH") {
     // Authorization payment (mandate registration) — show the full context
     planLabel = `${planLabel} - Monthly Subscription (AutoPay Activated)`;
@@ -195,7 +239,7 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
     planLabel = `${planLabel} - Monthly Subscription`;
     billingLabel = "Monthly Renewal";
   }
-  
+
   const tableTop = Math.max(y, 74) + 6;
   autoTable(doc, {
     startY: tableTop,
@@ -204,7 +248,11 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
     theme: "striped",
     headStyles: { fillColor: brand, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 10 },
     bodyStyles: { fontSize: 9.5, textColor: [45, 55, 72] },
-    columnStyles: { 0: { cellWidth: 110 }, 1: { cellWidth: 35 }, 2: { cellWidth: 37, halign: "right" } },
+    columnStyles: {
+      0: { cellWidth: 110 },
+      1: { cellWidth: 35 },
+      2: { cellWidth: 37, halign: "right" },
+    },
     margin: { left: 14, right: 14 },
   });
 
@@ -241,14 +289,17 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
   }
 
   // Format payment method to be customer-friendly
-  const paymentMethodLabel = d.paymentMethod 
+  const paymentMethodLabel = d.paymentMethod
     ? String(d.paymentMethod).toUpperCase().replace(/_/g, " ")
     : "-";
 
   // Generate professional internal reference from transaction ref
-  const internalRef = transactionRef.startsWith("TXN-") 
-    ? transactionRef 
-    : `TXN-${transactionRef.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(-12)}`;
+  const internalRef = transactionRef.startsWith("TXN-")
+    ? transactionRef
+    : `TXN-${transactionRef
+        .replace(/[^A-Za-z0-9]/g, "")
+        .toUpperCase()
+        .slice(-12)}`;
 
   const rows: Array<[string, string]> = [
     ["Payment Method", paymentMethodLabel],
@@ -270,7 +321,7 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
 
   rows.push(
     ["Internal Reference", internalRef],
-    ["Transaction Date & Time", fmtDate(d.paidAt || d.createdAt)]
+    ["Transaction Date & Time", fmtDate(d.paidAt || d.createdAt)],
   );
 
   doc.setFontSize(9);
@@ -292,7 +343,11 @@ async function buildInvoiceDoc(d: InvoiceData): Promise<{ doc: jsPDF; invoiceNo:
   doc.setFont("Helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...gray);
-  doc.text("This is a system-generated invoice and does not require a physical signature.", 14, pageH - 14);
+  doc.text(
+    "This is a system-generated invoice and does not require a physical signature.",
+    14,
+    pageH - 14,
+  );
   doc.text("For billing queries: bookmytime1355@gmail.com  |  +91 9168 08 1355", 14, pageH - 9);
 
   return { doc, invoiceNo };

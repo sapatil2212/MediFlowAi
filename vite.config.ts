@@ -11,6 +11,10 @@ export default defineConfig({
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
+    router: {
+      // Exclude *.test.ts(x) files under src/routes from being treated as route files
+      routeFileIgnorePattern: "\\.test\\.tsx?$",
+    },
   },
   nitro: {
     preset: "node-server",
@@ -19,14 +23,7 @@ export default defineConfig({
     ssr: {
       // Externalize heavy CJS packages that use Node globals (module, require, __dirname)
       // so they are loaded natively by Node instead of being bundled by Vite
-      external: [
-        "whatsapp-web.js",
-        "puppeteer",
-        "qrcode",
-        "bcryptjs",
-        "nodemailer",
-        "mariadb",
-      ],
+      external: ["whatsapp-web.js", "puppeteer", "qrcode", "bcryptjs", "nodemailer", "mariadb"],
       noExternal: [],
     },
   },

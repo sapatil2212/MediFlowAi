@@ -14,7 +14,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { createServerFn } from "@tanstack/react-start";
 
-import { nextPollDelayMs, projectForPatient, shouldStopPolling, type PatientStatus, type PeerState } from "./video-consultation";
+import {
+  nextPollDelayMs,
+  projectForPatient,
+  shouldStopPolling,
+  type PatientStatus,
+  type PeerState,
+} from "./video-consultation";
 import {
   activeLinkCount,
   buildDoctorRoomView,
@@ -62,7 +68,12 @@ import {
   resolveJoinTokenSoft,
   isTerminalStateName,
 } from "./video.server";
-import { buildIceConfiguration, isTurnConfigured, readTurnConfig, type IceConfiguration } from "./video-turn.server";
+import {
+  buildIceConfiguration,
+  isTurnConfigured,
+  readTurnConfig,
+  type IceConfiguration,
+} from "./video-turn.server";
 
 // ═════════════════════════════════════════════════════════════════════════════
 // DOCTOR / STAFF PATH
@@ -92,12 +103,19 @@ export const createVideoRoomServerFn = createServerFn({ method: "POST" })
     const user = await requireVideoOperator();
     const appt = await loadAppointmentForVideo(data.appointmentId, user.tenantId);
     if (!appt) throw new Error("Appointment not found");
-    if (user.role === "doctor" && user.doctorId && appt.doctorId && appt.doctorId !== user.doctorId) {
+    if (
+      user.role === "doctor" &&
+      user.doctorId &&
+      appt.doctorId &&
+      appt.doctorId !== user.doctorId
+    ) {
       throw new Error("You are not assigned to this consultation.");
     }
     const room = await ensureVideoRoom(data.appointmentId, user.tenantId);
     const { link } = await issueJoinToken(room.id, user.tenantId, "created");
-    void notifyVideoLink(data.appointmentId, user.tenantId, link, "videoLinkIssued").catch(() => {});
+    void notifyVideoLink(data.appointmentId, user.tenantId, link, "videoLinkIssued").catch(
+      () => {},
+    );
     const fresh = await loadRoomForRead(room.id, user.tenantId);
     const view = await buildDoctorRoomView(fresh, user);
     return { ...view, joinLink: link };
@@ -114,9 +132,18 @@ export const regenerateJoinTokenServerFn = createServerFn({ method: "POST" })
     await revokeJoinTokens(room.id);
     const { link } = await issueJoinToken(room.id, user.tenantId, "regenerated");
     if (room.appointmentId) {
-      void notifyVideoLink(room.appointmentId, user.tenantId, link, "videoLinkReissued").catch(() => {});
+      void notifyVideoLink(room.appointmentId, user.tenantId, link, "videoLinkReissued").catch(
+        () => {},
+      );
     }
-    await recordAudit(room.id, "state_change", "token_regenerated", undefined, user.tenantId, room.appointmentId);
+    await recordAudit(
+      room.id,
+      "state_change",
+      "token_regenerated",
+      undefined,
+      user.tenantId,
+      room.appointmentId,
+    );
     return { joinLink: link };
   });
 
@@ -151,7 +178,9 @@ export const pollVideoRoomServerFn = createServerFn({ method: "GET" })
     const user = await requireVideoOperator();
     const room = await requireRoomForDoctor(data.roomId, user);
     const participants = await loadParticipants(room.id, user.tenantId);
-    const admittedPatient = participants.find((p) => p.role === "patient" && p.status === "admitted");
+    const admittedPatient = participants.find(
+      (p) => p.role === "patient" && p.status === "admitted",
+    );
 
     const cursor = Number(data.afterSeq ?? 0);
     let signals: Array<{ seq: number; kind: string; senderRole: string; payload: string }> = [];
@@ -169,7 +198,9 @@ export const pollVideoRoomServerFn = createServerFn({ method: "GET" })
     const localPeer = (data.peerState as PeerState) ?? "new";
     return {
       roomState: room.state,
-      waiting: participants.filter((p) => p.role === "patient" && p.status === "requested").map(publicParticipant),
+      waiting: participants
+        .filter((p) => p.role === "patient" && p.status === "requested")
+        .map(publicParticipant),
       participants: participants.map(publicParticipant),
       signals,
       cursor: newCursor,
@@ -178,7 +209,12 @@ export const pollVideoRoomServerFn = createServerFn({ method: "GET" })
       // candidate is ever generated against an empty room.
       remotePresent: room.state === "active" && !!admittedPatient,
       stopPolling: shouldStopPolling(room.state, localPeer, remotePeer),
-      nextPollMs: nextPollDelayMs({ roomState: room.state, localPeer, remotePeer, consecutiveErrors: 0 }),
+      nextPollMs: nextPollDelayMs({
+        roomState: room.state,
+        localPeer,
+        remotePeer,
+        consecutiveErrors: 0,
+      }),
       turnConfigured: isTurnConfigured(readTurnConfig()),
     };
   });
@@ -201,8 +237,10 @@ export const publishSignalServerFn = createServerFn({ method: "POST" })
 
 export const admitParticipantServerFn = createServerFn({ method: "POST" })
   .validator((data: { roomId: string; participantId: string; decision: "admit" | "decline" }) => {
-    if (!data?.roomId || !data?.participantId) throw new Error("roomId and participantId are required");
-    if (data.decision !== "admit" && data.decision !== "decline") throw new Error("Invalid decision");
+    if (!data?.roomId || !data?.participantId)
+      throw new Error("roomId and participantId are required");
+    if (data.decision !== "admit" && data.decision !== "decline")
+      throw new Error("Invalid decision");
     return data;
   })
   .handler(async ({ data }) => {
@@ -241,7 +279,8 @@ export const admitParticipantServerFn = createServerFn({ method: "POST" })
 
 export const removeParticipantServerFn = createServerFn({ method: "POST" })
   .validator((data: { roomId: string; participantId: string }) => {
-    if (!data?.roomId || !data?.participantId) throw new Error("roomId and participantId are required");
+    if (!data?.roomId || !data?.participantId)
+      throw new Error("roomId and participantId are required");
     return data;
   })
   .handler(async ({ data }) => {
@@ -283,7 +322,14 @@ export const getIceConfigurationServerFn = createServerFn({ method: "POST" })
     try {
       return buildIceConfiguration(readTurnConfig(), doctorParticipantKey(user.id), Date.now());
     } catch {
-      await recordAudit(room.id, "turn_credential_failure", "doctor", "doctor", user.tenantId, room.appointmentId);
+      await recordAudit(
+        room.id,
+        "turn_credential_failure",
+        "doctor",
+        "doctor",
+        user.tenantId,
+        room.appointmentId,
+      );
       throw new Error("Could not prepare a secure connection.");
     }
   });
@@ -300,21 +346,41 @@ export const endVideoRoomServerFn = createServerFn({ method: "POST" })
   });
 
 export const reportCallEventServerFn = createServerFn({ method: "POST" })
-  .validator((data: { roomId: string; kind: string; detail?: string; peerState?: string; connectedMs?: number }) => {
-    if (!data?.roomId || !data?.kind) throw new Error("roomId and kind are required");
-    return data;
-  })
+  .validator(
+    (data: {
+      roomId: string;
+      kind: string;
+      detail?: string;
+      peerState?: string;
+      connectedMs?: number;
+    }) => {
+      if (!data?.roomId || !data?.kind) throw new Error("roomId and kind are required");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const user = await requireVideoOperator();
     const room = await requireRoomForDoctor(data.roomId, user);
-    const participant = await loadParticipantById(null, room.id, user.tenantId, doctorParticipantKey(user.id));
+    const participant = await loadParticipantById(
+      null,
+      room.id,
+      user.tenantId,
+      doctorParticipantKey(user.id),
+    );
     if (participant) {
       await updateParticipantState(participant.id, user.tenantId, {
         peerState: data.peerState,
         addConnectedMs: data.connectedMs,
       });
     }
-    await recordAudit(room.id, sanitizeEventKind(data.kind), data.detail ?? null, "doctor", user.tenantId, room.appointmentId);
+    await recordAudit(
+      room.id,
+      sanitizeEventKind(data.kind),
+      data.detail ?? null,
+      "doctor",
+      user.tenantId,
+      room.appointmentId,
+    );
     const roomState = await maybeEndForDisconnect(room, data.kind, user.tenantId);
     return { ok: true, roomState };
   });
@@ -366,7 +432,7 @@ export const createInstantMeetingServerFn = createServerFn({ method: "POST" })
     const { room, joinLink, meetingCode } = await createInstantVideoRoom({
       tenantId: user.tenantId,
       hostAccountId: user.id,
-      doctorId: user.role === "doctor" ? user.doctorId ?? null : null,
+      doctorId: user.role === "doctor" ? (user.doctorId ?? null) : null,
       title: data.title?.trim() || null,
       scheduledAt,
       guestName: data.guestName?.trim() || null,
@@ -465,7 +531,9 @@ export const getMeetingServerFn = createServerFn({ method: "GET" })
       guestName: extras?.guestName ?? null,
       autoAdmit: extras?.autoAdmit ?? false,
       participants: participants.map(publicParticipant),
-      waiting: participants.filter((p) => p.role === "patient" && p.status === "requested").map(publicParticipant),
+      waiting: participants
+        .filter((p) => p.role === "patient" && p.status === "requested")
+        .map(publicParticipant),
       linkActive: linkCount > 0,
       turnConfigured: isTurnConfigured(readTurnConfig()),
     };
@@ -512,7 +580,11 @@ export const getRelayStatusServerFn = createServerFn({ method: "GET" }).handler(
  */
 export const getDiagnosticIceServerFn = createServerFn({ method: "POST" }).handler(async () => {
   const user = await requireVideoOperator();
-  return buildIceConfiguration(readTurnConfig(), `diag-${doctorParticipantKey(user.id).slice(0, 16)}`, Date.now());
+  return buildIceConfiguration(
+    readTurnConfig(),
+    `diag-${doctorParticipantKey(user.id).slice(0, 16)}`,
+    Date.now(),
+  );
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -520,7 +592,9 @@ export const getDiagnosticIceServerFn = createServerFn({ method: "POST" }).handl
 // ═════════════════════════════════════════════════════════════════════════════
 
 /** Maps a token-resolution verdict onto the status the patient UI renders. */
-function patientStatusForFailure(status: "invalid" | "expired" | "rate_limited" | "ended"): PatientStatus {
+function patientStatusForFailure(
+  status: "invalid" | "expired" | "rate_limited" | "ended",
+): PatientStatus {
   if (status === "rate_limited") return "rate_limited";
   if (status === "expired") return "expired";
   if (status === "ended") return "ended";
@@ -546,7 +620,11 @@ export const getJoinContextServerFn = createServerFn({ method: "GET" })
     // server fault, NOT an invalid link, so it must not be reported as one —
     // otherwise a broken query looks exactly like a bad token to the patient.
     let participant = null;
-    let facts = { clinicName: null as string | null, doctorName: null as string | null, appointmentAt: null as string | null };
+    let facts = {
+      clinicName: null as string | null,
+      doctorName: null as string | null,
+      appointmentAt: null as string | null,
+    };
     try {
       participant = await loadPatientParticipant(room.id, room.tenantId);
       facts = await patientFactsFor(room);
@@ -571,7 +649,14 @@ export const acceptConsentServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { room } = await resolveJoinTokenOrThrow(data.token, await clientKeyFromRequest());
     await recordConsent(room);
-    await recordAudit(room.id, "consent_accepted", room.noticeVersion, "patient", room.tenantId, room.appointmentId);
+    await recordAudit(
+      room.id,
+      "consent_accepted",
+      room.noticeVersion,
+      "patient",
+      room.tenantId,
+      room.appointmentId,
+    );
     return { ok: true };
   });
 
@@ -611,7 +696,14 @@ export const requestEntryServerFn = createServerFn({ method: "POST" })
       displayAge,
       status: "requested",
     });
-    await recordAudit(room.id, "joined", "patient_requested_entry", "patient", room.tenantId, room.appointmentId);
+    await recordAudit(
+      room.id,
+      "joined",
+      "patient_requested_entry",
+      "patient",
+      room.tenantId,
+      room.appointmentId,
+    );
 
     if (room.state === "scheduled") {
       try {
@@ -651,7 +743,9 @@ export const requestEntryServerFn = createServerFn({ method: "POST" })
     }
 
     const fresh = await loadRoomForRead(room.id, room.tenantId);
-    return { status: patientStatusFrom(fresh, await loadPatientParticipant(room.id, room.tenantId)) };
+    return {
+      status: patientStatusFrom(fresh, await loadPatientParticipant(room.id, room.tenantId)),
+    };
   });
 
 export const getJoinStatusServerFn = createServerFn({ method: "GET" })
@@ -690,7 +784,9 @@ export const getJoinStatusServerFn = createServerFn({ method: "GET" })
       await updateParticipantState(participant.id, room.tenantId, { peerState: data.peerState });
     }
 
-    const doctor = (await loadParticipants(room.id, room.tenantId)).find((p) => p.role === "doctor");
+    const doctor = (await loadParticipants(room.id, room.tenantId)).find(
+      (p) => p.role === "doctor",
+    );
     const remotePeer = (doctor?.peerState as PeerState) ?? "new";
     const localPeer = (data.peerState as PeerState) ?? "new";
     return {
@@ -699,7 +795,12 @@ export const getJoinStatusServerFn = createServerFn({ method: "GET" })
       cursor: newCursor,
       remotePresent: room.state === "active" && participant?.status === "admitted" && !!doctor,
       stopPolling: shouldStopPolling(room.state, localPeer, remotePeer),
-      nextPollMs: nextPollDelayMs({ roomState: room.state, localPeer, remotePeer, consecutiveErrors: 0 }),
+      nextPollMs: nextPollDelayMs({
+        roomState: room.state,
+        localPeer,
+        remotePeer,
+        consecutiveErrors: 0,
+      }),
       noticeVersion: room.noticeVersion,
     };
   });
@@ -734,16 +835,31 @@ export const patientIceConfigServerFn = createServerFn({ method: "POST" })
     try {
       return buildIceConfiguration(readTurnConfig(), patientParticipantKey(room.id), Date.now());
     } catch {
-      await recordAudit(room.id, "turn_credential_failure", "patient", "patient", room.tenantId, room.appointmentId);
+      await recordAudit(
+        room.id,
+        "turn_credential_failure",
+        "patient",
+        "patient",
+        room.tenantId,
+        room.appointmentId,
+      );
       throw new Error("Could not prepare a secure connection.");
     }
   });
 
 export const patientReportEventServerFn = createServerFn({ method: "POST" })
-  .validator((data: { token: string; kind: string; peerState?: string; connectedMs?: number; detail?: string }) => {
-    if (!data?.token || !data?.kind) throw new Error("token and kind are required");
-    return data;
-  })
+  .validator(
+    (data: {
+      token: string;
+      kind: string;
+      peerState?: string;
+      connectedMs?: number;
+      detail?: string;
+    }) => {
+      if (!data?.token || !data?.kind) throw new Error("token and kind are required");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const { room } = await resolveJoinTokenOrThrow(data.token, await clientKeyFromRequest());
     const participant = await loadPatientParticipant(room.id, room.tenantId);
@@ -753,7 +869,14 @@ export const patientReportEventServerFn = createServerFn({ method: "POST" })
         addConnectedMs: data.connectedMs,
       });
     }
-    await recordAudit(room.id, sanitizeEventKind(data.kind), data.detail ?? null, "patient", room.tenantId, room.appointmentId);
+    await recordAudit(
+      room.id,
+      sanitizeEventKind(data.kind),
+      data.detail ?? null,
+      "patient",
+      room.tenantId,
+      room.appointmentId,
+    );
     const roomState = await maybeEndForDisconnect(room, data.kind, room.tenantId);
     return { ok: true, roomState };
   });
@@ -767,7 +890,14 @@ export const patientLeaveServerFn = createServerFn({ method: "POST" })
     const { room } = await resolveJoinTokenOrThrow(data.token, await clientKeyFromRequest());
     const participant = await loadPatientParticipant(room.id, room.tenantId);
     if (participant) await markParticipantGone(participant.id, room.tenantId, "left");
-    await recordAudit(room.id, "left", "patient_left", "patient", room.tenantId, room.appointmentId);
+    await recordAudit(
+      room.id,
+      "left",
+      "patient_left",
+      "patient",
+      room.tenantId,
+      room.appointmentId,
+    );
 
     let state = room.state;
     if (room.state === "active") {

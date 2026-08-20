@@ -2,7 +2,18 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { HeartPulse, Home, ChevronDown, Check, X, Loader2, Eye, EyeOff } from "lucide-react";
-import { sendOtpServerFn, verifyOtpServerFn, signupServerFn, checkEmailServerFn } from "../lib/auth";
+import {
+  sendOtpServerFn,
+  verifyOtpServerFn,
+  signupServerFn,
+  checkEmailServerFn,
+} from "../lib/auth";
+import {
+  PROFESSION_RESTAURANT,
+  MSG_RESTAURANT_NAME_LENGTH,
+  businessNameLabelForProfession,
+  validateBusinessName,
+} from "../lib/restaurant-availability";
 import bmtLogo from "../assets/bmt-logo.png";
 
 export const Route = createFileRoute("/signup")({
@@ -40,13 +51,17 @@ function getInitialPlan(param: string | undefined): string {
   if (!param) return "Basic";
   const p = param.toLowerCase().trim();
   if (p.includes("999") || p.includes("solo") || p.includes("basic")) return "Basic";
-  if (p.includes("1499") || p.includes("1,499") || p.includes("clinic") || p.includes("premium")) return "Premium";
+  if (p.includes("1499") || p.includes("1,499") || p.includes("clinic") || p.includes("premium"))
+    return "Premium";
   if (p.includes("hospital") || p.includes("custom") || p.includes("enterprise")) return "Hospital";
   return "Basic";
 }
 
 function getBusinessNameLabel(profession: string): string {
   switch (profession) {
+    case PROFESSION_RESTAURANT:
+      // Sourced from the pure helper so the label cannot drift from Req 1.2.
+      return businessNameLabelForProfession(profession);
     case "Beauty and wellness":
       return "Salon / Spa Name";
     case "Fitness Gym etc":
@@ -77,7 +92,7 @@ function SignupPage() {
       ? "Small Group (2-5 providers)"
       : initialPlan === "Hospital"
         ? "Large Clinic (16-50 providers)"
-        : "Solo Practice (1 provider)"
+        : "Solo Practice (1 provider)",
   );
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -199,7 +214,10 @@ function SignupPage() {
         setEmailError("Email already registered");
       } else if (err.message === "Phone number already registered") {
         setPhoneError("Phone number already registered");
-      } else if (err.message?.includes("already registered") || err.message?.includes("already exists")) {
+      } else if (
+        err.message?.includes("already registered") ||
+        err.message?.includes("already exists")
+      ) {
         setEmailError("Email or phone number already registered");
       } else {
         setFormError(err.message || "Registration failed");
@@ -234,7 +252,7 @@ function SignupPage() {
           setIsOtpModalOpen(false);
           setVerificationSuccess(false);
           setOtpValues(["", "", "", ""]);
-          
+
           if (pendingSignup) {
             performSignup();
           }
@@ -267,6 +285,17 @@ function SignupPage() {
     setPhoneError("");
     setFormError("");
     setFormSuccess("");
+
+    // Restaurant signups additionally require a 1-100 character trimmed
+    // business name before any request is sent (Req 1.6). Entered values are
+    // left untouched so the guest can correct just this field.
+    if (profession === PROFESSION_RESTAURANT) {
+      const nameCheck = validateBusinessName(clinicName, profession);
+      if (!nameCheck.ok) {
+        setFormError(nameCheck.errors[0]?.message || MSG_RESTAURANT_NAME_LENGTH);
+        return;
+      }
+    }
 
     setLoading(true);
     try {
@@ -310,7 +339,10 @@ function SignupPage() {
     <div className="relative flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-8 md:px-6">
       {/* Back button/Logo at top left with Home icon */}
       <div className="absolute top-6 left-6">
-        <Link to="/" className="group flex items-center gap-1.5 text-zinc-600 hover:text-zinc-950 transition-colors">
+        <Link
+          to="/"
+          className="group flex items-center gap-1.5 text-zinc-600 hover:text-zinc-950 transition-colors"
+        >
           <img src={bmtLogo} alt="Book MyTime Logo" className="h-12 w-auto object-contain" />
           <span className="mx-1.5 text-zinc-300">|</span>
           <Home className="size-3.5 text-zinc-400 group-hover:text-zinc-600 transition-colors" />
@@ -325,9 +357,7 @@ function SignupPage() {
           <div className="my-auto space-y-3">
             {/* Header */}
             <div className="text-center">
-              <h1 className="text-xl font-bold tracking-tight text-zinc-900">
-                Create Account
-              </h1>
+              <h1 className="text-xl font-bold tracking-tight text-zinc-900">Create Account</h1>
               <p className="mt-0.5 text-[11px] text-zinc-400">
                 Sign up to start sync'ing your healthcare workspace.
               </p>
@@ -449,7 +479,9 @@ function SignupPage() {
 
               {/* Profession Selection */}
               <div className="space-y-0.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider pl-1">Business Profession / Industry</label>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider pl-1">
+                  Business Profession / Industry
+                </label>
                 <select
                   value={profession}
                   onChange={(e) => setProfession(e.target.value)}
@@ -459,8 +491,11 @@ function SignupPage() {
                   <option value="Healthcare and medical">Healthcare & Medical</option>
                   <option value="Beauty and wellness">Beauty & Wellness</option>
                   <option value="Fitness Gym etc">Fitness & Gym</option>
-                  <option value="Professional services like law, consultant, real estate, CA">Professional Services (Law, Consultant, Real Estate, CA)</option>
+                  <option value="Professional services like law, consultant, real estate, CA">
+                    Professional Services (Law, Consultant, Real Estate, CA)
+                  </option>
                   <option value="Education institutions">Education Institutions</option>
+                  <option value="Restaurant and dining">Restaurant &amp; Dining</option>
                 </select>
               </div>
 
@@ -485,7 +520,9 @@ function SignupPage() {
 
               {/* Plan Selection Button Group */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider pl-1">Selected Plan</label>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider pl-1">
+                  Selected Plan
+                </label>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: "Basic", label: "Basic (₹999)" },
@@ -498,7 +535,8 @@ function SignupPage() {
                         setSelectedPlan(p.id);
                         if (p.id === "Basic") setPracticeSize("Solo Practice (1 provider)");
                         else if (p.id === "Premium") setPracticeSize("Small Group (2-5 providers)");
-                        else if (p.id === "Hospital") setPracticeSize("Large Clinic (16-50 providers)");
+                        else if (p.id === "Hospital")
+                          setPracticeSize("Large Clinic (16-50 providers)");
                       }}
                       className={`rounded-full py-2 text-[10px] sm:text-xs font-semibold border transition-all cursor-pointer ${
                         selectedPlan === p.id
@@ -572,10 +610,7 @@ function SignupPage() {
           {/* Footer Toggle */}
           <div className="pt-4 text-center text-xs text-zinc-400">
             Already registered?{" "}
-            <Link
-              to="/login"
-              className="font-semibold text-zinc-850 hover:underline"
-            >
+            <Link to="/login" className="font-semibold text-zinc-850 hover:underline">
               Log in
             </Link>
           </div>
@@ -667,7 +702,9 @@ function SignupPage() {
                   </div>
 
                   {otpError && (
-                    <p className="mt-1 mb-4 text-[10px] text-red-500 font-semibold px-4">{otpError}</p>
+                    <p className="mt-1 mb-4 text-[10px] text-red-500 font-semibold px-4">
+                      {otpError}
+                    </p>
                   )}
 
                   <p className="text-[10px] text-zinc-400">
@@ -711,7 +748,9 @@ function SignupPage() {
                       />
                     </svg>
                   </motion.div>
-                  <span className="text-xs font-bold text-emerald-600">Email Verified Successfully!</span>
+                  <span className="text-xs font-bold text-emerald-600">
+                    Email Verified Successfully!
+                  </span>
                 </div>
               )}
             </motion.div>

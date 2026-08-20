@@ -15,11 +15,14 @@ export const transporter = nodemailer.createTransport({
 
 // Verify SMTP connection on startup (non-blocking)
 if (typeof window === "undefined") {
-  transporter.verify().then(() => {
-    console.log("[Email] ✅ SMTP connection verified successfully");
-  }).catch((err) => {
-    console.error("[Email] ❌ SMTP connection failed:", err.message);
-  });
+  transporter
+    .verify()
+    .then(() => {
+      console.log("[Email] ✅ SMTP connection verified successfully");
+    })
+    .catch((err) => {
+      console.error("[Email] ❌ SMTP connection failed:", err.message);
+    });
 }
 
 /** Shared logo URL hosted on Cloudinary CDN */
@@ -50,10 +53,7 @@ function emailFooter() {
   `;
 }
 
-export async function sendOtpEmail(
-  email: string,
-  code: string
-): Promise<void> {
+export async function sendOtpEmail(email: string, code: string): Promise<void> {
   const bcc = process.env.EMAIL_BCC || "";
 
   await transporter.sendMail({
@@ -87,7 +87,10 @@ export async function sendOtpEmail(
             <div style="text-align: center; margin: 0 0 16px;">
               <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 auto; border-collapse: separate; border-spacing: 8px 0;">
                 <tr>
-                  ${code.split("").map(digit => `
+                  ${code
+                    .split("")
+                    .map(
+                      (digit) => `
                   <td>
                     <div style="
                       width: 56px;
@@ -103,7 +106,9 @@ export async function sendOtpEmail(
                       font-family: 'Poppins', 'Segoe UI', Arial, sans-serif;
                       letter-spacing: 0;
                     ">${digit}</div>
-                  </td>`).join("")}
+                  </td>`,
+                    )
+                    .join("")}
                 </tr>
               </table>
             </div>
@@ -260,7 +265,6 @@ export async function sendDemoAdminNotificationEmail(data: DemoBookingMailData):
   });
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Billing / Subscription (AutoPay) notifications
 // ─────────────────────────────────────────────────────────────────────────────
@@ -298,7 +302,7 @@ export async function sendBillingNotificationEmail(params: {
         <tr>
           <td style="padding: 8px 0; color: #71717a; font-size: 12px;">${d.label}</td>
           <td style="padding: 8px 0; color: #18181b; font-size: 12px; font-weight: 600; text-align: right;">${d.value}</td>
-        </tr>`
+        </tr>`,
     )
     .join("");
 

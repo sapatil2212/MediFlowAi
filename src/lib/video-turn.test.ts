@@ -38,8 +38,7 @@ import {
 //     a generated secret.
 // ───────────────────────────────────────────────────────────────────────────
 
-const SECRET_CHARS =
-  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_".split("");
+const SECRET_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_".split("");
 
 /** Long enough that a 28-char base64 HMAC cannot contain it as a substring. */
 const arbSecret = fc
@@ -53,10 +52,7 @@ const TURN_URL_POOL = [
   "turn:10.0.0.7:3478",
 ];
 
-const STUN_URL_POOL = [
-  "stun:turn.example.com:3478",
-  "stun:stun.internal.example.com:3478",
-];
+const STUN_URL_POOL = ["stun:turn.example.com:3478", "stun:stun.internal.example.com:3478"];
 
 const arbTurnUrls = fc.uniqueArray(fc.constantFrom(...TURN_URL_POOL), {
   minLength: 1,
@@ -151,9 +147,7 @@ test("Property 11.1: mintTurnCredential expires strictly in the future with ttl 
         expect(credential.expiresAtUnix).toBeGreaterThan(nowUnix);
 
         // Req 8.3: the ceiling holds no matter what the environment asked for.
-        expect(credential.ttlSeconds).toBeLessThanOrEqual(
-          MAX_TURN_CREDENTIAL_TTL_SECONDS,
-        );
+        expect(credential.ttlSeconds).toBeLessThanOrEqual(MAX_TURN_CREDENTIAL_TTL_SECONDS);
         expect(credential.ttlSeconds).toBeGreaterThanOrEqual(1);
         expect(Number.isSafeInteger(credential.ttlSeconds)).toBe(true);
 
@@ -258,17 +252,10 @@ describe("parseTurnUsername malformed examples", () => {
 
 test("Property 11.3: deriveTurnPassword is deterministic for equal (username, secret)", () => {
   fc.assert(
-    fc.property(
-      arbExpiryUnix,
-      arbParticipantId,
-      arbSecret,
-      (expiryUnix, id, secret) => {
-        const username = buildTurnUsername(expiryUnix, id);
-        expect(deriveTurnPassword(username, secret)).toBe(
-          deriveTurnPassword(username, secret),
-        );
-      },
-    ),
+    fc.property(arbExpiryUnix, arbParticipantId, arbSecret, (expiryUnix, id, secret) => {
+      const username = buildTurnUsername(expiryUnix, id);
+      expect(deriveTurnPassword(username, secret)).toBe(deriveTurnPassword(username, secret));
+    }),
     { numRuns: 200 },
   );
 });
@@ -278,9 +265,7 @@ test("Property 11.3: deriveTurnPassword differs when the shared secret differs",
     fc.property(
       arbExpiryUnix,
       arbParticipantId,
-      fc
-        .tuple(arbSecret, arbSecret)
-        .filter(([a, b]) => a !== b),
+      fc.tuple(arbSecret, arbSecret).filter(([a, b]) => a !== b),
       (expiryUnix, id, [secretA, secretB]) => {
         const username = buildTurnUsername(expiryUnix, id);
         expect(deriveTurnPassword(username, secretA)).not.toBe(
@@ -618,10 +603,7 @@ describe("buildIceConfiguration", () => {
     expect("username" in stunEntry).toBe(false);
     expect("credential" in stunEntry).toBe(false);
 
-    expect(turnEntry.urls).toEqual([
-      "turn:turn.example.com:3478",
-      "turns:turn.example.com:5349",
-    ]);
+    expect(turnEntry.urls).toEqual(["turn:turn.example.com:3478", "turns:turn.example.com:5349"]);
     expect(turnEntry.username).toBe("1700000000:participant-abc");
     expect(turnEntry.credential).toBe("eby2Xebi8FWeGr5bSzWk7pPFeJg=");
   });

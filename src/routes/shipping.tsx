@@ -25,14 +25,16 @@ function ShippingPage() {
           </p>
 
           <p className="mb-4">
-            This Shipping &amp; Delivery Policy explains how BookMyTime delivers its digital services after
-            a successful purchase.
+            This Shipping &amp; Delivery Policy explains how BookMyTime delivers its digital
+            services after a successful purchase.
           </p>
           <p className="mb-4">
-            BookMyTime is a cloud-based Software-as-a-Service (SaaS) platform. Since our services are
-            entirely digital, no physical products are shipped.
+            BookMyTime is a cloud-based Software-as-a-Service (SaaS) platform. Since our services
+            are entirely digital, no physical products are shipped.
           </p>
-          <p className="mb-6">By purchasing a subscription, you agree to this Shipping &amp; Delivery Policy.</p>
+          <p className="mb-6">
+            By purchasing a subscription, you agree to this Shipping &amp; Delivery Policy.
+          </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">1. Nature of Delivery</h2>
           <p>BookMyTime provides digital services including:</p>
@@ -56,8 +58,8 @@ function ShippingPage() {
             <li>Activation usually occurs within a few minutes.</li>
           </ul>
           <p className="mb-6">
-            In rare circumstances involving payment verification or technical issues, activation may take
-            up to 24 hours.
+            In rare circumstances involving payment verification or technical issues, activation may
+            take up to 24 hours.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">3. Free Trial</h2>
@@ -68,8 +70,8 @@ function ShippingPage() {
             </li>
             <li>No physical delivery is involved during the trial period.</li>
             <li>
-              If you choose to subscribe after the trial, premium features are activated digitally upon
-              successful payment.
+              If you choose to subscribe after the trial, premium features are activated digitally
+              upon successful payment.
             </li>
           </ul>
 
@@ -82,7 +84,9 @@ function ShippingPage() {
           </ul>
           <p className="mb-6">No installation media or physical package is sent.</p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">5. Subscription Confirmation</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            5. Subscription Confirmation
+          </h2>
           <p>After successful payment, you may receive:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Payment confirmation</li>
@@ -91,8 +95,8 @@ function ShippingPage() {
             <li>Account activation notification</li>
           </ul>
           <p className="mb-6">
-            These communications are sent to your registered email address and/or mobile number, where
-            applicable.
+            These communications are sent to your registered email address and/or mobile number,
+            where applicable.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">6. Delivery Time</h2>
@@ -101,7 +105,8 @@ function ShippingPage() {
             <li>Trial account activation: Immediate</li>
             <li>Paid subscription activation: Within a few minutes</li>
             <li>
-              Enterprise or custom plans: Within 1–2 business days, depending on configuration requirements
+              Enterprise or custom plans: Within 1–2 business days, depending on configuration
+              requirements
             </li>
           </ul>
 
@@ -119,7 +124,9 @@ function ShippingPage() {
             If activation is delayed beyond 24 hours, please contact our support team.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">8. Customer Responsibilities</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            8. Customer Responsibilities
+          </h2>
           <p>To ensure successful delivery of digital services, customers are responsible for:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Providing a valid email address.</li>
@@ -142,7 +149,8 @@ function ShippingPage() {
             <li>Circumstances beyond our reasonable control</li>
           </ul>
           <p className="mb-6">
-            We strive to minimize downtime and notify users of planned maintenance whenever possible.
+            We strive to minimize downtime and notify users of planned maintenance whenever
+            possible.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">10. Failed Activation</h2>
@@ -153,22 +161,25 @@ function ShippingPage() {
             <li>Contact our support team with your transaction details.</li>
           </ul>
           <p className="mb-6">
-            Our team will investigate and activate your subscription as quickly as possible if the payment
-            has been successfully received.
+            Our team will investigate and activate your subscription as quickly as possible if the
+            payment has been successfully received.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">11. Geographic Availability</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            11. Geographic Availability
+          </h2>
           <p className="mb-2">
             BookMyTime is accessible from most locations with an internet connection.
           </p>
           <p className="mb-6">
-            However, certain features or payment methods may vary depending on local laws, regulations, or
-            third-party service availability.
+            However, certain features or payment methods may vary depending on local laws,
+            regulations, or third-party service availability.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">12. Contact Us</h2>
           <p className="mb-2">
-            If you have any questions regarding service delivery or account activation, please contact us:
+            If you have any questions regarding service delivery or account activation, please
+            contact us:
           </p>
           <p className="mb-6">
             <strong className="text-zinc-900">BookMyTime Support</strong>
@@ -211,12 +222,13 @@ function ShippingPage() {
             Updated versions will be published on this page with the revised effective date.
           </p>
           <p className="mb-6">
-            Continued use of the Platform after such updates constitutes acceptance of the revised policy.
+            Continued use of the Platform after such updates constitutes acceptance of the revised
+            policy.
           </p>
 
           <p className="mb-6 text-sm text-zinc-500">
-            This Shipping &amp; Delivery Policy applies to all subscriptions and digital services purchased
-            directly through BookMyTime or its authorized payment partners.
+            This Shipping &amp; Delivery Policy applies to all subscriptions and digital services
+            purchased directly through BookMyTime or its authorized payment partners.
           </p>
         </div>
       </div>

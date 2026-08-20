@@ -16,7 +16,9 @@ async function main() {
     const query1 = await conn.query("SELECT * FROM Appointment WHERE tenantId = 'clinic-290547'");
     console.log("Appointment table rows:", query1);
 
-    const query2 = await conn.query("SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = 'clinic-290547'");
+    const query2 = await conn.query(
+      "SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = 'clinic-290547'",
+    );
     console.log("SQL Joined Query results:", query2);
   } catch (err) {
     console.error("Error:", err);

@@ -1,5 +1,5 @@
-const mariadb = require('mariadb');
-require('dotenv').config();
+const mariadb = require("mariadb");
+require("dotenv").config();
 
 async function run() {
   const pool = mariadb.createPool({
@@ -9,13 +9,16 @@ async function run() {
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     ssl: { rejectUnauthorized: false },
-    connectionLimit: 1
+    connectionLimit: 1,
   });
 
   try {
     const conn = await pool.getConnection();
-    const phone = '8830553868';
-    const users = await conn.query("SELECT id, name, email, phone, tenantId FROM User WHERE phone = ?", [phone]);
+    const phone = "8830553868";
+    const users = await conn.query(
+      "SELECT id, name, email, phone, tenantId FROM User WHERE phone = ?",
+      [phone],
+    );
     console.log("Users with phone:", phone);
     console.log(users);
 

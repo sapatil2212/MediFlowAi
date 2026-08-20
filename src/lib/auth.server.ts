@@ -14,7 +14,7 @@ export async function verifySession() {
        JOIN User u ON s.userId = u.id
        WHERE s.token = ? AND s.expiresAt > ?
        LIMIT 1`,
-      [token, new Date()]
+      [token, new Date()],
     );
     if (session) {
       return {
@@ -27,11 +27,17 @@ export async function verifySession() {
         tenantId: session.tenantId,
         subscriptionStatus: session.subscriptionStatus,
         subscriptionPlan: session.subscriptionPlan,
-        subscriptionExpiresAt: session.subscriptionExpiresAt instanceof Date ? session.subscriptionExpiresAt.toISOString() : session.subscriptionExpiresAt,
+        subscriptionExpiresAt:
+          session.subscriptionExpiresAt instanceof Date
+            ? session.subscriptionExpiresAt.toISOString()
+            : session.subscriptionExpiresAt,
         paymentAmount: session.paymentAmount,
         billingInterval: session.billingInterval,
         paymentMethod: session.paymentMethod,
-        createdAt: session.uCreatedAt instanceof Date ? session.uCreatedAt.toISOString() : session.uCreatedAt,
+        createdAt:
+          session.uCreatedAt instanceof Date
+            ? session.uCreatedAt.toISOString()
+            : session.uCreatedAt,
         profilePhoto: session.profilePhoto || null,
         role: "admin" as const,
         profession: session.profession || "Healthcare and medical",
@@ -53,7 +59,7 @@ export async function verifySession() {
        JOIN User u ON su.tenantId COLLATE utf8mb4_unicode_ci = u.tenantId COLLATE utf8mb4_unicode_ci
        WHERE ss.token = ? AND ss.expiresAt > ?
        LIMIT 1`,
-      [subToken, new Date()]
+      [subToken, new Date()],
     );
     if (subSession && subSession.isActive) {
       return {
@@ -66,11 +72,17 @@ export async function verifySession() {
         tenantId: subSession.tenantId,
         subscriptionStatus: subSession.subscriptionStatus,
         subscriptionPlan: subSession.subscriptionPlan,
-        subscriptionExpiresAt: subSession.subscriptionExpiresAt instanceof Date ? subSession.subscriptionExpiresAt.toISOString() : subSession.subscriptionExpiresAt,
+        subscriptionExpiresAt:
+          subSession.subscriptionExpiresAt instanceof Date
+            ? subSession.subscriptionExpiresAt.toISOString()
+            : subSession.subscriptionExpiresAt,
         paymentAmount: subSession.paymentAmount,
         billingInterval: subSession.billingInterval,
         paymentMethod: subSession.paymentMethod,
-        createdAt: subSession.uCreatedAt instanceof Date ? subSession.uCreatedAt.toISOString() : subSession.uCreatedAt,
+        createdAt:
+          subSession.uCreatedAt instanceof Date
+            ? subSession.uCreatedAt.toISOString()
+            : subSession.uCreatedAt,
         role: subSession.role as "reception" | "doctor",
         doctorId: subSession.doctorId,
         profession: subSession.profession || "Healthcare and medical",
@@ -93,7 +105,7 @@ export async function verifySession() {
        JOIN User u ON l.tenantId COLLATE utf8mb4_unicode_ci = u.tenantId COLLATE utf8mb4_unicode_ci
        WHERE ls.token = ? AND ls.expiresAt > ?
        LIMIT 1`,
-      [locToken, new Date()]
+      [locToken, new Date()],
     );
     if (locSession && locSession.isActive) {
       return {
@@ -106,11 +118,17 @@ export async function verifySession() {
         tenantId: locSession.tenantId,
         subscriptionStatus: locSession.subscriptionStatus,
         subscriptionPlan: locSession.subscriptionPlan,
-        subscriptionExpiresAt: locSession.subscriptionExpiresAt instanceof Date ? locSession.subscriptionExpiresAt.toISOString() : locSession.subscriptionExpiresAt,
+        subscriptionExpiresAt:
+          locSession.subscriptionExpiresAt instanceof Date
+            ? locSession.subscriptionExpiresAt.toISOString()
+            : locSession.subscriptionExpiresAt,
         paymentAmount: locSession.paymentAmount,
         billingInterval: locSession.billingInterval,
         paymentMethod: locSession.paymentMethod,
-        createdAt: locSession.uCreatedAt instanceof Date ? locSession.uCreatedAt.toISOString() : locSession.uCreatedAt,
+        createdAt:
+          locSession.uCreatedAt instanceof Date
+            ? locSession.uCreatedAt.toISOString()
+            : locSession.uCreatedAt,
         role: "location" as const,
         locationId: locSession.lid,
         locationName: locSession.locName,

@@ -4,12 +4,7 @@ import { verifyAdminSession } from "./admin.server";
 import { execute, query } from "./db";
 import { sendDemoAdminNotificationEmail, sendDemoConfirmationEmail } from "./email";
 
-export type DemoAppointmentStatus =
-  | "New"
-  | "Contacted"
-  | "Scheduled"
-  | "Completed"
-  | "Cancelled";
+export type DemoAppointmentStatus = "New" | "Contacted" | "Scheduled" | "Completed" | "Cancelled";
 
 type DemoAppointmentPayload = {
   name: string;
@@ -80,7 +75,7 @@ export const createDemoAppointmentServerFn = createServerFn({ method: "POST" })
         data.preferredTime.trim(),
         data.preferredMode.trim(),
         data.message?.trim() || null,
-      ]
+      ],
     );
 
     const mailData = {
@@ -102,13 +97,12 @@ export const createDemoAppointmentServerFn = createServerFn({ method: "POST" })
     return { success: true, id, referenceId };
   });
 
-export const getDemoAppointmentsServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const admin = await verifyAdminSession();
-    if (!admin) throw new Error("Unauthorized");
+export const getDemoAppointmentsServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const admin = await verifyAdminSession();
+  if (!admin) throw new Error("Unauthorized");
 
-    return query<any>(
-      `SELECT 
+  return query<any>(
+    `SELECT 
         id,
         referenceId,
         name,
@@ -129,9 +123,9 @@ export const getDemoAppointmentsServerFn = createServerFn({ method: "GET" })
         createdAt,
         updatedAt
        FROM DemoAppointment
-       ORDER BY createdAt DESC`
-    );
-  });
+       ORDER BY createdAt DESC`,
+  );
+});
 
 export const updateDemoAppointmentServerFn = createServerFn({ method: "POST" })
   .validator((data: { id: string; status: DemoAppointmentStatus; adminNotes?: string }) => {
@@ -145,9 +139,7 @@ export const updateDemoAppointmentServerFn = createServerFn({ method: "POST" })
     if (!admin) throw new Error("Unauthorized");
 
     const shouldSetLastContacted =
-      data.status === "Contacted" ||
-      data.status === "Scheduled" ||
-      data.status === "Completed";
+      data.status === "Contacted" || data.status === "Scheduled" || data.status === "Completed";
 
     await execute(
       `UPDATE DemoAppointment
@@ -156,7 +148,7 @@ export const updateDemoAppointmentServerFn = createServerFn({ method: "POST" })
            lastContactedAt = ${shouldSetLastContacted ? "NOW()" : "lastContactedAt"},
            updatedAt = NOW()
        WHERE id = ?`,
-      [data.status, data.adminNotes?.trim() || null, data.id]
+      [data.status, data.adminNotes?.trim() || null, data.id],
     );
 
     return { success: true };

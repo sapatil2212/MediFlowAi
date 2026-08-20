@@ -31,7 +31,7 @@ import {
   UserCheck,
   ListFilter,
   Sparkles,
-  Save
+  Save,
 } from "lucide-react";
 import {
   getWATemplatesServerFn,
@@ -62,12 +62,21 @@ import {
 interface WhatsAppHubProps {
   user: any;
   showToast: (type: "success" | "error" | "info", message: string) => void;
-  setConfirmDialog: (dialog: { open: boolean; title: string; message: string; onConfirm: () => void } | null) => void;
+  setConfirmDialog: (
+    dialog: { open: boolean; title: string; message: string; onConfirm: () => void } | null,
+  ) => void;
   canOperate?: boolean; // whether the account role has operate permission (vs view_only)
 }
 
-export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOperate = true }: WhatsAppHubProps) {
-  const [activeSubTab, setActiveSubTab] = useState<"dashboard" | "templates" | "campaigns" | "auto-reply" | "connection">("dashboard");
+export default function WhatsAppHub({
+  user,
+  showToast,
+  setConfirmDialog,
+  canOperate = true,
+}: WhatsAppHubProps) {
+  const [activeSubTab, setActiveSubTab] = useState<
+    "dashboard" | "templates" | "campaigns" | "auto-reply" | "connection"
+  >("dashboard");
 
   // Connection & polling states
   const [waStatus, setWaStatus] = useState<string>("DISCONNECTED");
@@ -107,7 +116,12 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
   const convBottomRef = useRef<HTMLDivElement>(null);
 
   // General Hub stats
-  const [stats, setStats] = useState({ totalCampaigns: 0, totalSent: 0, totalFailed: 0, activeAutoReplies: 0 });
+  const [stats, setStats] = useState({
+    totalCampaigns: 0,
+    totalSent: 0,
+    totalFailed: 0,
+    activeAutoReplies: 0,
+  });
   const [loadingStats, setLoadingStats] = useState(false);
 
   // Single Quick-Send state
@@ -132,9 +146,12 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
   // Poll status depending on active state
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(() => {
-      fetchStatus();
-    }, (waStatus === "CONNECTING" || waStatus === "QR_READY") ? 3000 : 10000);
+    const interval = setInterval(
+      () => {
+        fetchStatus();
+      },
+      waStatus === "CONNECTING" || waStatus === "QR_READY" ? 3000 : 10000,
+    );
     return () => clearInterval(interval);
   }, [waStatus]);
 
@@ -165,7 +182,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
     try {
       const res = await getWAAIStatusServerFn();
       setAiEnabled(res.aiEnabled);
-    } catch (e) { /* silent */ }
+    } catch (e) {
+      /* silent */
+    }
   };
 
   const loadConversations = async () => {
@@ -173,7 +192,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
     try {
       const rows = await getWAConversationsServerFn();
       setConversations(rows);
-    } catch (e) { /* silent */ } finally {
+    } catch (e) {
+      /* silent */
+    } finally {
       setLoadingConversations(false);
     }
   };
@@ -185,7 +206,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
       const rows = await getWAConversationHistoryServerFn({ data: { phone } });
       setConvHistory(rows);
       setTimeout(() => convBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-    } catch (e) { /* silent */ } finally {
+    } catch (e) {
+      /* silent */
+    } finally {
       setLoadingConvHistory(false);
     }
   };
@@ -195,7 +218,10 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
     try {
       await toggleWAAIReplyServerFn({ data: { enable } });
       setAiEnabled(enable);
-      showToast("success", enable ? "🤖 AI Smart Reply enabled!" : "Switched to keyword rules mode.");
+      showToast(
+        "success",
+        enable ? "🤖 AI Smart Reply enabled!" : "Switched to keyword rules mode.",
+      );
       if (enable) loadConversations();
     } catch (e: any) {
       showToast("error", "Failed to toggle AI: " + e.message);
@@ -275,12 +301,11 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
     }
   };
 
-  
   const handleStartCampaign = async (id: string) => {
     try {
       await startWACampaignServerFn({ data: id });
       showToast("success", "Campaign launched! Message sending enqueued in queue.");
-      
+
       const campaignsList = await getWACampaignsServerFn();
       setCampaigns(campaignsList);
       const freshCampaign = campaignsList.find((c: any) => c.id === id);
@@ -298,7 +323,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
     try {
       await pauseWACampaignServerFn({ data: id });
       showToast("success", "Campaign paused in the microservice.");
-      
+
       const campaignsList = await getWACampaignsServerFn();
       setCampaigns(campaignsList);
       const freshCampaign = campaignsList.find((c: any) => c.id === id);
@@ -314,7 +339,8 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
     setConfirmDialog({
       open: true,
       title: "Delete Campaign",
-      message: "Are you sure you want to delete this campaign? This will delete all recipient logs and clear any remaining messages from queue.",
+      message:
+        "Are you sure you want to delete this campaign? This will delete all recipient logs and clear any remaining messages from queue.",
       onConfirm: async () => {
         try {
           await deleteWACampaignServerFn({ data: id });
@@ -324,7 +350,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
         } catch (err: any) {
           showToast("error", "Delete failed: " + err.message);
         }
-      }
+      },
     });
   };
 
@@ -366,8 +392,8 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
           matchType: editingAutoReply.matchType,
           replyMessage: editingAutoReply.replyMessage.trim(),
           isActive: editingAutoReply.isActive ? 1 : 0,
-          priority: parseInt(editingAutoReply.priority) || 0
-        }
+          priority: parseInt(editingAutoReply.priority) || 0,
+        },
       });
       showToast("success", "Auto-reply rule saved!");
       setEditingAutoReply(null);
@@ -390,7 +416,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
         } catch (err: any) {
           showToast("error", "Delete failed: " + err.message);
         }
-      }
+      },
     });
   };
 
@@ -405,18 +431,25 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
           <div>
             <h2 className="text-base font-bold text-zinc-900 flex items-center gap-2">
               WhatsApp Broadcast &amp; Automations Hub
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold border ${
-                waStatus === "CONNECTED"
-                  ? "bg-emerald-50 text-emerald-600 border-emerald-100"
-                  : waStatus === "QR_READY" || waStatus === "CONNECTING"
-                    ? "bg-amber-50 text-amber-600 border-amber-100"
-                    : "bg-red-50 text-red-600 border-red-100"
-              }`}>
-                {waStatus === "CONNECTED" ? "Connected" : waStatus === "QR_READY" ? "Scan QR Code" : "Disconnected"}
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold border ${
+                  waStatus === "CONNECTED"
+                    ? "bg-emerald-50 text-emerald-600 border-emerald-100"
+                    : waStatus === "QR_READY" || waStatus === "CONNECTING"
+                      ? "bg-amber-50 text-amber-600 border-amber-100"
+                      : "bg-red-50 text-red-600 border-red-100"
+                }`}
+              >
+                {waStatus === "CONNECTED"
+                  ? "Connected"
+                  : waStatus === "QR_READY"
+                    ? "Scan QR Code"
+                    : "Disconnected"}
               </span>
             </h2>
             <p className="text-xs text-zinc-500 font-medium mt-0.5">
-              Build local templates, launch anti-ban broad broadcast campaigns, and configure keyword-based auto-replies.
+              Build local templates, launch anti-ban broad broadcast campaigns, and configure
+              keyword-based auto-replies.
             </p>
           </div>
         </div>
@@ -441,7 +474,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                   setEditingAutoReply(null);
                 }}
                 className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[10px] font-black transition-all cursor-pointer ${
-                  activeSubTab === t.id ? "bg-white text-zinc-950 shadow-sm" : "text-zinc-500 hover:text-zinc-800"
+                  activeSubTab === t.id
+                    ? "bg-white text-zinc-950 shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-800"
                 }`}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -467,34 +502,58 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
             <div className="md:col-span-2 grid gap-4 sm:grid-cols-2">
               <div className="bg-white border border-zinc-200 rounded-3xl p-5 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Sent Messages</span>
-                  <p className="text-3xl font-black text-zinc-800 tracking-tight mt-1">{stats.totalSent}</p>
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                    Sent Messages
+                  </span>
+                  <p className="text-3xl font-black text-zinc-800 tracking-tight mt-1">
+                    {stats.totalSent}
+                  </p>
                 </div>
-                <div className="h-10 w-10 bg-brand/5 border border-brand/10 text-brand rounded-full flex items-center justify-center font-bold">✓</div>
+                <div className="h-10 w-10 bg-brand/5 border border-brand/10 text-brand rounded-full flex items-center justify-center font-bold">
+                  ✓
+                </div>
               </div>
 
               <div className="bg-white border border-zinc-200 rounded-3xl p-5 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Campaigns Dispatched</span>
-                  <p className="text-3xl font-black text-zinc-800 tracking-tight mt-1">{stats.totalCampaigns}</p>
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                    Campaigns Dispatched
+                  </span>
+                  <p className="text-3xl font-black text-zinc-800 tracking-tight mt-1">
+                    {stats.totalCampaigns}
+                  </p>
                 </div>
-                <div className="h-10 w-10 bg-brand/5 border border-brand/10 text-brand rounded-full flex items-center justify-center font-bold">🚀</div>
+                <div className="h-10 w-10 bg-brand/5 border border-brand/10 text-brand rounded-full flex items-center justify-center font-bold">
+                  🚀
+                </div>
               </div>
 
               <div className="bg-white border border-zinc-200 rounded-3xl p-5 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Active Auto-Replies</span>
-                  <p className="text-3xl font-black text-zinc-800 tracking-tight mt-1">{stats.activeAutoReplies}</p>
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                    Active Auto-Replies
+                  </span>
+                  <p className="text-3xl font-black text-zinc-800 tracking-tight mt-1">
+                    {stats.activeAutoReplies}
+                  </p>
                 </div>
-                <div className="h-10 w-10 bg-brand/5 border border-brand/10 text-brand rounded-full flex items-center justify-center font-bold">🤖</div>
+                <div className="h-10 w-10 bg-brand/5 border border-brand/10 text-brand rounded-full flex items-center justify-center font-bold">
+                  🤖
+                </div>
               </div>
 
               <div className="bg-white border border-zinc-200 rounded-3xl p-5 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Failed In Queue</span>
-                  <p className="text-3xl font-black text-red-600 tracking-tight mt-1">{stats.totalFailed}</p>
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                    Failed In Queue
+                  </span>
+                  <p className="text-3xl font-black text-red-600 tracking-tight mt-1">
+                    {stats.totalFailed}
+                  </p>
                 </div>
-                <div className="h-10 w-10 bg-red-50 text-red-500 rounded-full flex items-center justify-center font-bold">✗</div>
+                <div className="h-10 w-10 bg-red-50 text-red-500 rounded-full flex items-center justify-center font-bold">
+                  ✗
+                </div>
               </div>
             </div>
 
@@ -502,12 +561,16 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
             <div className="bg-white border border-zinc-200 rounded-3xl p-5 space-y-4">
               <div>
                 <h3 className="text-xs font-bold text-zinc-900">Quick Message Dispatcher</h3>
-                <p className="text-[10px] text-zinc-400 font-semibold">Instantly test send a message to a patient number</p>
+                <p className="text-[10px] text-zinc-400 font-semibold">
+                  Instantly test send a message to a patient number
+                </p>
               </div>
 
               <form onSubmit={handleQuickSend} className="space-y-3">
                 <div>
-                  <label className="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Phone Number</label>
+                  <label className="text-[9px] font-bold text-zinc-400 uppercase block mb-1">
+                    Phone Number
+                  </label>
                   <input
                     type="text"
                     placeholder="+919876543210"
@@ -517,7 +580,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold text-zinc-400 uppercase block mb-1">Message Body</label>
+                  <label className="text-[9px] font-bold text-zinc-400 uppercase block mb-1">
+                    Message Body
+                  </label>
                   <textarea
                     rows={3}
                     placeholder="Hello, this is a quick message."
@@ -531,11 +596,17 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                   disabled={sendingQuick || waStatus !== "CONNECTED" || !canOperate}
                   className="w-full rounded-full bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-bold py-2 cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1.5"
                 >
-                  {sendingQuick ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3 w-3" />}
+                  {sendingQuick ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Send className="h-3 w-3" />
+                  )}
                   Send Quick Message
                 </button>
                 {waStatus !== "CONNECTED" && (
-                  <p className="text-[8px] text-red-500 text-center font-bold">⚠️ Device connection is required to send messages</p>
+                  <p className="text-[8px] text-red-500 text-center font-bold">
+                    ⚠️ Device connection is required to send messages
+                  </p>
                 )}
               </form>
             </div>
@@ -563,7 +634,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                 <div className="flex justify-between items-center border-b border-zinc-100 pb-3">
                   <div>
                     <h3 className="text-xs font-bold text-zinc-900">Saved Templates</h3>
-                    <p className="text-[10px] text-zinc-400 font-semibold">Reusable templates with variables support</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">
+                      Reusable templates with variables support
+                    </p>
                   </div>
                   <button
                     onClick={() => setEditingTemplate({})}
@@ -581,13 +654,22 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                 ) : templates.length > 0 ? (
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {templates.map((tpl) => (
-                      <div key={tpl.id} className="border border-zinc-200 rounded-2xl p-4 flex flex-col justify-between hover:border-brand/35 transition-all">
+                      <div
+                        key={tpl.id}
+                        className="border border-zinc-200 rounded-2xl p-4 flex flex-col justify-between hover:border-brand/35 transition-all"
+                      >
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-bold text-zinc-850 truncate max-w-[150px]">{tpl.name}</h4>
-                            <span className="rounded-full bg-brand/10 border border-brand/20 px-2 py-0.5 text-[8px] font-black text-brand uppercase">{tpl.category}</span>
+                            <h4 className="text-xs font-bold text-zinc-850 truncate max-w-[150px]">
+                              {tpl.name}
+                            </h4>
+                            <span className="rounded-full bg-brand/10 border border-brand/20 px-2 py-0.5 text-[8px] font-black text-brand uppercase">
+                              {tpl.category}
+                            </span>
                           </div>
-                          <p className="text-[10px] text-zinc-400 font-semibold line-clamp-3 leading-relaxed">{tpl.bodyText}</p>
+                          <p className="text-[10px] text-zinc-400 font-semibold line-clamp-3 leading-relaxed">
+                            {tpl.bodyText}
+                          </p>
                         </div>
                         <div className="flex gap-1.5 mt-4 pt-3 border-t border-zinc-100 justify-end">
                           <button
@@ -610,7 +692,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                                   } catch (err: any) {
                                     showToast("error", "Delete failed: " + err.message);
                                   }
-                                }
+                                },
                               });
                             }}
                             className="rounded-full border border-red-200 hover:bg-red-50 px-3 py-1 text-[10px] font-bold text-red-500 cursor-pointer flex items-center gap-1"
@@ -625,7 +707,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                   <div className="text-center py-10 border border-dashed border-zinc-200 rounded-2xl">
                     <FileText className="h-8 w-8 text-zinc-350 mx-auto mb-2" />
                     <p className="text-xs font-bold text-zinc-700">No Templates Created</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold mt-1">Create templates with variables to launch broadcast campaigns.</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                      Create templates with variables to launch broadcast campaigns.
+                    </p>
                   </div>
                 )}
               </div>
@@ -656,20 +740,23 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                   <div>
                     <h3 className="text-xs font-bold text-zinc-900 flex items-center gap-2">
                       {selectedCampaign.name}
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[8.5px] font-black uppercase border ${
-                        selectedCampaign.status === "completed"
-                          ? "bg-emerald-50 text-emerald-600 border-emerald-100"
-                          : selectedCampaign.status === "sending"
-                            ? "bg-blue-50 text-blue-600 border-blue-100"
-                            : selectedCampaign.status === "paused"
-                              ? "bg-amber-50 text-amber-600 border-amber-100"
-                              : "bg-zinc-50 text-zinc-600 border-zinc-100"
-                      }`}>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[8.5px] font-black uppercase border ${
+                          selectedCampaign.status === "completed"
+                            ? "bg-emerald-50 text-emerald-600 border-emerald-100"
+                            : selectedCampaign.status === "sending"
+                              ? "bg-blue-50 text-blue-600 border-blue-100"
+                              : selectedCampaign.status === "paused"
+                                ? "bg-amber-50 text-amber-600 border-amber-100"
+                                : "bg-zinc-50 text-zinc-600 border-zinc-100"
+                        }`}
+                      >
                         {selectedCampaign.status}
                       </span>
                     </h3>
                     <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
-                      Template: {selectedCampaign.templateName || "Quick Text"} · Delays: {selectedCampaign.minDelaySec}–{selectedCampaign.maxDelaySec}s
+                      Template: {selectedCampaign.templateName || "Quick Text"} · Delays:{" "}
+                      {selectedCampaign.minDelaySec}–{selectedCampaign.maxDelaySec}s
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -694,14 +781,17 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                     <div>
                       <p className="text-[9px] font-bold text-zinc-400 uppercase">Progress</p>
                       <p className="text-sm font-black text-zinc-800 mt-0.5">
-                        {selectedCampaign.sentCount + selectedCampaign.failedCount} / {selectedCampaign.totalRecipients} processed
+                        {selectedCampaign.sentCount + selectedCampaign.failedCount} /{" "}
+                        {selectedCampaign.totalRecipients} processed
                       </p>
                     </div>
                     {/* Progress Bar */}
                     <div className="w-32 bg-zinc-200 h-2.5 rounded-full overflow-hidden">
                       <div
                         className="bg-brand h-full rounded-full transition-all duration-350"
-                        style={{ width: `${(selectedCampaign.totalRecipients > 0 ? ((selectedCampaign.sentCount + selectedCampaign.failedCount) / selectedCampaign.totalRecipients) * 100 : 0)}%` }}
+                        style={{
+                          width: `${selectedCampaign.totalRecipients > 0 ? ((selectedCampaign.sentCount + selectedCampaign.failedCount) / selectedCampaign.totalRecipients) * 100 : 0}%`,
+                        }}
                       />
                     </div>
                   </div>
@@ -746,7 +836,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
 
                 {/* Recipient status grid */}
                 <div className="space-y-2">
-                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Recipients List &amp; Live Delivery Status</p>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                    Recipients List &amp; Live Delivery Status
+                  </p>
                   {loadingRecipients ? (
                     <div className="text-center py-10">
                       <Loader2 className="h-5 w-5 animate-spin text-zinc-400 mx-auto" />
@@ -769,18 +861,22 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                               <td className="p-3 font-mono">{rec.phone}</td>
                               <td className="p-3 font-bold text-zinc-800">{rec.name || "—"}</td>
                               <td className="p-3">
-                                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase border ${
-                                  rec.status === "sent"
-                                    ? "bg-emerald-50 text-emerald-600 border-emerald-100"
-                                    : rec.status === "failed"
-                                      ? "bg-red-50 text-red-600 border-red-100"
-                                      : "bg-amber-50 text-amber-600 border-amber-100"
-                                }`}>
+                                <span
+                                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase border ${
+                                    rec.status === "sent"
+                                      ? "bg-emerald-50 text-emerald-600 border-emerald-100"
+                                      : rec.status === "failed"
+                                        ? "bg-red-50 text-red-600 border-red-100"
+                                        : "bg-amber-50 text-amber-600 border-amber-100"
+                                  }`}
+                                >
                                   {rec.status}
                                 </span>
                               </td>
                               <td className="p-3 text-[10px] text-zinc-400">
-                                {rec.sentAt ? new Date(rec.sentAt).toLocaleString("en-IN") : "Pending"}
+                                {rec.sentAt
+                                  ? new Date(rec.sentAt).toLocaleString("en-IN")
+                                  : "Pending"}
                               </td>
                               <td className="p-3 text-[10px] text-red-500 font-semibold max-w-[200px] truncate">
                                 {rec.errorMsg || "—"}
@@ -798,7 +894,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                 <div className="flex justify-between items-center border-b border-zinc-100 pb-3">
                   <div>
                     <h3 className="text-xs font-bold text-zinc-900">Campaigns History</h3>
-                    <p className="text-[10px] text-zinc-400 font-semibold">Monitor progress and trigger pending campaigns</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold">
+                      Monitor progress and trigger pending campaigns
+                    </p>
                   </div>
                   <button
                     onClick={() => setCreatingCampaign(true)}
@@ -830,24 +928,34 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                           <tr key={camp.id} className="hover:bg-zinc-50/50">
                             <td className="p-3">
                               <p className="font-bold text-zinc-800">{camp.name}</p>
-                              <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">Template: {camp.templateName || "Quick Text"}</p>
+                              <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">
+                                Template: {camp.templateName || "Quick Text"}
+                              </p>
                             </td>
                             <td className="p-3">
-                              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase border ${
-                                camp.status === "completed"
-                                  ? "bg-emerald-50 text-emerald-600 border-emerald-100"
-                                  : camp.status === "sending"
-                                    ? "bg-blue-50 text-blue-600 border-blue-100"
-                                    : camp.status === "paused"
-                                      ? "bg-amber-50 text-amber-600 border-amber-100"
-                                      : "bg-zinc-50 text-zinc-600 border-zinc-150"
-                              }`}>
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase border ${
+                                  camp.status === "completed"
+                                    ? "bg-emerald-50 text-emerald-600 border-emerald-100"
+                                    : camp.status === "sending"
+                                      ? "bg-blue-50 text-blue-600 border-blue-100"
+                                      : camp.status === "paused"
+                                        ? "bg-amber-50 text-amber-600 border-amber-100"
+                                        : "bg-zinc-50 text-zinc-600 border-zinc-150"
+                                }`}
+                              >
                                 {camp.status}
                               </span>
                             </td>
                             <td className="p-3 font-mono">{camp.totalRecipients}</td>
                             <td className="p-3 text-zinc-400">
-                              <span className="text-emerald-600 font-bold">{camp.sentCount} sent</span> / <span className="text-red-500 font-bold">{camp.failedCount} failed</span>
+                              <span className="text-emerald-600 font-bold">
+                                {camp.sentCount} sent
+                              </span>{" "}
+                              /{" "}
+                              <span className="text-red-500 font-bold">
+                                {camp.failedCount} failed
+                              </span>
                             </td>
                             <td className="p-3 text-right">
                               <button
@@ -866,7 +974,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                   <div className="text-center py-10 border border-dashed border-zinc-200 rounded-2xl">
                     <Send className="h-8 w-8 text-zinc-350 mx-auto mb-2" />
                     <p className="text-xs font-bold text-zinc-700">No Campaigns Found</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold mt-1">Upload contacts and launch custom campaigns.</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                      Upload contacts and launch custom campaigns.
+                    </p>
                   </div>
                 )}
               </div>
@@ -884,15 +994,21 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
             className="space-y-5"
           >
             {/* AI Toggle Header Card */}
-            <div className={`rounded-3xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-300 ${
-              aiEnabled
-                ? "bg-gradient-to-r from-violet-500/10 to-emerald-500/8 border-violet-200"
-                : "bg-white border-zinc-200"
-            }`}>
+            <div
+              className={`rounded-3xl border p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-300 ${
+                aiEnabled
+                  ? "bg-gradient-to-r from-violet-500/10 to-emerald-500/8 border-violet-200"
+                  : "bg-white border-zinc-200"
+              }`}
+            >
               <div className="flex items-center gap-3">
-                <div className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
-                  aiEnabled ? "bg-gradient-to-br from-violet-500 to-emerald-500 shadow-lg shadow-violet-200" : "bg-zinc-100"
-                }`}>
+                <div
+                  className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
+                    aiEnabled
+                      ? "bg-gradient-to-br from-violet-500 to-emerald-500 shadow-lg shadow-violet-200"
+                      : "bg-zinc-100"
+                  }`}
+                >
                   <Sparkles className={`h-5 w-5 ${aiEnabled ? "text-white" : "text-zinc-400"}`} />
                 </div>
                 <div>
@@ -920,12 +1036,18 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                     aiEnabled ? "bg-gradient-to-r from-violet-500 to-emerald-500" : "bg-zinc-200"
                   }`}
                 >
-                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${
-                    aiEnabled ? "translate-x-8" : "translate-x-1"
-                  }`} />
-                  {loadingAIToggle && <Loader2 className="h-3 w-3 text-white absolute right-1.5 animate-spin" />}
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${
+                      aiEnabled ? "translate-x-8" : "translate-x-1"
+                    }`}
+                  />
+                  {loadingAIToggle && (
+                    <Loader2 className="h-3 w-3 text-white absolute right-1.5 animate-spin" />
+                  )}
                 </button>
-                <span className={`text-xs font-bold ${aiEnabled ? "text-violet-600" : "text-zinc-400"}`}>
+                <span
+                  className={`text-xs font-bold ${aiEnabled ? "text-violet-600" : "text-zinc-400"}`}
+                >
                   {aiEnabled ? "AI Mode ON" : "AI Mode OFF"}
                 </span>
               </div>
@@ -940,13 +1062,17 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                   <div className="p-4 border-b border-zinc-100 flex items-center justify-between">
                     <div>
                       <h4 className="text-xs font-bold text-zinc-900">Live Conversations</h4>
-                      <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">{conversations.length} unique senders</p>
+                      <p className="text-[9px] text-zinc-400 font-semibold mt-0.5">
+                        {conversations.length} unique senders
+                      </p>
                     </div>
                     <button
                       onClick={loadConversations}
                       className="p-1.5 rounded-full border border-zinc-200 hover:bg-zinc-50 cursor-pointer"
                     >
-                      <RefreshCw className={`h-3.5 w-3.5 text-zinc-400 ${loadingConversations ? "animate-spin" : ""}`} />
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 text-zinc-400 ${loadingConversations ? "animate-spin" : ""}`}
+                      />
                     </button>
                   </div>
                   <div className="flex-1 overflow-y-auto divide-y divide-zinc-100">
@@ -958,7 +1084,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                       <div className="text-center py-14 px-4">
                         <MessageCircle className="h-8 w-8 text-zinc-200 mx-auto mb-2" />
                         <p className="text-xs font-bold text-zinc-500">No conversations yet</p>
-                        <p className="text-[9px] text-zinc-400 font-semibold mt-1">Messages will appear here when patients text your WhatsApp number.</p>
+                        <p className="text-[9px] text-zinc-400 font-semibold mt-1">
+                          Messages will appear here when patients text your WhatsApp number.
+                        </p>
                       </div>
                     ) : (
                       conversations.map((conv) => (
@@ -966,7 +1094,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                           key={conv.senderPhone}
                           onClick={() => openConversation(conv.senderPhone)}
                           className={`w-full text-left p-3.5 hover:bg-zinc-50 transition-colors cursor-pointer ${
-                            selectedConvPhone === conv.senderPhone ? "bg-violet-50 border-l-2 border-violet-400" : ""
+                            selectedConvPhone === conv.senderPhone
+                              ? "bg-violet-50 border-l-2 border-violet-400"
+                              : ""
                           }`}
                         >
                           <div className="flex items-center gap-3">
@@ -979,11 +1109,15 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                                   {conv.senderName || `+${conv.senderPhone}`}
                                 </p>
                                 <span className="text-[8px] text-zinc-400 font-semibold shrink-0">
-                                  {new Date(conv.lastActivity).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                                  {new Date(conv.lastActivity).toLocaleTimeString("en-IN", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
                                 </span>
                               </div>
                               <p className="text-[9.5px] text-zinc-500 font-medium truncate mt-0.5">
-                                {conv.lastDirection === "outgoing" ? "🤖 " : "👤 "}{conv.lastMessage || "..."}
+                                {conv.lastDirection === "outgoing" ? "🤖 " : "👤 "}
+                                {conv.lastMessage || "..."}
                               </p>
                             </div>
                           </div>
@@ -1000,16 +1134,27 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                       {/* Chat header */}
                       <div className="p-4 border-b border-zinc-100 bg-[#075e54] rounded-t-3xl flex items-center gap-3">
                         <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center text-white text-[11px] font-bold shrink-0">
-                          {(conversations.find(c => c.senderPhone === selectedConvPhone)?.senderName || selectedConvPhone).charAt(0).toUpperCase()}
+                          {(
+                            conversations.find((c) => c.senderPhone === selectedConvPhone)
+                              ?.senderName || selectedConvPhone
+                          )
+                            .charAt(0)
+                            .toUpperCase()}
                         </div>
                         <div className="flex-1">
                           <p className="text-white text-xs font-bold">
-                            {conversations.find(c => c.senderPhone === selectedConvPhone)?.senderName || `+${selectedConvPhone}`}
+                            {conversations.find((c) => c.senderPhone === selectedConvPhone)
+                              ?.senderName || `+${selectedConvPhone}`}
                           </p>
-                          <p className="text-white/60 text-[9px] font-semibold">via AI Smart Reply</p>
+                          <p className="text-white/60 text-[9px] font-semibold">
+                            via AI Smart Reply
+                          </p>
                         </div>
                         <button
-                          onClick={() => { setSelectedConvPhone(null); setConvHistory([]); }}
+                          onClick={() => {
+                            setSelectedConvPhone(null);
+                            setConvHistory([]);
+                          }}
                           className="text-white/70 hover:text-white text-[10px] font-bold cursor-pointer"
                         >
                           ✕
@@ -1017,30 +1162,44 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                       </div>
 
                       {/* Messages */}
-                      <div className="flex-1 overflow-y-auto p-4 space-y-2.5 bg-[#e5ddd5]" style={{ minHeight: 360 }}>
+                      <div
+                        className="flex-1 overflow-y-auto p-4 space-y-2.5 bg-[#e5ddd5]"
+                        style={{ minHeight: 360 }}
+                      >
                         {loadingConvHistory ? (
                           <div className="flex items-center justify-center h-40">
                             <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
                           </div>
                         ) : convHistory.length === 0 ? (
-                          <div className="text-center pt-10 text-zinc-400 text-xs font-semibold">No messages yet</div>
+                          <div className="text-center pt-10 text-zinc-400 text-xs font-semibold">
+                            No messages yet
+                          </div>
                         ) : (
                           convHistory.map((msg: any) => (
                             <div
                               key={msg.id}
                               className={`flex ${msg.direction === "outgoing" ? "justify-end" : "justify-start"}`}
                             >
-                              <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 shadow-sm ${
-                                msg.direction === "outgoing"
-                                  ? "bg-[#dcf8c6] text-zinc-800"
-                                  : "bg-white text-zinc-800"
-                              }`}>
+                              <div
+                                className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 shadow-sm ${
+                                  msg.direction === "outgoing"
+                                    ? "bg-[#dcf8c6] text-zinc-800"
+                                    : "bg-white text-zinc-800"
+                                }`}
+                              >
                                 {msg.direction === "outgoing" && (
-                                  <span className="text-[8px] text-violet-500 font-black block mb-0.5">🤖 AI Agent</span>
+                                  <span className="text-[8px] text-violet-500 font-black block mb-0.5">
+                                    🤖 AI Agent
+                                  </span>
                                 )}
-                                <p className="text-[11px] font-medium whitespace-pre-wrap leading-relaxed">{msg.message}</p>
+                                <p className="text-[11px] font-medium whitespace-pre-wrap leading-relaxed">
+                                  {msg.message}
+                                </p>
                                 <p className="text-[8px] text-zinc-400 font-semibold text-right mt-1">
-                                  {new Date(msg.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                                  {new Date(msg.createdAt).toLocaleTimeString("en-IN", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
                                 </p>
                               </div>
                             </div>
@@ -1056,11 +1215,20 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                       </div>
                       <h4 className="text-sm font-bold text-zinc-800">AI Conversation Viewer</h4>
                       <p className="text-[10px] text-zinc-400 font-semibold mt-1 max-w-xs">
-                        Select a conversation from the left panel to see the full AI chat thread with your patients.
+                        Select a conversation from the left panel to see the full AI chat thread
+                        with your patients.
                       </p>
                       <div className="mt-5 bg-white border border-zinc-200 rounded-2xl p-4 text-left w-full max-w-xs space-y-2">
-                        <p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">What the AI Agent can do:</p>
-                        {["Greet patients warmly in any language", "Answer FAQs about clinic hours and doctors", "Collect patient name, date & reason", "Check available appointment slots", "Book and confirm appointments automatically"].map((cap, i) => (
+                        <p className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">
+                          What the AI Agent can do:
+                        </p>
+                        {[
+                          "Greet patients warmly in any language",
+                          "Answer FAQs about clinic hours and doctors",
+                          "Collect patient name, date & reason",
+                          "Check available appointment slots",
+                          "Book and confirm appointments automatically",
+                        ].map((cap, i) => (
                           <div key={i} className="flex items-center gap-2">
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
                             <p className="text-[10px] text-zinc-600 font-medium">{cap}</p>
@@ -1075,9 +1243,14 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
               /* ── KEYWORD MODE: Existing rules UI ── */
               <>
                 {editingAutoReply ? (
-                  <form onSubmit={handleSaveAutoReply} className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-5">
+                  <form
+                    onSubmit={handleSaveAutoReply}
+                    className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-5"
+                  >
                     <div className="flex items-center justify-between border-b border-zinc-150 pb-4">
-                      <h3 className="text-base font-bold text-zinc-900">{editingAutoReply.id ? "Edit Auto-Reply Rule" : "Create Auto-Reply Rule"}</h3>
+                      <h3 className="text-base font-bold text-zinc-900">
+                        {editingAutoReply.id ? "Edit Auto-Reply Rule" : "Create Auto-Reply Rule"}
+                      </h3>
                       <button
                         type="button"
                         onClick={() => setEditingAutoReply(null)}
@@ -1090,20 +1263,34 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                     <div className="space-y-4">
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div>
-                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Trigger Keyword</label>
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+                            Trigger Keyword
+                          </label>
                           <input
                             type="text"
                             placeholder="e.g. book, checkup, slot"
                             value={editingAutoReply.triggerKeyword}
-                            onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, triggerKeyword: e.target.value }))}
+                            onChange={(e) =>
+                              setEditingAutoReply((prev: any) => ({
+                                ...prev,
+                                triggerKeyword: e.target.value,
+                              }))
+                            }
                             className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
                           />
                         </div>
                         <div>
-                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Match Type</label>
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+                            Match Type
+                          </label>
                           <select
                             value={editingAutoReply.matchType}
-                            onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, matchType: e.target.value }))}
+                            onChange={(e) =>
+                              setEditingAutoReply((prev: any) => ({
+                                ...prev,
+                                matchType: e.target.value,
+                              }))
+                            }
                             className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
                           >
                             <option value="exact">Exact Phrase Match</option>
@@ -1115,23 +1302,37 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                       </div>
 
                       <div>
-                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Auto-Reply Message</label>
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+                          Auto-Reply Message
+                        </label>
                         <textarea
                           rows={4}
                           placeholder="Thank you for reaching out! To book a clinic appointment online, visit: https://bookmytime.ai/book"
                           value={editingAutoReply.replyMessage}
-                          onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, replyMessage: e.target.value }))}
+                          onChange={(e) =>
+                            setEditingAutoReply((prev: any) => ({
+                              ...prev,
+                              replyMessage: e.target.value,
+                            }))
+                          }
                           className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
                         />
                       </div>
 
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div>
-                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Match Priority (Higher Matches First)</label>
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+                            Match Priority (Higher Matches First)
+                          </label>
                           <input
                             type="number"
                             value={editingAutoReply.priority}
-                            onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, priority: parseInt(e.target.value) || 0 }))}
+                            onChange={(e) =>
+                              setEditingAutoReply((prev: any) => ({
+                                ...prev,
+                                priority: parseInt(e.target.value) || 0,
+                              }))
+                            }
                             className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
                           />
                         </div>
@@ -1140,7 +1341,12 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                             <input
                               type="checkbox"
                               checked={editingAutoReply.isActive}
-                              onChange={(e) => setEditingAutoReply((prev: any) => ({ ...prev, isActive: e.target.checked }))}
+                              onChange={(e) =>
+                                setEditingAutoReply((prev: any) => ({
+                                  ...prev,
+                                  isActive: e.target.checked,
+                                }))
+                              }
                               className="rounded"
                             />
                             Rule Active
@@ -1162,11 +1368,23 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                   <div className="bg-white border border-zinc-200 rounded-3xl p-5 space-y-4">
                     <div className="flex justify-between items-center border-b border-zinc-100 pb-3">
                       <div>
-                        <h3 className="text-xs font-bold text-zinc-900">Keyword Auto-Reply Rules</h3>
-                        <p className="text-[10px] text-zinc-400 font-semibold">Define trigger words and static reply messages (used when AI mode is OFF)</p>
+                        <h3 className="text-xs font-bold text-zinc-900">
+                          Keyword Auto-Reply Rules
+                        </h3>
+                        <p className="text-[10px] text-zinc-400 font-semibold">
+                          Define trigger words and static reply messages (used when AI mode is OFF)
+                        </p>
                       </div>
                       <button
-                        onClick={() => setEditingAutoReply({ triggerKeyword: "", matchType: "contains", replyMessage: "", isActive: true, priority: 0 })}
+                        onClick={() =>
+                          setEditingAutoReply({
+                            triggerKeyword: "",
+                            matchType: "contains",
+                            replyMessage: "",
+                            isActive: true,
+                            priority: 0,
+                          })
+                        }
                         className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-4 py-1.5 flex items-center gap-1 cursor-pointer shadow-sm"
                       >
                         <Plus className="h-3.5 w-3.5" /> Add Rule
@@ -1193,20 +1411,31 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                           <tbody className="divide-y divide-zinc-150 bg-white">
                             {autoReplies.map((rule) => (
                               <tr key={rule.id} className="hover:bg-zinc-50/50">
-                                <td className="p-3 font-mono font-bold text-zinc-800">{rule.triggerKeyword}</td>
-                                <td className="p-3">
-                                  <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[8.5px] border border-zinc-200 font-bold">{rule.matchType}</span>
+                                <td className="p-3 font-mono font-bold text-zinc-800">
+                                  {rule.triggerKeyword}
                                 </td>
-                                <td className="p-3 truncate max-w-[200px] text-[11px]" title={rule.replyMessage}>
+                                <td className="p-3">
+                                  <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[8.5px] border border-zinc-200 font-bold">
+                                    {rule.matchType}
+                                  </span>
+                                </td>
+                                <td
+                                  className="p-3 truncate max-w-[200px] text-[11px]"
+                                  title={rule.replyMessage}
+                                >
                                   {rule.replyMessage}
                                 </td>
                                 <td className="p-3 text-zinc-400">{rule.priority}</td>
                                 <td className="p-3">
-                                  <span className={`h-2.5 w-2.5 rounded-full inline-block ${rule.isActive ? "bg-emerald-500" : "bg-zinc-300"}`} />
+                                  <span
+                                    className={`h-2.5 w-2.5 rounded-full inline-block ${rule.isActive ? "bg-emerald-500" : "bg-zinc-300"}`}
+                                  />
                                 </td>
                                 <td className="p-3 text-right space-x-1.5">
                                   <button
-                                    onClick={() => setEditingAutoReply({ ...rule, isActive: !!rule.isActive })}
+                                    onClick={() =>
+                                      setEditingAutoReply({ ...rule, isActive: !!rule.isActive })
+                                    }
                                     className="rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[10px] font-bold px-3 py-1 cursor-pointer"
                                   >
                                     Edit
@@ -1228,7 +1457,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                       <div className="text-center py-10 border border-dashed border-zinc-200 rounded-2xl">
                         <RotateCcw className="h-8 w-8 text-zinc-350 mx-auto mb-2" />
                         <p className="text-xs font-bold text-zinc-700">No Keyword Rules</p>
-                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">Add trigger rules, or enable AI Mode above for intelligent auto-replies.</p>
+                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                          Add trigger rules, or enable AI Mode above for intelligent auto-replies.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -1252,7 +1483,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
             <div className="bg-white border border-zinc-200 rounded-3xl p-5 space-y-4 flex flex-col justify-between">
               <div>
                 <h3 className="text-xs font-bold text-zinc-900">WhatsApp Device Link</h3>
-                <p className="text-[10px] text-zinc-400 font-semibold">Scan QR code using WhatsApp to pair your clinic number</p>
+                <p className="text-[10px] text-zinc-400 font-semibold">
+                  Scan QR code using WhatsApp to pair your clinic number
+                </p>
               </div>
 
               {waStatus === "CONNECTED" ? (
@@ -1260,14 +1493,17 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                   <Wifi className="h-10 w-10 text-emerald-500 mx-auto animate-pulse" />
                   <div>
                     <p className="text-xs font-bold text-zinc-800">Your WhatsApp is Linked!</p>
-                    <p className="text-[10px] font-semibold text-zinc-400 mt-0.5">Connected number: {waConnectedNumber || "Clinic Account"}</p>
+                    <p className="text-[10px] font-semibold text-zinc-400 mt-0.5">
+                      Connected number: {waConnectedNumber || "Clinic Account"}
+                    </p>
                   </div>
                   <button
                     onClick={async () => {
                       setConfirmDialog({
                         open: true,
                         title: "Disconnect WhatsApp",
-                        message: "Are you sure you want to disconnect? You will have to scan a new QR code to pair again.",
+                        message:
+                          "Are you sure you want to disconnect? You will have to scan a new QR code to pair again.",
                         onConfirm: async () => {
                           try {
                             await disconnectWhatsAppServerFn();
@@ -1276,7 +1512,7 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                           } catch (e: any) {
                             showToast("error", "Disconnect failed: " + e.message);
                           }
-                        }
+                        },
                       });
                     }}
                     disabled={!canOperate}
@@ -1289,17 +1525,27 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                 <div className="text-center py-6 space-y-4">
                   {waQrDataUrl ? (
                     <div className="bg-white p-4 border border-zinc-200 rounded-2xl w-48 h-48 mx-auto shadow-sm flex items-center justify-center">
-                      <img src={waQrDataUrl} alt="WhatsApp QR Code" className="w-full h-full object-contain" />
+                      <img
+                        src={waQrDataUrl}
+                        alt="WhatsApp QR Code"
+                        className="w-full h-full object-contain"
+                      />
                     </div>
                   ) : (
                     <div className="h-48 w-48 bg-zinc-50 border border-zinc-200 rounded-2xl mx-auto flex flex-col items-center justify-center">
                       <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
-                      <p className="text-[9px] font-semibold text-zinc-400 mt-2">Retrieving QR Code...</p>
+                      <p className="text-[9px] font-semibold text-zinc-400 mt-2">
+                        Retrieving QR Code...
+                      </p>
                     </div>
                   )}
                   <div>
-                    <p className="text-xs font-bold text-zinc-700">Scan QR from WhatsApp Settings &gt; Linked Devices</p>
-                    <p className="text-[9px] text-zinc-400 font-semibold mt-1">Automatic refreshing every 10 seconds. Keeping this tab open helps.</p>
+                    <p className="text-xs font-bold text-zinc-700">
+                      Scan QR from WhatsApp Settings &gt; Linked Devices
+                    </p>
+                    <p className="text-[9px] text-zinc-400 font-semibold mt-1">
+                      Automatic refreshing every 10 seconds. Keeping this tab open helps.
+                    </p>
                   </div>
                 </div>
               ) : (
@@ -1307,7 +1553,9 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
                   <WifiOff className="h-8 w-8 text-zinc-400 mx-auto" />
                   <div>
                     <p className="text-xs font-bold text-zinc-700">Service is Offline</p>
-                    <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Initialize to retrieve QR code and link your phone</p>
+                    <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                      Initialize to retrieve QR code and link your phone
+                    </p>
                   </div>
                   <button
                     onClick={async () => {
@@ -1330,17 +1578,25 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
             <div className="bg-white border border-zinc-200 rounded-3xl p-5 space-y-4">
               <div>
                 <h3 className="text-xs font-bold text-zinc-900">Real-Time Messaging Console</h3>
-                <p className="text-[10px] text-zinc-400 font-semibold">Active queue: {waQueueCount} messages pending</p>
+                <p className="text-[10px] text-zinc-400 font-semibold">
+                  Active queue: {waQueueCount} messages pending
+                </p>
               </div>
 
               <div className="border border-zinc-200 rounded-2xl bg-zinc-950 p-4 aspect-[4/3] text-[9.5px] font-mono text-zinc-300 overflow-y-auto space-y-2 select-text">
-                <p className="text-brand font-bold border-b border-zinc-800 pb-1 mb-2">// OUTBOX LOG (LAST 50 MESSAGES)</p>
+                <p className="text-brand font-bold border-b border-zinc-800 pb-1 mb-2">
+                  // OUTBOX LOG (LAST 50 MESSAGES)
+                </p>
                 {waSentLogs.length > 0 ? (
                   waSentLogs.map((log, idx) => (
                     <div key={idx} className="border-b border-zinc-900/60 pb-1.5">
-                      <span className="text-zinc-500">[{new Date(log.timestamp).toLocaleTimeString()}]</span>{" "}
+                      <span className="text-zinc-500">
+                        [{new Date(log.timestamp).toLocaleTimeString()}]
+                      </span>{" "}
                       <span className="text-emerald-500 font-bold">To: +{log.recipient}</span>{" "}
-                      <span className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${log.status === "sent" ? "bg-emerald-950 text-emerald-450" : "bg-red-950 text-red-400"}`}>
+                      <span
+                        className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${log.status === "sent" ? "bg-emerald-950 text-emerald-450" : "bg-red-950 text-red-400"}`}
+                      >
                         {log.status}
                       </span>
                       <p className="text-zinc-400 pl-4 mt-0.5 truncate">{log.message}</p>
@@ -1358,7 +1614,6 @@ export default function WhatsAppHub({ user, showToast, setConfirmDialog, canOper
   );
 }
 
-
 // ──────────────────────────────────────────────
 // STANDALONE TEMPLATE BUILDER COMPONENT
 // ──────────────────────────────────────────────
@@ -1370,7 +1625,13 @@ interface TemplateBuilderProps {
   canOperate?: boolean;
 }
 
-const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToast, canOperate = true }: TemplateBuilderProps) => {
+const TemplateBuilder = ({
+  template,
+  setEditingTemplate,
+  loadTemplates,
+  showToast,
+  canOperate = true,
+}: TemplateBuilderProps) => {
   const [name, setName] = useState(template.name || "");
   const [category, setCategory] = useState(template.category || "marketing");
   const [headerType, setHeaderType] = useState(template.headerType || "none");
@@ -1379,23 +1640,31 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
   const [bodyText, setBodyText] = useState(template.bodyText || "");
   const [footerText, setFooterText] = useState(template.footerText || "");
   const [uploadingHeaderImage, setUploadingHeaderImage] = useState(false);
-  
+
   // Parse JSON safely
   const parseJsonSafely = (str: any, fallback: any) => {
     if (!str) return fallback;
     if (typeof str === "object") return str;
-    try { return JSON.parse(str); } catch { return fallback; }
+    try {
+      return JSON.parse(str);
+    } catch {
+      return fallback;
+    }
   };
 
   const [ctaButtons, setCtaButtons] = useState<any[]>(parseJsonSafely(template.ctaButtons, []));
-  const [quickReplyButtons, setQuickReplyButtons] = useState<string[]>(parseJsonSafely(template.quickReplyButtons, []));
-  
+  const [quickReplyButtons, setQuickReplyButtons] = useState<string[]>(
+    parseJsonSafely(template.quickReplyButtons, []),
+  );
+
   const [saving, setSaving] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [generatingAI, setGeneratingAI] = useState(false);
 
   // Parse variables from body text (e.g. {{1}}, {{2}})
-  const variables = Array.from(bodyText.matchAll(/\{\{(\d+)\}\}/g)).map((match: any) => `{{${match[1]}}}`);
+  const variables = Array.from(bodyText.matchAll(/\{\{(\d+)\}\}/g)).map(
+    (match: any) => `{{${match[1]}}}`,
+  );
   const uniqueVariables = Array.from(new Set(variables));
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1467,7 +1736,7 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
           ctaButtons: ctaButtons.length > 0 ? ctaButtons : null,
           quickReplyButtons: quickReplyButtons.length > 0 ? quickReplyButtons : null,
           variables: uniqueVariables.length > 0 ? uniqueVariables : null,
-        }
+        },
       });
       showToast("success", `Template saved!`);
       setEditingTemplate(null);
@@ -1484,7 +1753,9 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
       {/* Left Pane: Builder Form */}
       <div className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-6">
         <div className="flex items-center justify-between border-b border-zinc-150 pb-4">
-          <h3 className="text-base font-bold text-zinc-900">{template.id ? "Edit Template" : "New Message Template"}</h3>
+          <h3 className="text-base font-bold text-zinc-900">
+            {template.id ? "Edit Template" : "New Message Template"}
+          </h3>
           <button
             onClick={() => setEditingTemplate(null)}
             className="text-xs text-zinc-400 hover:text-zinc-650 font-bold bg-zinc-100 px-3 py-1.5 rounded-full cursor-pointer"
@@ -1538,17 +1809,23 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
           {/* Name & Category */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Template Name</label>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+                Template Name
+              </label>
               <input
                 type="text"
                 placeholder="e.g. appointment_reminder"
                 value={name}
-                onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase())}
+                onChange={(e) =>
+                  setName(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase())
+                }
                 className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
               />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Category</label>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+                Category
+              </label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
@@ -1564,7 +1841,9 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
 
           {/* Header Type */}
           <div>
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Header (Optional)</label>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+              Header (Optional)
+            </label>
             <div className="flex gap-2 mb-2">
               {["none", "text", "image"].map((t) => (
                 <button
@@ -1572,7 +1851,9 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
                   type="button"
                   onClick={() => setHeaderType(t)}
                   className={`flex-1 rounded-full py-1.5 text-xs font-bold border transition-all cursor-pointer ${
-                    headerType === t ? "bg-zinc-950 text-white border-zinc-950" : "bg-zinc-50 border-zinc-200 text-zinc-650 hover:bg-zinc-100"
+                    headerType === t
+                      ? "bg-zinc-950 text-white border-zinc-950"
+                      : "bg-zinc-50 border-zinc-200 text-zinc-650 hover:bg-zinc-100"
                   }`}
                 >
                   {t.toUpperCase()}
@@ -1601,11 +1882,17 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
                   htmlFor="template-header-file"
                   className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 px-4 py-2 text-xs font-bold text-zinc-650 cursor-pointer transition-colors"
                 >
-                  {uploadingHeaderImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Smartphone className="h-3.5 w-3.5" />}
+                  {uploadingHeaderImage ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Smartphone className="h-3.5 w-3.5" />
+                  )}
                   Upload Header Image
                 </label>
                 {headerImageUrl && (
-                  <span className="text-[10px] font-semibold text-zinc-400 truncate max-w-[200px]">Uploaded ✓</span>
+                  <span className="text-[10px] font-semibold text-zinc-400 truncate max-w-[200px]">
+                    Uploaded ✓
+                  </span>
                 )}
               </div>
             )}
@@ -1614,10 +1901,14 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
           {/* Body */}
           <div>
             <div className="flex justify-between items-center mb-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Message Body</label>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                Message Body
+              </label>
               <button
                 type="button"
-                onClick={() => setBodyText((prev: string) => prev + ` {{${uniqueVariables.length + 1}}}`)}
+                onClick={() =>
+                  setBodyText((prev: string) => prev + ` {{${uniqueVariables.length + 1}}}`)
+                }
                 className="text-[9px] font-bold text-brand hover:underline flex items-center gap-0.5"
               >
                 <PlusCircle className="h-2.5 w-2.5" /> Add Variable
@@ -1637,7 +1928,9 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
 
           {/* Footer */}
           <div>
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Footer Text (Optional)</label>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+              Footer Text (Optional)
+            </label>
             <input
               type="text"
               placeholder="e.g. Reply STOP to opt out"
@@ -1650,11 +1943,18 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
           {/* Interactive Call to Action buttons */}
           <div>
             <div className="flex justify-between items-center mb-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">CTA Buttons (Max 2)</label>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                CTA Buttons (Max 2)
+              </label>
               {ctaButtons.length < 2 && (
                 <button
                   type="button"
-                  onClick={() => setCtaButtons(prev => [...prev, { type: "url", label: "Visit Website", value: "https://" }])}
+                  onClick={() =>
+                    setCtaButtons((prev) => [
+                      ...prev,
+                      { type: "url", label: "Visit Website", value: "https://" },
+                    ])
+                  }
                   className="text-[9px] font-bold text-brand hover:underline"
                 >
                   + Add Button
@@ -1663,12 +1963,19 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
             </div>
             <div className="space-y-2">
               {ctaButtons.map((btn, bIdx) => (
-                <div key={bIdx} className="flex gap-2 items-center bg-zinc-50 p-2.5 rounded-xl border border-zinc-200">
+                <div
+                  key={bIdx}
+                  className="flex gap-2 items-center bg-zinc-50 p-2.5 rounded-xl border border-zinc-200"
+                >
                   <select
                     value={btn.type}
                     onChange={(e) => {
-                      const newBtn = { ...btn, type: e.target.value, value: e.target.value === "phone" ? "" : "https://" };
-                      setCtaButtons(prev => prev.map((b, i) => i === bIdx ? newBtn : b));
+                      const newBtn = {
+                        ...btn,
+                        type: e.target.value,
+                        value: e.target.value === "phone" ? "" : "https://",
+                      };
+                      setCtaButtons((prev) => prev.map((b, i) => (i === bIdx ? newBtn : b)));
                     }}
                     className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
                   >
@@ -1679,19 +1986,27 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
                     type="text"
                     placeholder="Button Label"
                     value={btn.label}
-                    onChange={(e) => setCtaButtons(prev => prev.map((b, i) => i === bIdx ? { ...b, label: e.target.value } : b))}
+                    onChange={(e) =>
+                      setCtaButtons((prev) =>
+                        prev.map((b, i) => (i === bIdx ? { ...b, label: e.target.value } : b)),
+                      )
+                    }
                     className="flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
                   />
                   <input
                     type="text"
                     placeholder={btn.type === "phone" ? "+91..." : "https://..."}
                     value={btn.value}
-                    onChange={(e) => setCtaButtons(prev => prev.map((b, i) => i === bIdx ? { ...b, value: e.target.value } : b))}
+                    onChange={(e) =>
+                      setCtaButtons((prev) =>
+                        prev.map((b, i) => (i === bIdx ? { ...b, value: e.target.value } : b)),
+                      )
+                    }
                     className="flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
                   />
                   <button
                     type="button"
-                    onClick={() => setCtaButtons(prev => prev.filter((_, i) => i !== bIdx))}
+                    onClick={() => setCtaButtons((prev) => prev.filter((_, i) => i !== bIdx))}
                     className="text-red-500 hover:text-red-700"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -1704,11 +2019,13 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
           {/* Quick Reply buttons */}
           <div>
             <div className="flex justify-between items-center mb-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Quick Replies (Max 3)</label>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+                Quick Replies (Max 3)
+              </label>
               {quickReplyButtons.length < 3 && (
                 <button
                   type="button"
-                  onClick={() => setQuickReplyButtons(prev => [...prev, "Confirm Clinic Slot"])}
+                  onClick={() => setQuickReplyButtons((prev) => [...prev, "Confirm Clinic Slot"])}
                   className="text-[9px] font-bold text-brand hover:underline"
                 >
                   + Add Reply
@@ -1717,28 +2034,37 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
             </div>
             <div className="space-y-2">
               {quickReplyButtons.map((btn, bIdx) => (
-                <div key={bIdx} className="flex gap-2 items-center bg-zinc-50 p-2 rounded-xl border border-zinc-200">
+                <div
+                  key={bIdx}
+                  className="flex gap-2 items-center bg-zinc-50 p-2 rounded-xl border border-zinc-200"
+                >
                   <input
                     type="text"
                     placeholder="Quick Reply Text"
                     value={btn}
-                    onChange={(e) => setQuickReplyButtons(prev => prev.map((b, i) => i === bIdx ? e.target.value : b))}
+                    onChange={(e) =>
+                      setQuickReplyButtons((prev) =>
+                        prev.map((b, i) => (i === bIdx ? e.target.value : b)),
+                      )
+                    }
                     className="flex-1 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none"
                   />
                   <button
                     type="button"
-                    onClick={() => setQuickReplyButtons(prev => prev.filter((_, i) => i !== bIdx))}
+                    onClick={() =>
+                      setQuickReplyButtons((prev) => prev.filter((_, i) => i !== bIdx))
+                    }
                     className="text-red-500 hover:text-red-700"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               ))}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Save/Cancel Actions */}
+        {/* Save/Cancel Actions */}
         <div className="pt-4 border-t border-zinc-150 flex gap-3">
           <button
             type="button"
@@ -1746,11 +2072,7 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
             disabled={saving || !canOperate}
             className="flex-1 rounded-xl bg-violet-600 hover:bg-violet-750 text-white font-bold text-xs py-3 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-md hover:shadow-lg transition-all"
           >
-            {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {template.id ? "Update Template" : "Save Template"}
           </button>
           <button
@@ -1765,14 +2087,18 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
 
       {/* Right Pane: Premium WhatsApp Device Mockup Previews */}
       <div className="flex flex-col items-center justify-center p-6 bg-zinc-50 border border-zinc-200 rounded-3xl relative">
-        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest absolute top-4">Interactive Device Mockup</span>
+        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest absolute top-4">
+          Interactive Device Mockup
+        </span>
         <div className="w-[300px] aspect-[9/18] border-[10px] border-zinc-850 bg-[#e5ddd5] rounded-[36px] shadow-2xl relative overflow-hidden flex flex-col pt-6 px-3">
           {/* Speaker & notch */}
           <div className="w-24 h-4 bg-zinc-850 rounded-full absolute top-1 left-1/2 -translate-x-1/2 z-20" />
 
           {/* Conversation Header */}
           <div className="bg-[#075e54] text-white p-2 rounded-t-lg -mx-3 flex items-center gap-2 shrink-0">
-            <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold font-mono">MD</div>
+            <div className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-bold font-mono">
+              MD
+            </div>
             <div>
               <p className="text-[9px] font-bold leading-none">BookMyTime Automated Alerts</p>
               <p className="text-[7px] text-zinc-250 leading-none mt-0.5">Online</p>
@@ -1783,30 +2109,46 @@ const TemplateBuilder = ({ template, setEditingTemplate, loadTemplates, showToas
           <div className="flex-1 overflow-y-auto py-3 space-y-2">
             <div className="bg-white rounded-xl p-2.5 text-[10px] text-zinc-800 shadow-sm border border-zinc-200 max-w-[240px] ml-1.5 space-y-1.5 relative leading-relaxed">
               {headerType === "text" && headerText && (
-                <p className="font-bold text-[10px] text-zinc-900 border-b border-zinc-100 pb-1">{headerText}</p>
+                <p className="font-bold text-[10px] text-zinc-900 border-b border-zinc-100 pb-1">
+                  {headerText}
+                </p>
               )}
               {headerType === "image" && headerImageUrl && (
-                <img src={headerImageUrl} alt="Header Preview" className="w-full h-24 object-cover rounded-lg" />
+                <img
+                  src={headerImageUrl}
+                  alt="Header Preview"
+                  className="w-full h-24 object-cover rounded-lg"
+                />
               )}
-              
-              {/* Replace placeholders with generic val for mockup */}
-              <p className="whitespace-pre-line font-medium text-[9px]">{bodyText || "Your template message will appear here..."}</p>
 
-              {footerText && (
-                <p className="text-[7.5px] text-zinc-400 font-bold">{footerText}</p>
-              )}
+              {/* Replace placeholders with generic val for mockup */}
+              <p className="whitespace-pre-line font-medium text-[9px]">
+                {bodyText || "Your template message will appear here..."}
+              </p>
+
+              {footerText && <p className="text-[7.5px] text-zinc-400 font-bold">{footerText}</p>}
             </div>
 
             {/* Action Buttons Mockups */}
             {ctaButtons.map((btn, bIdx) => (
-              <div key={bIdx} className="bg-white hover:bg-zinc-50 rounded-xl py-2 px-3 text-[9px] font-bold text-[#0080ff] border border-zinc-200 max-w-[240px] ml-1.5 flex items-center justify-center gap-1.5 shadow-sm">
-                {btn.type === "phone" ? <PhoneCall className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />}
+              <div
+                key={bIdx}
+                className="bg-white hover:bg-zinc-50 rounded-xl py-2 px-3 text-[9px] font-bold text-[#0080ff] border border-zinc-200 max-w-[240px] ml-1.5 flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                {btn.type === "phone" ? (
+                  <PhoneCall className="h-3 w-3" />
+                ) : (
+                  <ExternalLink className="h-3 w-3" />
+                )}
                 {btn.label || (btn.type === "phone" ? "Call Clinic" : "Learn More")}
               </div>
             ))}
 
             {quickReplyButtons.map((btn, bIdx) => (
-              <div key={bIdx} className="bg-[#dfebf5] hover:bg-[#d0e0ed] rounded-xl py-2 px-3 text-[9px] font-bold text-[#075e54] border border-[#bcd2e3] max-w-[240px] ml-1.5 flex items-center justify-center gap-1 shadow-sm">
+              <div
+                key={bIdx}
+                className="bg-[#dfebf5] hover:bg-[#d0e0ed] rounded-xl py-2 px-3 text-[9px] font-bold text-[#075e54] border border-[#bcd2e3] max-w-[240px] ml-1.5 flex items-center justify-center gap-1 shadow-sm"
+              >
                 <UserCheck className="h-3 w-3" />
                 {btn || "Quick Reply"}
               </div>
@@ -1829,11 +2171,17 @@ interface CampaignWizardProps {
   canOperate?: boolean;
 }
 
-const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToast, canOperate = true }: CampaignWizardProps) => {
+const CampaignWizard = ({
+  templates,
+  setCreatingCampaign,
+  loadCampaigns,
+  showToast,
+  canOperate = true,
+}: CampaignWizardProps) => {
   const [wizardStep, setWizardStep] = useState(1);
   const [campaignName, setCampaignName] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
-  
+
   // Safety
   const [minDelay, setMinDelay] = useState(10);
   const [maxDelay, setMaxDelay] = useState(25);
@@ -1844,7 +2192,7 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
   const [manualNumbers, setManualNumbers] = useState("");
   const [contactMethod, setContactMethod] = useState<"file" | "manual">("file");
 
-  const templateSelected = templates.find(t => t.id === selectedTemplateId);
+  const templateSelected = templates.find((t) => t.id === selectedTemplateId);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1865,13 +2213,24 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
         }
 
         const headers = data[0].map((h: any) => String(h).trim().toLowerCase());
-        
+
         // Locate phone column
-        const phoneIndex = headers.findIndex((h: string) => h.includes("phone") || h.includes("number") || h.includes("mobile") || h.includes("contact"));
-        const nameIndex = headers.findIndex((h: string) => h.includes("name") || h.includes("patient") || h.includes("customer"));
+        const phoneIndex = headers.findIndex(
+          (h: string) =>
+            h.includes("phone") ||
+            h.includes("number") ||
+            h.includes("mobile") ||
+            h.includes("contact"),
+        );
+        const nameIndex = headers.findIndex(
+          (h: string) => h.includes("name") || h.includes("patient") || h.includes("customer"),
+        );
 
         if (phoneIndex === -1) {
-          showToast("error", "Could not find phone number column. Make sure the first row contains 'phone', 'number', 'mobile', or 'contact'.");
+          showToast(
+            "error",
+            "Could not find phone number column. Make sure the first row contains 'phone', 'number', 'mobile', or 'contact'.",
+          );
           return;
         }
 
@@ -1882,7 +2241,7 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
           if (!rawPhone) continue;
 
           const name = nameIndex !== -1 ? String(row[nameIndex] || "").trim() : "Recipient " + i;
-          
+
           // Map row fields into a template variables dictionary
           const variablesObj: any = {};
           let varCounter = 1;
@@ -1895,7 +2254,7 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
           recipientsList.push({
             phone: rawPhone,
             name,
-            variables: variablesObj
+            variables: variablesObj,
           });
         }
 
@@ -1912,7 +2271,10 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
     let finalRecipients: any[] = [];
 
     if (contactMethod === "manual") {
-      const lines = manualNumbers.split("\n").map(l => l.trim()).filter(Boolean);
+      const lines = manualNumbers
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
       if (lines.length === 0) {
         showToast("error", "Please write or paste at least one phone number");
         return;
@@ -1941,8 +2303,8 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
           minDelaySec: minDelay,
           maxDelaySec: maxDelay,
           dailyLimit,
-          recipients: finalRecipients
-        }
+          recipients: finalRecipients,
+        },
       });
       showToast("success", "Campaign created successfully as Draft!");
       setCreatingCampaign(false);
@@ -1955,7 +2317,9 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
   return (
     <div className="rounded-3xl border border-zinc-200 bg-white p-6 space-y-6">
       <div className="flex items-center justify-between border-b border-zinc-150 pb-4">
-        <h3 className="text-base font-bold text-zinc-900">Create Broadcast Campaign (Step {wizardStep}/3)</h3>
+        <h3 className="text-base font-bold text-zinc-900">
+          Create Broadcast Campaign (Step {wizardStep}/3)
+        </h3>
         <button
           onClick={() => setCreatingCampaign(false)}
           className="text-xs text-zinc-400 hover:text-zinc-650 font-bold bg-zinc-100 px-3 py-1.5 rounded-full cursor-pointer"
@@ -1967,7 +2331,9 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
       {wizardStep === 1 && (
         <div className="space-y-4">
           <div>
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Campaign Name</label>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+              Campaign Name
+            </label>
             <input
               type="text"
               placeholder="e.g. June Diabetic Recall Campaign"
@@ -1978,15 +2344,19 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
           </div>
 
           <div>
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Select Message Template</label>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+              Select Message Template
+            </label>
             <select
               value={selectedTemplateId}
               onChange={(e) => setSelectedTemplateId(e.target.value)}
               className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
             >
               <option value="">-- Send Plain Quick Message (No Template) --</option>
-              {templates.map(t => (
-                <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.category})
+                </option>
               ))}
             </select>
           </div>
@@ -2006,13 +2376,17 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
       {wizardStep === 2 && (
         <div className="space-y-4">
           <div>
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Contacts Upload Method</label>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+              Contacts Upload Method
+            </label>
             <div className="flex gap-2 mb-4">
               <button
                 type="button"
                 onClick={() => setContactMethod("file")}
                 className={`flex-1 rounded-full py-1.5 text-xs font-bold border transition-all cursor-pointer ${
-                  contactMethod === "file" ? "bg-zinc-950 text-white border-zinc-950" : "bg-zinc-50 border-zinc-200 text-zinc-650"
+                  contactMethod === "file"
+                    ? "bg-zinc-950 text-white border-zinc-950"
+                    : "bg-zinc-50 border-zinc-200 text-zinc-650"
                 }`}
               >
                 Excel/CSV Upload
@@ -2021,7 +2395,9 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
                 type="button"
                 onClick={() => setContactMethod("manual")}
                 className={`flex-1 rounded-full py-1.5 text-xs font-bold border transition-all cursor-pointer ${
-                  contactMethod === "manual" ? "bg-zinc-950 text-white border-zinc-950" : "bg-zinc-50 border-zinc-200 text-zinc-650"
+                  contactMethod === "manual"
+                    ? "bg-zinc-950 text-white border-zinc-950"
+                    : "bg-zinc-50 border-zinc-200 text-zinc-650"
                 }`}
               >
                 Manual Entry
@@ -2038,13 +2414,19 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
                     className="absolute inset-0 opacity-0 cursor-pointer"
                   />
                   <FileSpreadsheet className="h-8 w-8 text-zinc-400 mx-auto mb-2" />
-                  <p className="text-xs font-bold text-zinc-700">Drag &amp; drop Excel or CSV sheet</p>
-                  <p className="text-[10px] text-zinc-400 font-semibold mt-1">Accepts .xlsx, .xls, .csv. Must include phone header column.</p>
+                  <p className="text-xs font-bold text-zinc-700">
+                    Drag &amp; drop Excel or CSV sheet
+                  </p>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                    Accepts .xlsx, .xls, .csv. Must include phone header column.
+                  </p>
                 </div>
 
                 {parsedRecipients.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Parsed Contacts Sample ({parsedRecipients.length})</p>
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                      Parsed Contacts Sample ({parsedRecipients.length})
+                    </p>
                     <div className="border border-zinc-200 rounded-xl overflow-hidden max-h-40 overflow-y-auto">
                       <table className="w-full text-left text-[10px] font-semibold text-zinc-650">
                         <thead className="bg-zinc-50 text-[9px] text-zinc-400 uppercase border-b border-zinc-200">
@@ -2070,7 +2452,9 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
               </div>
             ) : (
               <div>
-                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Paste Numbers (one per line)</label>
+                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+                  Paste Numbers (one per line)
+                </label>
                 <textarea
                   rows={6}
                   placeholder={`+919876543210, John Doe\n+919800012345, Jane Smith`}
@@ -2078,7 +2462,9 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
                   onChange={(e) => setManualNumbers(e.target.value)}
                   className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand font-mono"
                 />
-                <p className="text-[9px] text-zinc-400 font-semibold mt-1">Format: phone, name (optional)</p>
+                <p className="text-[9px] text-zinc-400 font-semibold mt-1">
+                  Format: phone, name (optional)
+                </p>
               </div>
             )}
           </div>
@@ -2102,12 +2488,16 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
 
       {wizardStep === 3 && (
         <div className="space-y-4">
-          <h4 className="text-xs font-bold text-zinc-800 border-b border-zinc-100 pb-2">Anti-Ban Campaign Settings</h4>
-          
+          <h4 className="text-xs font-bold text-zinc-800 border-b border-zinc-100 pb-2">
+            Anti-Ban Campaign Settings
+          </h4>
+
           {/* Delay sliders */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Min Delay: {minDelay} seconds</label>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+                Min Delay: {minDelay} seconds
+              </label>
               <input
                 type="range"
                 min="5"
@@ -2118,7 +2508,9 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
               />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Max Delay: {maxDelay} seconds</label>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+                Max Delay: {maxDelay} seconds
+              </label>
               <input
                 type="range"
                 min="10"
@@ -2132,14 +2524,18 @@ const CampaignWizard = ({ templates, setCreatingCampaign, loadCampaigns, showToa
 
           {/* Daily limit */}
           <div>
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">Max Daily Message Sending Limit (For safety)</label>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1.5">
+              Max Daily Message Sending Limit (For safety)
+            </label>
             <input
               type="number"
               value={dailyLimit}
               onChange={(e) => setDailyLimit(parseInt(e.target.value))}
               className="w-32 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
             />
-            <p className="text-[9px] text-zinc-400 font-semibold mt-1">Recommended is 200 messages per day per account to prevent phone number bans.</p>
+            <p className="text-[9px] text-zinc-400 font-semibold mt-1">
+              Recommended is 200 messages per day per account to prevent phone number bans.
+            </p>
           </div>
 
           <div className="flex justify-between pt-4 border-t border-zinc-100">

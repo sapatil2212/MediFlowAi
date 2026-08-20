@@ -53,16 +53,42 @@ async function upsertPaymentHistory(fields: {
          customerPhone = COALESCE(?, customerPhone),
          updatedAt = NOW()`,
       [
-        crypto.randomUUID(), fields.userId ?? null, fields.tenantId ?? null, fields.orderId, fields.cfPaymentId ?? null,
-        fields.plan ?? null, fields.amount, fields.currency || "INR", fields.status, fields.orderStatus ?? null,
-        fields.paymentMode ?? null, fields.failureReason ?? null, fields.customerName ?? null, fields.customerEmail ?? null, fields.customerPhone ?? null,
-        fields.userId ?? null, fields.tenantId ?? null, fields.cfPaymentId ?? null, fields.plan ?? null,
-        fields.amount, fields.status, fields.orderStatus ?? null, fields.paymentMode ?? null, fields.failureReason ?? null,
-        fields.customerName ?? null, fields.customerEmail ?? null, fields.customerPhone ?? null,
-      ]
+        crypto.randomUUID(),
+        fields.userId ?? null,
+        fields.tenantId ?? null,
+        fields.orderId,
+        fields.cfPaymentId ?? null,
+        fields.plan ?? null,
+        fields.amount,
+        fields.currency || "INR",
+        fields.status,
+        fields.orderStatus ?? null,
+        fields.paymentMode ?? null,
+        fields.failureReason ?? null,
+        fields.customerName ?? null,
+        fields.customerEmail ?? null,
+        fields.customerPhone ?? null,
+        fields.userId ?? null,
+        fields.tenantId ?? null,
+        fields.cfPaymentId ?? null,
+        fields.plan ?? null,
+        fields.amount,
+        fields.status,
+        fields.orderStatus ?? null,
+        fields.paymentMode ?? null,
+        fields.failureReason ?? null,
+        fields.customerName ?? null,
+        fields.customerEmail ?? null,
+        fields.customerPhone ?? null,
+      ],
     );
   } catch (err: any) {
-    console.warn("[PaymentHistory] Failed to upsert record for order", fields.orderId, ":", err.message);
+    console.warn(
+      "[PaymentHistory] Failed to upsert record for order",
+      fields.orderId,
+      ":",
+      err.message,
+    );
   }
 }
 
@@ -114,7 +140,7 @@ async function getLatestCashfreePaymentAttempt(
   host: string,
   appId: string | undefined,
   secretKey: string | undefined,
-  orderId: string
+  orderId: string,
 ): Promise<any | null> {
   try {
     const response = await fetch(`https://${host}/pg/orders/${orderId}/payments`, {
@@ -131,7 +157,11 @@ async function getLatestCashfreePaymentAttempt(
     if (!Array.isArray(payments) || payments.length === 0) return null;
     return payments
       .slice()
-      .sort((a: any, b: any) => new Date(b.payment_completion_time || b.payment_time).getTime() - new Date(a.payment_completion_time || a.payment_time).getTime())[0];
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.payment_completion_time || b.payment_time).getTime() -
+          new Date(a.payment_completion_time || a.payment_time).getTime(),
+      )[0];
   } catch (err: any) {
     console.warn("[CASHFREE] Could not fetch payment attempts:", err.message);
     return null;
@@ -163,7 +193,9 @@ export async function reconcileOrderPaymentHistory(orderId: string): Promise<str
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
-      console.warn(`[CASHFREE][reconcile] Order ${orderId} lookup failed: ${response.status} ${errText}`);
+      console.warn(
+        `[CASHFREE][reconcile] Order ${orderId} lookup failed: ${response.status} ${errText}`,
+      );
       return null;
     }
 
@@ -176,10 +208,14 @@ export async function reconcileOrderPaymentHistory(orderId: string): Promise<str
     const customerId = orderData?.customer_details?.customer_id || null;
     let user: any = null;
     if (tenantId) {
-      user = await queryOne<any>("SELECT id, tenantId FROM User WHERE tenantId = ? LIMIT 1", [tenantId]);
+      user = await queryOne<any>("SELECT id, tenantId FROM User WHERE tenantId = ? LIMIT 1", [
+        tenantId,
+      ]);
     }
     if (!user && customerId) {
-      user = await queryOne<any>("SELECT id, tenantId FROM User WHERE id = ? LIMIT 1", [customerId]);
+      user = await queryOne<any>("SELECT id, tenantId FROM User WHERE id = ? LIMIT 1", [
+        customerId,
+      ]);
     }
 
     const latestAttempt = await getLatestCashfreePaymentAttempt(host, appId, secretKey, orderId);
@@ -191,11 +227,19 @@ export async function reconcileOrderPaymentHistory(orderId: string): Promise<str
     let ledgerStatus: string;
     if (orderStatus === "PAID" || attemptStatus === "SUCCESS") {
       ledgerStatus = "SUCCESS";
-    } else if (attemptStatus === "USER_DROPPED" || attemptStatus === "CANCELLED" || attemptStatus === "VOID") {
+    } else if (
+      attemptStatus === "USER_DROPPED" ||
+      attemptStatus === "CANCELLED" ||
+      attemptStatus === "VOID"
+    ) {
       ledgerStatus = "CANCELLED";
     } else if (attemptStatus === "FAILED") {
       ledgerStatus = "FAILED";
-    } else if (attemptStatus === "PENDING" || attemptStatus === "NOT_ATTEMPTED" || orderStatus === "ACTIVE") {
+    } else if (
+      attemptStatus === "PENDING" ||
+      attemptStatus === "NOT_ATTEMPTED" ||
+      orderStatus === "ACTIVE"
+    ) {
       ledgerStatus = "PENDING";
     } else if (orderStatus === "EXPIRED" || orderStatus === "TERMINATED") {
       ledgerStatus = "CANCELLED";
@@ -204,11 +248,12 @@ export async function reconcileOrderPaymentHistory(orderId: string): Promise<str
     }
 
     const plan = orderAmount >= 1400 ? "Premium" : orderAmount > 0 ? "Basic" : null;
-    const failureReason = ledgerStatus === "SUCCESS" || ledgerStatus === "PENDING"
-      ? null
-      : (latestAttempt?.payment_message
-          || latestAttempt?.error_details?.error_description
-          || `Order status: ${orderStatus}`);
+    const failureReason =
+      ledgerStatus === "SUCCESS" || ledgerStatus === "PENDING"
+        ? null
+        : latestAttempt?.payment_message ||
+          latestAttempt?.error_details?.error_description ||
+          `Order status: ${orderStatus}`;
 
     await upsertPaymentHistory({
       userId: user?.id ?? null,

@@ -1,5 +1,5 @@
-const mariadb = require('mariadb');
-require('dotenv').config();
+const mariadb = require("mariadb");
+require("dotenv").config();
 
 async function run() {
   let dbHost = process.env.DB_HOST || "localhost";
@@ -31,7 +31,7 @@ async function run() {
     password: dbPassword,
     database: dbName,
     ssl: useSsl ? { rejectUnauthorized: false } : undefined,
-    connectionLimit: 1
+    connectionLimit: 1,
   });
 
   try {

@@ -18,7 +18,7 @@ const mariadb = require("mariadb");
 let dbPoolInstance = null;
 function getDbPool() {
   if (dbPoolInstance) return dbPoolInstance;
-  
+
   let dbHost = process.env.DB_HOST || "localhost";
   let dbPort = parseInt(process.env.DB_PORT || "3306");
   let dbUser = process.env.DB_USER || "root";
@@ -26,7 +26,13 @@ function getDbPool() {
   let dbName = process.env.DB_NAME || "bookmytime";
 
   const dbUrl = process.env.DATABASE_URL;
-  if (dbUrl && (dbUrl.startsWith("mysql://") || dbUrl.startsWith("mysqls://") || dbUrl.startsWith("mariadb://") || dbUrl.startsWith("mariadbs://"))) {
+  if (
+    dbUrl &&
+    (dbUrl.startsWith("mysql://") ||
+      dbUrl.startsWith("mysqls://") ||
+      dbUrl.startsWith("mariadb://") ||
+      dbUrl.startsWith("mariadbs://"))
+  ) {
     try {
       const parsedUrl = new URL(dbUrl);
       dbHost = parsedUrl.hostname;
@@ -75,15 +81,18 @@ const conversationContexts = new Map();
 // Key: `${tenantId}:${senderPhone}`
 // Value: { messages: [{role, content}], lastActivity: number, senderName: string }
 
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, ctx] of conversationContexts.entries()) {
-    if (now - ctx.lastActivity > 30 * 60 * 1000) {
-      conversationContexts.delete(key);
-      console.log(`[WA AI] 🗑️ Cleared stale conversation context for: ${key}`);
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [key, ctx] of conversationContexts.entries()) {
+      if (now - ctx.lastActivity > 30 * 60 * 1000) {
+        conversationContexts.delete(key);
+        console.log(`[WA AI] 🗑️ Cleared stale conversation context for: ${key}`);
+      }
     }
-  }
-}, 10 * 60 * 1000);
+  },
+  10 * 60 * 1000,
+);
 
 // ──────────────────────────────────────────────
 // AI Helper: Call OpenRouter with Free Models
@@ -97,7 +106,7 @@ async function callOpenRouter(systemPrompt, messages) {
     "openrouter/free",
     "deepseek/deepseek-r1:free",
     "meta-llama/llama-3.3-70b-instruct:free",
-    "qwen/qwen-2.5-72b-instruct:free"
+    "qwen/qwen-2.5-72b-instruct:free",
   ];
 
   let lastError = null;
@@ -106,20 +115,17 @@ async function callOpenRouter(systemPrompt, messages) {
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
           "HTTP-Referer": "http://localhost:8080",
-          "X-Title": "HealthSync AI WA Bot"
+          "X-Title": "HealthSync AI WA Bot",
         },
         body: JSON.stringify({
           model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...messages
-          ],
+          messages: [{ role: "system", content: systemPrompt }, ...messages],
           max_tokens: 500,
-          temperature: 0.7
-        })
+          temperature: 0.7,
+        }),
       });
       if (response.ok) {
         const data = await response.json();
@@ -145,15 +151,21 @@ async function callOpenRouter(systemPrompt, messages) {
 // ──────────────────────────────────────────────
 async function getClinicAvailabilityText(tenantId) {
   try {
-    const doctors = await dbQuery("SELECT id, name FROM Doctor WHERE tenantId = ? LIMIT 5", [tenantId]);
+    const doctors = await dbQuery("SELECT id, name FROM Doctor WHERE tenantId = ? LIMIT 5", [
+      tenantId,
+    ]);
     if (doctors.length === 0) {
       return "No doctors registered at the clinic yet.";
     }
 
-    const hours = await dbQuery("SELECT dayOfWeek, isClosed FROM ClinicHours WHERE tenantId = ?", [tenantId]);
-    const closedDays = new Set(hours.filter(h => h.isClosed === 1 || Number(h.isClosed) === 1).map(h => h.dayOfWeek));
+    const hours = await dbQuery("SELECT dayOfWeek, isClosed FROM ClinicHours WHERE tenantId = ?", [
+      tenantId,
+    ]);
+    const closedDays = new Set(
+      hours.filter((h) => h.isClosed === 1 || Number(h.isClosed) === 1).map((h) => h.dayOfWeek),
+    );
 
-    const weekdays = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     let text = "";
 
     for (const doc of doctors) {
@@ -167,17 +179,20 @@ async function getClinicAvailabilityText(tenantId) {
 
         if (closedDays.has(dayOfWeek)) continue;
 
-        const dateStr = d.toISOString().split('T')[0];
-        
+        const dateStr = d.toISOString().split("T")[0];
+
         // Check doctor leave
-        const leave = await dbQuery("SELECT id FROM DoctorLeave WHERE doctorId = ? AND leaveDate = ? LIMIT 1", [doc.id, dateStr]);
+        const leave = await dbQuery(
+          "SELECT id FROM DoctorLeave WHERE doctorId = ? AND leaveDate = ? LIMIT 1",
+          [doc.id, dateStr],
+        );
         if (leave.length > 0) continue;
 
         const slots = await getAvailableSlots(tenantId, doc.id, dateStr);
         if (slots.length > 0) {
           docAvailabilityCount++;
           // limit slots to first 4 for display
-          const displaySlots = slots.slice(0, 4).join(', ');
+          const displaySlots = slots.slice(0, 4).join(", ");
           const extraCount = slots.length > 4 ? ` (+${slots.length - 4} more)` : "";
           text += `  - ${dateStr} (${weekdays[dayOfWeek]}): ${displaySlots}${extraCount}\n`;
         }
@@ -200,52 +215,74 @@ async function getClinicContext(tenantId) {
   try {
     const profiles = await dbQuery(
       "SELECT clinicName, clinicianName, phone, address, shortDescription, services, email, contactNo, whatsappNo, landlineNo FROM ClinicProfile WHERE tenantId = ? LIMIT 1",
-      [tenantId]
+      [tenantId],
     );
     const users = await dbQuery(
       "SELECT name, clinicName, phone FROM User WHERE tenantId = ? LIMIT 1",
-      [tenantId]
+      [tenantId],
     );
     const profile = profiles[0] || {};
     const user = users[0] || {};
 
     const hours = await dbQuery(
       "SELECT dayOfWeek, openTime, closeTime, isClosed FROM ClinicHours WHERE tenantId = ? ORDER BY dayOfWeek",
-      [tenantId]
+      [tenantId],
     );
-    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    const hoursStr = hours.length > 0
-      ? hours.map(h => `${days[h.dayOfWeek]}: ${h.isClosed ? 'Closed' : `${h.openTime}-${h.closeTime}`}`).join(', ')
-      : 'Mon-Sat: 9:00-18:00';
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const hoursStr =
+      hours.length > 0
+        ? hours
+            .map(
+              (h) =>
+                `${days[h.dayOfWeek]}: ${h.isClosed ? "Closed" : `${h.openTime}-${h.closeTime}`}`,
+            )
+            .join(", ")
+        : "Mon-Sat: 9:00-18:00";
 
     const doctors = await dbQuery(
       `SELECT d.id, d.name, d.qualifications, dep.name as department 
        FROM Doctor d
        LEFT JOIN Department dep ON d.departmentId = dep.id
        WHERE d.tenantId = ? LIMIT 10`,
-      [tenantId]
+      [tenantId],
     );
-    const doctorsList = doctors.length > 0
-      ? doctors.map(d => `Dr. ${d.name} (${d.qualifications || 'General'}) [ID:${d.id}]`).join('\n')
-      : 'General Physician [ID:auto]';
+    const doctorsList =
+      doctors.length > 0
+        ? doctors
+            .map((d) => `Dr. ${d.name} (${d.qualifications || "General"}) [ID:${d.id}]`)
+            .join("\n")
+        : "General Physician [ID:auto]";
 
     return {
-      clinicName: profile.clinicName || user.clinicName || 'Our Clinic',
-      phone: profile.phone || user.phone || '',
-      address: profile.address || 'Address not specified',
-      email: profile.email || '',
-      contactNo: profile.contactNo || '',
-      whatsappNo: profile.whatsappNo || '',
-      landlineNo: profile.landlineNo || '',
-      shortDescription: profile.shortDescription || '',
-      services: profile.services || '',
+      clinicName: profile.clinicName || user.clinicName || "Our Clinic",
+      phone: profile.phone || user.phone || "",
+      address: profile.address || "Address not specified",
+      email: profile.email || "",
+      contactNo: profile.contactNo || "",
+      whatsappNo: profile.whatsappNo || "",
+      landlineNo: profile.landlineNo || "",
+      shortDescription: profile.shortDescription || "",
+      services: profile.services || "",
       hoursStr,
       doctors,
-      doctorsList
+      doctorsList,
     };
   } catch (err) {
-    console.error('[WA AI] Clinic context error:', err.message);
-    return { clinicName: 'Our Clinic', phone: '', address: 'Address not specified', email: '', contactNo: '', whatsappNo: '', landlineNo: '', shortDescription: '', services: '', hoursStr: 'Mon-Sat 9AM-6PM', doctors: [], doctorsList: 'General Physician [ID:auto]' };
+    console.error("[WA AI] Clinic context error:", err.message);
+    return {
+      clinicName: "Our Clinic",
+      phone: "",
+      address: "Address not specified",
+      email: "",
+      contactNo: "",
+      whatsappNo: "",
+      landlineNo: "",
+      shortDescription: "",
+      services: "",
+      hoursStr: "Mon-Sat 9AM-6PM",
+      doctors: [],
+      doctorsList: "General Physician [ID:auto]",
+    };
   }
 }
 
@@ -254,35 +291,35 @@ async function getClinicContext(tenantId) {
 // ──────────────────────────────────────────────
 async function getAvailableSlots(tenantId, doctorId, dateStr) {
   try {
-    const date = new Date(dateStr + 'T00:00:00');
+    const date = new Date(dateStr + "T00:00:00");
     const dayOfWeek = date.getDay();
     const schedules = await dbQuery(
       "SELECT startTime, endTime, slotDuration FROM DoctorSchedule WHERE doctorId = ? AND dayOfWeek = ? LIMIT 1",
-      [doctorId, dayOfWeek]
+      [doctorId, dayOfWeek],
     );
     if (schedules.length === 0) return [];
     const sched = schedules[0];
     const slotMin = sched.slotDuration || 30;
-    let [sh, sm] = sched.startTime.split(':').map(Number);
-    let [eh, em] = sched.endTime.split(':').map(Number);
+    let [sh, sm] = sched.startTime.split(":").map(Number);
+    let [eh, em] = sched.endTime.split(":").map(Number);
     let cur = sh * 60 + sm;
     const end = eh * 60 + em;
     const slots = [];
     while (cur + slotMin <= end) {
       const h = Math.floor(cur / 60);
       const m = cur % 60;
-      slots.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+      slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
       cur += slotMin;
     }
     const booked = await dbQuery(
       `SELECT timeSlot FROM Appointment WHERE tenantId = ? AND doctorId = ? 
        AND DATE(dateTime) = ? AND status != 'Cancelled'`,
-      [tenantId, doctorId, dateStr]
+      [tenantId, doctorId, dateStr],
     );
-    const bookedSet = new Set(booked.map(b => b.timeSlot));
-    return slots.filter(s => !bookedSet.has(s));
+    const bookedSet = new Set(booked.map((b) => b.timeSlot));
+    return slots.filter((s) => !bookedSet.has(s));
   } catch (err) {
-    console.error('[WA AI] Slots error:', err.message);
+    console.error("[WA AI] Slots error:", err.message);
     return [];
   }
 }
@@ -290,17 +327,30 @@ async function getAvailableSlots(tenantId, doctorId, dateStr) {
 // ──────────────────────────────────────────────
 // Helper: Book Appointment from WhatsApp
 // ──────────────────────────────────────────────
-async function bookAppointmentFromWA(tenantId, senderPhone, name, dateStr, timeSlot, doctorId, reason) {
-  const { randomUUID } = require('crypto');
+async function bookAppointmentFromWA(
+  tenantId,
+  senderPhone,
+  name,
+  dateStr,
+  timeSlot,
+  doctorId,
+  reason,
+) {
+  const { randomUUID } = require("crypto");
   const id = randomUUID();
-  let finalDoctorId = (doctorId && doctorId !== 'auto') ? doctorId : null;
+  let finalDoctorId = doctorId && doctorId !== "auto" ? doctorId : null;
   if (!finalDoctorId) {
     const docs = await dbQuery("SELECT id FROM Doctor WHERE tenantId = ? LIMIT 1", [tenantId]);
     if (docs.length > 0) finalDoctorId = docs[0].id;
   } else {
-    const docs = await dbQuery("SELECT id FROM Doctor WHERE id = ? AND tenantId = ? LIMIT 1", [finalDoctorId, tenantId]);
+    const docs = await dbQuery("SELECT id FROM Doctor WHERE id = ? AND tenantId = ? LIMIT 1", [
+      finalDoctorId,
+      tenantId,
+    ]);
     if (docs.length === 0) {
-      const fallback = await dbQuery("SELECT id FROM Doctor WHERE tenantId = ? LIMIT 1", [tenantId]);
+      const fallback = await dbQuery("SELECT id FROM Doctor WHERE tenantId = ? LIMIT 1", [
+        tenantId,
+      ]);
       finalDoctorId = fallback.length > 0 ? fallback[0].id : null;
     }
   }
@@ -308,9 +358,21 @@ async function bookAppointmentFromWA(tenantId, senderPhone, name, dateStr, timeS
   await dbQuery(
     `INSERT INTO Appointment (id, tenantId, name, email, phone, whatsapp, dateTime, timeSlot, doctorId, reason, status, appointmentType)
      VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, 'Pending', 'WhatsApp')`,
-    [id, tenantId, name, senderPhone, senderPhone, dateTime, timeSlot, finalDoctorId, reason || 'General Checkup']
+    [
+      id,
+      tenantId,
+      name,
+      senderPhone,
+      senderPhone,
+      dateTime,
+      timeSlot,
+      finalDoctorId,
+      reason || "General Checkup",
+    ],
   );
-  console.log(`[WA AI] ✅ Booked appointment [${id.substring(0,8)}] for ${name} on ${dateStr} at ${timeSlot}`);
+  console.log(
+    `[WA AI] ✅ Booked appointment [${id.substring(0, 8)}] for ${name} on ${dateStr} at ${timeSlot}`,
+  );
   return { id, dateTime, timeSlot };
 }
 
@@ -318,14 +380,14 @@ async function bookAppointmentFromWA(tenantId, senderPhone, name, dateStr, timeS
 // Helper: Persist Conversation to DB
 // ──────────────────────────────────────────────
 async function logConversation(tenantId, phone, name, direction, message) {
-  const { randomUUID } = require('crypto');
+  const { randomUUID } = require("crypto");
   try {
     await dbQuery(
       `INSERT INTO WAConversation (id, tenantId, senderPhone, senderName, direction, message) VALUES (?, ?, ?, ?, ?, ?)`,
-      [randomUUID(), tenantId, phone, name || null, direction, message]
+      [randomUUID(), tenantId, phone, name || null, direction, message],
     );
   } catch (err) {
-    console.error('[WA AI] Log conversation error:', err.message);
+    console.error("[WA AI] Log conversation error:", err.message);
   }
 }
 
@@ -357,20 +419,17 @@ Example output:
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         "HTTP-Referer": "http://localhost:8080",
-        "X-Title": "HealthSync AI Extractor"
+        "X-Title": "HealthSync AI Extractor",
       },
       body: JSON.stringify({
         model: "openrouter/free",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages.slice(-6)
-        ],
+        messages: [{ role: "system", content: systemPrompt }, ...messages.slice(-6)],
         max_tokens: 150,
-        temperature: 0.1
-      })
+        temperature: 0.1,
+      }),
     });
 
     if (response.ok) {
@@ -381,7 +440,7 @@ Example output:
         const parsed = JSON.parse(cleanContent);
         return {
           date: parsed.date || null,
-          doctorId: parsed.doctorId || null
+          doctorId: parsed.doctorId || null,
         };
       }
     }
@@ -404,15 +463,15 @@ async function handleAIReply(tenantId, senderPhone, incomingText, session, sende
   }
   ctx.lastActivity = Date.now();
 
-  await logConversation(tenantId, senderPhone, ctx.senderName, 'incoming', incomingText);
-  ctx.messages.push({ role: 'user', content: incomingText });
+  await logConversation(tenantId, senderPhone, ctx.senderName, "incoming", incomingText);
+  ctx.messages.push({ role: "user", content: incomingText });
 
   const clinic = await getClinicContext(tenantId);
-  const today = new Date().toISOString().split('T')[0];
-  
+  const today = new Date().toISOString().split("T")[0];
+
   // Extract selected entities from conversation history using LLM helper
   const entities = await extractBookingEntities(tenantId, ctx.messages, clinic.doctorsList, today);
-  
+
   let targetDoctorId = entities.doctorId;
   let dateSpecificSlotsText = "No date has been chosen yet.";
   if (entities.date) {
@@ -423,7 +482,9 @@ async function handleAIReply(tenantId, senderPhone, incomingText, session, sende
     }
     const slots = await getAvailableSlots(tenantId, targetDoctorId, entities.date);
     if (slots && slots.length > 0) {
-      dateSpecificSlotsText = `Available slots for ${entities.date} under doctor ID ${targetDoctorId}:\n` + slots.join(', ');
+      dateSpecificSlotsText =
+        `Available slots for ${entities.date} under doctor ID ${targetDoctorId}:\n` +
+        slots.join(", ");
     } else {
       dateSpecificSlotsText = `No slots available for ${entities.date} under doctor ID ${targetDoctorId}. Please request another date.`;
     }
@@ -440,13 +501,13 @@ Clinic Info:
 - Name: ${clinic.clinicName}
 - Phone: ${clinic.phone}
 - Address: ${clinic.address}
-- Email: ${clinic.email || 'Not specified'}
-- Contact No: ${clinic.contactNo || clinic.phone || 'Not specified'}
-- WhatsApp No: ${clinic.whatsappNo || 'Not specified'}
-- Landline No: ${clinic.landlineNo || 'Not specified'}
+- Email: ${clinic.email || "Not specified"}
+- Contact No: ${clinic.contactNo || clinic.phone || "Not specified"}
+- WhatsApp No: ${clinic.whatsappNo || "Not specified"}
+- Landline No: ${clinic.landlineNo || "Not specified"}
 - Hours: ${clinic.hoursStr}
-- About Clinic: ${clinic.shortDescription || 'A trusted healthcare provider.'}
-- Treatments & Services Offered: ${clinic.services || 'General consultations and primary care.'}
+- About Clinic: ${clinic.shortDescription || "A trusted healthcare provider."}
+- Treatments & Services Offered: ${clinic.services || "General consultations and primary care."}
 
 Available Doctors:
 ${clinic.doctorsList}
@@ -454,8 +515,8 @@ ${clinic.doctorsList}
 Today: ${today}
 
 Current User Selections (from history):
-- Selected Date: ${entities.date || 'None'}
-- Selected Doctor ID: ${targetDoctorId || 'None'}
+- Selected Date: ${entities.date || "None"}
+- Selected Doctor ID: ${targetDoctorId || "None"}
 
 Real-time slots for their selected date (if any date has been chosen):
 ${dateSpecificSlotsText}
@@ -510,45 +571,58 @@ RULES:
     aiReply = await callOpenRouter(systemPrompt, ctx.messages.slice(-12));
   } catch (err) {
     console.error(`[WA AI] [${tenantId}] AI call failed:`, err.message);
-    aiReply = "I'm sorry, I'm having a technical issue right now. Please call us directly for assistance.";
+    aiReply =
+      "I'm sorry, I'm having a technical issue right now. Please call us directly for assistance.";
   }
 
   // Parse booking marker
-  const bookingMatch = aiReply.match(/\[BOOK:name=([^|]+)\|date=([^|]+)\|time=([^|]+)\|doctorId=([^|]+)\|reason=([^\]]+)\]/);
+  const bookingMatch = aiReply.match(
+    /\[BOOK:name=([^|]+)\|date=([^|]+)\|time=([^|]+)\|doctorId=([^|]+)\|reason=([^\]]+)\]/,
+  );
   let bookingConfirmMsg = null;
 
   if (bookingMatch) {
     const [, name, date, time, doctorId, reason] = bookingMatch;
     try {
       const appt = await bookAppointmentFromWA(
-        tenantId, senderPhone,
-        name.trim(), date.trim(), time.trim(),
-        doctorId.trim(), reason.trim()
+        tenantId,
+        senderPhone,
+        name.trim(),
+        date.trim(),
+        time.trim(),
+        doctorId.trim(),
+        reason.trim(),
       );
       ctx.senderName = name.trim();
-      bookingConfirmMsg = `✅ *Appointment Confirmed!*\n\n📅 Date: ${date.trim()}\n⏰ Time: ${time.trim()}\n👤 Name: ${name.trim()}\n📋 Ref: ${appt.id.substring(0,8).toUpperCase()}\n\nPlease arrive 10 minutes early. See you soon! 🏥`;
+      bookingConfirmMsg = `✅ *Appointment Confirmed!*\n\n📅 Date: ${date.trim()}\n⏰ Time: ${time.trim()}\n👤 Name: ${name.trim()}\n📋 Ref: ${appt.id.substring(0, 8).toUpperCase()}\n\nPlease arrive 10 minutes early. See you soon! 🏥`;
     } catch (bookErr) {
       console.error(`[WA AI] [${tenantId}] Booking failed:`, bookErr.message);
-      bookingConfirmMsg = "I tried to book your appointment but ran into an issue. Please call us directly to confirm your slot.";
+      bookingConfirmMsg =
+        "I tried to book your appointment but ran into an issue. Please call us directly to confirm your slot.";
     }
   }
 
   // Strip booking marker from AI reply text
-  let cleanReply = aiReply.replace(/\[BOOK:[^\]]+\]/g, '').trim();
+  let cleanReply = aiReply.replace(/\[BOOK:[^\]]+\]/g, "").trim();
   if (!cleanReply && !bookingConfirmMsg) cleanReply = "How can I help you today? 😊";
 
   if (cleanReply) {
     await session.client.sendMessage(targetJid, cleanReply);
-    session.sentLog.unshift({ timestamp: new Date().toISOString(), recipient: senderPhone, message: `[AI] ${cleanReply}`, status: 'sent' });
+    session.sentLog.unshift({
+      timestamp: new Date().toISOString(),
+      recipient: senderPhone,
+      message: `[AI] ${cleanReply}`,
+      status: "sent",
+    });
     if (session.sentLog.length > 100) session.sentLog.pop();
-    await logConversation(tenantId, senderPhone, ctx.senderName, 'outgoing', cleanReply);
-    ctx.messages.push({ role: 'assistant', content: cleanReply });
+    await logConversation(tenantId, senderPhone, ctx.senderName, "outgoing", cleanReply);
+    ctx.messages.push({ role: "assistant", content: cleanReply });
   }
 
   if (bookingConfirmMsg) {
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 1500));
     await session.client.sendMessage(targetJid, bookingConfirmMsg);
-    await logConversation(tenantId, senderPhone, ctx.senderName, 'outgoing', bookingConfirmMsg);
+    await logConversation(tenantId, senderPhone, ctx.senderName, "outgoing", bookingConfirmMsg);
   }
 
   if (ctx.messages.length > 14) ctx.messages = ctx.messages.slice(-14);
@@ -598,7 +672,9 @@ async function initClient(tenantId, force = false) {
     }
 
     if (session.client) {
-      try { await session.client.destroy(); } catch (_) {}
+      try {
+        await session.client.destroy();
+      } catch (_) {}
       session.client = null;
     }
 
@@ -609,7 +685,8 @@ async function initClient(tenantId, force = false) {
       }),
       webVersionCache: {
         type: "remote",
-        remotePath: "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html",
+        remotePath:
+          "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html",
       },
       puppeteer: {
         headless: true,
@@ -666,7 +743,9 @@ async function initClient(tenantId, force = false) {
       setTimeout(() => {
         const sessionDir = path.resolve(`./.wwebjs_auth/session-${tenantId}`);
         if (fs.existsSync(sessionDir)) {
-          try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (_) {}
+          try {
+            fs.rmSync(sessionDir, { recursive: true, force: true });
+          } catch (_) {}
         }
         initClient(tenantId, true).catch(console.error);
       }, 5000);
@@ -690,13 +769,13 @@ async function initClient(tenantId, force = false) {
         if (msg.fromMe || msg.isGroup || !msg.body || msg.from.includes("@broadcast")) return;
         const sender = msg.from.split("@")[0];
         const incomingText = msg.body.trim();
-        
+
         console.log(`[WA Incoming] [${tenantId}] Received from +${sender}: "${incomingText}"`);
 
         // Check if AI smart reply is enabled for this tenant
         const configRows = await dbQuery(
           "SELECT aiEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1",
-          [tenantId]
+          [tenantId],
         );
         const aiEnabled = configRows[0]?.aiEnabled === 1 || Number(configRows[0]?.aiEnabled) === 1;
 
@@ -708,7 +787,7 @@ async function initClient(tenantId, force = false) {
         // ── Legacy keyword-based auto-reply (fallback when AI is OFF) ──
         const rules = await dbQuery(
           "SELECT * FROM WAAutoReply WHERE tenantId = ? AND isActive = 1 ORDER BY priority DESC, createdAt ASC",
-          [tenantId]
+          [tenantId],
         );
 
         for (const rule of rules) {
@@ -732,13 +811,15 @@ async function initClient(tenantId, force = false) {
           }
 
           if (matched) {
-            console.log(`[WA AutoReply] [${tenantId}] Match found for rule "${rule.triggerKeyword}". Replying with: "${rule.replyMessage}"`);
+            console.log(
+              `[WA AutoReply] [${tenantId}] Match found for rule "${rule.triggerKeyword}". Replying with: "${rule.replyMessage}"`,
+            );
             await session.client.sendMessage(msg.from, rule.replyMessage);
             session.sentLog.unshift({
               timestamp: new Date().toISOString(),
               recipient: sender,
               message: `[Auto-Reply] ${rule.replyMessage}`,
-              status: "sent"
+              status: "sent",
             });
             if (session.sentLog.length > 100) session.sentLog.pop();
             break;
@@ -769,8 +850,12 @@ async function disconnect(tenantId) {
   const session = clients.get(tenantId);
   if (session) {
     if (session.client) {
-      try { await session.client.logout(); } catch (_) {}
-      try { await session.client.destroy(); } catch (_) {}
+      try {
+        await session.client.logout();
+      } catch (_) {}
+      try {
+        await session.client.destroy();
+      } catch (_) {}
       session.client = null;
     }
     session.state = "DISCONNECTED";
@@ -782,10 +867,12 @@ async function disconnect(tenantId) {
   // Clear session directories
   const sessionDir = path.resolve(`./.wwebjs_auth/session-${tenantId}`);
   if (fs.existsSync(sessionDir)) {
-    try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (_) {}
+    try {
+      fs.rmSync(sessionDir, { recursive: true, force: true });
+    } catch (_) {}
     console.log(`[WA] [${tenantId}] Session folder cleared`);
   }
-  
+
   clients.delete(tenantId);
 }
 
@@ -808,25 +895,41 @@ async function processQueue(tenantId) {
         await session.client.sendMessage(`${msg.phone}@c.us`, msg.body);
       }
 
-      session.sentLog.unshift({ timestamp: new Date().toISOString(), recipient: msg.phone, message: msg.body, status: "sent" });
+      session.sentLog.unshift({
+        timestamp: new Date().toISOString(),
+        recipient: msg.phone,
+        message: msg.body,
+        status: "sent",
+      });
       if (session.sentLog.length > 100) session.sentLog.pop();
       session.queue.shift();
       console.log(`[WA] [${tenantId}] ✅ Sent to +` + msg.phone);
 
       // Update Database for Campaign Recipient
       if (msg.recipientId) {
-        await dbQuery("UPDATE WACampaignRecipient SET status = 'sent', sentAt = NOW() WHERE id = ?", [msg.recipientId]);
+        await dbQuery(
+          "UPDATE WACampaignRecipient SET status = 'sent', sentAt = NOW() WHERE id = ?",
+          [msg.recipientId],
+        );
       }
       if (msg.campaignId) {
-        await dbQuery("UPDATE WACampaign SET sentCount = sentCount + 1 WHERE id = ?", [msg.campaignId]);
-        
+        await dbQuery("UPDATE WACampaign SET sentCount = sentCount + 1 WHERE id = ?", [
+          msg.campaignId,
+        ]);
+
         // Auto-complete campaign status if queue is empty of this campaign
-        const remainingInQueue = session.queue.some(item => item.campaignId === msg.campaignId);
+        const remainingInQueue = session.queue.some((item) => item.campaignId === msg.campaignId);
         if (!remainingInQueue) {
-          const pending = await dbQuery("SELECT COUNT(*) as count FROM WACampaignRecipient WHERE campaignId = ? AND status = 'pending'", [msg.campaignId]);
+          const pending = await dbQuery(
+            "SELECT COUNT(*) as count FROM WACampaignRecipient WHERE campaignId = ? AND status = 'pending'",
+            [msg.campaignId],
+          );
           const pendingCount = pending[0]?.count || pending[0]?.COUNT || 0;
           if (parseInt(pendingCount) === 0) {
-            await dbQuery("UPDATE WACampaign SET status = 'completed', completedAt = NOW() WHERE id = ?", [msg.campaignId]);
+            await dbQuery(
+              "UPDATE WACampaign SET status = 'completed', completedAt = NOW() WHERE id = ?",
+              [msg.campaignId],
+            );
             console.log(`[WA] [${tenantId}] Campaign ${msg.campaignId} marked as COMPLETED.`);
           }
         }
@@ -835,22 +938,38 @@ async function processQueue(tenantId) {
       console.error(`[WA] [${tenantId}] ❌ Send failed to +` + msg.phone + ":", err.message);
       msg.retries = (msg.retries || 0) + 1;
       if (msg.retries >= 3) {
-        session.sentLog.unshift({ timestamp: new Date().toISOString(), recipient: msg.phone, message: msg.body, status: "failed" });
+        session.sentLog.unshift({
+          timestamp: new Date().toISOString(),
+          recipient: msg.phone,
+          message: msg.body,
+          status: "failed",
+        });
         session.queue.shift();
 
         // Update DB as failed
         if (msg.recipientId) {
-          await dbQuery("UPDATE WACampaignRecipient SET status = 'failed', errorMsg = ?, sentAt = NOW() WHERE id = ?", [err.message, msg.recipientId]);
+          await dbQuery(
+            "UPDATE WACampaignRecipient SET status = 'failed', errorMsg = ?, sentAt = NOW() WHERE id = ?",
+            [err.message, msg.recipientId],
+          );
         }
         if (msg.campaignId) {
-          await dbQuery("UPDATE WACampaign SET failedCount = failedCount + 1 WHERE id = ?", [msg.campaignId]);
-          
-          const remainingInQueue = session.queue.some(item => item.campaignId === msg.campaignId);
+          await dbQuery("UPDATE WACampaign SET failedCount = failedCount + 1 WHERE id = ?", [
+            msg.campaignId,
+          ]);
+
+          const remainingInQueue = session.queue.some((item) => item.campaignId === msg.campaignId);
           if (!remainingInQueue) {
-            const pending = await dbQuery("SELECT COUNT(*) as count FROM WACampaignRecipient WHERE campaignId = ? AND status = 'pending'", [msg.campaignId]);
+            const pending = await dbQuery(
+              "SELECT COUNT(*) as count FROM WACampaignRecipient WHERE campaignId = ? AND status = 'pending'",
+              [msg.campaignId],
+            );
             const pendingCount = pending[0]?.count || pending[0]?.COUNT || 0;
             if (parseInt(pendingCount) === 0) {
-              await dbQuery("UPDATE WACampaign SET status = 'completed', completedAt = NOW() WHERE id = ?", [msg.campaignId]);
+              await dbQuery(
+                "UPDATE WACampaign SET status = 'completed', completedAt = NOW() WHERE id = ?",
+                [msg.campaignId],
+              );
             }
           }
         }
@@ -858,11 +977,11 @@ async function processQueue(tenantId) {
         session.queue.push(session.queue.shift());
       }
     }
-    
+
     // Anti-ban delay: randomized delay between minDelay and maxDelay (default 8–15s)
     const minD = msg.minDelay || 8;
     const maxD = msg.maxDelay || 15;
-    const delay = (minD * 1000) + Math.floor(Math.random() * ((maxD - minD) * 1000));
+    const delay = minD * 1000 + Math.floor(Math.random() * ((maxD - minD) * 1000));
     await new Promise((r) => setTimeout(r, delay));
   }
   session.isProcessingQueue = false;
@@ -876,19 +995,22 @@ function readBody(req) {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
-      try { resolve(body ? JSON.parse(body) : {}); }
-      catch (e) { resolve({}); }
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (e) {
+        resolve({});
+      }
     });
     req.on("error", reject);
   });
 }
 
 function json(res, data, status = 200) {
-  res.writeHead(status, { 
-    "Content-Type": "application/json", 
+  res.writeHead(status, {
+    "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   });
   res.end(JSON.stringify(data));
 }
@@ -915,17 +1037,19 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && pathname === "/status") {
     const tenantId = parsedUrl.searchParams.get("tenantId") || "global";
     let session = clients.get(tenantId);
-    
+
     // Lazy load the client status if folder exists on disk and not loaded in memory
     if (!session) {
       const sessionDir = path.resolve(`./.wwebjs_auth/session-${tenantId}`);
       if (fs.existsSync(sessionDir)) {
-        console.log(`[WA Status] 🔄 Lazy initializing session on status check for tenant: ${tenantId}`);
+        console.log(
+          `[WA Status] 🔄 Lazy initializing session on status check for tenant: ${tenantId}`,
+        );
         initClient(tenantId).catch(console.error);
         session = clients.get(tenantId);
       }
     }
-    
+
     if (!session) {
       return json(res, {
         state: "DISCONNECTED",
@@ -950,12 +1074,12 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     const tenantId = body.tenantId || "global";
     if (!body.phone || !body.body) return json(res, { error: "phone and body required" }, 400);
-    
+
     let phone = String(body.phone).replace(/\D/g, "");
     if (phone.length === 10) phone = "91" + phone;
 
     let session = clients.get(tenantId);
-    
+
     // Lazy load previously-paired sessions if data exists
     if (!session) {
       const sessionDir = path.resolve(`./.wwebjs_auth/session-${tenantId}`);
@@ -972,7 +1096,9 @@ const server = http.createServer(async (req, res) => {
 
     session.lastActive = Date.now();
     session.queue.push({ phone, body: body.body, retries: 0 });
-    console.log(`[WA] [${tenantId}] 📬 Enqueued for +${phone}. Queue size: ${session.queue.length}`);
+    console.log(
+      `[WA] [${tenantId}] 📬 Enqueued for +${phone}. Queue size: ${session.queue.length}`,
+    );
     if (session.state === "CONNECTED") processQueue(tenantId);
     return json(res, { success: true, queued: true });
   }
@@ -1015,14 +1141,18 @@ const server = http.createServer(async (req, res) => {
         mediaUrl: msg.mediaUrl,
         minDelay,
         maxDelay,
-        retries: 0
+        retries: 0,
       });
     }
 
-    console.log(`[WA] [${tenantId}] 📬 Enqueued bulk of ${messages.length} messages. Queue size: ${session.queue.length}`);
-    
+    console.log(
+      `[WA] [${tenantId}] 📬 Enqueued bulk of ${messages.length} messages. Queue size: ${session.queue.length}`,
+    );
+
     if (campaignId) {
-      await dbQuery("UPDATE WACampaign SET status = 'sending', startedAt = NOW() WHERE id = ?", [campaignId]);
+      await dbQuery("UPDATE WACampaign SET status = 'sending', startedAt = NOW() WHERE id = ?", [
+        campaignId,
+      ]);
     }
 
     if (session.state === "CONNECTED") processQueue(tenantId);
@@ -1039,8 +1169,10 @@ const server = http.createServer(async (req, res) => {
 
     let session = clients.get(tenantId);
     if (session) {
-      session.queue = session.queue.filter(item => item.campaignId !== campaignId);
-      console.log(`[WA] [${tenantId}] Paused campaign ${campaignId}. Cleared messages from memory queue.`);
+      session.queue = session.queue.filter((item) => item.campaignId !== campaignId);
+      console.log(
+        `[WA] [${tenantId}] Paused campaign ${campaignId}. Cleared messages from memory queue.`,
+      );
     }
 
     await dbQuery("UPDATE WACampaign SET status = 'paused' WHERE id = ?", [campaignId]);
@@ -1079,7 +1211,7 @@ const server = http.createServer(async (req, res) => {
       phone: targetPhone,
       body: caption,
       mediaUrl: mediaUrl,
-      retries: 0
+      retries: 0,
     });
 
     if (session.state === "CONNECTED") processQueue(tenantId);
@@ -1120,7 +1252,7 @@ function autoRestoreSessions() {
         // Do not restore the legacy name
         if (tenantId && tenantId !== "bookmytime-session") {
           console.log(`[WA Startup] 🔄 Restoring active session for tenant: ${tenantId}`);
-          initClient(tenantId).catch(err => {
+          initClient(tenantId).catch((err) => {
             console.error(`[WA Startup] Failed to restore session for ${tenantId}:`, err.message);
           });
         }
@@ -1139,10 +1271,13 @@ setInterval(() => {
   for (const [tenantId, session] of clients.entries()) {
     // Only GC clients that have not paired (QR_READY or CONNECTING) and been idle for > 5 mins
     if (session.state === "QR_READY" || session.state === "CONNECTING") {
-      if (now - session.lastActive > 300000) { // 5 minutes
+      if (now - session.lastActive > 300000) {
+        // 5 minutes
         console.log(`[WA GC] 🧹 Garbage collecting idle session for tenant: ${tenantId}`);
         if (session.client) {
-          try { session.client.destroy(); } catch (_) {}
+          try {
+            session.client.destroy();
+          } catch (_) {}
           session.client = null;
         }
         clients.delete(tenantId);
@@ -1160,15 +1295,20 @@ setInterval(async () => {
       try {
         const state = await Promise.race([
           session.client.getState(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000)),
         ]);
         console.log(`[WA Health Check] [${tenantId}] Client state is:`, state);
         if (state !== "CONNECTED") {
-          console.warn(`[WA Health Check] [${tenantId}] State is not CONNECTED. Re-initializing...`);
+          console.warn(
+            `[WA Health Check] [${tenantId}] State is not CONNECTED. Re-initializing...`,
+          );
           initClient(tenantId, true).catch(console.error);
         }
       } catch (err) {
-        console.error(`[WA Health Check Failed] [${tenantId}] Error (hanging or crash):`, err.message);
+        console.error(
+          `[WA Health Check Failed] [${tenantId}] Error (hanging or crash):`,
+          err.message,
+        );
         initClient(tenantId, true).catch(console.error);
       }
     }
@@ -1191,7 +1331,7 @@ server.listen(PORT, "127.0.0.1", () => {
 // Graceful shutdown handling to prevent zombie puppeteer chrome processes
 async function gracefulShutdown(signal) {
   console.log(`[WA Server] 🛑 Received ${signal}. Cleaning up active WhatsApp sessions...`);
-  
+
   const activeClients = Array.from(clients.entries());
   for (const [tenantId, session] of activeClients) {
     if (session.client) {
@@ -1204,7 +1344,7 @@ async function gracefulShutdown(signal) {
       }
     }
   }
-  
+
   console.log("[WA Server] Cleanup complete. Exiting.");
   process.exit(0);
 }

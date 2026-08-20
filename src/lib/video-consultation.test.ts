@@ -42,11 +42,25 @@ import {
 // extending the maps fails the suite rather than silently passing.
 // ---------------------------------------------------------------------------
 const arbRoomState = fc.constantFrom<RoomState>(...ROOM_STATES);
-const TRANSITION_KINDS: TransitionKind[] = ["patient_arrived", "admit", "decline", "end", "expire", "cancel"];
+const TRANSITION_KINDS: TransitionKind[] = [
+  "patient_arrived",
+  "admit",
+  "decline",
+  "end",
+  "expire",
+  "cancel",
+];
 const arbTransitionKind = fc.constantFrom<TransitionKind>(...TRANSITION_KINDS);
 const arbSignalKind = fc.constantFrom<SignalKind>(...SIGNAL_KINDS);
 const arbRole = fc.constantFrom<ParticipantRole>("doctor", "patient");
-const PEER_STATES: PeerState[] = ["new", "connecting", "connected", "disconnected", "failed", "closed"];
+const PEER_STATES: PeerState[] = [
+  "new",
+  "connecting",
+  "connected",
+  "disconnected",
+  "failed",
+  "closed",
+];
 const arbPeerState = fc.constantFrom<PeerState>(...PEER_STATES);
 
 // ===========================================================================
@@ -60,21 +74,25 @@ describe("Property 1: terminal room states are absorbing", () => {
         expect(r.ok).toBe(false);
         expect(r.next).toBe(s);
         if (!r.ok) expect(r.reason).toBe("terminal");
-      })
+      }),
     );
   });
 
   it("no generated transition sequence can escape a terminal state", () => {
     fc.assert(
-      fc.property(fc.constantFrom(...TERMINAL_ROOM_STATES), fc.array(arbTransitionKind), (start, kinds) => {
-        let state: RoomState = start;
-        for (const k of kinds) {
-          const r = applyTransition(state, k);
-          state = r.next;
-        }
-        expect(isTerminalRoomState(state)).toBe(true);
-        expect(state).toBe(start);
-      })
+      fc.property(
+        fc.constantFrom(...TERMINAL_ROOM_STATES),
+        fc.array(arbTransitionKind),
+        (start, kinds) => {
+          let state: RoomState = start;
+          for (const k of kinds) {
+            const r = applyTransition(state, k);
+            state = r.next;
+          }
+          expect(isTerminalRoomState(state)).toBe(true);
+          expect(state).toBe(start);
+        },
+      ),
     );
   });
 });
@@ -85,7 +103,7 @@ describe("Property 2: a rejected transition is a no-op and agrees with canTransi
       fc.property(arbRoomState, arbTransitionKind, (from, kind) => {
         const r = applyTransition(from, kind);
         if (!r.ok) expect(r.next).toBe(from);
-      })
+      }),
     );
   });
 
@@ -101,7 +119,7 @@ describe("Property 2: a rejected transition is a no-op and agrees with canTransi
         } else {
           expect(canTransition(from, kind)).toBe(r.ok);
         }
-      })
+      }),
     );
   });
 });
@@ -113,7 +131,7 @@ describe("Property 3: reachability respects the lifecycle", () => {
         let state: RoomState = "scheduled";
         for (const k of kinds) state = applyTransition(state, k).next;
         expect(ROOM_STATES).toContain(state);
-      })
+      }),
     );
   });
 
@@ -127,7 +145,7 @@ describe("Property 3: reachability respects the lifecycle", () => {
           state = applyTransition(state, k).next;
         }
         if (state === "active") expect(sawAdmitFromWaiting).toBe(true);
-      })
+      }),
     );
   });
 
@@ -163,8 +181,8 @@ describe("Property 4: join windows are ordered and evaluation is total", () => {
           const w = computeJoinWindow(appt, { beforeMinutes: before, afterMinutes: after });
           expect(w.opensAt).toBeLessThanOrEqual(appt);
           expect(w.closesAt).toBeGreaterThanOrEqual(appt);
-        }
-      )
+        },
+      ),
     );
   });
 
@@ -181,8 +199,8 @@ describe("Property 4: join windows are ordered and evaluation is total", () => {
           if (now < w.opensAt) expect(v).toBe("early");
           else if (now > w.closesAt) expect(v).toBe("closed");
           else expect(v).toBe("open");
-        }
-      )
+        },
+      ),
     );
   });
 
@@ -203,21 +221,26 @@ describe("Property 5: signal delivery is ordered, gapless, and never repeats", (
       senderRole: arbRole,
       payload: fc.string(),
     }),
-    { maxLength: 50 }
+    { maxLength: 50 },
   );
 
   it("selectSignalsAfter returns strictly ascending, seq > cursor, other-role only", () => {
     fc.assert(
-      fc.property(arbSignals, fc.integer({ min: 0, max: 1000 }), arbRole, (all, cursor, forRole) => {
-        // de-dup seq to model the DB uniqueness of (roomId, seq)
-        const uniq = dedupeBySeq(all);
-        const out = selectSignalsAfter(uniq, cursor, forRole);
-        for (let k = 1; k < out.length; k++) expect(out[k].seq).toBeGreaterThan(out[k - 1].seq);
-        for (const s of out) {
-          expect(s.seq).toBeGreaterThan(cursor);
-          expect(s.senderRole).not.toBe(forRole);
-        }
-      })
+      fc.property(
+        arbSignals,
+        fc.integer({ min: 0, max: 1000 }),
+        arbRole,
+        (all, cursor, forRole) => {
+          // de-dup seq to model the DB uniqueness of (roomId, seq)
+          const uniq = dedupeBySeq(all);
+          const out = selectSignalsAfter(uniq, cursor, forRole);
+          for (let k = 1; k < out.length; k++) expect(out[k].seq).toBeGreaterThan(out[k - 1].seq);
+          for (const s of out) {
+            expect(s.seq).toBeGreaterThan(cursor);
+            expect(s.senderRole).not.toBe(forRole);
+          }
+        },
+      ),
     );
   });
 
@@ -225,7 +248,10 @@ describe("Property 5: signal delivery is ordered, gapless, and never repeats", (
     fc.assert(
       fc.property(arbSignals, arbRole, (all, forRole) => {
         const uniq = dedupeBySeq(all);
-        const expected = uniq.filter((s) => s.senderRole !== forRole).map((s) => s.seq).sort((a, b) => a - b);
+        const expected = uniq
+          .filter((s) => s.senderRole !== forRole)
+          .map((s) => s.seq)
+          .sort((a, b) => a - b);
         const delivered: number[] = [];
         let cursor = 0;
         // Simulate polls that reveal signals incrementally.
@@ -240,7 +266,7 @@ describe("Property 5: signal delivery is ordered, gapless, and never repeats", (
         for (const b of batch) delivered.push(b.seq);
         expect(delivered.slice().sort((a, b) => a - b)).toEqual(expected);
         expect(new Set(delivered).size).toBe(delivered.length); // no repeats
-      })
+      }),
     );
   });
 
@@ -261,7 +287,7 @@ describe("Property 6: payload validation is a hard gate", () => {
           expect(payload.length).toBeGreaterThan(0);
           expect(utf8ByteLength(payload)).toBeLessThanOrEqual(MAX_SIGNAL_PAYLOAD_BYTES);
         }
-      })
+      }),
     );
   });
 
@@ -288,7 +314,11 @@ describe("Property 6: payload validation is a hard gate", () => {
 // ===========================================================================
 describe("Property 7: outcome classification is deterministic and idempotent", () => {
   const arbInput = fc.record({
-    terminalState: fc.constantFrom<"ended" | "expired" | "cancelled">("ended", "expired", "cancelled"),
+    terminalState: fc.constantFrom<"ended" | "expired" | "cancelled">(
+      "ended",
+      "expired",
+      "cancelled",
+    ),
     patientEverAdmitted: fc.boolean(),
     patientEverWaited: fc.boolean(),
     admissionDecisionRecorded: fc.boolean(),
@@ -299,7 +329,7 @@ describe("Property 7: outcome classification is deterministic and idempotent", (
       "abandoned",
       "patient_no_show",
       "doctor_no_show",
-      "cancelled"
+      "cancelled",
     ),
   });
 
@@ -309,7 +339,7 @@ describe("Property 7: outcome classification is deterministic and idempotent", (
         const once = classifyOutcome(i);
         const twice = classifyOutcome({ ...i, existingOutcome: once });
         expect(twice).toBe(once);
-      })
+      }),
     );
   });
 
@@ -322,7 +352,7 @@ describe("Property 7: outcome classification is deterministic and idempotent", (
         patientEverAdmitted: false,
         connectedSeconds: 0,
         existingOutcome: null,
-      })
+      }),
     ).toBe("doctor_no_show");
     expect(
       classifyOutcome({
@@ -332,7 +362,7 @@ describe("Property 7: outcome classification is deterministic and idempotent", (
         patientEverAdmitted: false,
         connectedSeconds: 0,
         existingOutcome: null,
-      })
+      }),
     ).toBe("patient_no_show");
     expect(
       classifyOutcome({
@@ -342,7 +372,7 @@ describe("Property 7: outcome classification is deterministic and idempotent", (
         patientEverAdmitted: true,
         connectedSeconds: 0,
         existingOutcome: null,
-      })
+      }),
     ).toBe("abandoned");
     expect(
       classifyOutcome({
@@ -352,7 +382,7 @@ describe("Property 7: outcome classification is deterministic and idempotent", (
         patientEverAdmitted: true,
         connectedSeconds: 120,
         existingOutcome: null,
-      })
+      }),
     ).toBe("completed");
     // existing wins
     expect(
@@ -363,7 +393,7 @@ describe("Property 7: outcome classification is deterministic and idempotent", (
         patientEverAdmitted: true,
         connectedSeconds: 120,
         existingOutcome: "patient_no_show",
-      })
+      }),
     ).toBe("patient_no_show");
   });
 });
@@ -377,7 +407,7 @@ describe("Property 8: quality classification is total and monotonic", () => {
     fc.assert(
       fc.property(arbSample, (s) => {
         expect(["good", "fair", "poor"]).toContain(classifyQuality(s as QualitySample));
-      })
+      }),
     );
     expect(classifyQuality({ rttMs: null, packetLossPct: null, jitterMs: null })).toBe("good");
   });
@@ -389,7 +419,7 @@ describe("Property 8: quality classification is total and monotonic", () => {
         const rtt0 = base.rttMs ?? 0;
         const worsened: QualitySample = { ...base, rttMs: rtt0 + worse };
         expect(rank[classifyQuality(worsened)]).toBeGreaterThanOrEqual(rank[classifyQuality(base)]);
-      })
+      }),
     );
   });
 });
@@ -401,9 +431,11 @@ describe("Property 9: polling stops only when the call is genuinely up", () => {
         const stop = shouldStopPolling(rs, lp, rp);
         expect(stop).toBe(rs === "active" && lp === "connected" && rp === "connected");
         if (stop) {
-          expect(nextPollDelayMs({ roomState: rs, localPeer: lp, remotePeer: rp, consecutiveErrors: 0 })).toBeNull();
+          expect(
+            nextPollDelayMs({ roomState: rs, localPeer: lp, remotePeer: rp, consecutiveErrors: 0 }),
+          ).toBeNull();
         }
-      })
+      }),
     );
   });
 
@@ -412,17 +444,29 @@ describe("Property 9: polling stops only when the call is genuinely up", () => {
       fc.property(arbRoomState, arbPeerState, arbPeerState, (rs, lp, rp) => {
         if (isTerminalRoomState(rs)) return;
         if (shouldStopPolling(rs, lp, rp)) return;
-        const d = nextPollDelayMs({ roomState: rs, localPeer: lp, remotePeer: rp, consecutiveErrors: 0 });
+        const d = nextPollDelayMs({
+          roomState: rs,
+          localPeer: lp,
+          remotePeer: rp,
+          consecutiveErrors: 0,
+        });
         expect(d).not.toBeNull();
         expect(d as number).toBeGreaterThan(0);
         expect(d as number).toBeLessThanOrEqual(SETUP_POLL_INTERVAL_MS);
-      })
+      }),
     );
   });
 
   it("terminal room stops polling", () => {
     for (const s of TERMINAL_ROOM_STATES) {
-      expect(nextPollDelayMs({ roomState: s, localPeer: "new", remotePeer: "new", consecutiveErrors: 0 })).toBeNull();
+      expect(
+        nextPollDelayMs({
+          roomState: s,
+          localPeer: "new",
+          remotePeer: "new",
+          consecutiveErrors: 0,
+        }),
+      ).toBeNull();
     }
   });
 });
@@ -436,9 +480,11 @@ describe("Property 10: consultation mode is a closed set and room sync follows t
       fc.property(fc.string(), (s) => {
         const r = normalizeConsultationMode(s);
         if (r.ok) expect(CONSULTATION_MODES).toContain(r.mode);
-      })
+      }),
     );
-    expect(normalizeConsultationMode("  VIDEO ").ok && normalizeConsultationMode("  VIDEO ")).toMatchObject({
+    expect(
+      normalizeConsultationMode("  VIDEO ").ok && normalizeConsultationMode("  VIDEO "),
+    ).toMatchObject({
       mode: "video",
     });
     expect(normalizeConsultationMode("In_Person")).toMatchObject({ ok: true, mode: "in_person" });
@@ -454,18 +500,30 @@ describe("Property 10: consultation mode is a closed set and room sync follows t
         fc.boolean(),
         arbRoomState,
         (to, hasRoom, roomState) => {
-          const action = planRoomSyncForModeChange({ from: null, to, hasRoom, roomState: hasRoom ? roomState : null });
+          const action = planRoomSyncForModeChange({
+            from: null,
+            to,
+            hasRoom,
+            roomState: hasRoom ? roomState : null,
+          });
           if (to === "video") {
             expect(action).toBe(hasRoom ? "none" : "create");
           } else {
             const nonTerminal = hasRoom && !TERMINAL_ROOM_STATES.includes(roomState);
             expect(action).toBe(nonTerminal ? "cancel" : "none");
           }
-        }
-      )
+        },
+      ),
     );
     // idempotent re-save: video with an existing room does nothing
-    expect(planRoomSyncForModeChange({ from: "video", to: "video", hasRoom: true, roomState: "waiting" })).toBe("none");
+    expect(
+      planRoomSyncForModeChange({
+        from: "video",
+        to: "video",
+        hasRoom: true,
+        roomState: "waiting",
+      }),
+    ).toBe("none");
   });
 });
 
@@ -475,7 +533,7 @@ describe("Property 12: token authority is narrow", () => {
       fc.property(fc.string(), fc.string(), fc.boolean(), (bound, requested, revoked) => {
         const ok = isTokenScopedTo(bound, requested, revoked);
         expect(ok).toBe(!revoked && bound === requested);
-      })
+      }),
     );
   });
 });
@@ -497,7 +555,8 @@ describe("Property 13: rate limiter honours its window", () => {
 
   it("permits again once the window passes", () => {
     let state: RateLimitState = { hits: [] };
-    for (let k = 0; k < RATE_LIMIT_MAX_ATTEMPTS; k++) state = evaluateRateLimit(state, 1000 + k).state;
+    for (let k = 0; k < RATE_LIMIT_MAX_ATTEMPTS; k++)
+      state = evaluateRateLimit(state, 1000 + k).state;
     // far in the future, window has slid past all prior hits
     const r = evaluateRateLimit(state, 1000 + 10 * 60_000);
     expect(r.allowed).toBe(true);
@@ -515,7 +574,7 @@ describe("Property 13: rate limiter honours its window", () => {
           const windowCount = state.hits.filter((t) => t > now - 60_000).length;
           if (r.allowed) expect(windowCount).toBeLessThanOrEqual(RATE_LIMIT_MAX_ATTEMPTS);
         }
-      })
+      }),
     );
   });
 });
@@ -545,7 +604,7 @@ describe("Property 14: the patient projection cannot leak", () => {
             "ended",
             "expired",
             "invalid",
-            "rate_limited"
+            "rate_limited",
           ),
           clinicName: fc.string(),
           doctorName: fc.string(),
@@ -564,11 +623,19 @@ describe("Property 14: the patient projection cannot leak", () => {
           const p = projectForPatient(i as any);
           expect(Object.keys(p).sort()).toEqual(KEYS);
           const values = Object.values(p);
-          for (const secret of [i.phone, i.email, i.reason, i.patientId, i.tenantId, i.appointmentId, i.roomId]) {
+          for (const secret of [
+            i.phone,
+            i.email,
+            i.reason,
+            i.patientId,
+            i.tenantId,
+            i.appointmentId,
+            i.roomId,
+          ]) {
             expect(values).not.toContain(secret);
           }
-        }
-      )
+        },
+      ),
     );
   });
 

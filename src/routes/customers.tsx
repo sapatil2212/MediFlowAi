@@ -1,13 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Nav } from "@/components/site/Nav";
 import { SiteShell } from "@/components/site/Footer";
-import {
-  PageHeader,
-  Testimonials,
-  Stats,
-  LogosMarquee,
-  CTA,
-} from "@/components/site/sections";
+import { PageHeader, Testimonials, Stats, LogosMarquee, CTA } from "@/components/site/sections";
 import { motion } from "motion/react";
 import { TrendingUp, Clock, Users } from "lucide-react";
 

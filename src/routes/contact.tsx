@@ -189,8 +189,8 @@ function ContactForm() {
               Demo request received, {submitted.name || "there"}.
             </h3>
             <p className="mt-2 max-w-md text-sm leading-6 text-zinc-600">
-              We have recorded your preferred slot and sent a confirmation email. Our team will reach
-              out soon to finalize the session.
+              We have recorded your preferred slot and sent a confirmation email. Our team will
+              reach out soon to finalize the session.
             </p>
             <div className="mt-5 rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm font-semibold text-zinc-800">
               Reference ID: {submitted.referenceId}
@@ -325,7 +325,8 @@ function ContactForm() {
               )}
             </button>
             <p className="mt-4 text-center text-[11px] text-zinc-500">
-              You will receive a confirmation email, and our admin team gets the same booking instantly.
+              You will receive a confirmation email, and our admin team gets the same booking
+              instantly.
             </p>
           </>
         )}
@@ -386,7 +387,9 @@ function Field({
         {label} {required && <span className="text-brand">*</span>}
       </label>
       <div className="relative">
-        {Icon && <Icon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />}
+        {Icon && (
+          <Icon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+        )}
         <input
           type={type}
           value={value}

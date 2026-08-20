@@ -1,5 +1,5 @@
-const mariadb = require('mariadb');
-require('dotenv').config();
+const mariadb = require("mariadb");
+require("dotenv").config();
 
 async function run() {
   const pool = mariadb.createPool({
@@ -9,23 +9,23 @@ async function run() {
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     ssl: { rejectUnauthorized: false },
-    connectionLimit: 1
+    connectionLimit: 1,
   });
 
-  const oldTenantId = 'clinic-616474';
-  const newTenantId = 'gym-616474';
+  const oldTenantId = "clinic-616474";
+  const newTenantId = "gym-616474";
 
   const tables = [
-    'User',
-    'SubUser',
-    'ClinicProfile',
-    'Department',
-    'Doctor',
-    'Appointment',
-    'ClinicHours',
-    'WhatsAppConfig',
-    'WAConversation',
-    'WAAutoReply'
+    "User",
+    "SubUser",
+    "ClinicProfile",
+    "Department",
+    "Doctor",
+    "Appointment",
+    "ClinicHours",
+    "WhatsAppConfig",
+    "WAConversation",
+    "WAAutoReply",
   ];
 
   try {

@@ -1,5 +1,5 @@
-require('dotenv').config();
-const mariadb = require('mariadb');
+require("dotenv").config();
+const mariadb = require("mariadb");
 
 async function testConnection() {
   let dbHost = process.env.DB_HOST || "localhost";
@@ -36,15 +36,17 @@ async function testConnection() {
   try {
     const conn = await pool.getConnection();
     console.log("SUCCESS: Connected to database!");
-    
+
     const users = await conn.query("SELECT id, tenantId, name, email, profession FROM `User`");
     console.log("All registered users in DB:");
     console.dir(users, { depth: null });
-    
-    const appointments = await conn.query("SELECT id, tenantId, name, email, reason, status FROM `Appointment`");
+
+    const appointments = await conn.query(
+      "SELECT id, tenantId, name, email, reason, status FROM `Appointment`",
+    );
     console.log("All appointments in DB:");
     console.dir(appointments, { depth: null });
-    
+
     conn.release();
   } catch (err) {
     console.error("ERROR: Failed to query database:", err.message);

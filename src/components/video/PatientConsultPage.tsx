@@ -71,7 +71,7 @@ export function PatientConsultPage({ token }: { token: string }) {
       try {
         const r = await getJoinStatusServerFn({ data: { token, afterSeq: 0, peerState: "new" } });
         const s = r.status;
-        if (s === "active" || (s === "admitted" as string)) {
+        if (s === "active" || s === ("admitted" as string)) {
           setPhase("active");
           return; // VideoCallShell takes over polling
         }
@@ -154,7 +154,11 @@ export function PatientConsultPage({ token }: { token: string }) {
           <span className="text-lg font-bold text-zinc-900">Video Consultation</span>
         </div>
 
-        {phase === "loading" && <Centered><Loader2 className="h-7 w-7 animate-spin text-blue-600" /></Centered>}
+        {phase === "loading" && (
+          <Centered>
+            <Loader2 className="h-7 w-7 animate-spin text-blue-600" />
+          </Centered>
+        )}
 
         {phase === "identity" && ctx && (
           <IdentityBody
@@ -195,19 +199,27 @@ export function PatientConsultPage({ token }: { token: string }) {
 
         {phase === "declined" && (
           <Terminal icon={<XCircle className="h-8 w-8 text-amber-500" />} title="Not admitted">
-            The doctor was unable to admit you to this consultation. Please contact the clinic to reschedule.
+            The doctor was unable to admit you to this consultation. Please contact the clinic to
+            reschedule.
           </Terminal>
         )}
 
         {phase === "ended" && (
-          <Terminal icon={<CheckCircle2 className="h-8 w-8 text-emerald-500" />} title="Consultation ended">
+          <Terminal
+            icon={<CheckCircle2 className="h-8 w-8 text-emerald-500" />}
+            title="Consultation ended"
+          >
             Thank you. Your video consultation has ended. The clinic has your visit on record.
           </Terminal>
         )}
 
         {phase === "expired" && (
-          <Terminal icon={<Clock className="h-8 w-8 text-zinc-400" />} title="This link has expired">
-            Your consultation link is no longer valid. Please contact the clinic if you still need to be seen.
+          <Terminal
+            icon={<Clock className="h-8 w-8 text-zinc-400" />}
+            title="This link has expired"
+          >
+            Your consultation link is no longer valid. Please contact the clinic if you still need
+            to be seen.
           </Terminal>
         )}
 
@@ -218,7 +230,10 @@ export function PatientConsultPage({ token }: { token: string }) {
         )}
 
         {phase === "invalid" && (
-          <Terminal icon={<XCircle className="h-8 w-8 text-red-500" />} title="This link is not valid">
+          <Terminal
+            icon={<XCircle className="h-8 w-8 text-red-500" />}
+            title="This link is not valid"
+          >
             We couldn't open this consultation. Please check the link the clinic sent you.
           </Terminal>
         )}
@@ -289,7 +304,8 @@ function IdentityBody({
   onContinue: () => void;
 }) {
   const parsedAge = Number.parseInt(age, 10);
-  const ageValid = age.trim().length > 0 && Number.isInteger(parsedAge) && parsedAge > 0 && parsedAge < 130;
+  const ageValid =
+    age.trim().length > 0 && Number.isInteger(parsedAge) && parsedAge > 0 && parsedAge < 130;
   const canContinue = name.trim().length > 1 && ageValid;
 
   return (
@@ -316,7 +332,9 @@ function IdentityBody({
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-400">Age</span>
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+            Age
+          </span>
           <input
             value={age}
             onChange={(e) => onAge(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
@@ -325,7 +343,9 @@ function IdentityBody({
             className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
           {age.trim().length > 0 && !ageValid && (
-            <span className="mt-1 block text-xs text-red-500">Please enter an age between 1 and 129.</span>
+            <span className="mt-1 block text-xs text-red-500">
+              Please enter an age between 1 and 129.
+            </span>
           )}
         </label>
       </div>
@@ -358,13 +378,22 @@ function ConsentBody({
       <div className="mt-4 space-y-2 rounded-xl bg-zinc-50 p-4 text-sm text-zinc-600">
         <p className="flex items-start gap-2">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-          This is a private teleconsultation. Audio and video travel directly between you and your clinician and are
+          This is a private teleconsultation. Audio and video travel directly between you and your
+          clinician and are
           <strong className="font-semibold"> not recorded</strong>.
         </p>
-        <p>You'll be asked for camera and microphone access, then wait briefly until the doctor admits you.</p>
+        <p>
+          You'll be asked for camera and microphone access, then wait briefly until the doctor
+          admits you.
+        </p>
       </div>
       <label className="mt-4 flex items-center gap-2 text-sm text-zinc-700">
-        <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} className="h-4 w-4 rounded" />
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => setChecked(e.target.checked)}
+          className="h-4 w-4 rounded"
+        />
         I understand and consent to a remote consultation.
       </label>
       {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
@@ -424,7 +453,10 @@ function PreflightBody({
         if (previewRef.current) previewRef.current.srcObject = stream;
         setError(null);
       } catch (e: any) {
-        if (e?.name === "NotAllowedError") setError("Camera and microphone access was blocked. Allow access in your browser and retry.");
+        if (e?.name === "NotAllowedError")
+          setError(
+            "Camera and microphone access was blocked. Allow access in your browser and retry.",
+          );
         else if (e?.name === "NotFoundError") setError("No camera or microphone was found.");
         else setError("Could not access your camera or microphone.");
       } finally {
@@ -440,7 +472,8 @@ function PreflightBody({
   if (!supported) {
     return (
       <Terminal icon={<XCircle className="h-8 w-8 text-red-500" />} title="Browser not supported">
-        Your browser does not support video calls. Please use the latest Chrome, Edge, Safari, or Firefox.
+        Your browser does not support video calls. Please use the latest Chrome, Edge, Safari, or
+        Firefox.
       </Terminal>
     );
   }
@@ -501,10 +534,20 @@ function AppointmentMeta({ ctx }: { ctx: PatientRoomProjection }) {
   );
 }
 
-function Terminal({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+function Terminal({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="py-4 text-center">
-      <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-zinc-50">{icon}</div>
+      <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-zinc-50">
+        {icon}
+      </div>
       <h2 className="text-lg font-bold text-zinc-900">{title}</h2>
       <p className="mx-auto mt-2 max-w-xs text-sm text-zinc-500">{children}</p>
     </div>

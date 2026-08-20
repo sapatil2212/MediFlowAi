@@ -33,7 +33,11 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
   const [mode, setMode] = useState<Mode>("menu");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ roomId: string; joinLink: string; meetingCode: string } | null>(null);
+  const [created, setCreated] = useState<{
+    roomId: string;
+    joinLink: string;
+    meetingCode: string;
+  } | null>(null);
   const [copied, setCopied] = useState(false);
 
   // Shared form state (Get a link / Schedule)
@@ -57,7 +61,12 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
   };
 
   const create = useCallback(
-    async (opts: { scheduledAt?: string | null; autoAdmit: boolean; startNow: boolean; notify: boolean }) => {
+    async (opts: {
+      scheduledAt?: string | null;
+      autoAdmit: boolean;
+      startNow: boolean;
+      notify: boolean;
+    }) => {
       setBusy(true);
       setError(null);
       try {
@@ -134,13 +143,19 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
               Share this link with your patient. Anyone with the link can join from any network.
             </p>
           </div>
-          <button onClick={reset} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100" aria-label="Close">
+          <button
+            onClick={reset}
+            className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100"
+            aria-label="Close"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <div className="mt-4 rounded-xl bg-zinc-50 p-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Meeting code</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+            Meeting code
+          </p>
           <p className="font-mono text-sm font-semibold text-zinc-800">{created.meetingCode}</p>
         </div>
 
@@ -157,7 +172,9 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
 
         <div className="mt-4 flex flex-wrap gap-2">
           <button
-            onClick={() => onStartCall(created.roomId, created.joinLink, { meetingCode: created.meetingCode })}
+            onClick={() =>
+              onStartCall(created.roomId, created.joinLink, { meetingCode: created.meetingCode })
+            }
             className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
           >
             <Video className="h-4 w-4" /> Join now
@@ -190,7 +207,9 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
             </span>
             <p className="mt-2 text-sm font-bold text-zinc-900">Start now</p>
             <p className="text-xs text-zinc-500">Instant meeting with a shareable link</p>
-            <p className="mt-1 text-[10px] text-zinc-400">You approve each patient before they join</p>
+            <p className="mt-1 text-[10px] text-zinc-400">
+              You approve each patient before they join
+            </p>
           </button>
           <MenuCard
             icon={<Link2 className="h-5 w-5" />}
@@ -297,7 +316,9 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
         <div className="flex flex-wrap gap-2 pt-1">
           {mode === "later" && (
             <button
-              onClick={() => create({ scheduledAt: null, autoAdmit: false, startNow: false, notify: true })}
+              onClick={() =>
+                create({ scheduledAt: null, autoAdmit: false, startNow: false, notify: true })
+              }
               disabled={busy}
               className="flex items-center gap-1.5 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
             >
@@ -309,12 +330,21 @@ export function NewMeetingPanel({ onStartCall, onCreated }: NewMeetingPanelProps
             <button
               onClick={() => {
                 const dt = new Date(`${date}T${time}`);
-                create({ scheduledAt: dt.toISOString(), autoAdmit: false, startNow: false, notify: true });
+                create({
+                  scheduledAt: dt.toISOString(),
+                  autoAdmit: false,
+                  startNow: false,
+                  notify: true,
+                });
               }}
               disabled={busy || !canSubmit}
               className="flex items-center gap-1.5 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
             >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarClock className="h-4 w-4" />}
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CalendarClock className="h-4 w-4" />
+              )}
               Schedule & send link
             </button>
           )}
@@ -350,7 +380,9 @@ function MenuCard({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-400">{label}</span>
+      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+        {label}
+      </span>
       {children}
     </label>
   );

@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import React, { useEffect, useState } from "react";
 import { getCurrentUserServerFn } from "../lib/auth";
 import { Loader2 } from "lucide-react";
+import { PROFESSION_RESTAURANT } from "../lib/restaurant-availability";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -38,6 +39,11 @@ function DashboardRouterGateway() {
           navigate({ to: "/dashboards/professional" });
         } else if (profession === "Education institutions") {
           navigate({ to: "/dashboards/education" });
+        } else if (profession === PROFESSION_RESTAURANT) {
+          // The generated route tree only learns "/dashboards/restaurant" once
+          // that route file lands, so the target is widened here to keep this
+          // added arm type-checking without altering any existing arm.
+          navigate({ to: "/dashboards/restaurant" as any });
         } else {
           // Default to medical-dashboard
           navigate({ to: "/dashboards/medical" });

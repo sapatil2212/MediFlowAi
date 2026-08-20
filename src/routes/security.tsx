@@ -28,8 +28,8 @@ function SecurityPage() {
             operational safeguards designed to protect our platform and the data entrusted to us.
           </p>
           <p className="mb-6">
-            This Security Policy explains the measures we take to help secure our systems, infrastructure,
-            and customer data.
+            This Security Policy explains the measures we take to help secure our systems,
+            infrastructure, and customer data.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">1. Our Commitment</h2>
@@ -42,7 +42,9 @@ function SecurityPage() {
             <li>Responding promptly to security incidents.</li>
           </ul>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">2. Secure Infrastructure</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            2. Secure Infrastructure
+          </h2>
           <p>BookMyTime operates on secure cloud infrastructure designed to provide:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>High availability</li>
@@ -61,8 +63,8 @@ function SecurityPage() {
             (SSL/TLS).
           </p>
           <p className="mb-6">
-            This helps protect information exchanged between your device and our servers from interception
-            or unauthorized access.
+            This helps protect information exchanged between your device and our servers from
+            interception or unauthorized access.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">4. Account Security</h2>
@@ -75,11 +77,15 @@ function SecurityPage() {
             <li>Role-based access controls</li>
             <li>Automatic session expiration where applicable</li>
           </ul>
-          <p className="mb-6">Users are responsible for keeping their login credentials confidential.</p>
+          <p className="mb-6">
+            Users are responsible for keeping their login credentials confidential.
+          </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">5. Password Protection</h2>
           <p className="mb-2">Passwords are never stored in plain text.</p>
-          <p className="mb-2">Instead, passwords are securely hashed before being stored in our systems.</p>
+          <p className="mb-2">
+            Instead, passwords are securely hashed before being stored in our systems.
+          </p>
           <p>We recommend users:</p>
           <ul className="list-disc pl-5 space-y-1 mb-6">
             <li>Use strong, unique passwords.</li>
@@ -89,7 +95,9 @@ function SecurityPage() {
           </ul>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">6. Data Protection</h2>
-          <p>BookMyTime employs reasonable safeguards to protect customer information, including:</p>
+          <p>
+            BookMyTime employs reasonable safeguards to protect customer information, including:
+          </p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Access controls</li>
             <li>Database security</li>
@@ -98,8 +106,8 @@ function SecurityPage() {
             <li>Regular system maintenance</li>
           </ul>
           <p className="mb-6">
-            Only authorized personnel have access to systems necessary for providing and maintaining our
-            services.
+            Only authorized personnel have access to systems necessary for providing and maintaining
+            our services.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">7. Payment Security</h2>
@@ -116,7 +124,9 @@ function SecurityPage() {
             responsible for handling payment information according to their own security standards.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">8. User Responsibilities</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            8. User Responsibilities
+          </h2>
           <p>Security is a shared responsibility. Users are encouraged to:</p>
           <ul className="list-disc pl-5 space-y-1 mb-6">
             <li>Keep passwords confidential.</li>
@@ -132,11 +142,13 @@ function SecurityPage() {
             Access to customer information is limited based on operational requirements.
           </p>
           <p className="mb-6">
-            Our platform supports role-based permissions to help ensure users only access information
-            relevant to their responsibilities.
+            Our platform supports role-based permissions to help ensure users only access
+            information relevant to their responsibilities.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">10. Monitoring &amp; Maintenance</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            10. Monitoring &amp; Maintenance
+          </h2>
           <p>We regularly monitor our systems to help:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Detect unusual activity.</li>
@@ -146,19 +158,24 @@ function SecurityPage() {
             <li>Support incident response.</li>
           </ul>
           <p className="mb-6">
-            System updates and maintenance are performed periodically to enhance security and stability.
+            System updates and maintenance are performed periodically to enhance security and
+            stability.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">11. Data Backup &amp; Recovery</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            11. Data Backup &amp; Recovery
+          </h2>
           <p className="mb-2">
-            We perform regular data backup procedures designed to support service continuity and recovery
-            in the event of unexpected incidents.
+            We perform regular data backup procedures designed to support service continuity and
+            recovery in the event of unexpected incidents.
           </p>
           <p className="mb-6">
             Recovery processes are periodically reviewed to help maintain operational reliability.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">12. Third-Party Services</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            12. Third-Party Services
+          </h2>
           <p>BookMyTime integrates with trusted third-party providers for services such as:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Payment Processing</li>
@@ -167,7 +184,9 @@ function SecurityPage() {
             <li>SMS Notifications</li>
             <li>Analytics</li>
           </ul>
-          <p className="mb-6">Each third-party provider maintains its own security practices and policies.</p>
+          <p className="mb-6">
+            Each third-party provider maintains its own security practices and policies.
+          </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">13. Security Incidents</h2>
           <p>If we become aware of a security incident affecting our systems, we will:</p>
@@ -178,8 +197,13 @@ function SecurityPage() {
             <li>Implement corrective actions to reduce the likelihood of recurrence.</li>
           </ul>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">14. Platform Availability</h2>
-          <p>While we strive to maintain continuous availability, temporary interruptions may occur due to:</p>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            14. Platform Availability
+          </h2>
+          <p>
+            While we strive to maintain continuous availability, temporary interruptions may occur
+            due to:
+          </p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Scheduled maintenance</li>
             <li>Infrastructure upgrades</li>
@@ -187,12 +211,16 @@ function SecurityPage() {
             <li>Network failures</li>
             <li>Events beyond our reasonable control</li>
           </ul>
-          <p className="mb-6">We work to minimize downtime and restore services as quickly as possible.</p>
+          <p className="mb-6">
+            We work to minimize downtime and restore services as quickly as possible.
+          </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">15. Reporting Security Issues</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            15. Reporting Security Issues
+          </h2>
           <p className="mb-2">
-            If you believe you have discovered a security vulnerability or suspicious activity related to
-            BookMyTime, please notify us immediately.
+            If you believe you have discovered a security vulnerability or suspicious activity
+            related to BookMyTime, please notify us immediately.
           </p>
           <p>Please include:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
@@ -207,8 +235,8 @@ function SecurityPage() {
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">16. Policy Updates</h2>
           <p className="mb-2">
-            BookMyTime may update this Security Policy from time to time to reflect improvements in our
-            security practices or changes in legal or operational requirements.
+            BookMyTime may update this Security Policy from time to time to reflect improvements in
+            our security practices or changes in legal or operational requirements.
           </p>
           <p className="mb-6">
             Updated versions will be published on this page with the revised effective date.

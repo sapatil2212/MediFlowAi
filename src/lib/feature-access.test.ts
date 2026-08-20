@@ -941,3 +941,468 @@ describe("Video consultation feature (profession-gated)", () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Task 6.2 additions — feature-access baseline non-regression coverage for the
+// two restaurant feature ids (`restaurant_config`, `restaurant_bookings`).
+//
+// Everything below is ADDITIVE. The tests above are left byte-for-byte
+// unchanged; their generic loops over FEATURE_IDS simply now also cover the two
+// restaurant ids, which carry no PROFESSION_FEATURES entry and are entitled on
+// every plan tier.
+// ═══════════════════════════════════════════════════════════════════════════
+
+import type { Permission, FeatureAccess } from "./feature-access";
+
+/**
+ * The seven feature ids that existed before the restaurant category was added.
+ * Frozen here on purpose: the baseline below must not follow the module if the
+ * module drifts.
+ */
+const PRE_EXISTING_FEATURE_IDS = [
+  "whatsapp",
+  "analytics",
+  "scribe",
+  "users",
+  "locations",
+  "plans",
+  "video",
+] as const;
+
+type PreExistingFeatureId = (typeof PRE_EXISTING_FEATURE_IDS)[number];
+
+/** Plan entitlement as it stood before the restaurant ids were registered. */
+const BASELINE_PLAN_FEATURES: Record<PlanTier, Record<PreExistingFeatureId, boolean>> = {
+  Basic: {
+    whatsapp: false,
+    analytics: true,
+    scribe: true,
+    users: true,
+    locations: false,
+    plans: true,
+    video: false,
+  },
+  Premium: {
+    whatsapp: true,
+    analytics: true,
+    scribe: true,
+    users: true,
+    locations: true,
+    plans: true,
+    video: true,
+  },
+  Enterprise: {
+    whatsapp: true,
+    analytics: true,
+    scribe: true,
+    users: true,
+    locations: true,
+    plans: true,
+    video: true,
+  },
+};
+
+/** Role permissions as they stood before the restaurant ids were registered. */
+const BASELINE_ROLE_PERMISSIONS: Record<PreExistingFeatureId, Record<AccountRole, Permission>> = {
+  whatsapp: { admin: "operate", doctor: "operate", reception: "view_only", location: "operate" },
+  analytics: { admin: "operate", doctor: "operate", reception: "view_only", location: "operate" },
+  scribe: { admin: "operate", doctor: "operate", reception: "none", location: "operate" },
+  users: { admin: "operate", doctor: "none", reception: "none", location: "none" },
+  locations: { admin: "operate", doctor: "none", reception: "none", location: "none" },
+  plans: { admin: "operate", doctor: "none", reception: "none", location: "none" },
+  video: { admin: "operate", doctor: "operate", reception: "none", location: "none" },
+};
+
+/** The only profession restriction that existed before the restaurant category. */
+const BASELINE_PROFESSION_FEATURES: Partial<Record<PreExistingFeatureId, readonly string[]>> = {
+  video: [HEALTHCARE_PROFESSION],
+};
+
+/** Independent copy of plan normalization, so drift in either side is caught. */
+function baselineNormalizePlan(plan?: string | null): PlanTier {
+  const raw = (plan ?? "").toLowerCase();
+  if (raw.includes("enterprise") || raw.includes("hospital") || raw.includes("custom")) {
+    return "Enterprise";
+  }
+  if (
+    raw.includes("premium") ||
+    raw.includes("clinic") ||
+    raw.includes("pro") ||
+    raw.includes("1499")
+  ) {
+    return "Premium";
+  }
+  return "Basic";
+}
+
+/** Independent copy of the subscription-active rule. */
+function baselineSubscriptionActive(ctx: AccountContext): boolean {
+  if ((ctx.subscriptionStatus ?? "").toLowerCase() !== "active") return false;
+  const raw = ctx.subscriptionExpiresAt;
+  if (raw === null || raw === undefined || raw === "") return true;
+  const expiresAt = new Date(raw);
+  if (Number.isNaN(expiresAt.getTime())) return true;
+  return !(expiresAt.getTime() < (ctx.now ?? new Date()).getTime());
+}
+
+/** Independent copy of the resolver, restricted to the seven pre-existing ids. */
+function baselineResolve(ctx: AccountContext): Record<PreExistingFeatureId, FeatureAccess> {
+  const plan = baselineNormalizePlan(ctx.subscriptionPlan);
+  const active = baselineSubscriptionActive(ctx);
+  const childOk = ctx.isActive !== false;
+
+  const out = {} as Record<PreExistingFeatureId, FeatureAccess>;
+  for (const feature of PRE_EXISTING_FEATURE_IDS) {
+    const allowedProfessions = BASELINE_PROFESSION_FEATURES[feature];
+    const professionOk = allowedProfessions
+      ? allowedProfessions.includes((ctx.profession ?? "").trim())
+      : true;
+    const available = active && childOk && BASELINE_PLAN_FEATURES[plan][feature] && professionOk;
+    const permission: Permission = available
+      ? BASELINE_ROLE_PERMISSIONS[feature][ctx.role]
+      : "none";
+    out[feature] = { available, permission, visible: available && permission !== "none" };
+  }
+  return out;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Exhaustive baseline: every combination of plan, subscription status, role and
+// legacy profession must still resolve exactly as it did before the two
+// restaurant ids were registered.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("Restaurant feature registration is non-regressive (Requirement 12.4)", () => {
+  const BASELINE_NOW = new Date("2025-06-15T12:00:00Z");
+
+  const BASELINE_PLANS: Array<string | null | undefined> = [
+    "Basic",
+    "Premium",
+    "Enterprise",
+    "Solo",
+    "Clinic",
+    "Hospital",
+    "Custom",
+    "Pro",
+    "1499",
+    "₹999",
+    "unknown",
+    "",
+    null,
+    undefined,
+  ];
+
+  const BASELINE_STATUSES: Array<string | null | undefined> = [
+    "Active",
+    "active",
+    "Cancelled",
+    "Expired",
+    "",
+    null,
+  ];
+
+  const BASELINE_PROFESSIONS: Array<string | null | undefined> = [
+    HEALTHCARE_PROFESSION,
+    " Healthcare and medical ",
+    "healthcare and medical",
+    ...NON_HEALTHCARE_PROFESSIONS,
+    "",
+    null,
+    undefined,
+  ];
+
+  const BASELINE_EXPIRIES: Array<string | null | undefined> = [
+    null,
+    "",
+    "2099-01-01T00:00:00Z", // future
+    "2024-01-01T00:00:00Z", // past
+  ];
+
+  const allRoles: AccountRole[] = ["admin", "reception", "doctor", "location"];
+
+  it("resolves the seven pre-existing feature ids identically for every combination", () => {
+    let combinations = 0;
+
+    for (const subscriptionPlan of BASELINE_PLANS) {
+      for (const subscriptionStatus of BASELINE_STATUSES) {
+        for (const role of allRoles) {
+          for (const profession of BASELINE_PROFESSIONS) {
+            for (const subscriptionExpiresAt of BASELINE_EXPIRIES) {
+              const ctx: AccountContext = {
+                role,
+                profession,
+                subscriptionPlan,
+                subscriptionStatus,
+                subscriptionExpiresAt,
+                isActive: true,
+                now: BASELINE_NOW,
+              };
+
+              const actual = resolveFeatureAccess(ctx);
+              const expected = baselineResolve(ctx);
+
+              for (const feature of PRE_EXISTING_FEATURE_IDS) {
+                expect(
+                  actual[feature],
+                  `drift for ${feature} at plan=${subscriptionPlan} status=${subscriptionStatus} role=${role} profession=${profession} expires=${subscriptionExpiresAt}`,
+                ).toEqual(expected[feature]);
+              }
+
+              combinations += 1;
+            }
+          }
+        }
+      }
+    }
+
+    expect(combinations).toBe(
+      BASELINE_PLANS.length *
+        BASELINE_STATUSES.length *
+        allRoles.length *
+        BASELINE_PROFESSIONS.length *
+        BASELINE_EXPIRIES.length,
+    );
+  });
+
+  it("registers exactly the two restaurant ids and adds no profession restriction", () => {
+    expect(FEATURE_IDS).toEqual([
+      ...PRE_EXISTING_FEATURE_IDS,
+      "restaurant_config",
+      "restaurant_bookings",
+    ]);
+    expect(Object.keys(PROFESSION_FEATURES)).toEqual(["video"]);
+    expect(PROFESSION_FEATURES.restaurant_config).toBeUndefined();
+    expect(PROFESSION_FEATURES.restaurant_bookings).toBeUndefined();
+  });
+
+  it("entitles both restaurant ids on every plan tier", () => {
+    for (const tier of PLAN_TIERS) {
+      expect(planIncludesFeature(tier, "restaurant_config")).toBe(true);
+      expect(planIncludesFeature(tier, "restaurant_bookings")).toBe(true);
+      expect(PLAN_FEATURES[tier].restaurant_config).toBe(true);
+      expect(PLAN_FEATURES[tier].restaurant_bookings).toBe(true);
+    }
+  });
+
+  it("carries the documented role permission matrix", () => {
+    expect(ROLE_PERMISSIONS.restaurant_config).toEqual({
+      admin: "operate",
+      reception: "view_only",
+      doctor: "none",
+      location: "operate",
+    });
+    expect(ROLE_PERMISSIONS.restaurant_bookings).toEqual({
+      admin: "operate",
+      reception: "operate",
+      doctor: "view_only",
+      location: "operate",
+    });
+
+    expect(rolePermission("reception", "restaurant_config")).toBe("view_only");
+    expect(rolePermission("doctor", "restaurant_config")).toBe("none");
+    expect(rolePermission("doctor", "restaurant_bookings")).toBe("view_only");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Feature: restaurant-table-booking, Property 28: Writes are refused server-side
+// whenever the resolved permission is not operate — for any account context
+// whose resolved permission for restaurant configuration is not `operate` and
+// any submitted Dining_Table, Operating_Hours, or Service_Settings payload, and
+// for any account context whose resolved permission for booking management is
+// not `operate` and any submitted Booking_Status change or table reassignment,
+// the submission is rejected with a not-authorised message and the stored
+// Dining_Tables, Operating_Hours, Service_Settings, Booking_Statuses, and
+// assigned Dining_Tables are unchanged.
+//
+// This file owns the decision half of that property: the guard the server
+// functions call (`canOperateFeature`) refuses exactly when the resolved
+// permission is not `operate`, and `canUseFeature` refuses exactly when it is
+// `none`. The store-unchanged half is covered by the row-access suites.
+// ───────────────────────────────────────────────────────────────────────────
+
+test("Property 28: canOperateFeature refuses restaurant writes exactly when the resolved permission is not operate", () => {
+  fc.assert(
+    fc.property(arbProfessionContext, (ctx) => {
+      const access = resolveFeatureAccess(ctx);
+
+      for (const feature of ["restaurant_config", "restaurant_bookings"] as FeatureId[]) {
+        const fa = access[feature];
+
+        if (fa.permission !== "operate") {
+          expect(canOperateFeature(ctx, feature)).toBe(false);
+        } else {
+          expect(fa.available).toBe(true);
+          expect(canOperateFeature(ctx, feature)).toBe(true);
+        }
+
+        expect(canUseFeature(ctx, feature)).toBe(fa.available && fa.permission !== "none");
+        expect(fa.visible).toBe(fa.available && fa.permission !== "none");
+      }
+
+      // A doctor-role account can never configure a restaurant, and a reception
+      // account can never write configuration, whatever the plan or profession.
+      if (ctx.role === "doctor") {
+        expect(canUseFeature(ctx, "restaurant_config")).toBe(false);
+      }
+      if (ctx.role === "reception") {
+        expect(canOperateFeature(ctx, "restaurant_config")).toBe(false);
+      }
+    }),
+    { numRuns: 300 },
+  );
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Feature: restaurant-table-booking, Property 30: Restaurant data and the
+// restaurant category change nothing for the existing categories — for any
+// Tenant whose Business_Profession is not `Restaurant and dining`, the
+// Booking_Slots computed for a given date and staff member are deeply equal
+// whether or not arbitrary Operating_Hours, Service_Settings, and Dining_Table
+// rows exist for that Tenant, and every booking created for that Tenant stores
+// an empty Dining_Table reference, Party_Size, Turn_Time snapshot, and
+// Table_Name snapshot; for any account context, the resolved feature
+// availability and permission of every feature carrying no profession
+// restriction are unchanged when only the Business_Profession varies.
+//
+// This file owns the final clause; the slot and booking clauses belong to the
+// availability and booking-model suites.
+// ───────────────────────────────────────────────────────────────────────────
+
+test("Property 30: varying only profession leaves every unrestricted feature's available, permission and visible identical", () => {
+  const unrestricted = FEATURE_IDS.filter((f) => !PROFESSION_FEATURES[f]);
+
+  fc.assert(
+    fc.property(arbProfessionContext, arbProfession, (ctx, otherProfession) => {
+      const withOther: AccountContext = { ...ctx, profession: otherProfession };
+      const { profession: _omitted, ...withoutProfession } = ctx;
+
+      const base = resolveFeatureAccess(ctx);
+      const varied = resolveFeatureAccess(withOther);
+      const omitted = resolveFeatureAccess(withoutProfession);
+
+      expect(unrestricted).toContain("restaurant_config");
+      expect(unrestricted).toContain("restaurant_bookings");
+      expect(unrestricted).not.toContain("video");
+
+      for (const feature of unrestricted) {
+        expect(varied[feature].available).toBe(base[feature].available);
+        expect(varied[feature].permission).toBe(base[feature].permission);
+        expect(varied[feature].visible).toBe(base[feature].visible);
+        expect(omitted[feature]).toEqual(base[feature]);
+      }
+    }),
+    { numRuns: 300 },
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Task 11.4 additions — restaurant-dashboard-settings regression anchor.
+//
+// The Settings closures and Menu editors have NO feature ids of their own: both
+// are governed entirely by `restaurant_config`, and the `Restaurant Profile`
+// supersession (Profile stays visible even when `restaurant_config` is `none`)
+// is a navigation decision the shell derives from the SAME resolved permission.
+// This block pins the governing permission and the sub-location inheritance the
+// design relies on, and proves neither depends on the tenant's profession, so
+// the five non-restaurant Category_Dashboard flows are preserved.
+//
+// Everything below is ADDITIVE and example-based; the exhaustive resolution
+// matrix and the profession/child-inheritance properties above are unchanged.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("Restaurant Settings closures/menu governance and supersession (task 11.4)", () => {
+  const NOW = new Date("2025-06-15T12:00:00Z");
+  const FUTURE_EXPIRY = "2099-01-01T00:00:00Z";
+
+  /**
+   * The profession values that reach `/dashboards/restaurant` (the sixth
+   * profession) and the five non-restaurant Category_Dashboards. Closures/menu
+   * are unrestricted by profession, so `restaurant_config` must resolve the same
+   * across every one of them.
+   */
+  const PROFESSION_FLOWS: Array<string | null | undefined> = [
+    "Restaurant and dining",
+    HEALTHCARE_PROFESSION,
+    ...NON_HEALTHCARE_PROFESSIONS,
+  ];
+
+  const makeCtx = (
+    role: AccountRole,
+    plan: string,
+    profession: string | null | undefined,
+    isActive = true,
+  ): AccountContext => ({
+    role,
+    profession,
+    subscriptionPlan: plan,
+    subscriptionStatus: "active",
+    subscriptionExpiresAt: FUTURE_EXPIRY,
+    isActive,
+    now: NOW,
+  });
+
+  // Req 6.9-6.11 / 4.x: closures AND menu writes are both `restaurant_config`
+  // operations, so a single permission gates them. The matrix that drives that
+  // gate — and the Profile supersession — is fixed and profession-independent.
+  it("gates closures and menu writes through the single restaurant_config permission for every profession", () => {
+    for (const profession of PROFESSION_FLOWS) {
+      // Owner and branch may change closures/menu; reception may only look;
+      // a doctor-role account is refused even read-shaped requests.
+      expect(canOperateFeature(makeCtx("admin", "Premium", profession), "restaurant_config")).toBe(
+        true,
+      );
+      expect(
+        canOperateFeature(makeCtx("location", "Premium", profession), "restaurant_config"),
+      ).toBe(true);
+
+      const reception = makeCtx("reception", "Premium", profession);
+      expect(canUseFeature(reception, "restaurant_config")).toBe(true);
+      expect(canOperateFeature(reception, "restaurant_config")).toBe(false);
+
+      const doctor = makeCtx("doctor", "Premium", profession);
+      expect(canUseFeature(doctor, "restaurant_config")).toBe(false);
+      expect(resolveFeatureAccess(doctor).restaurant_config.permission).toBe("none");
+    }
+  });
+
+  // Req 2.1 supersession: `Restaurant Profile` stays visible even when the
+  // resolved `restaurant_config` permission is `none`/`view_only`. At the
+  // resolver layer that is exactly the permission the navigation supersedes —
+  // pin it so a drift toward hiding Profile is caught upstream.
+  it("still resolves a concrete restaurant_config permission (never hidden) for the roles Profile supersedes", () => {
+    for (const profession of PROFESSION_FLOWS) {
+      expect(resolveFeatureAccess(makeCtx("doctor", "Premium", profession)).restaurant_config).toEqual(
+        { available: true, permission: "none", visible: false },
+      );
+      expect(
+        resolveFeatureAccess(makeCtx("reception", "Premium", profession)).restaurant_config,
+      ).toEqual({ available: true, permission: "view_only", visible: true });
+    }
+  });
+
+  // Inherited-plan behaviour for sub-locations: a Branch_Account (`location`)
+  // inherits the parent plan's restaurant entitlement, identically across every
+  // profession and plan tier, and loses it when deactivated.
+  it("inherits the parent plan's restaurant entitlement for a sub-location across every profession and tier", () => {
+    for (const tier of PLAN_TIERS) {
+      for (const profession of PROFESSION_FLOWS) {
+        const owner = resolveFeatureAccess(makeCtx("admin", tier, profession));
+        const branch = resolveFeatureAccess(makeCtx("location", tier, profession));
+
+        for (const feature of ["restaurant_config", "restaurant_bookings"] as FeatureId[]) {
+          expect(branch[feature].available).toBe(owner[feature].available);
+          // The branch role operates both restaurant features when entitled.
+          expect(branch[feature].permission).toBe(owner[feature].available ? "operate" : "none");
+        }
+      }
+    }
+
+    // A deactivated branch loses the inherited restaurant entitlement entirely.
+    const deactivated = resolveFeatureAccess(
+      makeCtx("location", "Enterprise", "Restaurant and dining", false),
+    );
+    expect(deactivated.restaurant_config.available).toBe(false);
+    expect(deactivated.restaurant_bookings.available).toBe(false);
+  });
+});

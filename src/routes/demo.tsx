@@ -30,8 +30,7 @@ export const Route = createFileRoute("/demo")({
       { property: "og:title", content: "Live demo — BookMyTime" },
       {
         property: "og:description",
-        content:
-          "Interactive walkthrough of the AI voice receptionist, scribe, and billing.",
+        content: "Interactive walkthrough of the AI voice receptionist, scribe, and billing.",
       },
     ],
   }),
@@ -39,10 +38,22 @@ export const Route = createFileRoute("/demo")({
 });
 
 const transcript: { role: "patient" | "ai"; text: string; t: number }[] = [
-  { role: "patient", t: 0, text: "Hi, I'd like to book an appointment with Dr. Rao for next week." },
-  { role: "ai", t: 1, text: "Of course. I can offer Tuesday 2:30pm or Thursday 11am. Which works?" },
+  {
+    role: "patient",
+    t: 0,
+    text: "Hi, I'd like to book an appointment with Dr. Rao for next week.",
+  },
+  {
+    role: "ai",
+    t: 1,
+    text: "Of course. I can offer Tuesday 2:30pm or Thursday 11am. Which works?",
+  },
   { role: "patient", t: 2, text: "Thursday 11 works." },
-  { role: "ai", t: 3, text: "Booked. I've sent a WhatsApp confirmation and a pre-visit intake form." },
+  {
+    role: "ai",
+    t: 3,
+    text: "Booked. I've sent a WhatsApp confirmation and a pre-visit intake form.",
+  },
   { role: "patient", t: 4, text: "Perfect, thanks." },
   { role: "ai", t: 5, text: "Anything else? I can also remind you 24h before." },
 ];
@@ -57,6 +68,16 @@ const steps = [
 function DemoPage() {
   const [playing, setPlaying] = useState(true);
   const [tick, setTick] = useState(0);
+  // The waveform is a client-only animation. Rendering its computed heights
+  // during SSR produced a hydration mismatch, because the browser re-serialises
+  // full-precision inline lengths (28.21957161029529px -> 28.2196px) when it
+  // parses the server HTML. Holding the resting state until after mount keeps
+  // the first client render byte-identical to the server output.
+  const [animating, setAnimating] = useState(false);
+
+  useEffect(() => {
+    setAnimating(true);
+  }, []);
 
   useEffect(() => {
     if (!playing) return;
@@ -80,12 +101,11 @@ function DemoPage() {
             <Sparkles className="h-3.5 w-3.5" /> 90-second interactive demo
           </div>
           <h1 className="mx-auto mt-5 max-w-3xl text-5xl font-bold tracking-tight text-zinc-900 sm:text-6xl">
-            See BookMyTime{" "}
-            <span className="text-gradient-brand">run a real patient call</span>
+            See BookMyTime <span className="text-gradient-brand">run a real patient call</span>
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-zinc-600">
-            No signup. Press play and watch the AI receptionist book, intake,
-            and bill — exactly as it does in production.
+            No signup. Press play and watch the AI receptionist book, intake, and bill — exactly as
+            it does in production.
           </p>
         </div>
       </section>
@@ -132,17 +152,11 @@ function DemoPage() {
                           : "bg-white/10 text-zinc-200"
                       }`}
                     >
-                      {m.role === "ai" ? (
-                        <Bot className="h-4 w-4" />
-                      ) : (
-                        <User className="h-4 w-4" />
-                      )}
+                      {m.role === "ai" ? <Bot className="h-4 w-4" /> : <User className="h-4 w-4" />}
                     </div>
                     <div
                       className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                        m.role === "ai"
-                          ? "bg-teal-500/15 text-teal-50"
-                          : "bg-white/5 text-zinc-100"
+                        m.role === "ai" ? "bg-teal-500/15 text-teal-50" : "bg-white/5 text-zinc-100"
                       }`}
                     >
                       {m.text}
@@ -159,9 +173,7 @@ function DemoPage() {
                     className="w-1 rounded-full bg-gradient-to-t from-teal-500 to-emerald-300"
                     style={{
                       height: `${
-                        playing
-                          ? 6 + Math.abs(Math.sin((tick + i) * 0.6)) * 26
-                          : 6
+                        animating && playing ? 6 + Math.abs(Math.sin((tick + i) * 0.6)) * 26 : 6
                       }px`,
                       transition: "height 200ms ease-out",
                     }}
@@ -183,27 +195,19 @@ function DemoPage() {
                     <div
                       key={s.label}
                       className={`flex items-center gap-3 rounded-xl border p-3 transition-all ${
-                        done
-                          ? "border-teal-500/40 bg-teal-500/10"
-                          : "border-white/5 bg-white/5"
+                        done ? "border-teal-500/40 bg-teal-500/10" : "border-white/5 bg-white/5"
                       }`}
                     >
                       <div
                         className={`flex h-9 w-9 items-center justify-center rounded-lg ${
-                          done
-                            ? "bg-teal-500 text-white"
-                            : "bg-white/10 text-zinc-400"
+                          done ? "bg-teal-500 text-white" : "bg-white/10 text-zinc-400"
                         }`}
                       >
                         {done ? <Check className="h-4 w-4" /> : <s.icon className="h-4 w-4" />}
                       </div>
                       <div className="text-sm">
-                        <div className={done ? "text-white" : "text-zinc-400"}>
-                          {s.label}
-                        </div>
-                        {active && (
-                          <div className="text-xs text-teal-300">running…</div>
-                        )}
+                        <div className={done ? "text-white" : "text-zinc-400"}>{s.label}</div>
+                        {active && <div className="text-xs text-teal-300">running…</div>}
                       </div>
                     </div>
                   );
@@ -213,12 +217,10 @@ function DemoPage() {
               <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-zinc-300">
                 <div className="font-semibold text-white">SOAP draft</div>
                 <div className="mt-2 leading-relaxed">
-                  <span className="text-teal-300">S:</span> Patient requests
-                  follow-up. No new symptoms reported.{" "}
-                  <span className="text-teal-300">O:</span> Pending vitals at
-                  visit. <span className="text-teal-300">A:</span> Routine
-                  follow-up. <span className="text-teal-300">P:</span> Confirm
-                  Thursday 11am, send intake.
+                  <span className="text-teal-300">S:</span> Patient requests follow-up. No new
+                  symptoms reported. <span className="text-teal-300">O:</span> Pending vitals at
+                  visit. <span className="text-teal-300">A:</span> Routine follow-up.{" "}
+                  <span className="text-teal-300">P:</span> Confirm Thursday 11am, send intake.
                 </div>
               </div>
             </div>
@@ -243,9 +245,7 @@ function DemoPage() {
               transition={{ delay: i * 0.05 }}
               className="rounded-2xl border border-zinc-200 bg-white p-5 text-center"
             >
-              <div className="text-3xl font-bold tracking-tight text-zinc-900">
-                {s.v}
-              </div>
+              <div className="text-3xl font-bold tracking-tight text-zinc-900">{s.v}</div>
               <div className="mt-1 text-xs font-medium uppercase tracking-wide text-zinc-500">
                 {s.l}
               </div>

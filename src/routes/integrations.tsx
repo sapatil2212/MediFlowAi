@@ -68,21 +68,66 @@ const integrations: {
   icon: typeof CreditCard;
   popular?: boolean;
 }[] = [
-  { name: "Stripe", category: "Payments", desc: "Cards, ACH, subscription billing", icon: CreditCard, popular: true },
+  {
+    name: "Stripe",
+    category: "Payments",
+    desc: "Cards, ACH, subscription billing",
+    icon: CreditCard,
+    popular: true,
+  },
   { name: "Razorpay", category: "Payments", desc: "UPI, cards, EMI for India", icon: CreditCard },
   { name: "Paddle", category: "Payments", desc: "Global merchant of record", icon: CreditCard },
-  { name: "Twilio", category: "Messaging", desc: "SMS, voice, programmable IVR", icon: MessageSquare, popular: true },
-  { name: "WhatsApp Business", category: "Messaging", desc: "Patient chat & reminders", icon: MessageSquare, popular: true },
-  { name: "Slack", category: "Messaging", desc: "Clinical alerts & ops channels", icon: MessageSquare },
-  { name: "Google Calendar", category: "Calendar", desc: "Two-way sync per provider", icon: Calendar, popular: true },
+  {
+    name: "Twilio",
+    category: "Messaging",
+    desc: "SMS, voice, programmable IVR",
+    icon: MessageSquare,
+    popular: true,
+  },
+  {
+    name: "WhatsApp Business",
+    category: "Messaging",
+    desc: "Patient chat & reminders",
+    icon: MessageSquare,
+    popular: true,
+  },
+  {
+    name: "Slack",
+    category: "Messaging",
+    desc: "Clinical alerts & ops channels",
+    icon: MessageSquare,
+  },
+  {
+    name: "Google Calendar",
+    category: "Calendar",
+    desc: "Two-way sync per provider",
+    icon: Calendar,
+    popular: true,
+  },
   { name: "Outlook 365", category: "Calendar", desc: "Microsoft 365 + Teams", icon: Calendar },
   { name: "Calendly", category: "Calendar", desc: "Patient self-booking flows", icon: Calendar },
-  { name: "Epic", category: "EHR / EMR", desc: "FHIR R4 + HL7 v2 bidirectional", icon: FileText, popular: true },
-  { name: "Cerner / Oracle Health", category: "EHR / EMR", desc: "Encounters & document sync", icon: FileText },
+  {
+    name: "Epic",
+    category: "EHR / EMR",
+    desc: "FHIR R4 + HL7 v2 bidirectional",
+    icon: FileText,
+    popular: true,
+  },
+  {
+    name: "Cerner / Oracle Health",
+    category: "EHR / EMR",
+    desc: "Encounters & document sync",
+    icon: FileText,
+  },
   { name: "Athenahealth", category: "EHR / EMR", desc: "Practice + clinical data", icon: FileText },
   { name: "DrChrono", category: "EHR / EMR", desc: "Templates & e-prescribe", icon: FileText },
   { name: "LabCorp", category: "Labs", desc: "Orders + results ingestion", icon: Stethoscope },
-  { name: "Quest Diagnostics", category: "Labs", desc: "Lab + pathology results", icon: Stethoscope },
+  {
+    name: "Quest Diagnostics",
+    category: "Labs",
+    desc: "Lab + pathology results",
+    icon: Stethoscope,
+  },
   { name: "Snowflake", category: "Analytics", desc: "Mirror to your warehouse", icon: Database },
   { name: "BigQuery", category: "Analytics", desc: "Streaming export", icon: Database },
   { name: "Looker", category: "Analytics", desc: "Pre-built dashboards", icon: Database },
@@ -117,12 +162,11 @@ function IntegrationsPage() {
             <Plug className="h-3.5 w-3.5" /> 120+ integrations
           </div>
           <h1 className="mx-auto mt-5 max-w-3xl text-5xl font-bold tracking-tight text-zinc-900 sm:text-6xl">
-            One platform.{" "}
-            <span className="text-gradient-brand">Every tool you already use.</span>
+            One platform. <span className="text-gradient-brand">Every tool you already use.</span>
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-zinc-600">
-            Plug BookMyTime into your EHR, payments, messaging, identity, and
-            analytics stack — no middleware, no consultants, no surprises.
+            Plug BookMyTime into your EHR, payments, messaging, identity, and analytics stack — no
+            middleware, no consultants, no surprises.
           </p>
 
           {/* Search */}
@@ -213,9 +257,8 @@ function IntegrationsPage() {
               REST + GraphQL + Webhooks
             </h2>
             <p className="mt-3 text-zinc-600">
-              Build anything we haven't. Full FHIR R4 surface, signed webhooks,
-              and granular RBAC tokens — versioned, documented, and rate-limited
-              fairly.
+              Build anything we haven't. Full FHIR R4 surface, signed webhooks, and granular RBAC
+              tokens — versioned, documented, and rate-limited fairly.
             </p>
             <ul className="mt-5 space-y-2 text-sm text-zinc-700">
               {[
@@ -238,7 +281,7 @@ function IntegrationsPage() {
               <span className="ml-3 text-zinc-500">POST /v1/appointments</span>
             </div>
             <pre className="leading-relaxed">
-{`{
+              {`{
   "patient_id": "pat_8K2",
   "provider_id": "prv_AR3",
   "starts_at": "2026-06-20T14:30:00Z",

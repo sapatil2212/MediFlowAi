@@ -41,14 +41,38 @@ export async function getWAStatus(tenantId = "global"): Promise<WAStatus> {
   try {
     return await waFetch(`/status?tenantId=${encodeURIComponent(tenantId)}`);
   } catch {
-    return { state: "DISCONNECTED", qrDataUrl: "", connectedNumber: "", queueCount: 0, sentLog: [] };
+    return {
+      state: "DISCONNECTED",
+      qrDataUrl: "",
+      connectedNumber: "",
+      queueCount: 0,
+      sentLog: [],
+    };
   }
 }
 
+/**
+ * Strict status read used by the Settings panel. Unlike {@link getWAStatus},
+ * this does NOT swallow transport errors into a `DISCONNECTED` state — it lets
+ * the failure propagate so a caller can surface an explicit `ERROR` state.
+ * Booking notifications keep using the tolerant {@link getWAStatus}.
+ */
+export async function getWAStatusStrict(tenantId = "global"): Promise<WAStatus> {
+  return waFetch(`/status?tenantId=${encodeURIComponent(tenantId)}`);
+}
+
 /** Enqueue a WhatsApp message for a tenant */
-export async function enqueueWA(tenantId: string, phone: string, body: string): Promise<{ success: boolean }>;
+export async function enqueueWA(
+  tenantId: string,
+  phone: string,
+  body: string,
+): Promise<{ success: boolean }>;
 export async function enqueueWA(phone: string, body: string): Promise<{ success: boolean }>;
-export async function enqueueWA(arg1: string, arg2: string, arg3?: string): Promise<{ success: boolean }> {
+export async function enqueueWA(
+  arg1: string,
+  arg2: string,
+  arg3?: string,
+): Promise<{ success: boolean }> {
   let tenantId = "global";
   let phone = arg1;
   let body = arg2;
@@ -78,7 +102,7 @@ export async function enqueueWABulk(
   campaignId: string | null,
   messages: { recipientId: string; phone: string; body: string; mediaUrl?: string | null }[],
   minDelay = 10,
-  maxDelay = 25
+  maxDelay = 25,
 ): Promise<{ success: boolean; count: number }> {
   return waFetch("/enqueue-bulk", "POST", { tenantId, campaignId, messages, minDelay, maxDelay });
 }
@@ -88,13 +112,16 @@ export async function sendWAMedia(
   tenantId: string,
   phone: string,
   mediaUrl: string,
-  caption = ""
+  caption = "",
 ): Promise<{ success: boolean }> {
   return waFetch("/send-media", "POST", { tenantId, phone, mediaUrl, caption });
 }
 
 /** Pause sending a campaign in the microservice queue */
-export async function pauseWACampaign(tenantId: string, campaignId: string): Promise<{ success: boolean }> {
+export async function pauseWACampaign(
+  tenantId: string,
+  campaignId: string,
+): Promise<{ success: boolean }> {
   return waFetch("/pause-campaign", "POST", { tenantId, campaignId });
 }
 
@@ -106,7 +133,7 @@ export const whatsappService = {
   },
   enqueue(phone: string, body: string) {
     enqueueWA("global", phone, body).catch((e) =>
-      console.error("[WA Client] Failed to enqueue:", e?.message)
+      console.error("[WA Client] Failed to enqueue:", e?.message),
     );
   },
   getStatus: getWAStatus,
@@ -114,4 +141,3 @@ export const whatsappService = {
 };
 
 export default whatsappService;
-

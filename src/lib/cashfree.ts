@@ -30,9 +30,12 @@ export interface CashfreeConfig {
 export function getCashfreeConfig(): CashfreeConfig {
   const appId = process.env.CASHFREE_APP_ID;
   const secretKey = process.env.CASHFREE_SECRET_KEY;
-  const environment = (process.env.CASHFREE_ENV || "production") === "production" ? "production" : "sandbox";
+  const environment =
+    (process.env.CASHFREE_ENV || "production") === "production" ? "production" : "sandbox";
   if (!appId || !secretKey) {
-    throw new Error("Cashfree credentials are not configured (CASHFREE_APP_ID / CASHFREE_SECRET_KEY).");
+    throw new Error(
+      "Cashfree credentials are not configured (CASHFREE_APP_ID / CASHFREE_SECRET_KEY).",
+    );
   }
   const host = environment === "production" ? "api.cashfree.com" : "sandbox.cashfree.com";
   const origin =
@@ -41,7 +44,11 @@ export function getCashfreeConfig(): CashfreeConfig {
   return { appId, secretKey, environment, host, origin, mode: environment };
 }
 
-function baseHeaders(cfg: CashfreeConfig, apiVersion: string, idempotencyKey?: string): Record<string, string> {
+function baseHeaders(
+  cfg: CashfreeConfig,
+  apiVersion: string,
+  idempotencyKey?: string,
+): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     accept: "application/json",
@@ -221,7 +228,9 @@ export async function raiseCashfreeSubscriptionCharge(input: RaiseChargeInput): 
   });
   const data = await parseJsonSafe(res);
   if (!res.ok) {
-    throw new Error(data?.message || `Failed to raise Cashfree subscription charge (${res.status})`);
+    throw new Error(
+      data?.message || `Failed to raise Cashfree subscription charge (${res.status})`,
+    );
   }
   return data;
 }
@@ -229,10 +238,13 @@ export async function raiseCashfreeSubscriptionCharge(input: RaiseChargeInput): 
 /** GET subscription details/status. Returns null on 404. */
 export async function getCashfreeSubscription(subscriptionId: string): Promise<any | null> {
   const cfg = getCashfreeConfig();
-  const res = await fetch(`https://${cfg.host}/pg/subscriptions/${encodeURIComponent(subscriptionId)}`, {
-    method: "GET",
-    headers: baseHeaders(cfg, SUB_API_VERSION),
-  });
+  const res = await fetch(
+    `https://${cfg.host}/pg/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    {
+      method: "GET",
+      headers: baseHeaders(cfg, SUB_API_VERSION),
+    },
+  );
   if (res.status === 404) return null;
   const data = await parseJsonSafe(res);
   if (!res.ok) throw new Error(data?.message || `Failed to fetch subscription (${res.status})`);
@@ -242,13 +254,19 @@ export async function getCashfreeSubscription(subscriptionId: string): Promise<a
 export type ManageAction = "CANCEL" | "PAUSE" | "ACTIVATE";
 
 /** Manage a subscription lifecycle: CANCEL / PAUSE / ACTIVATE. */
-export async function manageCashfreeSubscription(subscriptionId: string, action: ManageAction): Promise<any> {
+export async function manageCashfreeSubscription(
+  subscriptionId: string,
+  action: ManageAction,
+): Promise<any> {
   const cfg = getCashfreeConfig();
-  const res = await fetch(`https://${cfg.host}/pg/subscriptions/${encodeURIComponent(subscriptionId)}/manage`, {
-    method: "POST",
-    headers: baseHeaders(cfg, SUB_API_VERSION),
-    body: JSON.stringify({ subscription_id: subscriptionId, action }),
-  });
+  const res = await fetch(
+    `https://${cfg.host}/pg/subscriptions/${encodeURIComponent(subscriptionId)}/manage`,
+    {
+      method: "POST",
+      headers: baseHeaders(cfg, SUB_API_VERSION),
+      body: JSON.stringify({ subscription_id: subscriptionId, action }),
+    },
+  );
   const data = await parseJsonSafe(res);
   if (!res.ok) throw new Error(data?.message || `Failed to ${action} subscription (${res.status})`);
   return data;
@@ -258,10 +276,13 @@ export async function manageCashfreeSubscription(subscriptionId: string, action:
 export async function getCashfreeSubscriptionPayments(subscriptionId: string): Promise<any[]> {
   const cfg = getCashfreeConfig();
   try {
-    const res = await fetch(`https://${cfg.host}/pg/subscriptions/${encodeURIComponent(subscriptionId)}/payments`, {
-      method: "GET",
-      headers: baseHeaders(cfg, SUB_API_VERSION),
-    });
+    const res = await fetch(
+      `https://${cfg.host}/pg/subscriptions/${encodeURIComponent(subscriptionId)}/payments`,
+      {
+        method: "GET",
+        headers: baseHeaders(cfg, SUB_API_VERSION),
+      },
+    );
     if (!res.ok) return [];
     const data = await parseJsonSafe(res);
     return Array.isArray(data) ? data : Array.isArray(data?.payments) ? data.payments : [];
@@ -287,7 +308,7 @@ export async function getCashfreeSubscriptionPayments(subscriptionId: string): P
 export function verifyCashfreeWebhookSignature(
   rawBody: string,
   signature: string | null,
-  timestamp: string | null
+  timestamp: string | null,
 ): boolean {
   if (!signature || !timestamp) return false;
 
@@ -298,7 +319,9 @@ export function verifyCashfreeWebhookSignature(
   if (process.env.CASHFREE_WEBHOOK_SECRET) candidates.push(process.env.CASHFREE_WEBHOOK_SECRET);
   try {
     candidates.push(getCashfreeConfig().secretKey);
-  } catch { /* credentials not configured */ }
+  } catch {
+    /* credentials not configured */
+  }
   if (process.env.CASHFREE_SECRET_KEY && !candidates.includes(process.env.CASHFREE_SECRET_KEY)) {
     candidates.push(process.env.CASHFREE_SECRET_KEY);
   }
@@ -314,7 +337,9 @@ export function verifyCashfreeWebhookSignature(
     if (a.length === sigBuf.length) {
       try {
         if (crypto.timingSafeEqual(a, sigBuf)) return true;
-      } catch { /* length mismatch — try next */ }
+      } catch {
+        /* length mismatch — try next */
+      }
     }
   }
   return false;

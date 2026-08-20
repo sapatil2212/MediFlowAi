@@ -88,7 +88,9 @@ function readPositiveInt(raw: string | undefined, fallback: number): number {
  * Reads the four video environment variables (Req 6.4, 8.5). `env` is injectable
  * so callers and tests never have to mutate globals.
  */
-export function readVideoConfig(env: Record<string, string | undefined> = process.env): VideoConfig {
+export function readVideoConfig(
+  env: Record<string, string | undefined> = process.env,
+): VideoConfig {
   const configuredOrigin = (env.APP_ORIGIN || "").trim();
   const appOrigin =
     configuredOrigin.length > 0
@@ -98,8 +100,14 @@ export function readVideoConfig(env: Record<string, string | undefined> = proces
         : "http://localhost:3000";
 
   return {
-    beforeMinutes: readPositiveInt(env.VIDEO_JOIN_WINDOW_BEFORE_MINUTES, DEFAULT_JOIN_WINDOW_BEFORE_MINUTES),
-    afterMinutes: readPositiveInt(env.VIDEO_JOIN_WINDOW_AFTER_MINUTES, DEFAULT_JOIN_WINDOW_AFTER_MINUTES),
+    beforeMinutes: readPositiveInt(
+      env.VIDEO_JOIN_WINDOW_BEFORE_MINUTES,
+      DEFAULT_JOIN_WINDOW_BEFORE_MINUTES,
+    ),
+    afterMinutes: readPositiveInt(
+      env.VIDEO_JOIN_WINDOW_AFTER_MINUTES,
+      DEFAULT_JOIN_WINDOW_AFTER_MINUTES,
+    ),
     noticeVersion: (env.VIDEO_NOTICE_VERSION || "").trim() || DEFAULT_NOTICE_VERSION,
     appOrigin,
   };
@@ -273,8 +281,7 @@ export async function resolveJoinLinkOrigin(
     const h = typeof mod.getHeaders === "function" ? mod.getHeaders() : {};
     const host = (h["x-forwarded-host"] || h["host"] || "").toString().trim().split(",")[0].trim();
     if (host && (host.startsWith("localhost") || host.startsWith("127.0.0.1"))) {
-      const proto =
-        (h["x-forwarded-proto"] || "").toString().trim().split(",")[0].trim() || "http";
+      const proto = (h["x-forwarded-proto"] || "").toString().trim().split(",")[0].trim() || "http";
       return `${proto}://${host}`.replace(/\/+$/, "");
     }
   } catch {
@@ -363,7 +370,10 @@ function isRateLimited(key: string, nowMs: number): boolean {
 
 /** Commits one failed attempt against the client's sliding window. */
 function recordJoinFailure(key: string, nowMs: number): void {
-  if (joinFailureStates.size >= MAX_TRACKED_CLIENTS || nowMs - lastRateLimitPruneMs > RATE_LIMIT_STATE_TTL_MS) {
+  if (
+    joinFailureStates.size >= MAX_TRACKED_CLIENTS ||
+    nowMs - lastRateLimitPruneMs > RATE_LIMIT_STATE_TTL_MS
+  ) {
     pruneJoinFailureStates(nowMs);
   }
 
@@ -600,7 +610,10 @@ export async function loadRoomByAppointment(
  * window from `Appointment.dateTime` and the configured window so the sweeper
  * has an indexable predicate.
  */
-export async function ensureVideoRoom(appointmentId: string, tenantId: string): Promise<VideoRoomRow> {
+export async function ensureVideoRoom(
+  appointmentId: string,
+  tenantId: string,
+): Promise<VideoRoomRow> {
   const existing = await loadRoomByAppointment(appointmentId, tenantId);
   if (existing) return existing;
 
@@ -745,17 +758,30 @@ export async function transitionRoom(
     }
 
     params.push(roomId, ctx.tenantId);
-    await conn.query(`UPDATE VideoRoom SET ${sets.join(", ")} WHERE id = ? AND tenantId = ?`, params);
+    await conn.query(
+      `UPDATE VideoRoom SET ${sets.join(", ")} WHERE id = ? AND tenantId = ?`,
+      params,
+    );
 
     // Audit row inside the same transaction.
     await conn.query(
       `INSERT INTO VideoAuditEvent (id, tenantId, roomId, appointmentId, participantRole, kind, detail)
        VALUES (?, ?, ?, ?, ?, 'state_change', ?)`,
-      [randomUUID(), ctx.tenantId, roomId, ctx.appointmentId, ctx.actorRole ?? null, ctx.detail ?? `${current.state}->${next}`],
+      [
+        randomUUID(),
+        ctx.tenantId,
+        roomId,
+        ctx.appointmentId,
+        ctx.actorRole ?? null,
+        ctx.detail ?? `${current.state}->${next}`,
+      ],
     );
 
     if (isTerminalRoomState(next)) {
-      await conn.query(`UPDATE VideoJoinToken SET revokedAt = NOW(3) WHERE roomId = ? AND revokedAt IS NULL`, [roomId]);
+      await conn.query(
+        `UPDATE VideoJoinToken SET revokedAt = NOW(3) WHERE roomId = ? AND revokedAt IS NULL`,
+        [roomId],
+      );
       await conn.query(`DELETE FROM VideoSignal WHERE roomId = ?`, [roomId]);
     }
 
@@ -943,7 +969,10 @@ export function doctorParticipantKey(accountId: string): string {
 }
 
 /** Loads participants for a room, tenant-scoped. */
-export async function loadParticipants(roomId: string, tenantId: string): Promise<VideoParticipantRow[]> {
+export async function loadParticipants(
+  roomId: string,
+  tenantId: string,
+): Promise<VideoParticipantRow[]> {
   const rows = await queryScoped<any>(
     `SELECT * FROM VideoParticipant WHERE roomId = ? AND tenantId = ? ORDER BY createdAt ASC`,
     [roomId, tenantId],
@@ -1000,7 +1029,9 @@ export async function upsertParticipant(input: {
        WHERE id = ?`,
       [input.displayName ?? null, input.displayAge ?? null, input.status ?? null, existing.id],
     );
-    const reloaded = await queryOne<any>(`SELECT * FROM VideoParticipant WHERE id = ? LIMIT 1`, [existing.id]);
+    const reloaded = await queryOne<any>(`SELECT * FROM VideoParticipant WHERE id = ? LIMIT 1`, [
+      existing.id,
+    ]);
     return mapParticipantRow(reloaded);
   }
   const id = randomUUID();
@@ -1028,7 +1059,13 @@ export async function upsertParticipant(input: {
 export async function updateParticipantState(
   participantId: string,
   tenantId: string,
-  patch: { peerState?: string; micEnabled?: boolean; cameraEnabled?: boolean; quality?: string; addConnectedMs?: number },
+  patch: {
+    peerState?: string;
+    micEnabled?: boolean;
+    cameraEnabled?: boolean;
+    quality?: string;
+    addConnectedMs?: number;
+  },
 ): Promise<void> {
   const sets: string[] = ["lastSeenAt = NOW(3)"];
   const params: any[] = [];
@@ -1053,7 +1090,10 @@ export async function updateParticipantState(
     params.push(Math.floor(patch.addConnectedMs));
   }
   params.push(participantId, tenantId);
-  await execute(`UPDATE VideoParticipant SET ${sets.join(", ")} WHERE id = ? AND tenantId = ?`, params);
+  await execute(
+    `UPDATE VideoParticipant SET ${sets.join(", ")} WHERE id = ? AND tenantId = ?`,
+    params,
+  );
 }
 
 /** Marks a participant as left/removed and stamps leftAt. */
@@ -1085,7 +1125,15 @@ export async function recordAudit(
     await execute(
       `INSERT INTO VideoAuditEvent (id, tenantId, roomId, appointmentId, participantRole, kind, detail)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [randomUUID(), tenantId, roomId, appointmentId, role ?? null, kind, detail ? String(detail).slice(0, 255) : null],
+      [
+        randomUUID(),
+        tenantId,
+        roomId,
+        appointmentId,
+        role ?? null,
+        kind,
+        detail ? String(detail).slice(0, 255) : null,
+      ],
     );
   } catch (err: any) {
     console.error("[Video][audit] failed:", err?.message);
@@ -1119,7 +1167,9 @@ export async function finalizeRoomOutcome(roomId: string, tenantId: string): Pro
 
   const participants = await loadParticipants(roomId, tenantId);
   const patient = participants.find((p) => p.role === "patient");
-  const patientEverAdmitted = participants.some((p) => p.role === "patient" && p.admittedAt !== null);
+  const patientEverAdmitted = participants.some(
+    (p) => p.role === "patient" && p.admittedAt !== null,
+  );
   const patientEverWaited = participants.some((p) => p.role === "patient");
   const admissionDecisionRecorded = room.admissionDecisionAt !== null;
 
@@ -1204,10 +1254,14 @@ export async function requireVideoViewer(): Promise<SessionUser> {
  * or the parent (admin) account (Req 5.6). Reception/location never reach here
  * because the operator guard rejects them first.
  */
-export async function requireRoomForDoctor(roomId: string, user: SessionUser): Promise<VideoRoomRow> {
+export async function requireRoomForDoctor(
+  roomId: string,
+  user: SessionUser,
+): Promise<VideoRoomRow> {
   const room = await loadRoomForRead(roomId, user.tenantId);
   const isAdmin = user.role === "admin";
-  const isAssignedDoctor = user.role === "doctor" && !!user.doctorId && room.doctorId === user.doctorId;
+  const isAssignedDoctor =
+    user.role === "doctor" && !!user.doctorId && room.doctorId === user.doctorId;
 
   // Ad-hoc meetings are owned by whoever created them, so the host is also
   // authorised even when no Doctor record is attached to the room.
@@ -1254,8 +1308,8 @@ export async function syncVideoRoomForAppointment(input: {
     const { link } = await issueJoinToken(room.id, input.tenantId, "created");
     if (input.notify !== false) {
       // Best-effort; never blocks the appointment write.
-      void notifyVideoLink(input.appointmentId, input.tenantId, link, "videoLinkIssued").catch((e) =>
-        console.error("[Video][notify] issue failed:", e?.message),
+      void notifyVideoLink(input.appointmentId, input.tenantId, link, "videoLinkIssued").catch(
+        (e) => console.error("[Video][notify] issue failed:", e?.message),
       );
     }
     return { room, joinLink: link };
@@ -1324,7 +1378,6 @@ export async function notifyVideoLink(
   }
 }
 
-
 /**
  * Whether a TENANT is eligible for video consultations at all — profession is
  * healthcare, plan includes video, and the subscription is active. Role is not
@@ -1341,7 +1394,7 @@ export async function isTenantVideoEligible(tenantId: string): Promise<boolean> 
   const expires =
     u.subscriptionExpiresAt instanceof Date
       ? u.subscriptionExpiresAt.toISOString()
-      : u.subscriptionExpiresAt ?? null;
+      : (u.subscriptionExpiresAt ?? null);
   return canOperateFeature(
     {
       role: "admin",
@@ -1354,7 +1407,6 @@ export async function isTenantVideoEligible(tenantId: string): Promise<boolean> 
     "video",
   );
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Ad-hoc meetings — instant and scheduled-by-link rooms with no Appointment.
@@ -1452,13 +1504,24 @@ export async function createInstantVideoRoom(
   if (!room) throw new Error("Failed to create meeting");
 
   const { link } = await issueJoinToken(room.id, input.tenantId, "created");
-  await recordAudit(room.id, "state_change", isInstant ? "instant_created" : "scheduled_created", "doctor", input.tenantId, null);
+  await recordAudit(
+    room.id,
+    "state_change",
+    isInstant ? "instant_created" : "scheduled_created",
+    "doctor",
+    input.tenantId,
+    null,
+  );
 
   return { room, joinLink: link, meetingCode };
 }
 
 /** Lists ad-hoc meetings for a tenant (most recent first). */
-export async function listInstantRooms(tenantId: string, hostAccountId: string | null, isAdmin: boolean): Promise<any[]> {
+export async function listInstantRooms(
+  tenantId: string,
+  hostAccountId: string | null,
+  isAdmin: boolean,
+): Promise<any[]> {
   const params: any[] = [tenantId];
   // The ad-hoc columns are NOT part of VIDEO_ROOM_COLUMNS, so they have to be
   // selected explicitly — the row mapping below reads every one of them.
@@ -1486,7 +1549,10 @@ export async function listInstantRooms(tenantId: string, hostAccountId: string |
 }
 
 /** Loads the ad-hoc extras that `VideoRoomRow` does not carry. */
-export async function loadRoomExtras(roomId: string, tenantId: string): Promise<{
+export async function loadRoomExtras(
+  roomId: string,
+  tenantId: string,
+): Promise<{
   kind: string;
   title: string | null;
   meetingCode: string | null;
@@ -1533,7 +1599,8 @@ export async function notifyInstantMeetingLink(
   const kind = scheduledAt ? "videoLinkIssued" : "videoLinkIssued";
 
   try {
-    const { sendAppointmentNotification, sendVideoLinkEmail } = await import("./appointment-notify");
+    const { sendAppointmentNotification, sendVideoLinkEmail } =
+      await import("./appointment-notify");
     if (guest.phone) {
       await sendAppointmentNotification(tenantId, guest.phone, kind as any, {
         name: guest.name || "there",
@@ -1575,7 +1642,6 @@ async function resolveDoctorNameSafe(doctorId: string): Promise<string> {
     return "";
   }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // View shaping and request helpers.
@@ -1650,10 +1716,14 @@ export async function buildDoctorRoomView(room: VideoRoomRow, user: SessionUser)
   const { readTurnConfig, isTurnConfigured } = await import("./video-turn.server");
   const [participants, appt, linkCount] = await Promise.all([
     loadParticipants(room.id, user.tenantId),
-    room.appointmentId ? loadAppointmentForVideo(room.appointmentId, user.tenantId) : Promise.resolve(null),
+    room.appointmentId
+      ? loadAppointmentForVideo(room.appointmentId, user.tenantId)
+      : Promise.resolve(null),
     activeLinkCount(room.id, user.tenantId),
   ]);
-  const waiting = participants.filter((p) => p.role === "patient" && p.status === "requested").map(publicParticipant);
+  const waiting = participants
+    .filter((p) => p.role === "patient" && p.status === "requested")
+    .map(publicParticipant);
   const cfg = readTurnConfig();
   return {
     room: {
@@ -1796,13 +1866,15 @@ export async function maybeEndForDisconnect(
 
   if (kind === "reconnecting" || kind === "connection_lost" || kind === "connection_failed") {
     const fresh = await loadRoomForRead(room.id, tenantId);
-    const since = fresh.disconnectedSinceAt ? new Date(fresh.disconnectedSinceAt as any).getTime() : null;
+    const since = fresh.disconnectedSinceAt
+      ? new Date(fresh.disconnectedSinceAt as any).getTime()
+      : null;
     const total = fresh.disconnectedTotalMs + (since ? now - since : 0);
     if (since === null) {
-      await execute(`UPDATE VideoRoom SET disconnectedSinceAt = NOW(3) WHERE id = ? AND tenantId = ?`, [
-        room.id,
-        tenantId,
-      ]);
+      await execute(
+        `UPDATE VideoRoom SET disconnectedSinceAt = NOW(3) WHERE id = ? AND tenantId = ?`,
+        [room.id, tenantId],
+      );
     }
     if (shouldEndForDisconnect(total) && fresh.state === "active") {
       const updated = await transitionRoom(room.id, "end", {
@@ -1818,7 +1890,9 @@ export async function maybeEndForDisconnect(
 
   if (kind === "reconnected") {
     const fresh = await loadRoomForRead(room.id, tenantId);
-    const since = fresh.disconnectedSinceAt ? new Date(fresh.disconnectedSinceAt as any).getTime() : null;
+    const since = fresh.disconnectedSinceAt
+      ? new Date(fresh.disconnectedSinceAt as any).getTime()
+      : null;
     if (since !== null) {
       await execute(
         `UPDATE VideoRoom SET disconnectedTotalMs = disconnectedTotalMs + ?, disconnectedSinceAt = NULL WHERE id = ? AND tenantId = ?`,
@@ -1851,7 +1925,6 @@ export async function hasConsent(room: VideoRoomRow): Promise<boolean> {
   return !!row;
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Token resolution wrappers and small room operations used by the server
 // function surface. Keeping these here means `video.ts` holds only
@@ -1871,7 +1944,10 @@ export async function resolveJoinTokenSoft(
  * the patient UI maps onto its terminal states; none of them disclose any
  * appointment, patient, or tenant detail (Req 6.6).
  */
-export async function resolveJoinTokenOrThrow(token: string, clientKey: string): Promise<ResolvedToken> {
+export async function resolveJoinTokenOrThrow(
+  token: string,
+  clientKey: string,
+): Promise<ResolvedToken> {
   const res = await resolveJoinToken(token, clientKey);
   if (!res.ok) {
     if (res.status === "rate_limited") throw new Error("RATE_LIMITED");
@@ -1911,7 +1987,10 @@ export async function loadParticipantById(
  * promotes a guest who is already waiting so they connect immediately.
  * Returns the resulting room state.
  */
-export async function registerHostParticipant(room: VideoRoomRow, user: SessionUser): Promise<string> {
+export async function registerHostParticipant(
+  room: VideoRoomRow,
+  user: SessionUser,
+): Promise<string> {
   await upsertParticipant({
     tenantId: user.tenantId,
     roomId: room.id,
@@ -1952,7 +2031,11 @@ export async function endRoomAsDoctor(
   reason?: string,
 ): Promise<{ roomState: string; connectedSeconds: number; outcome: string | null }> {
   if (room.state !== "active" && room.state !== "waiting") {
-    return { roomState: room.state, connectedSeconds: room.connectedSeconds, outcome: room.outcome };
+    return {
+      roomState: room.state,
+      connectedSeconds: room.connectedSeconds,
+      outcome: room.outcome,
+    };
   }
   const endReason = reason === "connection_lost" ? "connection_lost" : "doctor_ended";
   const updated = await transitionRoom(room.id, "end", {
@@ -1962,11 +2045,18 @@ export async function endRoomAsDoctor(
     endReason,
     detail: endReason,
   });
-  return { roomState: updated.state, connectedSeconds: updated.connectedSeconds, outcome: updated.outcome };
+  return {
+    roomState: updated.state,
+    connectedSeconds: updated.connectedSeconds,
+    outcome: updated.outcome,
+  };
 }
 
 /** Cancels an ad-hoc meeting on the host's behalf. */
-export async function cancelRoomForHost(room: VideoRoomRow, tenantId: string): Promise<{ roomState: string }> {
+export async function cancelRoomForHost(
+  room: VideoRoomRow,
+  tenantId: string,
+): Promise<{ roomState: string }> {
   if (isTerminalStateName(room.state)) return { roomState: room.state };
   const updated = await transitionRoom(room.id, "cancel", {
     tenantId,

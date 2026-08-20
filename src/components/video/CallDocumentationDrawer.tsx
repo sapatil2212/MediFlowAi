@@ -36,7 +36,9 @@ export function CallDocumentationDrawer({
 
   const save = async () => {
     if (!patientId) {
-      setError("This appointment has no linked patient record, so notes can't be saved. Add the patient first.");
+      setError(
+        "This appointment has no linked patient record, so notes can't be saved. Add the patient first.",
+      );
       return;
     }
     setSaving(true);
@@ -70,7 +72,11 @@ export function CallDocumentationDrawer({
               {patientName && <p className="text-xs text-zinc-500">{patientName}</p>}
             </div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100" aria-label="Close">
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100"
+            aria-label="Close"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -79,13 +85,34 @@ export function CallDocumentationDrawer({
           {!patientId && (
             <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-700">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              No patient record is linked to this appointment. Notes cannot be saved until one is added.
+              No patient record is linked to this appointment. Notes cannot be saved until one is
+              added.
             </div>
           )}
-          <Field label="Subjective" value={subjective} onChange={setSubjective} placeholder="Patient's narrative, chief complaint, history…" />
-          <Field label="Objective" value={objective} onChange={setObjective} placeholder="Exam findings, vitals…" />
-          <Field label="Assessment" value={assessment} onChange={setAssessment} placeholder="Diagnosis, clinical impression…" />
-          <Field label="Plan" value={plan} onChange={setPlan} placeholder="Treatment, prescriptions, follow-up…" />
+          <Field
+            label="Subjective"
+            value={subjective}
+            onChange={setSubjective}
+            placeholder="Patient's narrative, chief complaint, history…"
+          />
+          <Field
+            label="Objective"
+            value={objective}
+            onChange={setObjective}
+            placeholder="Exam findings, vitals…"
+          />
+          <Field
+            label="Assessment"
+            value={assessment}
+            onChange={setAssessment}
+            placeholder="Diagnosis, clinical impression…"
+          />
+          <Field
+            label="Plan"
+            value={plan}
+            onChange={setPlan}
+            placeholder="Treatment, prescriptions, follow-up…"
+          />
           {error && <p className="text-sm text-red-500">{error}</p>}
         </div>
 

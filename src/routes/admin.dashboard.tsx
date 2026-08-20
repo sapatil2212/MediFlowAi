@@ -45,7 +45,7 @@ import {
   ArrowLeft,
   CreditCard,
   XCircle,
-  Ban
+  Ban,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -77,7 +77,7 @@ import {
   createPaymentServerFn,
   updatePaymentServerFn,
   deletePaymentServerFn,
-  updateTenantFullServerFn
+  updateTenantFullServerFn,
 } from "../lib/admin";
 import {
   getAdminSubscriptionsServerFn,
@@ -87,7 +87,7 @@ import {
   updateAdminSubscriptionServerFn,
   deleteAdminSubscriptionServerFn,
   createAdminSubscriptionPaymentServerFn,
-  chargeSubscriptionNowServerFn
+  chargeSubscriptionNowServerFn,
 } from "../lib/subscription";
 import {
   getDemoAppointmentsServerFn,
@@ -175,7 +175,6 @@ interface DemoAppointment {
   updatedAt: string;
 }
 
-
 const CustomChartTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const point = payload[0].payload;
@@ -207,7 +206,9 @@ const CustomPieTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className="rounded-xl border border-zinc-200/80 bg-white/90 backdrop-blur-md p-3.5 shadow-xl space-y-1">
-        <p className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">{payload[0].name} Tier</p>
+        <p className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider">
+          {payload[0].name} Tier
+        </p>
         <p className="text-xs font-black text-zinc-955 flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-zinc-800" />
           {payload[0].value} Tenants
@@ -239,7 +240,10 @@ function CustomCheckbox({
   return (
     <label className={`inline-flex items-center gap-2 cursor-pointer select-none ${className}`}>
       <span
-        onClick={(e) => { e.preventDefault(); onChange(); }}
+        onClick={(e) => {
+          e.preventDefault();
+          onChange();
+        }}
         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition-all ${
           checked || indeterminate
             ? "bg-[#0059C6] border-[#0059C6]"
@@ -285,10 +289,18 @@ function AdminDashboardPage() {
   });
 
   // Active Dashboard Tab View — persisted across refreshes via localStorage.
-  const [activeTab, setActiveTab] = useState<"overview" | "registry" | "payments" | "subscriptions" | "demo">(() => {
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "registry" | "payments" | "subscriptions" | "demo"
+  >(() => {
     if (typeof window !== "undefined") {
       const saved = window.localStorage.getItem("bmt_admin_active_tab");
-      if (saved === "overview" || saved === "registry" || saved === "payments" || saved === "subscriptions" || saved === "demo") {
+      if (
+        saved === "overview" ||
+        saved === "registry" ||
+        saved === "payments" ||
+        saved === "subscriptions" ||
+        saved === "demo"
+      ) {
         return saved;
       }
     }
@@ -301,22 +313,42 @@ function AdminDashboardPage() {
       window.localStorage.setItem("bmt_admin_active_tab", activeTab);
     }
   }, [activeTab]);
-  
+
   // Signup Trends Chart Filter
   const [trendsTimeRange, setTrendsTimeRange] = useState<"day" | "week" | "month" | "all">("month");
 
   // Recurring subscriptions (AutoPay) admin state
   const [subscriptionRows, setSubscriptionRows] = useState<any[]>([]);
   const [subscriptionSummary, setSubscriptionSummary] = useState<{
-    totalCount: number; activeCount: number; cancelledCount: number; onHoldCount: number; activeMrr: number; failedRenewals: number;
-    collectedAmount: number; failedAmount: number; successCount: number;
-  }>({ totalCount: 0, activeCount: 0, cancelledCount: 0, onHoldCount: 0, activeMrr: 0, failedRenewals: 0, collectedAmount: 0, failedAmount: 0, successCount: 0 });
+    totalCount: number;
+    activeCount: number;
+    cancelledCount: number;
+    onHoldCount: number;
+    activeMrr: number;
+    failedRenewals: number;
+    collectedAmount: number;
+    failedAmount: number;
+    successCount: number;
+  }>({
+    totalCount: 0,
+    activeCount: 0,
+    cancelledCount: 0,
+    onHoldCount: 0,
+    activeMrr: 0,
+    failedRenewals: 0,
+    collectedAmount: 0,
+    failedAmount: 0,
+    successCount: 0,
+  });
   const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
   const [syncingSubscriptions, setSyncingSubscriptions] = useState(false);
   const [subAdminStatusFilter, setSubAdminStatusFilter] = useState("all");
   const [subAdminSearch, setSubAdminSearch] = useState("");
   // Per-subscription payment ledger modal (super admin)
-  const [subPaymentsModal, setSubPaymentsModal] = useState<{ subscription: any; payments: any[] } | null>(null);
+  const [subPaymentsModal, setSubPaymentsModal] = useState<{
+    subscription: any;
+    payments: any[];
+  } | null>(null);
   const [loadingSubPayments, setLoadingSubPayments] = useState(false);
 
   const openSubscriptionPayments = async (subscriptionRef: string) => {
@@ -336,9 +368,26 @@ function AdminDashboardPage() {
   // Payment History states
   const [paymentRows, setPaymentRows] = useState<any[]>([]);
   const [paymentSummary, setPaymentSummary] = useState<{
-    totalCount: number; successCount: number; failedCount: number; cancelledCount: number; pendingCount: number; totalReceived: number;
-    failedAmount: number; cancelledAmount: number; pendingAmount: number;
-  }>({ totalCount: 0, successCount: 0, failedCount: 0, cancelledCount: 0, pendingCount: 0, totalReceived: 0, failedAmount: 0, cancelledAmount: 0, pendingAmount: 0 });
+    totalCount: number;
+    successCount: number;
+    failedCount: number;
+    cancelledCount: number;
+    pendingCount: number;
+    totalReceived: number;
+    failedAmount: number;
+    cancelledAmount: number;
+    pendingAmount: number;
+  }>({
+    totalCount: 0,
+    successCount: 0,
+    failedCount: 0,
+    cancelledCount: 0,
+    pendingCount: 0,
+    totalReceived: 0,
+    failedAmount: 0,
+    cancelledAmount: 0,
+    pendingAmount: 0,
+  });
   const [loadingPayments, setLoadingPayments] = useState(false);
   const [syncingPayments, setSyncingPayments] = useState(false);
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
@@ -391,13 +440,13 @@ function AdminDashboardPage() {
   const [editPlan, setEditPlan] = useState("Trial");
   const [editExpiry, setEditExpiry] = useState("");
   const [editPaymentMethod, setEditPaymentMethod] = useState("None");
-    const [editPaymentAmount, setEditPaymentAmount] = useState(0);
+  const [editPaymentAmount, setEditPaymentAmount] = useState(0);
   const [editBillingInterval, setEditBillingInterval] = useState("monthly");
   const [updating, setUpdating] = useState(false);
   const [subHistory, setSubHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [togglingTenantId, setTogglingTenantId] = useState<string | null>(null);
-  
+
   // Delete Modal States
   const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -406,7 +455,7 @@ function AdminDashboardPage() {
   const [selectedTenantIds, setSelectedTenantIds] = useState<Set<string>>(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
-  
+
   // Full Profile State
   const [selectedTenantProfile, setSelectedTenantProfile] = useState<any>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
@@ -584,8 +633,8 @@ function AdminDashboardPage() {
   const reloadViewSubPayments = (subscriptionRef: string) => {
     setLoadingViewSubPayments(true);
     return getAdminSubscriptionPaymentsServerFn({ data: { subscriptionRef } })
-      .then(res => setViewSubPayments(res.payments || []))
-      .catch(err => toast.error("Failed to load payments ledger: " + err.message))
+      .then((res) => setViewSubPayments(res.payments || []))
+      .catch((err) => toast.error("Failed to load payments ledger: " + err.message))
       .finally(() => setLoadingViewSubPayments(false));
   };
 
@@ -635,9 +684,21 @@ function AdminDashboardPage() {
       setEditSubStatus(editingSub.status);
       setEditSubInterval(editingSub.intervalType || "MONTH");
       setEditSubIntervals(Number(editingSub.intervals) || 1);
-      setEditSubNextCharge(editingSub.nextChargeAt ? new Date(editingSub.nextChargeAt).toISOString().substring(0, 10) : "");
-      setEditSubPeriodStart(editingSub.currentPeriodStart ? new Date(editingSub.currentPeriodStart).toISOString().substring(0, 10) : "");
-      setEditSubPeriodEnd(editingSub.currentPeriodEnd ? new Date(editingSub.currentPeriodEnd).toISOString().substring(0, 10) : "");
+      setEditSubNextCharge(
+        editingSub.nextChargeAt
+          ? new Date(editingSub.nextChargeAt).toISOString().substring(0, 10)
+          : "",
+      );
+      setEditSubPeriodStart(
+        editingSub.currentPeriodStart
+          ? new Date(editingSub.currentPeriodStart).toISOString().substring(0, 10)
+          : "",
+      );
+      setEditSubPeriodEnd(
+        editingSub.currentPeriodEnd
+          ? new Date(editingSub.currentPeriodEnd).toISOString().substring(0, 10)
+          : "",
+      );
       setEditSubCancelAtEnd(Number(editingSub.cancelAtPeriodEnd) || 0);
       setEditSubName(editingSub.customerName || "");
       setEditSubEmail(editingSub.customerEmail || "");
@@ -675,7 +736,7 @@ function AdminDashboardPage() {
           customerEmail: addPayEmail || undefined,
           customerPhone: addPayPhone || undefined,
           createdAt: addPayDate || undefined,
-        }
+        },
       });
       toast.success("Offline payment recorded successfully!");
       setIsRecordPaymentOpen(false);
@@ -708,7 +769,7 @@ function AdminDashboardPage() {
           customerName: editPayName || undefined,
           customerEmail: editPayEmail || undefined,
           customerPhone: editPayPhone || undefined,
-        }
+        },
       });
       toast.success("Payment log updated successfully!");
       setEditingPayment(null);
@@ -726,7 +787,7 @@ function AdminDashboardPage() {
         data: {
           id: deletingPayment.id,
           type: deletingPayment.type,
-        }
+        },
       });
       toast.success("Payment log deleted successfully");
       setDeletingPayment(null);
@@ -741,7 +802,8 @@ function AdminDashboardPage() {
   const togglePaymentSelection = (id: string) => {
     setSelectedPaymentIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -756,10 +818,15 @@ function AdminDashboardPage() {
     setIsBulkDeletingPayments(true);
     try {
       const rows = paymentRows.filter((p) => selectedPaymentIds.has(p.id));
-      let ok = 0, fail = 0;
+      let ok = 0,
+        fail = 0;
       for (const p of rows) {
-        try { await deletePaymentServerFn({ data: { id: p.id, type: p.type } }); ok++; }
-        catch { fail++; }
+        try {
+          await deletePaymentServerFn({ data: { id: p.id, type: p.type } });
+          ok++;
+        } catch {
+          fail++;
+        }
       }
       if (fail > 0) toast.warning(`Deleted ${ok} of ${rows.length} — ${fail} failed.`);
       else toast.success(`Deleted ${ok} payment${ok === 1 ? "" : "s"} successfully.`);
@@ -796,7 +863,7 @@ function AdminDashboardPage() {
           customerName: addSubName || undefined,
           customerEmail: addSubEmail || undefined,
           customerPhone: addSubPhone || undefined,
-        }
+        },
       });
       toast.success("Custom subscription provisioned successfully!");
       setIsProvisionSubOpen(false);
@@ -835,7 +902,7 @@ function AdminDashboardPage() {
           customerName: editSubName || undefined,
           customerEmail: editSubEmail || undefined,
           customerPhone: editSubPhone || undefined,
-        }
+        },
       });
       toast.success("Subscription updated successfully!");
       setEditingSub(null);
@@ -859,7 +926,7 @@ function AdminDashboardPage() {
           paymentType: logPayType,
           paidAt: logPayDate || null,
           remarks: logPayRemarks || null,
-        }
+        },
       });
       toast.success("Cycle payment logged successfully!");
       setLogPaymentSub(null);
@@ -876,7 +943,7 @@ function AdminDashboardPage() {
       await deleteAdminSubscriptionServerFn({
         data: {
           id: deletingSub.id,
-        }
+        },
       });
       toast.success("Subscription deleted successfully");
       setDeletingSub(null);
@@ -891,7 +958,8 @@ function AdminDashboardPage() {
   const toggleSubSelection = (id: string) => {
     setSelectedSubIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -906,10 +974,15 @@ function AdminDashboardPage() {
     setIsBulkDeletingSubs(true);
     try {
       const ids = Array.from(selectedSubIds);
-      let ok = 0, fail = 0;
+      let ok = 0,
+        fail = 0;
       for (const id of ids) {
-        try { await deleteAdminSubscriptionServerFn({ data: { id } }); ok++; }
-        catch { fail++; }
+        try {
+          await deleteAdminSubscriptionServerFn({ data: { id } });
+          ok++;
+        } catch {
+          fail++;
+        }
       }
       if (fail > 0) toast.warning(`Deleted ${ok} of ${ids.length} — ${fail} failed.`);
       else toast.success(`Deleted ${ok} subscription${ok === 1 ? "" : "s"} successfully.`);
@@ -1037,7 +1110,9 @@ function AdminDashboardPage() {
       const res = await syncAllPaymentsFromCashfreeServerFn();
       console.log("[AdminSync] Payments reconciled:", res);
       const backfillNote = res.backfilled ? `${res.backfilled} recovered from accounts, ` : "";
-      toast.success(`${backfillNote}synced ${res.reconciled}/${res.scanned} pending${res.promoted ? ` — ${res.promoted} now paid` : ""}`);
+      toast.success(
+        `${backfillNote}synced ${res.reconciled}/${res.scanned} pending${res.promoted ? ` — ${res.promoted} now paid` : ""}`,
+      );
       await fetchPaymentHistory();
     } catch (err: any) {
       console.error("[AdminSync] Payment sync failed:", err);
@@ -1079,7 +1154,9 @@ function AdminDashboardPage() {
     try {
       const res = await syncAllSubscriptionsFromCashfreeServerFn();
       console.log("[AdminSync] Subscriptions reconciled:", res);
-      toast.success(`Synced ${res.reconciled}/${res.scanned} subscriptions — ${res.paymentsSynced} payments recorded`);
+      toast.success(
+        `Synced ${res.reconciled}/${res.scanned} subscriptions — ${res.paymentsSynced} payments recorded`,
+      );
       await fetchAdminSubscriptions();
     } catch (err: any) {
       console.error("[AdminSync] Subscription sync failed:", err);
@@ -1112,7 +1189,11 @@ function AdminDashboardPage() {
     setTogglingTenantId(t.id);
     try {
       const res = await toggleTenantStatusServerFn({ data: { id: t.id } });
-      setTenants((prev) => prev.map((item) => item.id === t.id ? { ...item, subscriptionStatus: res.newStatus } : item));
+      setTenants((prev) =>
+        prev.map((item) =>
+          item.id === t.id ? { ...item, subscriptionStatus: res.newStatus } : item,
+        ),
+      );
     } catch (err: any) {
       toast.error(err.message || "Failed to toggle status.");
     } finally {
@@ -1204,12 +1285,15 @@ function AdminDashboardPage() {
     } else {
       setEditPlan(normalizePlan(t.subscriptionPlan));
     }
-    
+
     let expiryVal = "";
     if (t.subscriptionExpiresAt) {
       if (typeof t.subscriptionExpiresAt === "string") {
         expiryVal = t.subscriptionExpiresAt.substring(0, 10);
-      } else if ((t.subscriptionExpiresAt as any) instanceof Date || Object.prototype.toString.call(t.subscriptionExpiresAt) === '[object Date]') {
+      } else if (
+        (t.subscriptionExpiresAt as any) instanceof Date ||
+        Object.prototype.toString.call(t.subscriptionExpiresAt) === "[object Date]"
+      ) {
         expiryVal = new Date(t.subscriptionExpiresAt).toISOString().substring(0, 10);
       }
     }
@@ -1247,8 +1331,8 @@ function AdminDashboardPage() {
           billingInterval: editBillingInterval,
           virtualPhoneNumber: editingTenant.virtualPhoneNumber,
           callLimit: editingTenant.callLimit,
-          callsHandled: editingTenant.callsHandled
-        }
+          callsHandled: editingTenant.callsHandled,
+        },
       });
       toast.success(`Successfully updated ${editingTenant.clinicName} SaaS metrics!`);
       setEditingTenant(null);
@@ -1272,8 +1356,8 @@ function AdminDashboardPage() {
           phone: addPhone,
           clinicName: addClinicName,
           practiceSize: addPracticeSize,
-          password: addPassword
-        }
+          password: addPassword,
+        },
       });
       setCreatedResult(res);
       toast.success("Tenant registered successfully!");
@@ -1340,7 +1424,7 @@ function AdminDashboardPage() {
             day: "numeric",
             month: "short",
             year: "numeric",
-          }
+          },
     );
   };
 
@@ -1357,7 +1441,10 @@ function AdminDashboardPage() {
   // etc). subscriptionStatus alone is NOT reliable: new signups are inserted
   // as 'Active' with a 7-day trial expiry, so status can't distinguish trial
   // vs. paid on its own.
-  const isTenantPaid = (t: { paymentAmount?: number | string | null; paymentMethod?: string | null }) => {
+  const isTenantPaid = (t: {
+    paymentAmount?: number | string | null;
+    paymentMethod?: string | null;
+  }) => {
     const pm = String(t.paymentMethod || "").toLowerCase();
     return Number(t.paymentAmount) > 0 && pm !== "none" && pm !== "trial";
   };
@@ -1384,8 +1471,8 @@ function AdminDashboardPage() {
                     : item.lastContactedAt,
                 updatedAt: new Date().toISOString(),
               }
-            : item
-        )
+            : item,
+        ),
       );
       toast.success(`Demo request ${demo.referenceId} marked as ${status}.`);
     } catch (err: any) {
@@ -1396,62 +1483,70 @@ function AdminDashboardPage() {
   };
 
   // Search and filter list
-  const filteredTenants = tenants.filter((t) => {
-    const queryMatch =
-      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.clinicName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.tenantId.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredTenants = tenants
+    .filter((t) => {
+      const queryMatch =
+        t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.clinicName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.tenantId.toLowerCase().includes(searchQuery.toLowerCase());
 
-    let planMatch = true;
-    if (planFilter !== "all") {
-      if (planFilter === "trial") {
-        planMatch = !isTenantPaid(t);
-      } else {
-        planMatch = isTenantPaid(t) && normalizePlan(t.subscriptionPlan).toLowerCase() === planFilter.toLowerCase();
+      let planMatch = true;
+      if (planFilter !== "all") {
+        if (planFilter === "trial") {
+          planMatch = !isTenantPaid(t);
+        } else {
+          planMatch =
+            isTenantPaid(t) &&
+            normalizePlan(t.subscriptionPlan).toLowerCase() === planFilter.toLowerCase();
+        }
       }
-    }
-    const statusMatch = statusFilter === "all" || t.subscriptionStatus.toLowerCase() === statusFilter.toLowerCase();
+      const statusMatch =
+        statusFilter === "all" || t.subscriptionStatus.toLowerCase() === statusFilter.toLowerCase();
 
-    // Expiry window filter based on days left until subscription expiry.
-    let expiryMatch = true;
-    if (expiryFilter !== "all") {
-      const days = getDaysLeft(t.subscriptionExpiresAt);
-      if (expiryFilter === "expired") expiryMatch = days !== null && days < 0;
-      else if (expiryFilter === "expiring") expiryMatch = days !== null && days >= 0 && days <= 7;
-      else if (expiryFilter === "active") expiryMatch = days === null || days > 7;
-    }
-
-    return queryMatch && planMatch && statusMatch && expiryMatch;
-  }).sort((a, b) => {
-    switch (tenantSort) {
-      case "oldest":
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      case "name_asc":
-        return (a.clinicName || "").localeCompare(b.clinicName || "");
-      case "name_desc":
-        return (b.clinicName || "").localeCompare(a.clinicName || "");
-      case "expiring": {
-        const da = getDaysLeft(a.subscriptionExpiresAt);
-        const db = getDaysLeft(b.subscriptionExpiresAt);
-        // Nulls (no expiry) sort last; otherwise ascending by days left.
-        if (da === null && db === null) return 0;
-        if (da === null) return 1;
-        if (db === null) return -1;
-        return da - db;
+      // Expiry window filter based on days left until subscription expiry.
+      let expiryMatch = true;
+      if (expiryFilter !== "all") {
+        const days = getDaysLeft(t.subscriptionExpiresAt);
+        if (expiryFilter === "expired") expiryMatch = days !== null && days < 0;
+        else if (expiryFilter === "expiring") expiryMatch = days !== null && days >= 0 && days <= 7;
+        else if (expiryFilter === "active") expiryMatch = days === null || days > 7;
       }
-      case "plan":
-        return normalizePlan(b.subscriptionPlan).localeCompare(normalizePlan(a.subscriptionPlan));
-      case "newest":
-      default:
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    }
-  });
+
+      return queryMatch && planMatch && statusMatch && expiryMatch;
+    })
+    .sort((a, b) => {
+      switch (tenantSort) {
+        case "oldest":
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case "name_asc":
+          return (a.clinicName || "").localeCompare(b.clinicName || "");
+        case "name_desc":
+          return (b.clinicName || "").localeCompare(a.clinicName || "");
+        case "expiring": {
+          const da = getDaysLeft(a.subscriptionExpiresAt);
+          const db = getDaysLeft(b.subscriptionExpiresAt);
+          // Nulls (no expiry) sort last; otherwise ascending by days left.
+          if (da === null && db === null) return 0;
+          if (da === null) return 1;
+          if (db === null) return -1;
+          return da - db;
+        }
+        case "plan":
+          return normalizePlan(b.subscriptionPlan).localeCompare(normalizePlan(a.subscriptionPlan));
+        case "newest":
+        default:
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+    });
 
   // Whether any tenant filter is active (used to show the Clear button).
   const tenantFiltersActive =
-    searchQuery !== "" || planFilter !== "all" || statusFilter !== "all" ||
-    expiryFilter !== "all" || tenantSort !== "newest";
+    searchQuery !== "" ||
+    planFilter !== "all" ||
+    statusFilter !== "all" ||
+    expiryFilter !== "all" ||
+    tenantSort !== "newest";
 
   const clearTenantFilters = () => {
     setSearchQuery("");
@@ -1485,14 +1580,15 @@ function AdminDashboardPage() {
   };
 
   // Calculate SVG Coordinates dynamically based on real trends from database
-  const maxTrendCount = Math.max(...trends.map(t => t.count), 1);
+  const maxTrendCount = Math.max(...trends.map((t) => t.count), 1);
   const chartPoints = trends.map((t, idx) => {
-  const x = idx * 20; // 0, 20, 40, 60, 80, 100 for 6 months
+    const x = idx * 20; // 0, 20, 40, 60, 80, 100 for 6 months
     const y = 100 - ((t.count / maxTrendCount) * 65 + 15); // Scale y between 15% and 80% height
     return { x, y, count: t.count, month: t.month };
   });
 
-  const svgLinePath = chartPoints.length > 0 ? `M ${chartPoints.map(p => `${p.x} ${p.y}`).join(" L ")}` : "";
+  const svgLinePath =
+    chartPoints.length > 0 ? `M ${chartPoints.map((p) => `${p.x} ${p.y}`).join(" L ")}` : "";
 
   // Calculate Plan Distribution for Pie Chart
   const planCounts = tenants.reduce((acc: Record<string, number>, t) => {
@@ -1500,7 +1596,7 @@ function AdminDashboardPage() {
     acc[plan] = (acc[plan] || 0) + 1;
     return acc;
   }, {});
-  
+
   const planData = Object.keys(planCounts).map((plan) => ({
     name: plan,
     value: planCounts[plan],
@@ -1547,7 +1643,10 @@ function AdminDashboardPage() {
         const end = weekStart + 7 * 24 * 60 * 60 * 1000;
         buckets.push({
           key: `w-${weekStart}`,
-          label: new Date(weekStart).toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+          label: new Date(weekStart).toLocaleDateString("en-IN", {
+            day: "numeric",
+            month: "short",
+          }),
           start: weekStart,
           end,
         });
@@ -1650,7 +1749,13 @@ function AdminDashboardPage() {
     return 0;
   });
 
-  const PIE_COLORS = ["rgb(24, 24, 27)", "rgb(5, 150, 105)", "rgb(161, 161, 170)", "rgb(228, 228, 231)"];  if (loadingSession) {
+  const PIE_COLORS = [
+    "rgb(24, 24, 27)",
+    "rgb(5, 150, 105)",
+    "rgb(161, 161, 170)",
+    "rgb(228, 228, 231)",
+  ];
+  if (loadingSession) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 text-zinc-800 font-sans">
         <div className="relative flex items-center justify-center mb-6">
@@ -1668,7 +1773,6 @@ function AdminDashboardPage() {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-gradient-to-br from-zinc-50 via-white to-zinc-50 font-sans text-zinc-900 relative">
-
       {/* ── Left Sidebar — BookMyTime Branded ── */}
       <aside className="hidden w-64 shrink-0 border-r border-zinc-200/80 bg-white/80 backdrop-blur-xl p-5 flex-col justify-between md:flex">
         <div className="space-y-6">
@@ -1680,11 +1784,11 @@ function AdminDashboardPage() {
           {/* Nav Items */}
           <nav className="space-y-1">
             {[
-              { id: "overview",    label: "Overview",     icon: TrendingUp },
-              { id: "registry",   label: "Tenants",      icon: Building },
-              { id: "payments",   label: "Payments",     icon: CreditCard },
+              { id: "overview", label: "Overview", icon: TrendingUp },
+              { id: "registry", label: "Tenants", icon: Building },
+              { id: "payments", label: "Payments", icon: CreditCard },
               { id: "subscriptions", label: "Subscriptions", icon: RefreshCw },
-              { id: "demo",       label: "Demo Requests",        icon: Calendar },
+              { id: "demo", label: "Demo Requests", icon: Calendar },
             ].map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -1693,7 +1797,11 @@ function AdminDashboardPage() {
                   key={tab.id}
                   onClick={() => {
                     setActiveTab(tab.id as any);
-                    if (tab.id === "registry") { setSearchQuery(""); setPlanFilter("all"); setStatusFilter("all"); }
+                    if (tab.id === "registry") {
+                      setSearchQuery("");
+                      setPlanFilter("all");
+                      setStatusFilter("all");
+                    }
                   }}
                   className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold transition-all cursor-pointer ${
                     active
@@ -1716,8 +1824,12 @@ function AdminDashboardPage() {
               {getInitials((admin?.name || "BookMyTime Admin").replace(/MediFlow/gi, "BookMyTime"))}
             </div>
             <div className="overflow-hidden flex-1 min-w-0">
-              <h4 className="text-xs font-bold text-zinc-900 truncate leading-tight">{(admin?.name || "BookMyTime Admin").replace(/MediFlow/gi, "BookMyTime")}</h4>
-              <span className="text-[10px] font-medium text-zinc-500 truncate block">Platform Owner</span>
+              <h4 className="text-xs font-bold text-zinc-900 truncate leading-tight">
+                {(admin?.name || "BookMyTime Admin").replace(/MediFlow/gi, "BookMyTime")}
+              </h4>
+              <span className="text-[10px] font-medium text-zinc-500 truncate block">
+                Platform Owner
+              </span>
             </div>
           </div>
           <button
@@ -1742,7 +1854,7 @@ function AdminDashboardPage() {
               {activeTab === "payments" && <CreditCard className="h-5 w-5 text-[#0059C6]" />}
               {activeTab === "subscriptions" && <RefreshCw className="h-5 w-5 text-[#0059C6]" />}
               {activeTab === "demo" && <Calendar className="h-5 w-5 text-[#0059C6]" />}
-              
+
               <span className="text-sm font-bold text-zinc-900">
                 {activeTab === "overview" && "Platform Overview"}
                 {activeTab === "registry" && "Tenants Directory"}
@@ -1769,7 +1881,6 @@ function AdminDashboardPage() {
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto bg-gradient-to-br from-zinc-50 via-white to-zinc-50">
           <div className="px-4 sm:px-6 py-6 space-y-6 max-w-[1600px] mx-auto">
-
             {/* Page Title */}
             <div className="flex items-end justify-between gap-3">
               <div>
@@ -1781,11 +1892,16 @@ function AdminDashboardPage() {
                   {activeTab === "demo" && "Demo Pipeline"}
                 </h1>
                 <p className="text-sm text-zinc-500 mt-1">
-                  {activeTab === "overview" && "Real-time metrics, signup trends, and system health monitoring"}
-                  {activeTab === "registry" && "Manage clinic accounts, billing status, and subscription plans"}
-                  {activeTab === "payments" && "Complete payment history from Cashfree — successful, failed, and pending transactions"}
-                  {activeTab === "subscriptions" && "AutoPay subscription management — active mandates, renewals, and billing cycles"}
-                  {activeTab === "demo" && "Track demo requests, follow-ups, and conversion pipeline"}
+                  {activeTab === "overview" &&
+                    "Real-time metrics, signup trends, and system health monitoring"}
+                  {activeTab === "registry" &&
+                    "Manage clinic accounts, billing status, and subscription plans"}
+                  {activeTab === "payments" &&
+                    "Complete payment history from Cashfree — successful, failed, and pending transactions"}
+                  {activeTab === "subscriptions" &&
+                    "AutoPay subscription management — active mandates, renewals, and billing cycles"}
+                  {activeTab === "demo" &&
+                    "Track demo requests, follow-ups, and conversion pipeline"}
                 </p>
               </div>
               <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 rounded-full shrink-0">
@@ -1800,7 +1916,9 @@ function AdminDashboardPage() {
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between group hover:border-[#0059C6]/30 transition-all">
                     <div>
-                      <span className="block text-xl font-black text-zinc-950 tracking-tight">{formatCurrencyInr(metrics.totalMRR)}</span>
+                      <span className="block text-xl font-black text-zinc-950 tracking-tight">
+                        {formatCurrencyInr(metrics.totalMRR)}
+                      </span>
                       <span className="block text-[10px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                         Live
@@ -1810,12 +1928,16 @@ function AdminDashboardPage() {
                       <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
                         <IndianRupee className="size-3.5" />
                       </div>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">MRR</span>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                        MRR
+                      </span>
                     </div>
                   </div>
                   <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between group hover:border-[#0059C6]/30 transition-all">
                     <div>
-                      <span className="block text-xl font-black text-zinc-950 tracking-tight">{metrics.totalTenants}</span>
+                      <span className="block text-xl font-black text-zinc-950 tracking-tight">
+                        {metrics.totalTenants}
+                      </span>
                       <div className="flex gap-1.5 text-[10px] font-semibold mt-1">
                         <span className="text-emerald-600">{metrics.activePaid} Paid</span>
                         <span className="text-zinc-300">•</span>
@@ -1826,31 +1948,45 @@ function AdminDashboardPage() {
                       <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-[#0059C6]">
                         <Building className="size-3.5" />
                       </div>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Tenants</span>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                        Tenants
+                      </span>
                     </div>
                   </div>
                   <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between group hover:border-[#0059C6]/30 transition-all">
                     <div>
-                      <span className="block text-xl font-black text-zinc-950 tracking-tight">{metrics.totalCallsHandled.toLocaleString()}</span>
-                      <span className="block text-[10px] text-zinc-400 font-semibold mt-1">Total handled</span>
+                      <span className="block text-xl font-black text-zinc-950 tracking-tight">
+                        {metrics.totalCallsHandled.toLocaleString()}
+                      </span>
+                      <span className="block text-[10px] text-zinc-400 font-semibold mt-1">
+                        Total handled
+                      </span>
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
                       <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
                         <PhoneCall className="size-3.5" />
                       </div>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">AI Calls</span>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                        AI Calls
+                      </span>
                     </div>
                   </div>
                   <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between group hover:border-[#0059C6]/30 transition-all">
                     <div>
-                      <span className="block text-xl font-black text-zinc-950 tracking-tight">{metrics.totalAppointments}</span>
-                      <span className="block text-[10px] text-zinc-400 font-semibold mt-1">{metrics.totalDoctors} Providers</span>
+                      <span className="block text-xl font-black text-zinc-950 tracking-tight">
+                        {metrics.totalAppointments}
+                      </span>
+                      <span className="block text-[10px] text-zinc-400 font-semibold mt-1">
+                        {metrics.totalDoctors} Providers
+                      </span>
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
                       <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
                         <Calendar className="size-3.5" />
                       </div>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Appointments</span>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                        Appointments
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1864,7 +2000,9 @@ function AdminDashboardPage() {
                           <TrendingUp className="size-5 text-[#0059C6]" />
                           Signup Trends
                         </h3>
-                        <p className="text-xs text-zinc-500 mt-1">Cumulative tenant growth over time</p>
+                        <p className="text-xs text-zinc-500 mt-1">
+                          Cumulative tenant growth over time
+                        </p>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-white bg-[#0059C6] px-3 py-1.5 rounded-lg">
@@ -1872,7 +2010,7 @@ function AdminDashboardPage() {
                         </span>
                       </div>
                     </div>
-                    
+
                     {/* Time Range Filter */}
                     <div className="flex items-center gap-2 pb-2">
                       <span className="text-xs font-semibold text-zinc-600 mr-1">View:</span>
@@ -1895,7 +2033,7 @@ function AdminDashboardPage() {
                         </button>
                       ))}
                     </div>
-                    
+
                     {/* Quick stats for the selected range */}
                     <div className="flex items-center gap-4 pb-1">
                       <div className="flex items-center gap-1.5 text-xs">
@@ -1909,12 +2047,14 @@ function AdminDashboardPage() {
                         <span className="h-2 w-2 rounded-full bg-emerald-500" />
                         <span className="font-semibold text-zinc-600">Cumulative:</span>
                         <span className="font-black text-zinc-900">
-                          {computedTrends.length ? computedTrends[computedTrends.length - 1].count : 0}
+                          {computedTrends.length
+                            ? computedTrends[computedTrends.length - 1].count
+                            : 0}
                         </span>
                       </div>
                     </div>
 
-                    <motion.div 
+                    <motion.div
                       key={trendsTimeRange}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -1927,65 +2067,75 @@ function AdminDashboardPage() {
                           <p className="text-xs font-semibold">No signup data for this range</p>
                         </div>
                       ) : (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={computedTrends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                          <defs>
-                            <linearGradient id="colorSignups" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#0059C6" stopOpacity={0.18}/>
-                              <stop offset="95%" stopColor="#0059C6" stopOpacity={0.00}/>
-                            </linearGradient>
-                            <linearGradient id="colorNew" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#10B981" stopOpacity={0.15}/>
-                              <stop offset="95%" stopColor="#10B981" stopOpacity={0.00}/>
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                          <XAxis 
-                            dataKey="label" 
-                            stroke="#71717a" 
-                            fontSize={10} 
-                            fontWeight={600} 
-                            tickLine={false} 
-                            axisLine={false} 
-                            dy={10} 
-                            interval="preserveStartEnd"
-                          />
-                          <YAxis 
-                            stroke="#71717a" 
-                            fontSize={10} 
-                            fontWeight={600} 
-                            tickLine={false} 
-                            axisLine={false} 
-                            dx={-10} 
-                            allowDecimals={false}
-                          />
-                          <ChartTooltip content={<CustomChartTooltip />} cursor={{ stroke: '#0059C6', strokeWidth: 1, strokeDasharray: "4 4" }} />
-                          <Area 
-                            type="monotone" 
-                            dataKey="signups" 
-                            name="New Signups"
-                            stroke="#10B981" 
-                            strokeWidth={2} 
-                            fillOpacity={1} 
-                            fill="url(#colorNew)" 
-                            activeDot={{ r: 5, strokeWidth: 2, stroke: "white", fill: "#10B981" }} 
-                            animationDuration={800}
-                            animationEasing="ease-in-out"
-                          />
-                          <Area 
-                            type="monotone" 
-                            dataKey="count" 
-                            name="Total Tenants"
-                            stroke="#0059C6" 
-                            strokeWidth={3} 
-                            fillOpacity={1} 
-                            fill="url(#colorSignups)" 
-                            activeDot={{ r: 6, strokeWidth: 2, stroke: "white", fill: "#0059C6" }} 
-                            animationDuration={800}
-                            animationEasing="ease-in-out"
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart
+                            data={computedTrends}
+                            margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                          >
+                            <defs>
+                              <linearGradient id="colorSignups" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#0059C6" stopOpacity={0.18} />
+                                <stop offset="95%" stopColor="#0059C6" stopOpacity={0.0} />
+                              </linearGradient>
+                              <linearGradient id="colorNew" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#10B981" stopOpacity={0.15} />
+                                <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              stroke="#e5e7eb"
+                              vertical={false}
+                            />
+                            <XAxis
+                              dataKey="label"
+                              stroke="#71717a"
+                              fontSize={10}
+                              fontWeight={600}
+                              tickLine={false}
+                              axisLine={false}
+                              dy={10}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis
+                              stroke="#71717a"
+                              fontSize={10}
+                              fontWeight={600}
+                              tickLine={false}
+                              axisLine={false}
+                              dx={-10}
+                              allowDecimals={false}
+                            />
+                            <ChartTooltip
+                              content={<CustomChartTooltip />}
+                              cursor={{ stroke: "#0059C6", strokeWidth: 1, strokeDasharray: "4 4" }}
+                            />
+                            <Area
+                              type="monotone"
+                              dataKey="signups"
+                              name="New Signups"
+                              stroke="#10B981"
+                              strokeWidth={2}
+                              fillOpacity={1}
+                              fill="url(#colorNew)"
+                              activeDot={{ r: 5, strokeWidth: 2, stroke: "white", fill: "#10B981" }}
+                              animationDuration={800}
+                              animationEasing="ease-in-out"
+                            />
+                            <Area
+                              type="monotone"
+                              dataKey="count"
+                              name="Total Tenants"
+                              stroke="#0059C6"
+                              strokeWidth={3}
+                              fillOpacity={1}
+                              fill="url(#colorSignups)"
+                              activeDot={{ r: 6, strokeWidth: 2, stroke: "white", fill: "#0059C6" }}
+                              animationDuration={800}
+                              animationEasing="ease-in-out"
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
                       )}
                     </motion.div>
                   </div>
@@ -1999,7 +2149,9 @@ function AdminDashboardPage() {
                             <Activity className="size-4 text-zinc-650" />
                             SaaS Tier Distribution
                           </h3>
-                          <p className="text-[10px] text-zinc-400 mt-0.5">Subscription plan levels across registered tenants.</p>
+                          <p className="text-[10px] text-zinc-400 mt-0.5">
+                            Subscription plan levels across registered tenants.
+                          </p>
                         </div>
                       </div>
                       <div className="h-44 w-full flex items-center justify-center relative mt-2">
@@ -2015,7 +2167,10 @@ function AdminDashboardPage() {
                               dataKey="value"
                             >
                               {planData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                                <Cell
+                                  key={`cell-${index}`}
+                                  fill={PIE_COLORS[index % PIE_COLORS.length]}
+                                />
                               ))}
                             </Pie>
                             <ChartTooltip content={<CustomPieTooltip />} />
@@ -2028,10 +2183,19 @@ function AdminDashboardPage() {
                       {planData.map((item, idx) => (
                         <div key={item.name} className="flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
-                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }} />
+                            <span
+                              className="h-2 w-2 rounded-full"
+                              style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }}
+                            />
                             <span className="font-semibold text-zinc-550">{item.name} Tier</span>
                           </div>
-                          <span className="font-extrabold text-zinc-900">{item.value} ({tenants.length > 0 ? ((item.value / tenants.length) * 100).toFixed(0) : 0}%)</span>
+                          <span className="font-extrabold text-zinc-900">
+                            {item.value} (
+                            {tenants.length > 0
+                              ? ((item.value / tenants.length) * 100).toFixed(0)
+                              : 0}
+                            %)
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -2043,370 +2207,72 @@ function AdminDashboardPage() {
             {/* VIEW: TENANTS REGISTRY */}
             {activeTab === "registry" && !selectedTenantProfile && (
               <div className="space-y-6">
-              {/* Summary cards */}
-              {(() => {
-                const totalTenants = tenants.length;
-                const paidCount = tenants.filter(t => isTenantPaid(t)).length;
-                const trialCount = tenants.filter(t => !isTenantPaid(t)).length;
-                const suspendedCount = tenants.filter(t => ["Suspended", "Cancelled", "Expired", "Inactive"].includes(String(t.subscriptionStatus))).length;
-                const cards = [
-                  { label: "Total", value: totalTenants, hint: "All accounts", icon: Building, color: "bg-blue-50 text-[#0059C6]" },
-                  { label: "Paid", value: paidCount, hint: "Active subscriptions", icon: CheckCircle2, color: "bg-emerald-50 text-emerald-600" },
-                  { label: "Trial", value: trialCount, hint: "On free trial", icon: Clock3, color: "bg-amber-50 text-amber-600" },
-                  { label: "Suspended", value: suspendedCount, hint: "Expired / cancelled", icon: Ban, color: "bg-red-50 text-red-600" },
-                ];
-                return (
-                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    {cards.map((card) => {
-                      const Icon = card.icon;
-                      return (
-                        <div key={card.label} className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
-                          <div>
-                            <span className="block text-xl font-black tracking-tight text-zinc-950">{card.value}</span>
-                            <span className="block text-[10px] font-semibold text-zinc-400 mt-1">{card.hint}</span>
-                          </div>
-                          <div className="flex flex-col items-end gap-1.5">
-                            <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${card.color}`}>
-                              <Icon className="size-3.5" />
-                            </div>
-                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">{card.label}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-
-              <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">
-                <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
-                  <div>
-                    <h2 className="text-sm font-extrabold text-zinc-900">Tenants</h2>
-                    <p className="text-[10px] text-zinc-400 mt-0.5">
-                      {tenantFiltersActive
-                        ? `Showing ${filteredTenants.length} of ${tenants.length} tenants (filtered)`
-                        : `Manage billing, limits, and settings for ${tenants.length} tenants`}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
-                    <div className="relative w-full sm:w-60">
-                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
-                      <input
-                        type="text"
-                        placeholder="Search name, email, phone, or ID..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-8 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all font-semibold"
-                      />
-                      {searchQuery && (
-                        <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 cursor-pointer">
-                          <X className="size-3.5" />
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
-                      <Filter className="size-3.5 text-zinc-400" />
-                      <select value={planFilter} onChange={(e) => setPlanFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer">
-                        <option value="all">All Plans</option>
-                        <option value="trial">Trial</option>
-                        <option value="basic">Basic</option>
-                        <option value="premium">Premium</option>
-                        <option value="enterprise">Enterprise</option>
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
-                      <Activity className="size-3.5 text-zinc-400" />
-                      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer">
-                        <option value="all">All Statuses</option>
-                        <option value="active">Active</option>
-                        <option value="trialing">Trialing</option>
-                        <option value="cancelled">Deactivated</option>
-                        <option value="past due">Past Due</option>
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
-                      <Clock3 className="size-3.5 text-zinc-400" />
-                      <select value={expiryFilter} onChange={(e) => setExpiryFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer">
-                        <option value="all">Any Expiry</option>
-                        <option value="active">Active (&gt;7d)</option>
-                        <option value="expiring">Expiring (&le;7d)</option>
-                        <option value="expired">Expired</option>
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
-                      <Sliders className="size-3.5 text-zinc-400" />
-                      <select value={tenantSort} onChange={(e) => setTenantSort(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer">
-                        <option value="newest">Newest First</option>
-                        <option value="oldest">Oldest First</option>
-                        <option value="name_asc">Name A–Z</option>
-                        <option value="name_desc">Name Z–A</option>
-                        <option value="expiring">Expiring Soon</option>
-                        <option value="plan">Plan Tier</option>
-                      </select>
-                    </div>
-                    {tenantFiltersActive && (
-                      <button
-                        onClick={clearTenantFilters}
-                        className="flex items-center gap-1.5 border border-red-200 bg-red-50 text-red-600 rounded-xl px-3 py-2 text-xs font-bold hover:bg-red-100 transition-all cursor-pointer"
-                        title="Clear all filters"
-                      >
-                        <X className="size-3.5" />
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-              {/* Bulk action bar — appears when one or more tenants are selected */}
-              <AnimatePresence>
-                {selectedTenantIds.size > 0 && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 overflow-hidden"
-                  >
-                    <span className="text-xs font-bold text-red-700">
-                      {selectedTenantIds.size} tenant{selectedTenantIds.size === 1 ? "" : "s"} selected
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setSelectedTenantIds(new Set())}
-                        className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 px-2.5 py-1.5 rounded-lg hover:bg-white/60 transition-all cursor-pointer"
-                      >
-                        Clear
-                      </button>
-                      <button
-                        onClick={() => setShowBulkDeleteConfirm(true)}
-                        className="flex items-center gap-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-all cursor-pointer active:scale-95"
-                      >
-                        <Trash2 className="size-3.5" />
-                        Delete Selected
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {loadingData ? (
-                <div className="flex flex-col items-center justify-center py-24 gap-3">
-                  <Loader2 className="size-7 text-zinc-900 animate-spin" />
-                  <span className="text-xs text-zinc-400 font-bold">Synchronizing database indices...</span>
-                </div>
-              ) : filteredTenants.length === 0 ? (
-                <div className="text-center py-20 space-y-3">
-                  <div className="flex size-12 items-center justify-center rounded-full bg-zinc-50 border border-zinc-150 mx-auto">
-                    <AlertCircle className="size-5 text-zinc-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-zinc-700">No Tenant Records Found</h3>
-                    <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">
-                      {tenantFiltersActive ? "No tenants match the current filters." : "Register a new tenant to get started."}
-                    </p>
-                    {tenantFiltersActive && (
-                      <button onClick={clearTenantFilters} className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-[#0059C6] hover:underline cursor-pointer">
-                        <X className="size-3.5" /> Clear filters
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <table className="w-full text-left border-collapse min-w-[950px]">
-                  <thead>
-                    <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                      <th className="pb-3 pl-3 w-8">
-                        <CustomCheckbox
-                          checked={filteredTenants.length > 0 && filteredTenants.every((t) => selectedTenantIds.has(t.id))}
-                          indeterminate={selectedTenantIds.size > 0 && !filteredTenants.every((t) => selectedTenantIds.has(t.id))}
-                          onChange={() => toggleSelectAllTenants(filteredTenants.map((t) => t.id))}
-                        />
-                      </th>
-                      <th className="pb-3">Tenant & ID</th>
-                      <th className="pb-3">Director Contact</th>
-                      <th className="pb-3">Subscription</th>
-                      <th className="pb-3">Days Left</th>
-                      <th className="pb-3 text-right pr-3">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
-                    {filteredTenants.map((t) => {
-                      const usagePercent = Math.min(100, (t.callsHandled / (t.callLimit || 100)) * 100);
-                      const isLimitDanger = usagePercent > 90;
-                      const isLimitWarning = usagePercent > 75 && usagePercent <= 90;
-                      const clinicColor = getColorClass(t.clinicName);
-                      const daysLeft = getDaysLeft(t.subscriptionExpiresAt);
-                      
-                      const isSelected = selectedTenantIds.has(t.id);
-                      return (
-                        <tr key={t.id} className={`transition-colors group ${isSelected ? "bg-blue-50/60 hover:bg-blue-50" : "hover:bg-slate-50/40"}`}>
-
-                          {/* Row checkbox */}
-                          <td className="py-4 pl-3 w-8">
-                            <CustomCheckbox
-                              checked={isSelected}
-                              onChange={() => toggleTenantSelection(t.id)}
-                            />
-                          </td>
-
-                          {/* Tenant Avatar & ID */}
-                          <td className="py-4">
-                            <div className="flex items-center gap-3">
-                              <div className={`flex size-9 items-center justify-center rounded-xl border text-xs font-black shrink-0 ${clinicColor}`}>
-                                {getInitials(t.clinicName)}
-                              </div>
-                              <div className="space-y-1">
-                                <span className="font-extrabold text-zinc-900 text-xs leading-tight block group-hover:text-zinc-950 transition-colors">
-                                  {t.clinicName}
-                                </span>
-                                <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-medium">
-                                  <span>ID: <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">{t.tenantId}</code></span>
-                                  <span>•</span>
-                                  <span>Created: {new Date(t.createdAt).toLocaleDateString()}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Contact details */}
-                          <td className="py-4">
-                            <span className="block font-bold text-zinc-800 leading-tight">{t.name}</span>
-                            <span className="block text-[10px] text-zinc-400 font-semibold mt-0.5 leading-none">{t.email}</span>
-                          </td>
-
-                          {/* Subscription indicators */}
-                          <td className="py-4 space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
-                                t.subscriptionStatus === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-150' :
-                                t.subscriptionStatus === 'Trialing' ? 'bg-zinc-150 text-zinc-700 border-zinc-250' :
-                                t.subscriptionStatus === 'Cancelled' ? 'bg-zinc-100 text-zinc-650 border-zinc-200' :
-                                'bg-red-50 text-red-700 border-red-150'
-                              }`}>
-                                {t.subscriptionStatus === 'Cancelled' ? 'Deactivated' : t.subscriptionStatus}
-                              </span>
-                              <span className="text-[10px] font-extrabold text-zinc-550">{t.subscriptionPlan} Tier</span>
-                            </div>
-                            <div className="text-[10px] text-zinc-400 font-semibold flex gap-1.5 items-center">
-                              <span>{formatCurrencyInr(t.paymentAmount)}/{t.billingInterval === 'yearly' ? 'yr' : 'mo'}</span>
-                              {t.subscriptionExpiresAt && (
-                                <>
-                                  <span>•</span>
-                                  <span>Renews: {formatDate(t.subscriptionExpiresAt)}</span>
-                                </>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Days Left metrics */}
-                          <td className="py-4">
-                            <div className="flex items-center gap-1.5 text-xs font-bold">
-                              {daysLeft !== null ? (
-                                <span className={daysLeft < 7 ? "text-red-600" : daysLeft < 14 ? "text-amber-600" : "text-emerald-600"}>
-                                  {daysLeft} days
-                                </span>
-                              ) : (
-                                <span className="text-zinc-400">N/A</span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Action modifiers */}
-                          <td className="py-4 text-right pr-3">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                onClick={() => openEditTenantModal(t)}
-                                className="p-1.5 rounded-xl border border-zinc-200 hover:border-[#0059C6]/40 hover:bg-blue-50 text-zinc-600 hover:text-[#0059C6] transition-all cursor-pointer active:scale-[0.98]"
-                                title="Edit Tenant Information"
-                              >
-                                <Edit2 className="size-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleToggleStatus(t)}
-                                disabled={togglingTenantId === t.id}
-                                className={`p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 transition-all cursor-pointer active:scale-[0.98] ${t.subscriptionStatus === 'Active' ? 'text-emerald-600 hover:bg-emerald-50' : 'text-zinc-600 hover:bg-zinc-50'}`}
-                                title={t.subscriptionStatus === 'Active' ? 'Deactivate User' : 'Activate User'}
-                              >
-                                {togglingTenantId === t.id ? <Loader2 className="size-3.5 animate-spin text-zinc-500" /> : <Power className="size-3.5" />}
-                              </button>
-                              <button
-                                onClick={() => handleDeleteTenant(t)}
-                                className="p-1.5 rounded-xl border border-red-100 hover:border-red-200 hover:bg-red-50 text-red-600 transition-all cursor-pointer active:scale-[0.98]"
-                                title="Delete Tenant"
-                              >
-                                <Trash2 className="size-3.5" />
-                              </button>
-                              <button
-                                onClick={() => openTenantProfile(t)}
-                                className="px-2.5 py-1.5 text-[10px] font-extrabold rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 hover:text-zinc-955 transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98]"
-                                title="Modify Config"
-                              >
-                                Config
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-              </div>
-            </div>
-          )}
-
-            {/* VIEW: FULL TENANT PROFILE */}
-            {activeTab === "registry" && selectedTenantProfile && (
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 border-b border-zinc-200 pb-4">
-                  <button onClick={() => { setSelectedTenantProfile(null); setEditingTenant(null); }} className="p-2 rounded-full hover:bg-zinc-100 transition-colors cursor-pointer">
-                    <ArrowLeft className="size-5 text-zinc-500" />
-                  </button>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2.5">
-                      <h2 className="text-xl font-black text-zinc-950">{editingTenant?.clinicName}</h2>
-                      {(() => {
-                        const st = editingTenant?.subscriptionStatus || "";
-                        const cls = st === "Active" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : st === "Trialing" ? "bg-amber-50 text-amber-700 border-amber-200"
-                          : "bg-red-50 text-red-700 border-red-200";
-                        return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${cls}`}>{st || "Unknown"}</span>;
-                      })()}
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border bg-blue-50 text-[#0059C6] border-blue-200">
-                        {editPlan || "Trial"}
-                      </span>
-                    </div>
-                    <p className="text-xs text-zinc-500 mt-1">ID: <code className="bg-zinc-100 px-1 py-0.5 rounded font-mono">{editingTenant?.tenantId}</code> • Created: {new Date(editingTenant?.createdAt || "").toLocaleDateString()}</p>
-                  </div>
-                </div>
-
+                {/* Summary cards */}
                 {(() => {
-                  const prof = (selectedTenantProfile.user?.profession || "").toLowerCase();
-                  let l1 = "Doctors", l2 = "Patients", l3 = "Appointments", l4 = "SOAP Notes";
-                  if (prof.includes("gym") || prof.includes("fitness")) { l1 = "Trainers"; l2 = "Members"; l3 = "Classes"; l4 = "Workout Plans"; }
-                  else if (prof.includes("beauty") || prof.includes("wellness")) { l1 = "Specialists"; l2 = "Clients"; l3 = "Bookings"; l4 = "Session Notes"; }
-                  else if (prof.includes("education") || prof.includes("coach")) { l1 = "Instructors"; l2 = "Students"; l3 = "Classes"; l4 = "Progress Notes"; }
-                  else if (prof.includes("legal") || prof.includes("consult")) { l1 = "Consultants"; l2 = "Clients"; l3 = "Meetings"; l4 = "Case Notes"; }
-                  
-                  const profileCards = [
-                    { label: l1, value: selectedTenantProfile.metrics.doctors, icon: UserCheck, color: "bg-blue-50 text-[#0059C6]" },
-                    { label: l2, value: selectedTenantProfile.metrics.patients, icon: Users, color: "bg-emerald-50 text-emerald-600" },
-                    { label: l3, value: selectedTenantProfile.metrics.appointments, icon: Calendar, color: "bg-amber-50 text-amber-600" },
-                    { label: l4, value: selectedTenantProfile.metrics.soapNotes, icon: FileText, color: "bg-purple-50 text-purple-600" },
+                  const totalTenants = tenants.length;
+                  const paidCount = tenants.filter((t) => isTenantPaid(t)).length;
+                  const trialCount = tenants.filter((t) => !isTenantPaid(t)).length;
+                  const suspendedCount = tenants.filter((t) =>
+                    ["Suspended", "Cancelled", "Expired", "Inactive"].includes(
+                      String(t.subscriptionStatus),
+                    ),
+                  ).length;
+                  const cards = [
+                    {
+                      label: "Total",
+                      value: totalTenants,
+                      hint: "All accounts",
+                      icon: Building,
+                      color: "bg-blue-50 text-[#0059C6]",
+                    },
+                    {
+                      label: "Paid",
+                      value: paidCount,
+                      hint: "Active subscriptions",
+                      icon: CheckCircle2,
+                      color: "bg-emerald-50 text-emerald-600",
+                    },
+                    {
+                      label: "Trial",
+                      value: trialCount,
+                      hint: "On free trial",
+                      icon: Clock3,
+                      color: "bg-amber-50 text-amber-600",
+                    },
+                    {
+                      label: "Suspended",
+                      value: suspendedCount,
+                      hint: "Expired / cancelled",
+                      icon: Ban,
+                      color: "bg-red-50 text-red-600",
+                    },
                   ];
                   return (
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                      {profileCards.map((card) => {
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                      {cards.map((card) => {
                         const Icon = card.icon;
                         return (
-                          <div key={card.label} className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                          <div
+                            key={card.label}
+                            className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all"
+                          >
                             <div>
-                              <span className="block text-xl font-black text-zinc-950 tracking-tight">{card.value}</span>
+                              <span className="block text-xl font-black tracking-tight text-zinc-950">
+                                {card.value}
+                              </span>
+                              <span className="block text-[10px] font-semibold text-zinc-400 mt-1">
+                                {card.hint}
+                              </span>
                             </div>
                             <div className="flex flex-col items-end gap-1.5">
-                              <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${card.color}`}>
+                              <div
+                                className={`flex h-7 w-7 items-center justify-center rounded-lg ${card.color}`}
+                              >
                                 <Icon className="size-3.5" />
                               </div>
-                              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">{card.label}</span>
+                              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                                {card.label}
+                              </span>
                             </div>
                           </div>
                         );
@@ -2415,11 +2281,504 @@ function AdminDashboardPage() {
                   );
                 })()}
 
+                <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">
+                  <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
+                    <div>
+                      <h2 className="text-sm font-extrabold text-zinc-900">Tenants</h2>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">
+                        {tenantFiltersActive
+                          ? `Showing ${filteredTenants.length} of ${tenants.length} tenants (filtered)`
+                          : `Manage billing, limits, and settings for ${tenants.length} tenants`}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
+                      <div className="relative w-full sm:w-60">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
+                        <input
+                          type="text"
+                          placeholder="Search name, email, phone, or ID..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full pl-9 pr-8 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all font-semibold"
+                        />
+                        {searchQuery && (
+                          <button
+                            onClick={() => setSearchQuery("")}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 cursor-pointer"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
+                        <Filter className="size-3.5 text-zinc-400" />
+                        <select
+                          value={planFilter}
+                          onChange={(e) => setPlanFilter(e.target.value)}
+                          className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer"
+                        >
+                          <option value="all">All Plans</option>
+                          <option value="trial">Trial</option>
+                          <option value="basic">Basic</option>
+                          <option value="premium">Premium</option>
+                          <option value="enterprise">Enterprise</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
+                        <Activity className="size-3.5 text-zinc-400" />
+                        <select
+                          value={statusFilter}
+                          onChange={(e) => setStatusFilter(e.target.value)}
+                          className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer"
+                        >
+                          <option value="all">All Statuses</option>
+                          <option value="active">Active</option>
+                          <option value="trialing">Trialing</option>
+                          <option value="cancelled">Deactivated</option>
+                          <option value="past due">Past Due</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
+                        <Clock3 className="size-3.5 text-zinc-400" />
+                        <select
+                          value={expiryFilter}
+                          onChange={(e) => setExpiryFilter(e.target.value)}
+                          className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer"
+                        >
+                          <option value="all">Any Expiry</option>
+                          <option value="active">Active (&gt;7d)</option>
+                          <option value="expiring">Expiring (&le;7d)</option>
+                          <option value="expired">Expired</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
+                        <Sliders className="size-3.5 text-zinc-400" />
+                        <select
+                          value={tenantSort}
+                          onChange={(e) => setTenantSort(e.target.value)}
+                          className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1 cursor-pointer"
+                        >
+                          <option value="newest">Newest First</option>
+                          <option value="oldest">Oldest First</option>
+                          <option value="name_asc">Name A–Z</option>
+                          <option value="name_desc">Name Z–A</option>
+                          <option value="expiring">Expiring Soon</option>
+                          <option value="plan">Plan Tier</option>
+                        </select>
+                      </div>
+                      {tenantFiltersActive && (
+                        <button
+                          onClick={clearTenantFilters}
+                          className="flex items-center gap-1.5 border border-red-200 bg-red-50 text-red-600 rounded-xl px-3 py-2 text-xs font-bold hover:bg-red-100 transition-all cursor-pointer"
+                          title="Clear all filters"
+                        >
+                          <X className="size-3.5" />
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bulk action bar — appears when one or more tenants are selected */}
+                  <AnimatePresence>
+                    {selectedTenantIds.size > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 overflow-hidden"
+                      >
+                        <span className="text-xs font-bold text-red-700">
+                          {selectedTenantIds.size} tenant{selectedTenantIds.size === 1 ? "" : "s"}{" "}
+                          selected
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setSelectedTenantIds(new Set())}
+                            className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 px-2.5 py-1.5 rounded-lg hover:bg-white/60 transition-all cursor-pointer"
+                          >
+                            Clear
+                          </button>
+                          <button
+                            onClick={() => setShowBulkDeleteConfirm(true)}
+                            className="flex items-center gap-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-all cursor-pointer active:scale-95"
+                          >
+                            <Trash2 className="size-3.5" />
+                            Delete Selected
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {loadingData ? (
+                    <div className="flex flex-col items-center justify-center py-24 gap-3">
+                      <Loader2 className="size-7 text-zinc-900 animate-spin" />
+                      <span className="text-xs text-zinc-400 font-bold">
+                        Synchronizing database indices...
+                      </span>
+                    </div>
+                  ) : filteredTenants.length === 0 ? (
+                    <div className="text-center py-20 space-y-3">
+                      <div className="flex size-12 items-center justify-center rounded-full bg-zinc-50 border border-zinc-150 mx-auto">
+                        <AlertCircle className="size-5 text-zinc-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-bold text-zinc-700">No Tenant Records Found</h3>
+                        <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">
+                          {tenantFiltersActive
+                            ? "No tenants match the current filters."
+                            : "Register a new tenant to get started."}
+                        </p>
+                        {tenantFiltersActive && (
+                          <button
+                            onClick={clearTenantFilters}
+                            className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-[#0059C6] hover:underline cursor-pointer"
+                          >
+                            <X className="size-3.5" /> Clear filters
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <table className="w-full text-left border-collapse min-w-[950px]">
+                      <thead>
+                        <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
+                          <th className="pb-3 pl-3 w-8">
+                            <CustomCheckbox
+                              checked={
+                                filteredTenants.length > 0 &&
+                                filteredTenants.every((t) => selectedTenantIds.has(t.id))
+                              }
+                              indeterminate={
+                                selectedTenantIds.size > 0 &&
+                                !filteredTenants.every((t) => selectedTenantIds.has(t.id))
+                              }
+                              onChange={() =>
+                                toggleSelectAllTenants(filteredTenants.map((t) => t.id))
+                              }
+                            />
+                          </th>
+                          <th className="pb-3">Tenant & ID</th>
+                          <th className="pb-3">Director Contact</th>
+                          <th className="pb-3">Subscription</th>
+                          <th className="pb-3">Days Left</th>
+                          <th className="pb-3 text-right pr-3">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
+                        {filteredTenants.map((t) => {
+                          const usagePercent = Math.min(
+                            100,
+                            (t.callsHandled / (t.callLimit || 100)) * 100,
+                          );
+                          const isLimitDanger = usagePercent > 90;
+                          const isLimitWarning = usagePercent > 75 && usagePercent <= 90;
+                          const clinicColor = getColorClass(t.clinicName);
+                          const daysLeft = getDaysLeft(t.subscriptionExpiresAt);
+
+                          const isSelected = selectedTenantIds.has(t.id);
+                          return (
+                            <tr
+                              key={t.id}
+                              className={`transition-colors group ${isSelected ? "bg-blue-50/60 hover:bg-blue-50" : "hover:bg-slate-50/40"}`}
+                            >
+                              {/* Row checkbox */}
+                              <td className="py-4 pl-3 w-8">
+                                <CustomCheckbox
+                                  checked={isSelected}
+                                  onChange={() => toggleTenantSelection(t.id)}
+                                />
+                              </td>
+
+                              {/* Tenant Avatar & ID */}
+                              <td className="py-4">
+                                <div className="flex items-center gap-3">
+                                  <div
+                                    className={`flex size-9 items-center justify-center rounded-xl border text-xs font-black shrink-0 ${clinicColor}`}
+                                  >
+                                    {getInitials(t.clinicName)}
+                                  </div>
+                                  <div className="space-y-1">
+                                    <span className="font-extrabold text-zinc-900 text-xs leading-tight block group-hover:text-zinc-950 transition-colors">
+                                      {t.clinicName}
+                                    </span>
+                                    <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-medium">
+                                      <span>
+                                        ID:{" "}
+                                        <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">
+                                          {t.tenantId}
+                                        </code>
+                                      </span>
+                                      <span>•</span>
+                                      <span>
+                                        Created: {new Date(t.createdAt).toLocaleDateString()}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Contact details */}
+                              <td className="py-4">
+                                <span className="block font-bold text-zinc-800 leading-tight">
+                                  {t.name}
+                                </span>
+                                <span className="block text-[10px] text-zinc-400 font-semibold mt-0.5 leading-none">
+                                  {t.email}
+                                </span>
+                              </td>
+
+                              {/* Subscription indicators */}
+                              <td className="py-4 space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
+                                      t.subscriptionStatus === "Active"
+                                        ? "bg-emerald-50 text-emerald-700 border-emerald-150"
+                                        : t.subscriptionStatus === "Trialing"
+                                          ? "bg-zinc-150 text-zinc-700 border-zinc-250"
+                                          : t.subscriptionStatus === "Cancelled"
+                                            ? "bg-zinc-100 text-zinc-650 border-zinc-200"
+                                            : "bg-red-50 text-red-700 border-red-150"
+                                    }`}
+                                  >
+                                    {t.subscriptionStatus === "Cancelled"
+                                      ? "Deactivated"
+                                      : t.subscriptionStatus}
+                                  </span>
+                                  <span className="text-[10px] font-extrabold text-zinc-550">
+                                    {t.subscriptionPlan} Tier
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-zinc-400 font-semibold flex gap-1.5 items-center">
+                                  <span>
+                                    {formatCurrencyInr(t.paymentAmount)}/
+                                    {t.billingInterval === "yearly" ? "yr" : "mo"}
+                                  </span>
+                                  {t.subscriptionExpiresAt && (
+                                    <>
+                                      <span>•</span>
+                                      <span>Renews: {formatDate(t.subscriptionExpiresAt)}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Days Left metrics */}
+                              <td className="py-4">
+                                <div className="flex items-center gap-1.5 text-xs font-bold">
+                                  {daysLeft !== null ? (
+                                    <span
+                                      className={
+                                        daysLeft < 7
+                                          ? "text-red-600"
+                                          : daysLeft < 14
+                                            ? "text-amber-600"
+                                            : "text-emerald-600"
+                                      }
+                                    >
+                                      {daysLeft} days
+                                    </span>
+                                  ) : (
+                                    <span className="text-zinc-400">N/A</span>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* Action modifiers */}
+                              <td className="py-4 text-right pr-3">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    onClick={() => openEditTenantModal(t)}
+                                    className="p-1.5 rounded-xl border border-zinc-200 hover:border-[#0059C6]/40 hover:bg-blue-50 text-zinc-600 hover:text-[#0059C6] transition-all cursor-pointer active:scale-[0.98]"
+                                    title="Edit Tenant Information"
+                                  >
+                                    <Edit2 className="size-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleToggleStatus(t)}
+                                    disabled={togglingTenantId === t.id}
+                                    className={`p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 transition-all cursor-pointer active:scale-[0.98] ${t.subscriptionStatus === "Active" ? "text-emerald-600 hover:bg-emerald-50" : "text-zinc-600 hover:bg-zinc-50"}`}
+                                    title={
+                                      t.subscriptionStatus === "Active"
+                                        ? "Deactivate User"
+                                        : "Activate User"
+                                    }
+                                  >
+                                    {togglingTenantId === t.id ? (
+                                      <Loader2 className="size-3.5 animate-spin text-zinc-500" />
+                                    ) : (
+                                      <Power className="size-3.5" />
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteTenant(t)}
+                                    className="p-1.5 rounded-xl border border-red-100 hover:border-red-200 hover:bg-red-50 text-red-600 transition-all cursor-pointer active:scale-[0.98]"
+                                    title="Delete Tenant"
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => openTenantProfile(t)}
+                                    className="px-2.5 py-1.5 text-[10px] font-extrabold rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 hover:text-zinc-955 transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98]"
+                                    title="Modify Config"
+                                  >
+                                    Config
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* VIEW: FULL TENANT PROFILE */}
+            {activeTab === "registry" && selectedTenantProfile && (
+              <div className="space-y-6">
+                <div className="flex items-center gap-4 border-b border-zinc-200 pb-4">
+                  <button
+                    onClick={() => {
+                      setSelectedTenantProfile(null);
+                      setEditingTenant(null);
+                    }}
+                    className="p-2 rounded-full hover:bg-zinc-100 transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="size-5 text-zinc-500" />
+                  </button>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2.5">
+                      <h2 className="text-xl font-black text-zinc-950">
+                        {editingTenant?.clinicName}
+                      </h2>
+                      {(() => {
+                        const st = editingTenant?.subscriptionStatus || "";
+                        const cls =
+                          st === "Active"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : st === "Trialing"
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : "bg-red-50 text-red-700 border-red-200";
+                        return (
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${cls}`}
+                          >
+                            {st || "Unknown"}
+                          </span>
+                        );
+                      })()}
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border bg-blue-50 text-[#0059C6] border-blue-200">
+                        {editPlan || "Trial"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      ID:{" "}
+                      <code className="bg-zinc-100 px-1 py-0.5 rounded font-mono">
+                        {editingTenant?.tenantId}
+                      </code>{" "}
+                      • Created: {new Date(editingTenant?.createdAt || "").toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+
+                {(() => {
+                  const prof = (selectedTenantProfile.user?.profession || "").toLowerCase();
+                  let l1 = "Doctors",
+                    l2 = "Patients",
+                    l3 = "Appointments",
+                    l4 = "SOAP Notes";
+                  if (prof.includes("gym") || prof.includes("fitness")) {
+                    l1 = "Trainers";
+                    l2 = "Members";
+                    l3 = "Classes";
+                    l4 = "Workout Plans";
+                  } else if (prof.includes("beauty") || prof.includes("wellness")) {
+                    l1 = "Specialists";
+                    l2 = "Clients";
+                    l3 = "Bookings";
+                    l4 = "Session Notes";
+                  } else if (prof.includes("education") || prof.includes("coach")) {
+                    l1 = "Instructors";
+                    l2 = "Students";
+                    l3 = "Classes";
+                    l4 = "Progress Notes";
+                  } else if (prof.includes("legal") || prof.includes("consult")) {
+                    l1 = "Consultants";
+                    l2 = "Clients";
+                    l3 = "Meetings";
+                    l4 = "Case Notes";
+                  }
+
+                  const profileCards = [
+                    {
+                      label: l1,
+                      value: selectedTenantProfile.metrics.doctors,
+                      icon: UserCheck,
+                      color: "bg-blue-50 text-[#0059C6]",
+                    },
+                    {
+                      label: l2,
+                      value: selectedTenantProfile.metrics.patients,
+                      icon: Users,
+                      color: "bg-emerald-50 text-emerald-600",
+                    },
+                    {
+                      label: l3,
+                      value: selectedTenantProfile.metrics.appointments,
+                      icon: Calendar,
+                      color: "bg-amber-50 text-amber-600",
+                    },
+                    {
+                      label: l4,
+                      value: selectedTenantProfile.metrics.soapNotes,
+                      icon: FileText,
+                      color: "bg-purple-50 text-purple-600",
+                    },
+                  ];
+                  return (
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      {profileCards.map((card) => {
+                        const Icon = card.icon;
+                        return (
+                          <div
+                            key={card.label}
+                            className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all"
+                          >
+                            <div>
+                              <span className="block text-xl font-black text-zinc-950 tracking-tight">
+                                {card.value}
+                              </span>
+                            </div>
+                            <div className="flex flex-col items-end gap-1.5">
+                              <div
+                                className={`flex h-7 w-7 items-center justify-center rounded-lg ${card.color}`}
+                              >
+                                <Icon className="size-3.5" />
+                              </div>
+                              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                                {card.label}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 <div className="rounded-2xl border border-zinc-200/80 bg-white p-6">
                   <div className="flex items-center gap-4 mb-5">
                     {selectedTenantProfile.user?.profilePhoto ? (
-                      <img src={selectedTenantProfile.user.profilePhoto} alt="Profile" className="h-14 w-14 rounded-full object-cover border border-zinc-200" />
+                      <img
+                        src={selectedTenantProfile.user.profilePhoto}
+                        alt="Profile"
+                        className="h-14 w-14 rounded-full object-cover border border-zinc-200"
+                      />
                     ) : (
                       <div className="h-14 w-14 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center text-xl font-black text-zinc-400">
                         {selectedTenantProfile.user?.name?.charAt(0) || "U"}
@@ -2427,61 +2786,105 @@ function AdminDashboardPage() {
                     )}
                     <div>
                       <h3 className="text-sm font-black text-zinc-950">Director Information</h3>
-                      <p className="text-xs text-zinc-500 font-semibold">{selectedTenantProfile.user?.profession || "Healthcare Professional"}</p>
+                      <p className="text-xs text-zinc-500 font-semibold">
+                        {selectedTenantProfile.user?.profession || "Healthcare Professional"}
+                      </p>
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-5 gap-x-4">
                     <div>
-                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">Full Name</span>
-                      <span className="block text-xs font-bold text-zinc-800 mt-1">{selectedTenantProfile.user?.name}</span>
+                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">
+                        Full Name
+                      </span>
+                      <span className="block text-xs font-bold text-zinc-800 mt-1">
+                        {selectedTenantProfile.user?.name}
+                      </span>
                     </div>
                     <div>
-                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">Email Address</span>
-                      <span className="block text-xs font-bold text-zinc-800 mt-1 truncate" title={selectedTenantProfile.user?.email}>{selectedTenantProfile.user?.email}</span>
+                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">
+                        Email Address
+                      </span>
+                      <span
+                        className="block text-xs font-bold text-zinc-800 mt-1 truncate"
+                        title={selectedTenantProfile.user?.email}
+                      >
+                        {selectedTenantProfile.user?.email}
+                      </span>
                     </div>
                     <div>
-                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">Phone Number</span>
-                      <span className="block text-xs font-bold text-zinc-800 mt-1">{selectedTenantProfile.user?.phone}</span>
+                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">
+                        Phone Number
+                      </span>
+                      <span className="block text-xs font-bold text-zinc-800 mt-1">
+                        {selectedTenantProfile.user?.phone}
+                      </span>
                     </div>
                     <div>
                       {(() => {
                         const prof = (selectedTenantProfile.user?.profession || "").toLowerCase();
                         let label = "Practice Size";
                         let staffStr = "providers";
-                        if (prof.includes("gym") || prof.includes("fitness")) { label = "Facility Size"; staffStr = "trainers"; }
-                        else if (prof.includes("beauty") || prof.includes("wellness")) { label = "Salon Size"; staffStr = "specialists"; }
-                        else if (prof.includes("education") || prof.includes("coach")) { label = "Institute Size"; staffStr = "instructors"; }
-                        else if (prof.includes("legal") || prof.includes("consult")) { label = "Firm Size"; staffStr = "consultants"; }
-                        
+                        if (prof.includes("gym") || prof.includes("fitness")) {
+                          label = "Facility Size";
+                          staffStr = "trainers";
+                        } else if (prof.includes("beauty") || prof.includes("wellness")) {
+                          label = "Salon Size";
+                          staffStr = "specialists";
+                        } else if (prof.includes("education") || prof.includes("coach")) {
+                          label = "Institute Size";
+                          staffStr = "instructors";
+                        } else if (prof.includes("legal") || prof.includes("consult")) {
+                          label = "Firm Size";
+                          staffStr = "consultants";
+                        }
+
                         const rawSize = selectedTenantProfile.user?.practiceSize || "Unknown";
                         const displaySize = rawSize.replace(/providers/i, staffStr);
 
                         return (
                           <>
-                            <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">{label}</span>
-                            <span className="block text-xs font-bold text-zinc-800 mt-1">{displaySize}</span>
+                            <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">
+                              {label}
+                            </span>
+                            <span className="block text-xs font-bold text-zinc-800 mt-1">
+                              {displaySize}
+                            </span>
                           </>
                         );
                       })()}
                     </div>
                     <div>
-                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">WhatsApp Number</span>
-                      <span className="block text-xs font-bold text-zinc-800 mt-1">{selectedTenantProfile.profile?.whatsappNo || "Not Connected"}</span>
+                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">
+                        WhatsApp Number
+                      </span>
+                      <span className="block text-xs font-bold text-zinc-800 mt-1">
+                        {selectedTenantProfile.profile?.whatsappNo || "Not Connected"}
+                      </span>
                     </div>
                     <div>
                       {(() => {
                         const prof = (selectedTenantProfile.user?.profession || "").toLowerCase();
                         let addressLabel = "Clinic Address";
-                        if (prof.includes("gym") || prof.includes("fitness")) { addressLabel = "Facility Address"; }
-                        else if (prof.includes("beauty") || prof.includes("wellness")) { addressLabel = "Salon Address"; }
-                        else if (prof.includes("education") || prof.includes("coach")) { addressLabel = "Institute Address"; }
-                        else if (prof.includes("legal") || prof.includes("consult")) { addressLabel = "Office Address"; }
-                        
+                        if (prof.includes("gym") || prof.includes("fitness")) {
+                          addressLabel = "Facility Address";
+                        } else if (prof.includes("beauty") || prof.includes("wellness")) {
+                          addressLabel = "Salon Address";
+                        } else if (prof.includes("education") || prof.includes("coach")) {
+                          addressLabel = "Institute Address";
+                        } else if (prof.includes("legal") || prof.includes("consult")) {
+                          addressLabel = "Office Address";
+                        }
+
                         return (
                           <>
-                            <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">{addressLabel}</span>
-                            <span className="block text-xs font-bold text-zinc-800 mt-1 truncate" title={selectedTenantProfile.profile?.address || ""}>
+                            <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">
+                              {addressLabel}
+                            </span>
+                            <span
+                              className="block text-xs font-bold text-zinc-800 mt-1 truncate"
+                              title={selectedTenantProfile.profile?.address || ""}
+                            >
                               {selectedTenantProfile.profile?.address || "Not Provided"}
                             </span>
                           </>
@@ -2489,17 +2892,28 @@ function AdminDashboardPage() {
                       })()}
                     </div>
                     <div>
-                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">Public Booking Link</span>
+                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">
+                        Public Booking Link
+                      </span>
                       <span className="block text-xs font-bold text-brand mt-1 truncate">
-                        <a href={`/book/${selectedTenantProfile.user?.tenantId}`} target="_blank" rel="noreferrer" className="hover:underline">
+                        <a
+                          href={`/book/${selectedTenantProfile.user?.tenantId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:underline"
+                        >
                           /book/{selectedTenantProfile.user?.tenantId}
                         </a>
                       </span>
                     </div>
                     <div>
-                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">Last Updated</span>
+                      <span className="block text-[10px] font-extrabold text-zinc-400 uppercase">
+                        Last Updated
+                      </span>
                       <span className="block text-xs font-bold text-zinc-800 mt-1">
-                        {selectedTenantProfile.user?.updatedAt ? new Date(selectedTenantProfile.user.updatedAt).toLocaleString("en-IN") : "N/A"}
+                        {selectedTenantProfile.user?.updatedAt
+                          ? new Date(selectedTenantProfile.user.updatedAt).toLocaleString("en-IN")
+                          : "N/A"}
                       </span>
                     </div>
                   </div>
@@ -2508,15 +2922,25 @@ function AdminDashboardPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   <div className="lg:col-span-2 space-y-6">
                     <div className="rounded-2xl border border-zinc-200/80 bg-white p-6">
-                      <h3 className="text-sm font-black text-zinc-950 mb-4">Modify System Config</h3>
-                      <form onSubmit={handleEditSubmit} id="edit-profile-form" className="space-y-6">
+                      <h3 className="text-sm font-black text-zinc-950 mb-4">
+                        Modify System Config
+                      </h3>
+                      <form
+                        onSubmit={handleEditSubmit}
+                        id="edit-profile-form"
+                        className="space-y-6"
+                      >
                         {/* Section 1: Subscriptions */}
                         <div className="space-y-4">
-                          <span className="block text-[9px] font-extrabold text-zinc-400 uppercase tracking-widest pl-1">Subscription & Billing</span>
-                          
+                          <span className="block text-[9px] font-extrabold text-zinc-400 uppercase tracking-widest pl-1">
+                            Subscription & Billing
+                          </span>
+
                           <div className="grid grid-cols-2 gap-3.5">
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-zinc-550 pl-1">SaaS Status</label>
+                              <label className="text-[10px] font-bold text-zinc-550 pl-1">
+                                SaaS Status
+                              </label>
                               <select
                                 value={editStatus}
                                 onChange={(e) => setEditStatus(e.target.value)}
@@ -2530,7 +2954,9 @@ function AdminDashboardPage() {
                             </div>
 
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-zinc-550 pl-1">Plan Tier</label>
+                              <label className="text-[10px] font-bold text-zinc-550 pl-1">
+                                Plan Tier
+                              </label>
                               <select
                                 value={editPlan}
                                 onChange={(e) => {
@@ -2540,7 +2966,11 @@ function AdminDashboardPage() {
                                   // billable plan is chosen (Trial = free, Enterprise = custom).
                                   if (newPlan === "Trial") {
                                     setEditPaymentAmount(0);
-                                  } else if (newPlan === "Basic" || newPlan === "Premium" || newPlan === "Enterprise") {
+                                  } else if (
+                                    newPlan === "Basic" ||
+                                    newPlan === "Premium" ||
+                                    newPlan === "Enterprise"
+                                  ) {
                                     setEditPaymentAmount(PLAN_BILLING[newPlan as PlanTier].monthly);
                                   }
                                 }}
@@ -2556,7 +2986,9 @@ function AdminDashboardPage() {
 
                           <div className="grid grid-cols-2 gap-3.5">
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-zinc-550 pl-1">Price (INR)</label>
+                              <label className="text-[10px] font-bold text-zinc-550 pl-1">
+                                Price (INR)
+                              </label>
                               <input
                                 type="number"
                                 step="0.01"
@@ -2567,7 +2999,9 @@ function AdminDashboardPage() {
                             </div>
 
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-zinc-550 pl-1">Period</label>
+                              <label className="text-[10px] font-bold text-zinc-550 pl-1">
+                                Period
+                              </label>
                               <select
                                 value={editBillingInterval}
                                 onChange={(e) => setEditBillingInterval(e.target.value)}
@@ -2581,7 +3015,9 @@ function AdminDashboardPage() {
 
                           <div className="grid grid-cols-2 gap-3.5">
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-zinc-550 pl-1">Expiration Date</label>
+                              <label className="text-[10px] font-bold text-zinc-550 pl-1">
+                                Expiration Date
+                              </label>
                               <input
                                 type="date"
                                 value={editExpiry}
@@ -2591,7 +3027,9 @@ function AdminDashboardPage() {
                             </div>
 
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-zinc-550 pl-1">Payment Method</label>
+                              <label className="text-[10px] font-bold text-zinc-550 pl-1">
+                                Payment Method
+                              </label>
                               <select
                                 value={editPaymentMethod}
                                 onChange={(e) => setEditPaymentMethod(e.target.value)}
@@ -2612,11 +3050,15 @@ function AdminDashboardPage() {
 
                         {/* Section 2: Plan Permissions */}
                         <div className="space-y-4">
-                          <span className="block text-[9px] font-extrabold text-zinc-400 uppercase tracking-widest pl-1">Plan Permissions</span>
-                          
+                          <span className="block text-[9px] font-extrabold text-zinc-400 uppercase tracking-widest pl-1">
+                            Plan Permissions
+                          </span>
+
                           <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3">
                             <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-zinc-500 uppercase">Selected Tier</span>
+                              <span className="text-[10px] font-bold text-zinc-500 uppercase">
+                                Selected Tier
+                              </span>
                               <span className="rounded-lg bg-[#0059C6]/10 px-2.5 py-1 text-[10px] font-bold text-[#0059C6]">
                                 {editPlan || "Trial"}
                                 {editPlan === "Basic" && " · ₹999/mo"}
@@ -2625,23 +3067,49 @@ function AdminDashboardPage() {
                                 {(editPlan === "Trial" || !editPlan) && " · Free"}
                               </span>
                             </div>
-                            
+
                             <ul className="space-y-2 pt-2 border-t border-zinc-200">
                               {(() => {
                                 const p = editPlan || "Trial";
-                                const prof = (selectedTenantProfile?.user?.profession || "").toLowerCase();
-                                
-                                let noun = "appointments", records = "client", staff = "Professionals", action = "Consultation", aiFeat = "AI-based Voice Rx";
+                                const prof = (
+                                  selectedTenantProfile?.user?.profession || ""
+                                ).toLowerCase();
+
+                                let noun = "appointments",
+                                  records = "client",
+                                  staff = "Professionals",
+                                  action = "Consultation",
+                                  aiFeat = "AI-based Voice Rx";
                                 if (prof.includes("gym") || prof.includes("fitness")) {
-                                  noun = "classes"; records = "member"; staff = "Trainers"; action = "Member"; aiFeat = "AI-based Workout Gen";
+                                  noun = "classes";
+                                  records = "member";
+                                  staff = "Trainers";
+                                  action = "Member";
+                                  aiFeat = "AI-based Workout Gen";
                                 } else if (prof.includes("beauty") || prof.includes("wellness")) {
-                                  noun = "bookings"; records = "client"; staff = "Specialists"; action = "Session"; aiFeat = "AI-based Treatment Notes";
+                                  noun = "bookings";
+                                  records = "client";
+                                  staff = "Specialists";
+                                  action = "Session";
+                                  aiFeat = "AI-based Treatment Notes";
                                 } else if (prof.includes("education") || prof.includes("coach")) {
-                                  noun = "classes"; records = "student"; staff = "Instructors"; action = "Student"; aiFeat = "AI-based Lesson Plans";
+                                  noun = "classes";
+                                  records = "student";
+                                  staff = "Instructors";
+                                  action = "Student";
+                                  aiFeat = "AI-based Lesson Plans";
                                 } else if (prof.includes("legal") || prof.includes("consult")) {
-                                  noun = "meetings"; records = "client"; staff = "Consultants"; action = "Case"; aiFeat = "AI-based Case Summaries";
+                                  noun = "meetings";
+                                  records = "client";
+                                  staff = "Consultants";
+                                  action = "Case";
+                                  aiFeat = "AI-based Case Summaries";
                                 } else {
-                                  noun = "appointments"; records = "patient"; staff = "Doctors"; action = "Consultation"; aiFeat = "AI-based Voice Rx";
+                                  noun = "appointments";
+                                  records = "patient";
+                                  staff = "Doctors";
+                                  action = "Consultation";
+                                  aiFeat = "AI-based Voice Rx";
                                 }
 
                                 if (p === "Enterprise" || p === "Hospital") {
@@ -2652,9 +3120,12 @@ function AdminDashboardPage() {
                                     "Multi QR Code Booking",
                                     "Meta Verified WhatsApp integration",
                                     "Custom API & integrations",
-                                    "Dedicated AI fine-tuning"
+                                    "Dedicated AI fine-tuning",
                                   ].map((feat, i) => (
-                                    <li key={i} className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
+                                    <li
+                                      key={i}
+                                      className="flex items-center gap-2 text-xs font-semibold text-zinc-700"
+                                    >
                                       <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                                       {feat}
                                     </li>
@@ -2668,9 +3139,12 @@ function AdminDashboardPage() {
                                     "Advanced AI assistant",
                                     `Multi-user dashboards (Reception & ${staff})`,
                                     aiFeat,
-                                    `${action} tracking`
+                                    `${action} tracking`,
                                   ].map((feat, i) => (
-                                    <li key={i} className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
+                                    <li
+                                      key={i}
+                                      className="flex items-center gap-2 text-xs font-semibold text-zinc-700"
+                                    >
                                       <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                                       {feat}
                                     </li>
@@ -2682,9 +3156,12 @@ function AdminDashboardPage() {
                                     `Up to 500 ${records} records`,
                                     "QR Code Booking",
                                     "Standard AI assistant",
-                                    "Standard Support"
+                                    "Standard Support",
                                   ].map((feat, i) => (
-                                    <li key={i} className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
+                                    <li
+                                      key={i}
+                                      className="flex items-center gap-2 text-xs font-semibold text-zinc-700"
+                                    >
                                       <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                                       {feat}
                                     </li>
@@ -2699,7 +3176,10 @@ function AdminDashboardPage() {
                       <div className="flex gap-2.5 pt-6 mt-6 border-t border-zinc-150">
                         <button
                           type="button"
-                          onClick={() => { setSelectedTenantProfile(null); setEditingTenant(null); }}
+                          onClick={() => {
+                            setSelectedTenantProfile(null);
+                            setEditingTenant(null);
+                          }}
                           disabled={updating}
                           className="flex-1 rounded-xl border border-zinc-200 py-3 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer active:scale-[0.98]"
                         >
@@ -2720,41 +3200,52 @@ function AdminDashboardPage() {
 
                   <div className="lg:col-span-1 space-y-6">
                     <div className="rounded-2xl border border-zinc-200/80 bg-white p-6 h-full max-h-[600px] flex flex-col">
-                      <h3 className="text-sm font-black text-zinc-950 mb-4">Subscription History</h3>
-                      
+                      <h3 className="text-sm font-black text-zinc-950 mb-4">
+                        Subscription History
+                      </h3>
+
                       {loadingProfile ? (
                         <div className="flex items-center justify-center py-6 text-zinc-455 text-xs gap-1.5">
                           <Loader2 className="h-4 w-4 animate-spin text-zinc-550" />
                           Loading logs...
                         </div>
                       ) : selectedTenantProfile.history.length === 0 ? (
-                        <p className="text-[10px] text-zinc-450 italic">No subscription logs found for this tenant.</p>
+                        <p className="text-[10px] text-zinc-450 italic">
+                          No subscription logs found for this tenant.
+                        </p>
                       ) : (
                         <div className="space-y-5 overflow-y-auto pr-2 flex-1">
                           {selectedTenantProfile.history.map((item: any, idx: number) => (
-                            <div key={item.id || idx} className="relative pl-4 border-l border-zinc-200 text-[10px] space-y-1.5">
+                            <div
+                              key={item.id || idx}
+                              className="relative pl-4 border-l border-zinc-200 text-[10px] space-y-1.5"
+                            >
                               {/* Circle bullet */}
                               <div className="absolute -left-[4.5px] top-1.5 size-2 rounded-full bg-zinc-400 ring-4 ring-white" />
-                              
+
                               <div className="flex items-center justify-between font-bold text-zinc-500">
-                                <span>{new Date(item.changedAt).toLocaleString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                  hour12: true
-                                })}</span>
+                                <span>
+                                  {new Date(item.changedAt).toLocaleString("en-US", {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                    hour12: true,
+                                  })}
+                                </span>
                                 <span className="text-[8px] px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-650 uppercase tracking-wider font-extrabold">
                                   {item.changedBy}
                                 </span>
                               </div>
-                              
+
                               <div className="text-zinc-800">
                                 <span className="font-extrabold text-zinc-450">Status: </span>
                                 <span className="text-zinc-500">{item.previousStatus}</span>
                                 <span className="text-zinc-400 font-normal"> → </span>
-                                <span className="font-extrabold text-zinc-950">{item.newStatus}</span>
+                                <span className="font-extrabold text-zinc-950">
+                                  {item.newStatus}
+                                </span>
                               </div>
 
                               <div className="text-zinc-800">
@@ -2762,7 +3253,14 @@ function AdminDashboardPage() {
                                 <span className="text-zinc-500">{item.previousPlan}</span>
                                 <span className="text-zinc-400 font-normal"> → </span>
                                 <span className="font-extrabold text-zinc-950">{item.newPlan}</span>
-                                <span className="text-zinc-900 font-extrabold"> ({item.newPlan === "Trial" ? "Free" : `₹${item.amount || 0}/${item.billingInterval}`})</span>
+                                <span className="text-zinc-900 font-extrabold">
+                                  {" "}
+                                  (
+                                  {item.newPlan === "Trial"
+                                    ? "Free"
+                                    : `₹${item.amount || 0}/${item.billingInterval}`}
+                                  )
+                                </span>
                               </div>
                             </div>
                           ))}
@@ -2781,62 +3279,92 @@ function AdminDashboardPage() {
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
                   <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
                     <div>
-                      <p className="text-xl font-black text-emerald-600 tracking-tight">{formatCurrencyInr(paymentSummary.totalReceived)}</p>
-                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">{paymentSummary.successCount} payments</p>
+                      <p className="text-xl font-black text-emerald-600 tracking-tight">
+                        {formatCurrencyInr(paymentSummary.totalReceived)}
+                      </p>
+                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                        {paymentSummary.successCount} payments
+                      </p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
                       <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
                         <CheckCircle2 className="size-3.5" />
                       </div>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Received</span>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                        Received
+                      </span>
                     </div>
                   </div>
                   <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
                     <div>
-                      <p className="text-xl font-black text-red-600 tracking-tight">{formatCurrencyInr(paymentSummary.failedAmount)}</p>
-                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">{paymentSummary.failedCount} declined</p>
+                      <p className="text-xl font-black text-red-600 tracking-tight">
+                        {formatCurrencyInr(paymentSummary.failedAmount)}
+                      </p>
+                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                        {paymentSummary.failedCount} declined
+                      </p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
                       <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 text-red-600">
                         <XCircle className="size-3.5" />
                       </div>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Failed</span>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                        Failed
+                      </span>
                     </div>
                   </div>
                   <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
                     <div>
-                      <p className="text-xl font-black text-zinc-600 tracking-tight">{formatCurrencyInr(paymentSummary.cancelledAmount)}</p>
-                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">{paymentSummary.cancelledCount} dropped</p>
+                      <p className="text-xl font-black text-zinc-600 tracking-tight">
+                        {formatCurrencyInr(paymentSummary.cancelledAmount)}
+                      </p>
+                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                        {paymentSummary.cancelledCount} dropped
+                      </p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
                       <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600">
                         <Ban className="size-3.5" />
                       </div>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Cancelled</span>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                        Cancelled
+                      </span>
                     </div>
                   </div>
                   <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
                     <div>
-                      <p className="text-xl font-black text-amber-600 tracking-tight">{formatCurrencyInr(paymentSummary.pendingAmount)}</p>
-                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">{paymentSummary.pendingCount} awaiting</p>
+                      <p className="text-xl font-black text-amber-600 tracking-tight">
+                        {formatCurrencyInr(paymentSummary.pendingAmount)}
+                      </p>
+                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                        {paymentSummary.pendingCount} awaiting
+                      </p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
                       <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
                         <Clock3 className="size-3.5" />
                       </div>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Pending</span>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                        Pending
+                      </span>
                     </div>
                   </div>
                   <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
                     <div>
-                      <p className="text-xl font-black text-zinc-900 tracking-tight">{paymentSummary.totalCount}</p>
-                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">All-time events</p>
+                      <p className="text-xl font-black text-zinc-900 tracking-tight">
+                        {paymentSummary.totalCount}
+                      </p>
+                      <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                        All-time events
+                      </p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
                       <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-[#0059C6]">
                         <CreditCard className="size-3.5" />
                       </div>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Attempts</span>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                        Attempts
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -2844,8 +3372,13 @@ function AdminDashboardPage() {
                 <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">
                   <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
                     <div>
-                      <h2 className="text-sm font-extrabold text-zinc-900">Unified Transaction Ledger</h2>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">Every checkout order attempt and recurring AutoPay cycle recorded ({paymentRows.length} fetched).</p>
+                      <h2 className="text-sm font-extrabold text-zinc-900">
+                        Unified Transaction Ledger
+                      </h2>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">
+                        Every checkout order attempt and recurring AutoPay cycle recorded (
+                        {paymentRows.length} fetched).
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
                       <div className="relative w-full sm:w-64">
@@ -2855,13 +3388,19 @@ function AdminDashboardPage() {
                           placeholder="Search order ID, email, phone, or name..."
                           value={paymentSearchQuery}
                           onChange={(e) => setPaymentSearchQuery(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") fetchPaymentHistory(); }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") fetchPaymentHistory();
+                          }}
                           className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all font-semibold"
                         />
                       </div>
                       <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
                         <Filter className="size-3.5 text-zinc-400" />
-                        <select value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1">
+                        <select
+                          value={paymentStatusFilter}
+                          onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                          className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1"
+                        >
                           <option value="all">All Statuses</option>
                           <option value="SUCCESS">Received</option>
                           <option value="FAILED">Failed</option>
@@ -2882,7 +3421,9 @@ function AdminDashboardPage() {
                         className="flex items-center gap-2 h-9 px-3.5 border border-emerald-200 bg-emerald-50 rounded-xl text-emerald-700 text-xs font-extrabold hover:bg-emerald-100 transition-colors active:scale-[0.98] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                         title="Reconcile pending/failed orders directly against Cashfree"
                       >
-                        <RefreshCw className={`size-3.5 ${syncingPayments ? "animate-spin" : ""}`} />
+                        <RefreshCw
+                          className={`size-3.5 ${syncingPayments ? "animate-spin" : ""}`}
+                        />
                         {syncingPayments ? "Syncing..." : "Sync"}
                       </button>
                       <button
@@ -2899,7 +3440,9 @@ function AdminDashboardPage() {
                   {loadingPayments ? (
                     <div className="flex flex-col items-center justify-center py-24 gap-3">
                       <Loader2 className="size-7 text-zinc-900 animate-spin" />
-                      <span className="text-xs text-zinc-400 font-bold">Loading unified payment ledger...</span>
+                      <span className="text-xs text-zinc-400 font-bold">
+                        Loading unified payment ledger...
+                      </span>
                     </div>
                   ) : sortedPaymentRows.length === 0 ? (
                     <div className="text-center py-20 space-y-3">
@@ -2907,8 +3450,12 @@ function AdminDashboardPage() {
                         <CreditCard className="size-5 text-zinc-400" />
                       </div>
                       <div>
-                        <h3 className="text-xs font-bold text-zinc-700">No Payment Records Found</h3>
-                        <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">Try adjusting your search query/filters, or log a manual transaction.</p>
+                        <h3 className="text-xs font-bold text-zinc-700">
+                          No Payment Records Found
+                        </h3>
+                        <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">
+                          Try adjusting your search query/filters, or log a manual transaction.
+                        </p>
                       </div>
                     </div>
                   ) : (
@@ -2922,11 +3469,20 @@ function AdminDashboardPage() {
                             className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 mb-3 overflow-hidden"
                           >
                             <span className="text-xs font-bold text-red-700">
-                              {selectedPaymentIds.size} payment{selectedPaymentIds.size === 1 ? "" : "s"} selected
+                              {selectedPaymentIds.size} payment
+                              {selectedPaymentIds.size === 1 ? "" : "s"} selected
                             </span>
                             <div className="flex items-center gap-2">
-                              <button onClick={() => setSelectedPaymentIds(new Set())} className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 px-2.5 py-1.5 rounded-lg hover:bg-white/60 transition-all cursor-pointer">Clear</button>
-                              <button onClick={() => setShowBulkDeletePayments(true)} className="flex items-center gap-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-all cursor-pointer active:scale-95">
+                              <button
+                                onClick={() => setSelectedPaymentIds(new Set())}
+                                className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 px-2.5 py-1.5 rounded-lg hover:bg-white/60 transition-all cursor-pointer"
+                              >
+                                Clear
+                              </button>
+                              <button
+                                onClick={() => setShowBulkDeletePayments(true)}
+                                className="flex items-center gap-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-all cursor-pointer active:scale-95"
+                              >
                                 <Trash2 className="size-3.5" /> Delete Selected
                               </button>
                             </div>
@@ -2938,27 +3494,60 @@ function AdminDashboardPage() {
                           <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
                             <th className="pb-3 pl-3 w-8">
                               <CustomCheckbox
-                                checked={sortedPaymentRows.length > 0 && sortedPaymentRows.every((p) => selectedPaymentIds.has(p.id))}
-                                indeterminate={selectedPaymentIds.size > 0 && !sortedPaymentRows.every((p) => selectedPaymentIds.has(p.id))}
-                                onChange={() => toggleSelectAllPayments(sortedPaymentRows.map((p) => p.id))}
+                                checked={
+                                  sortedPaymentRows.length > 0 &&
+                                  sortedPaymentRows.every((p) => selectedPaymentIds.has(p.id))
+                                }
+                                indeterminate={
+                                  selectedPaymentIds.size > 0 &&
+                                  !sortedPaymentRows.every((p) => selectedPaymentIds.has(p.id))
+                                }
+                                onChange={() =>
+                                  toggleSelectAllPayments(sortedPaymentRows.map((p) => p.id))
+                                }
                               />
                             </th>
-                            <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("customerName")}>
-                              Customer & Order {paymentSortField === "customerName" && (paymentSortOrder === "asc" ? " ▲" : " ▼")}
+                            <th
+                              className="pb-3 cursor-pointer select-none hover:text-zinc-700"
+                              onClick={() => handlePaymentSort("customerName")}
+                            >
+                              Customer & Order{" "}
+                              {paymentSortField === "customerName" &&
+                                (paymentSortOrder === "asc" ? " ▲" : " ▼")}
                             </th>
-                            <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("plan")}>
-                              Plan {paymentSortField === "plan" && (paymentSortOrder === "asc" ? " ▲" : " ▼")}
+                            <th
+                              className="pb-3 cursor-pointer select-none hover:text-zinc-700"
+                              onClick={() => handlePaymentSort("plan")}
+                            >
+                              Plan{" "}
+                              {paymentSortField === "plan" &&
+                                (paymentSortOrder === "asc" ? " ▲" : " ▼")}
                             </th>
-                            <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("amount")}>
-                              Amount {paymentSortField === "amount" && (paymentSortOrder === "asc" ? " ▲" : " ▼")}
+                            <th
+                              className="pb-3 cursor-pointer select-none hover:text-zinc-700"
+                              onClick={() => handlePaymentSort("amount")}
+                            >
+                              Amount{" "}
+                              {paymentSortField === "amount" &&
+                                (paymentSortOrder === "asc" ? " ▲" : " ▼")}
                             </th>
                             <th className="pb-3">Payment Mode</th>
-                            <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("status")}>
-                              Status {paymentSortField === "status" && (paymentSortOrder === "asc" ? " ▲" : " ▼")}
+                            <th
+                              className="pb-3 cursor-pointer select-none hover:text-zinc-700"
+                              onClick={() => handlePaymentSort("status")}
+                            >
+                              Status{" "}
+                              {paymentSortField === "status" &&
+                                (paymentSortOrder === "asc" ? " ▲" : " ▼")}
                             </th>
                             <th className="pb-3">Type</th>
-                            <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handlePaymentSort("createdAt")}>
-                              Date {paymentSortField === "createdAt" && (paymentSortOrder === "asc" ? " ▲" : " ▼")}
+                            <th
+                              className="pb-3 cursor-pointer select-none hover:text-zinc-700"
+                              onClick={() => handlePaymentSort("createdAt")}
+                            >
+                              Date{" "}
+                              {paymentSortField === "createdAt" &&
+                                (paymentSortOrder === "asc" ? " ▲" : " ▼")}
                             </th>
                             <th className="pb-3 text-right pr-3">Actions</th>
                           </tr>
@@ -2966,26 +3555,41 @@ function AdminDashboardPage() {
                         <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
                           {sortedPaymentRows.map((p) => {
                             const statusStyle =
-                              p.status === "SUCCESS" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
-                              p.status === "FAILED" ? "bg-red-50 text-red-700 border-red-150" :
-                              p.status === "CANCELLED" ? "bg-zinc-100 text-zinc-650 border-zinc-200" :
-                              "bg-amber-50 text-amber-700 border-amber-150";
+                              p.status === "SUCCESS"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-150"
+                                : p.status === "FAILED"
+                                  ? "bg-red-50 text-red-700 border-red-150"
+                                  : p.status === "CANCELLED"
+                                    ? "bg-zinc-100 text-zinc-650 border-zinc-200"
+                                    : "bg-amber-50 text-amber-700 border-amber-150";
                             const StatusIcon =
-                              p.status === "SUCCESS" ? CheckCircle2 :
-                              p.status === "FAILED" ? XCircle :
-                              p.status === "CANCELLED" ? Ban :
-                              Clock3;
+                              p.status === "SUCCESS"
+                                ? CheckCircle2
+                                : p.status === "FAILED"
+                                  ? XCircle
+                                  : p.status === "CANCELLED"
+                                    ? Ban
+                                    : Clock3;
                             const statusLabel =
-                              p.status === "SUCCESS" ? "Received" :
-                              p.status === "FAILED" ? "Failed" :
-                              p.status === "CANCELLED" ? "Cancelled" :
-                              "Pending";
+                              p.status === "SUCCESS"
+                                ? "Received"
+                                : p.status === "FAILED"
+                                  ? "Failed"
+                                  : p.status === "CANCELLED"
+                                    ? "Cancelled"
+                                    : "Pending";
 
                             const isPaySelected = selectedPaymentIds.has(p.id);
                             return (
-                              <tr key={p.id} className={`transition-colors group ${isPaySelected ? "bg-blue-50/60 hover:bg-blue-50" : "hover:bg-slate-50/40"}`}>
+                              <tr
+                                key={p.id}
+                                className={`transition-colors group ${isPaySelected ? "bg-blue-50/60 hover:bg-blue-50" : "hover:bg-slate-50/40"}`}
+                              >
                                 <td className="py-4 pl-3 w-8">
-                                  <CustomCheckbox checked={isPaySelected} onChange={() => togglePaymentSelection(p.id)} />
+                                  <CustomCheckbox
+                                    checked={isPaySelected}
+                                    onChange={() => togglePaymentSelection(p.id)}
+                                  />
                                 </td>
                                 {/* Customer & Order */}
                                 <td className="py-4">
@@ -2998,12 +3602,16 @@ function AdminDashboardPage() {
                                       {p.customerPhone && <div>{p.customerPhone}</div>}
                                       <div className="flex items-center gap-1.5">
                                         <span>Order:</span>
-                                        <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">{p.orderId}</code>
+                                        <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">
+                                          {p.orderId}
+                                        </code>
                                       </div>
                                       {p.cfPaymentId && (
                                         <div className="flex items-center gap-1.5">
                                           <span>CF ID:</span>
-                                          <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">{p.cfPaymentId}</code>
+                                          <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">
+                                            {p.cfPaymentId}
+                                          </code>
                                         </div>
                                       )}
                                     </div>
@@ -3012,22 +3620,30 @@ function AdminDashboardPage() {
 
                                 {/* Plan / Amount */}
                                 <td className="py-4">
-                                  <span className="block text-[10px] text-zinc-450 font-semibold">{p.plan || "—"} Plan</span>
+                                  <span className="block text-[10px] text-zinc-450 font-semibold">
+                                    {p.plan || "—"} Plan
+                                  </span>
                                 </td>
 
                                 {/* Amount */}
                                 <td className="py-4">
-                                  <span className="block font-extrabold text-zinc-900 text-xs">{formatCurrencyInr(p.amount)}</span>
+                                  <span className="block font-extrabold text-zinc-900 text-xs">
+                                    {formatCurrencyInr(p.amount)}
+                                  </span>
                                 </td>
 
                                 {/* Payment Mode */}
                                 <td className="py-4">
-                                  <span className="text-[11px] font-bold text-zinc-700">{p.paymentMode || "—"}</span>
+                                  <span className="text-[11px] font-bold text-zinc-700">
+                                    {p.paymentMode || "—"}
+                                  </span>
                                 </td>
 
                                 {/* Status */}
                                 <td className="py-4">
-                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${statusStyle}`}>
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${statusStyle}`}
+                                  >
                                     <StatusIcon className="size-2.5" />
                                     {statusLabel}
                                   </span>
@@ -3035,11 +3651,13 @@ function AdminDashboardPage() {
 
                                 {/* Type */}
                                 <td className="py-4">
-                                  <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${
-                                    p.type === "subscription" 
-                                      ? "bg-purple-50 text-purple-700 border-purple-100" 
-                                      : "bg-zinc-100 text-zinc-600 border-zinc-200"
-                                  }`}>
+                                  <span
+                                    className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${
+                                      p.type === "subscription"
+                                        ? "bg-purple-50 text-purple-700 border-purple-100"
+                                        : "bg-zinc-100 text-zinc-600 border-zinc-200"
+                                    }`}
+                                  >
                                     {p.type === "subscription" ? "AutoPay" : "Checkout"}
                                   </span>
                                 </td>
@@ -3048,8 +3666,12 @@ function AdminDashboardPage() {
                                 <td className="py-4">
                                   <span className="text-[10px] text-zinc-500 font-semibold whitespace-nowrap">
                                     {new Date(p.createdAt).toLocaleString("en-US", {
-                                      month: "short", day: "numeric", year: "numeric",
-                                      hour: "numeric", minute: "2-digit", hour12: true
+                                      month: "short",
+                                      day: "numeric",
+                                      year: "numeric",
+                                      hour: "numeric",
+                                      minute: "2-digit",
+                                      hour12: true,
                                     })}
                                   </span>
                                 </td>
@@ -3095,535 +3717,725 @@ function AdminDashboardPage() {
             )}
 
             {/* VIEW: RECURRING SUBSCRIPTIONS */}
-            {activeTab === "subscriptions" && (() => {
-              // Calculate custom SaaS telemetry values dynamically from rows
-              const activeCount = subscriptionRows.filter(s => String(s.status).toUpperCase() === "ACTIVE").length;
-              const cancelledCount = subscriptionRows.filter(s => String(s.status).toUpperCase() === "CANCELLED").length;
-              const onHoldCount = subscriptionRows.filter(s => ["ON_HOLD", "PAUSED", "UNDER_RESOLUTION"].includes(String(s.status).toUpperCase())).length;
-              
-              const mrr = subscriptionSummary.activeMrr;
-              const arr = mrr * 12;
-              const arpu = activeCount > 0 ? mrr / activeCount : 0;
-              const churnRate = (cancelledCount / (activeCount + cancelledCount || 1)) * 100;
-              const recoveryRate = subscriptionSummary.successCount > 0 
-                ? (subscriptionSummary.successCount / (subscriptionSummary.successCount + subscriptionSummary.failedRenewals || 1)) * 100 
-                : 100;
+            {activeTab === "subscriptions" &&
+              (() => {
+                // Calculate custom SaaS telemetry values dynamically from rows
+                const activeCount = subscriptionRows.filter(
+                  (s) => String(s.status).toUpperCase() === "ACTIVE",
+                ).length;
+                const cancelledCount = subscriptionRows.filter(
+                  (s) => String(s.status).toUpperCase() === "CANCELLED",
+                ).length;
+                const onHoldCount = subscriptionRows.filter((s) =>
+                  ["ON_HOLD", "PAUSED", "UNDER_RESOLUTION"].includes(
+                    String(s.status).toUpperCase(),
+                  ),
+                ).length;
 
-              return (
-                <div className="space-y-6 animate-in fade-in duration-300">
-                  {/* SaaS Telemetry Metrics */}
-                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
-                      <div>
-                        <p className="text-xl font-black text-zinc-900 tracking-tight">{formatCurrencyInr(mrr)}</p>
-                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">{activeCount} mandates</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-[#0059C6]">
-                          <IndianRupee className="size-3.5" />
-                        </div>
-                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">MRR</span>
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
-                      <div>
-                        <p className="text-xl font-black text-zinc-950 tracking-tight">{formatCurrencyInr(arr)}</p>
-                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">Annual run rate</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-                          <TrendingUp className="size-3.5" />
-                        </div>
-                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">ARR</span>
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
-                      <div>
-                        <p className="text-xl font-black text-indigo-600 tracking-tight">{formatCurrencyInr(arpu)}</p>
-                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">Monthly ARPU</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
-                          <User className="size-3.5" />
-                        </div>
-                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">ARPU</span>
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
-                      <div>
-                        <p className="text-xl font-black text-emerald-600 tracking-tight">{formatCurrencyInr(subscriptionSummary.collectedAmount)}</p>
-                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">{subscriptionSummary.successCount} cycles</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                          <CheckCircle2 className="size-3.5" />
-                        </div>
-                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Collected</span>
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
-                      <div>
-                        <p className="text-xl font-black text-zinc-650 tracking-tight">{churnRate.toFixed(1)}%</p>
-                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">{cancelledCount} deactivated</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 text-red-600">
-                          <XCircle className="size-3.5" />
-                        </div>
-                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Churn</span>
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
-                      <div>
-                        <p className="text-xl font-black text-emerald-600 tracking-tight">{recoveryRate.toFixed(1)}%</p>
-                        <p className="text-[10px] text-zinc-400 font-semibold mt-1">{subscriptionSummary.failedRenewals} failed</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                          <RefreshCw className="size-3.5" />
-                        </div>
-                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">Success</span>
-                      </div>
-                    </div>
-                  </div>
+                const mrr = subscriptionSummary.activeMrr;
+                const arr = mrr * 12;
+                const arpu = activeCount > 0 ? mrr / activeCount : 0;
+                const churnRate = (cancelledCount / (activeCount + cancelledCount || 1)) * 100;
+                const recoveryRate =
+                  subscriptionSummary.successCount > 0
+                    ? (subscriptionSummary.successCount /
+                        (subscriptionSummary.successCount + subscriptionSummary.failedRenewals ||
+                          1)) *
+                      100
+                    : 100;
 
-                  {/* AutoPay Registry */}
-                  <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">
-                    <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
-                      <div>
-                        <h2 className="text-sm font-extrabold text-zinc-900">AutoPay Mandates</h2>
-                        <p className="text-[10px] text-zinc-400 mt-0.5">Manage subscription contracts, tiers, and payment ledgers ({subscriptionRows.length} fetched).</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
-                        <div className="relative w-full sm:w-64">
-                          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
-                          <input
-                            type="text"
-                            placeholder="Search tenant, email, or subscription ID..."
-                            value={subAdminSearch}
-                            onChange={(e) => setSubAdminSearch(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === "Enter") fetchAdminSubscriptions(); }}
-                            className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all font-semibold"
-                          />
-                        </div>
-                        <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
-                          <Filter className="size-3.5 text-zinc-400" />
-                          <select value={subAdminStatusFilter} onChange={(e) => setSubAdminStatusFilter(e.target.value)} className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1">
-                            <option value="all">All Statuses</option>
-                            <option value="ACTIVE">Active</option>
-                            <option value="ON_HOLD">On Hold</option>
-                            <option value="CANCELLED">Cancelled</option>
-                            <option value="INITIALIZED">Initialized</option>
-                          </select>
-                        </div>
-                        <button
-                          onClick={() => setIsProvisionSubOpen(true)}
-                          className="flex items-center gap-1.5 h-9 px-3.5 bg-zinc-950 text-white rounded-xl text-xs font-extrabold hover:bg-zinc-850 transition-colors active:scale-[0.98] cursor-pointer shadow-sm"
-                        >
-                          <Plus className="size-3.5" />
-                          Provision Custom
-                        </button>
-                        <button
-                          onClick={syncSubscriptionsFromCashfree}
-                          disabled={syncingSubscriptions || loadingSubscriptions}
-                          className="flex items-center gap-2 h-9 px-3.5 border border-emerald-200 bg-emerald-50 rounded-xl text-emerald-700 text-xs font-extrabold hover:bg-emerald-100 transition-colors active:scale-[0.98] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                          title="Reconcile every subscription + payment ledger directly against Cashfree"
-                        >
-                          <RefreshCw className={`size-3.5 ${syncingSubscriptions ? "animate-spin" : ""}`} />
-                          {syncingSubscriptions ? "Syncing..." : "Sync"}
-                        </button>
-                        <button
-                          onClick={fetchAdminSubscriptions}
-                          disabled={loadingSubscriptions}
-                          className="flex items-center justify-center size-9 border border-zinc-200 bg-white rounded-xl text-zinc-500 hover:text-zinc-800 transition-colors active:scale-[0.98] cursor-pointer"
-                          title="Refresh"
-                        >
-                          <RefreshCw className={`size-4 ${loadingSubscriptions ? "animate-spin" : ""}`} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {loadingSubscriptions ? (
-                      <div className="flex flex-col items-center justify-center py-24 gap-3">
-                        <Loader2 className="size-7 text-zinc-900 animate-spin" />
-                        <span className="text-xs text-zinc-400 font-bold">Loading subscriptions...</span>
-                      </div>
-                    ) : sortedSubscriptionRows.length === 0 ? (
-                      <div className="text-center py-20 space-y-3">
-                        <div className="flex size-12 items-center justify-center rounded-full bg-zinc-50 border border-zinc-150 mx-auto">
-                          <RefreshCw className="size-5 text-zinc-400" />
-                        </div>
-                        <div>
-                          <h3 className="text-xs font-bold text-zinc-700">No Subscriptions Found</h3>
-                          <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">Recurring AutoPay mandates will appear here once tenants subscribe.</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <AnimatePresence>
-                          {selectedSubIds.size > 0 && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: "auto" }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 mb-3 overflow-hidden"
-                            >
-                              <span className="text-xs font-bold text-red-700">
-                                {selectedSubIds.size} subscription{selectedSubIds.size === 1 ? "" : "s"} selected
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <button onClick={() => setSelectedSubIds(new Set())} className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 px-2.5 py-1.5 rounded-lg hover:bg-white/60 transition-all cursor-pointer">Clear</button>
-                                <button onClick={() => setShowBulkDeleteSubs(true)} className="flex items-center gap-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-all cursor-pointer active:scale-95">
-                                  <Trash2 className="size-3.5" /> Delete Selected
-                                </button>
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                        <table className="w-full text-left border-collapse min-w-[1000px]">
-                          <thead>
-                            <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
-                              <th className="pb-3 pl-3 w-8">
-                                <CustomCheckbox
-                                  checked={sortedSubscriptionRows.length > 0 && sortedSubscriptionRows.every((s) => selectedSubIds.has(s.id))}
-                                  indeterminate={selectedSubIds.size > 0 && !sortedSubscriptionRows.every((s) => selectedSubIds.has(s.id))}
-                                  onChange={() => toggleSelectAllSubs(sortedSubscriptionRows.map((s) => s.id))}
-                                />
-                              </th>
-                              <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("clinicName")}>
-                                Tenant & Subscription {subSortField === "clinicName" && (subSortOrder === "asc" ? " ▲" : " ▼")}
-                              </th>
-                              <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("planTier")}>
-                                Plan / Tier {subSortField === "planTier" && (subSortOrder === "asc" ? " ▲" : " ▼")}
-                              </th>
-                              <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("amount")}>
-                                Price {subSortField === "amount" && (subSortOrder === "asc" ? " ▲" : " ▼")}
-                              </th>
-                              <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("status")}>
-                                Status {subSortField === "status" && (subSortOrder === "asc" ? " ▲" : " ▼")}
-                              </th>
-                              <th className="pb-3">Next Renewal</th>
-                              <th className="pb-3 cursor-pointer select-none hover:text-zinc-700" onClick={() => handleSubSort("createdAt")}>
-                                Created {subSortField === "createdAt" && (subSortOrder === "asc" ? " ▲" : " ▼")}
-                              </th>
-                              <th className="pb-3 text-right pr-3">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
-                            {sortedSubscriptionRows.map((s) => {
-                              const st = String(s.status || "").toUpperCase();
-                              const statusStyle =
-                                st === "ACTIVE" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
-                                st === "ON_HOLD" || st === "PAUSED" ? "bg-amber-50 text-amber-700 border-amber-150" :
-                                st === "CANCELLED" ? "bg-zinc-100 text-zinc-650 border-zinc-200" :
-                                "bg-sky-50 text-sky-700 border-sky-150";
-                              const next = s.nextChargeAt || s.currentPeriodEnd;
-                              const isSubSelected = selectedSubIds.has(s.id);
-                              return (
-                                <tr key={s.id} className={`transition-colors group ${isSubSelected ? "bg-blue-50/60 hover:bg-blue-50" : "hover:bg-slate-50/40"}`}>
-                                  <td className="py-4 pl-3 w-8">
-                                    <CustomCheckbox checked={isSubSelected} onChange={() => toggleSubSelection(s.id)} />
-                                  </td>
-                                  <td className="py-4">
-                                    <span className="font-extrabold text-zinc-900 text-xs block">{s.clinicName || s.customerName || "—"}</span>
-                                    <div className="text-[10px] text-zinc-400 font-medium mt-0.5 space-y-0.5">
-                                      {s.customerEmail && <div>{s.customerEmail}</div>}
-                                      <div className="flex items-center gap-1.5">
-                                        <span>Sub:</span>
-                                        <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">{s.subscriptionRef}</code>
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td className="py-4">
-                                    <span className="font-extrabold text-zinc-900 text-xs uppercase">{s.planTier}</span>
-                                  </td>
-                                  <td className="py-4">
-                                    <span className="block font-extrabold text-zinc-900 text-xs">{formatCurrencyInr(s.amount)}</span>
-                                    <span className="block text-[10px] text-zinc-400 font-semibold mt-0.5">{s.intervalType === "YEAR" ? "Yearly" : "Monthly"} · {s.paymentMethod || "Mandate"}</span>
-                                  </td>
-                                  <td className="py-4">
-                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${statusStyle}`}>
-                                      {st}
-                                    </span>
-                                  </td>
-                                  <td className="py-4 text-zinc-600 font-semibold">
-                                    {next ? new Date(next).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
-                                  </td>
-                                  <td className="py-4">
-                                    <span className="text-[10px] text-zinc-500 font-semibold whitespace-nowrap">
-                                      {new Date(s.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                                    </span>
-                                  </td>
-                                  <td className="py-4 text-right pr-3">
-                                    <div className="flex items-center justify-end gap-1.5">
-                                      <button
-                                        type="button"
-                                        title="View billing details"
-                                        onClick={() => setViewSubDetails(s)}
-                                        className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
-                                      >
-                                        <Eye className="size-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        title="Edit subscription mandate"
-                                        onClick={() => setEditingSub(s)}
-                                        className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
-                                      >
-                                        <Edit2 className="size-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        title="Record manual cycle payment"
-                                        onClick={() => setLogPaymentSub(s)}
-                                        className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
-                                      >
-                                        <Plus className="size-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        title="Delete subscription mandate log"
-                                        onClick={() => setDeletingSub(s)}
-                                        className="p-1.5 rounded-xl border border-red-100 hover:border-red-200 hover:bg-red-50 text-red-600 transition-all cursor-pointer active:scale-[0.98]"
-                                      >
-                                        <Trash2 className="size-3.5" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-        {/* VIEW: DEMO APPOINTMENTS */}
-        {activeTab === "demo" && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              {[
-                { label: "Total", value: demoSummary.total, hint: "All leads", icon: Calendar, color: "bg-blue-50 text-[#0059C6]" },
-                { label: "Fresh", value: demoSummary.fresh, hint: "Need response", icon: AlertCircle, color: "bg-amber-50 text-amber-600" },
-                { label: "Contacted", value: demoSummary.contacted, hint: "Follow-up started", icon: Phone, color: "bg-purple-50 text-purple-600" },
-                { label: "Scheduled", value: demoSummary.scheduled, hint: "Slot locked", icon: CheckCircle2, color: "bg-emerald-50 text-emerald-600" },
-              ].map((card) => {
-                const Icon = card.icon;
                 return (
-                  <div key={card.label} className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
-                    <div>
-                      <span className="block text-xl font-black tracking-tight text-zinc-950">{card.value}</span>
-                      <span className="block text-[10px] font-semibold text-zinc-400 mt-1">{card.hint}</span>
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5">
-                      <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${card.color}`}>
-                        <Icon className="size-3.5" />
+                  <div className="space-y-6 animate-in fade-in duration-300">
+                    {/* SaaS Telemetry Metrics */}
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+                      <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                        <div>
+                          <p className="text-xl font-black text-zinc-900 tracking-tight">
+                            {formatCurrencyInr(mrr)}
+                          </p>
+                          <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                            {activeCount} mandates
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-[#0059C6]">
+                            <IndianRupee className="size-3.5" />
+                          </div>
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                            MRR
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">{card.label}</span>
+                      <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                        <div>
+                          <p className="text-xl font-black text-zinc-950 tracking-tight">
+                            {formatCurrencyInr(arr)}
+                          </p>
+                          <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                            Annual run rate
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                            <TrendingUp className="size-3.5" />
+                          </div>
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                            ARR
+                          </span>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                        <div>
+                          <p className="text-xl font-black text-indigo-600 tracking-tight">
+                            {formatCurrencyInr(arpu)}
+                          </p>
+                          <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                            Monthly ARPU
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+                            <User className="size-3.5" />
+                          </div>
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                            ARPU
+                          </span>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                        <div>
+                          <p className="text-xl font-black text-emerald-600 tracking-tight">
+                            {formatCurrencyInr(subscriptionSummary.collectedAmount)}
+                          </p>
+                          <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                            {subscriptionSummary.successCount} cycles
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                            <CheckCircle2 className="size-3.5" />
+                          </div>
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                            Collected
+                          </span>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                        <div>
+                          <p className="text-xl font-black text-zinc-650 tracking-tight">
+                            {churnRate.toFixed(1)}%
+                          </p>
+                          <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                            {cancelledCount} deactivated
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 text-red-600">
+                            <XCircle className="size-3.5" />
+                          </div>
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                            Churn
+                          </span>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all">
+                        <div>
+                          <p className="text-xl font-black text-emerald-600 tracking-tight">
+                            {recoveryRate.toFixed(1)}%
+                          </p>
+                          <p className="text-[10px] text-zinc-400 font-semibold mt-1">
+                            {subscriptionSummary.failedRenewals} failed
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                            <RefreshCw className="size-3.5" />
+                          </div>
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                            Success
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* AutoPay Registry */}
+                    <div className="rounded-2xl border border-zinc-200/80 bg-white p-5 space-y-5">
+                      <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between border-b border-zinc-100 pb-4">
+                        <div>
+                          <h2 className="text-sm font-extrabold text-zinc-900">AutoPay Mandates</h2>
+                          <p className="text-[10px] text-zinc-400 mt-0.5">
+                            Manage subscription contracts, tiers, and payment ledgers (
+                            {subscriptionRows.length} fetched).
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
+                          <div className="relative w-full sm:w-64">
+                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
+                            <input
+                              type="text"
+                              placeholder="Search tenant, email, or subscription ID..."
+                              value={subAdminSearch}
+                              onChange={(e) => setSubAdminSearch(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") fetchAdminSubscriptions();
+                              }}
+                              className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all font-semibold"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
+                            <Filter className="size-3.5 text-zinc-400" />
+                            <select
+                              value={subAdminStatusFilter}
+                              onChange={(e) => setSubAdminStatusFilter(e.target.value)}
+                              className="bg-transparent text-xs text-zinc-700 font-extrabold focus:outline-none border-none pr-1"
+                            >
+                              <option value="all">All Statuses</option>
+                              <option value="ACTIVE">Active</option>
+                              <option value="ON_HOLD">On Hold</option>
+                              <option value="CANCELLED">Cancelled</option>
+                              <option value="INITIALIZED">Initialized</option>
+                            </select>
+                          </div>
+                          <button
+                            onClick={() => setIsProvisionSubOpen(true)}
+                            className="flex items-center gap-1.5 h-9 px-3.5 bg-zinc-950 text-white rounded-xl text-xs font-extrabold hover:bg-zinc-850 transition-colors active:scale-[0.98] cursor-pointer shadow-sm"
+                          >
+                            <Plus className="size-3.5" />
+                            Provision Custom
+                          </button>
+                          <button
+                            onClick={syncSubscriptionsFromCashfree}
+                            disabled={syncingSubscriptions || loadingSubscriptions}
+                            className="flex items-center gap-2 h-9 px-3.5 border border-emerald-200 bg-emerald-50 rounded-xl text-emerald-700 text-xs font-extrabold hover:bg-emerald-100 transition-colors active:scale-[0.98] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                            title="Reconcile every subscription + payment ledger directly against Cashfree"
+                          >
+                            <RefreshCw
+                              className={`size-3.5 ${syncingSubscriptions ? "animate-spin" : ""}`}
+                            />
+                            {syncingSubscriptions ? "Syncing..." : "Sync"}
+                          </button>
+                          <button
+                            onClick={fetchAdminSubscriptions}
+                            disabled={loadingSubscriptions}
+                            className="flex items-center justify-center size-9 border border-zinc-200 bg-white rounded-xl text-zinc-500 hover:text-zinc-800 transition-colors active:scale-[0.98] cursor-pointer"
+                            title="Refresh"
+                          >
+                            <RefreshCw
+                              className={`size-4 ${loadingSubscriptions ? "animate-spin" : ""}`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      {loadingSubscriptions ? (
+                        <div className="flex flex-col items-center justify-center py-24 gap-3">
+                          <Loader2 className="size-7 text-zinc-900 animate-spin" />
+                          <span className="text-xs text-zinc-400 font-bold">
+                            Loading subscriptions...
+                          </span>
+                        </div>
+                      ) : sortedSubscriptionRows.length === 0 ? (
+                        <div className="text-center py-20 space-y-3">
+                          <div className="flex size-12 items-center justify-center rounded-full bg-zinc-50 border border-zinc-150 mx-auto">
+                            <RefreshCw className="size-5 text-zinc-400" />
+                          </div>
+                          <div>
+                            <h3 className="text-xs font-bold text-zinc-700">
+                              No Subscriptions Found
+                            </h3>
+                            <p className="text-[10px] text-zinc-400 max-w-xs mx-auto mt-1">
+                              Recurring AutoPay mandates will appear here once tenants subscribe.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <AnimatePresence>
+                            {selectedSubIds.size > 0 && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 mb-3 overflow-hidden"
+                              >
+                                <span className="text-xs font-bold text-red-700">
+                                  {selectedSubIds.size} subscription
+                                  {selectedSubIds.size === 1 ? "" : "s"} selected
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => setSelectedSubIds(new Set())}
+                                    className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 px-2.5 py-1.5 rounded-lg hover:bg-white/60 transition-all cursor-pointer"
+                                  >
+                                    Clear
+                                  </button>
+                                  <button
+                                    onClick={() => setShowBulkDeleteSubs(true)}
+                                    className="flex items-center gap-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-all cursor-pointer active:scale-95"
+                                  >
+                                    <Trash2 className="size-3.5" /> Delete Selected
+                                  </button>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                          <table className="w-full text-left border-collapse min-w-[1000px]">
+                            <thead>
+                              <tr className="border-b border-zinc-150 text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
+                                <th className="pb-3 pl-3 w-8">
+                                  <CustomCheckbox
+                                    checked={
+                                      sortedSubscriptionRows.length > 0 &&
+                                      sortedSubscriptionRows.every((s) => selectedSubIds.has(s.id))
+                                    }
+                                    indeterminate={
+                                      selectedSubIds.size > 0 &&
+                                      !sortedSubscriptionRows.every((s) => selectedSubIds.has(s.id))
+                                    }
+                                    onChange={() =>
+                                      toggleSelectAllSubs(sortedSubscriptionRows.map((s) => s.id))
+                                    }
+                                  />
+                                </th>
+                                <th
+                                  className="pb-3 cursor-pointer select-none hover:text-zinc-700"
+                                  onClick={() => handleSubSort("clinicName")}
+                                >
+                                  Tenant & Subscription{" "}
+                                  {subSortField === "clinicName" &&
+                                    (subSortOrder === "asc" ? " ▲" : " ▼")}
+                                </th>
+                                <th
+                                  className="pb-3 cursor-pointer select-none hover:text-zinc-700"
+                                  onClick={() => handleSubSort("planTier")}
+                                >
+                                  Plan / Tier{" "}
+                                  {subSortField === "planTier" &&
+                                    (subSortOrder === "asc" ? " ▲" : " ▼")}
+                                </th>
+                                <th
+                                  className="pb-3 cursor-pointer select-none hover:text-zinc-700"
+                                  onClick={() => handleSubSort("amount")}
+                                >
+                                  Price{" "}
+                                  {subSortField === "amount" &&
+                                    (subSortOrder === "asc" ? " ▲" : " ▼")}
+                                </th>
+                                <th
+                                  className="pb-3 cursor-pointer select-none hover:text-zinc-700"
+                                  onClick={() => handleSubSort("status")}
+                                >
+                                  Status{" "}
+                                  {subSortField === "status" &&
+                                    (subSortOrder === "asc" ? " ▲" : " ▼")}
+                                </th>
+                                <th className="pb-3">Next Renewal</th>
+                                <th
+                                  className="pb-3 cursor-pointer select-none hover:text-zinc-700"
+                                  onClick={() => handleSubSort("createdAt")}
+                                >
+                                  Created{" "}
+                                  {subSortField === "createdAt" &&
+                                    (subSortOrder === "asc" ? " ▲" : " ▼")}
+                                </th>
+                                <th className="pb-3 text-right pr-3">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
+                              {sortedSubscriptionRows.map((s) => {
+                                const st = String(s.status || "").toUpperCase();
+                                const statusStyle =
+                                  st === "ACTIVE"
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-150"
+                                    : st === "ON_HOLD" || st === "PAUSED"
+                                      ? "bg-amber-50 text-amber-700 border-amber-150"
+                                      : st === "CANCELLED"
+                                        ? "bg-zinc-100 text-zinc-650 border-zinc-200"
+                                        : "bg-sky-50 text-sky-700 border-sky-150";
+                                const next = s.nextChargeAt || s.currentPeriodEnd;
+                                const isSubSelected = selectedSubIds.has(s.id);
+                                return (
+                                  <tr
+                                    key={s.id}
+                                    className={`transition-colors group ${isSubSelected ? "bg-blue-50/60 hover:bg-blue-50" : "hover:bg-slate-50/40"}`}
+                                  >
+                                    <td className="py-4 pl-3 w-8">
+                                      <CustomCheckbox
+                                        checked={isSubSelected}
+                                        onChange={() => toggleSubSelection(s.id)}
+                                      />
+                                    </td>
+                                    <td className="py-4">
+                                      <span className="font-extrabold text-zinc-900 text-xs block">
+                                        {s.clinicName || s.customerName || "—"}
+                                      </span>
+                                      <div className="text-[10px] text-zinc-400 font-medium mt-0.5 space-y-0.5">
+                                        {s.customerEmail && <div>{s.customerEmail}</div>}
+                                        <div className="flex items-center gap-1.5">
+                                          <span>Sub:</span>
+                                          <code className="text-[9px] text-zinc-650 bg-zinc-100 border border-zinc-200/50 px-1 py-0.5 rounded font-mono">
+                                            {s.subscriptionRef}
+                                          </code>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="py-4">
+                                      <span className="font-extrabold text-zinc-900 text-xs uppercase">
+                                        {s.planTier}
+                                      </span>
+                                    </td>
+                                    <td className="py-4">
+                                      <span className="block font-extrabold text-zinc-900 text-xs">
+                                        {formatCurrencyInr(s.amount)}
+                                      </span>
+                                      <span className="block text-[10px] text-zinc-400 font-semibold mt-0.5">
+                                        {s.intervalType === "YEAR" ? "Yearly" : "Monthly"} ·{" "}
+                                        {s.paymentMethod || "Mandate"}
+                                      </span>
+                                    </td>
+                                    <td className="py-4">
+                                      <span
+                                        className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${statusStyle}`}
+                                      >
+                                        {st}
+                                      </span>
+                                    </td>
+                                    <td className="py-4 text-zinc-600 font-semibold">
+                                      {next
+                                        ? new Date(next).toLocaleDateString("en-US", {
+                                            month: "short",
+                                            day: "numeric",
+                                            year: "numeric",
+                                          })
+                                        : "—"}
+                                    </td>
+                                    <td className="py-4">
+                                      <span className="text-[10px] text-zinc-500 font-semibold whitespace-nowrap">
+                                        {new Date(s.createdAt).toLocaleDateString("en-US", {
+                                          month: "short",
+                                          day: "numeric",
+                                          year: "numeric",
+                                        })}
+                                      </span>
+                                    </td>
+                                    <td className="py-4 text-right pr-3">
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <button
+                                          type="button"
+                                          title="View billing details"
+                                          onClick={() => setViewSubDetails(s)}
+                                          className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
+                                        >
+                                          <Eye className="size-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          title="Edit subscription mandate"
+                                          onClick={() => setEditingSub(s)}
+                                          className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
+                                        >
+                                          <Edit2 className="size-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          title="Record manual cycle payment"
+                                          onClick={() => setLogPaymentSub(s)}
+                                          className="p-1.5 rounded-xl border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-600 transition-all cursor-pointer active:scale-[0.98]"
+                                        >
+                                          <Plus className="size-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          title="Delete subscription mandate log"
+                                          onClick={() => setDeletingSub(s)}
+                                          className="p-1.5 rounded-xl border border-red-100 hover:border-red-200 hover:bg-red-50 text-red-600 transition-all cursor-pointer active:scale-[0.98]"
+                                        >
+                                          <Trash2 className="size-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
-              })}
-            </div>
+              })()}
 
-            <div className="rounded-3xl border border-zinc-200/80 bg-white p-6 space-y-6">
-              <div className="flex flex-col gap-4 border-b border-zinc-150 pb-5 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h2 className="text-sm font-extrabold text-zinc-900">Public Demo Requests</h2>
-                  <p className="mt-0.5 text-[10px] text-zinc-400">
-                    Every contact-page booking lands here with the preferred slot and outreach status.
-                  </p>
+            {/* VIEW: DEMO APPOINTMENTS */}
+            {activeTab === "demo" && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  {[
+                    {
+                      label: "Total",
+                      value: demoSummary.total,
+                      hint: "All leads",
+                      icon: Calendar,
+                      color: "bg-blue-50 text-[#0059C6]",
+                    },
+                    {
+                      label: "Fresh",
+                      value: demoSummary.fresh,
+                      hint: "Need response",
+                      icon: AlertCircle,
+                      color: "bg-amber-50 text-amber-600",
+                    },
+                    {
+                      label: "Contacted",
+                      value: demoSummary.contacted,
+                      hint: "Follow-up started",
+                      icon: Phone,
+                      color: "bg-purple-50 text-purple-600",
+                    },
+                    {
+                      label: "Scheduled",
+                      value: demoSummary.scheduled,
+                      hint: "Slot locked",
+                      icon: CheckCircle2,
+                      color: "bg-emerald-50 text-emerald-600",
+                    },
+                  ].map((card) => {
+                    const Icon = card.icon;
+                    return (
+                      <div
+                        key={card.label}
+                        className="rounded-xl border border-zinc-200 bg-white p-4 flex items-start justify-between hover:border-[#0059C6]/30 transition-all"
+                      >
+                        <div>
+                          <span className="block text-xl font-black tracking-tight text-zinc-950">
+                            {card.value}
+                          </span>
+                          <span className="block text-[10px] font-semibold text-zinc-400 mt-1">
+                            {card.hint}
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <div
+                            className={`flex h-7 w-7 items-center justify-center rounded-lg ${card.color}`}
+                          >
+                            <Icon className="size-3.5" />
+                          </div>
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                            {card.label}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <div className="relative w-full sm:w-72">
-                    <Search className="absolute left-3.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
-                    <input
-                      type="text"
-                      placeholder="Search by name, tenant, phone, or ref..."
-                      value={demoSearchQuery}
-                      onChange={(e) => setDemoSearchQuery(e.target.value)}
-                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50/50 py-2 pl-9 pr-4 text-xs font-semibold text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all shadow-inner"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2">
-                    <Activity className="size-3.5 text-zinc-400" />
-                    <select
-                      value={demoStatusFilter}
-                      onChange={(e) => setDemoStatusFilter(e.target.value)}
-                      className="border-none bg-transparent pr-1 text-xs font-extrabold text-zinc-700 focus:outline-none"
-                    >
-                      <option value="all">All statuses</option>
-                      <option value="new">New</option>
-                      <option value="contacted">Contacted</option>
-                      <option value="scheduled">Scheduled</option>
-                      <option value="completed">Completed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                {loadingData ? (
-                  <div className="flex flex-col items-center justify-center gap-3 py-20">
-                    <Loader2 className="size-7 animate-spin text-zinc-900" />
-                    <span className="text-xs font-bold text-zinc-400">Loading demo pipeline...</span>
-                  </div>
-                ) : filteredDemoAppointments.length === 0 ? (
-                  <div className="py-20 text-center">
-                    <div className="mx-auto flex size-12 items-center justify-center rounded-full border border-zinc-150 bg-zinc-50">
-                      <Calendar className="size-5 text-zinc-400" />
+                <div className="rounded-3xl border border-zinc-200/80 bg-white p-6 space-y-6">
+                  <div className="flex flex-col gap-4 border-b border-zinc-150 pb-5 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h2 className="text-sm font-extrabold text-zinc-900">Public Demo Requests</h2>
+                      <p className="mt-0.5 text-[10px] text-zinc-400">
+                        Every contact-page booking lands here with the preferred slot and outreach
+                        status.
+                      </p>
                     </div>
-                    <h3 className="mt-4 text-xs font-bold text-zinc-700">No demo bookings match this view</h3>
-                    <p className="mt-1 text-[10px] text-zinc-400">
-                      New contact-page bookings will start appearing here automatically.
-                    </p>
+
+                    <div className="flex flex-wrap gap-2">
+                      <div className="relative w-full sm:w-72">
+                        <Search className="absolute left-3.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
+                        <input
+                          type="text"
+                          placeholder="Search by name, tenant, phone, or ref..."
+                          value={demoSearchQuery}
+                          onChange={(e) => setDemoSearchQuery(e.target.value)}
+                          className="w-full rounded-xl border border-zinc-200 bg-zinc-50/50 py-2 pl-9 pr-4 text-xs font-semibold text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all shadow-inner"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2">
+                        <Activity className="size-3.5 text-zinc-400" />
+                        <select
+                          value={demoStatusFilter}
+                          onChange={(e) => setDemoStatusFilter(e.target.value)}
+                          className="border-none bg-transparent pr-1 text-xs font-extrabold text-zinc-700 focus:outline-none"
+                        >
+                          <option value="all">All statuses</option>
+                          <option value="new">New</option>
+                          <option value="contacted">Contacted</option>
+                          <option value="scheduled">Scheduled</option>
+                          <option value="completed">Completed</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <table className="min-w-[1120px] w-full border-collapse text-left">
-                    <thead>
-                      <tr className="border-b border-zinc-150 text-[10px] uppercase tracking-wider text-zinc-400">
-                        <th className="pb-3 pl-3 font-bold">Lead</th>
-                        <th className="pb-3 font-bold">Organisation</th>
-                        <th className="pb-3 font-bold">Requested Slot</th>
-                        <th className="pb-3 font-bold">Mode</th>
-                        <th className="pb-3 font-bold">Notes</th>
-                        <th className="pb-3 font-bold">Status</th>
-                        <th className="pb-3 pr-3 text-right font-bold">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
-                      {filteredDemoAppointments.map((demo) => (
-                        <tr key={demo.id} className="group transition-colors hover:bg-slate-50/50">
-                          <td className="py-4 pl-3">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-extrabold text-zinc-900">{demo.name}</span>
-                                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[9px] font-black text-zinc-600">
-                                  {demo.referenceId}
+
+                  <div className="overflow-x-auto">
+                    {loadingData ? (
+                      <div className="flex flex-col items-center justify-center gap-3 py-20">
+                        <Loader2 className="size-7 animate-spin text-zinc-900" />
+                        <span className="text-xs font-bold text-zinc-400">
+                          Loading demo pipeline...
+                        </span>
+                      </div>
+                    ) : filteredDemoAppointments.length === 0 ? (
+                      <div className="py-20 text-center">
+                        <div className="mx-auto flex size-12 items-center justify-center rounded-full border border-zinc-150 bg-zinc-50">
+                          <Calendar className="size-5 text-zinc-400" />
+                        </div>
+                        <h3 className="mt-4 text-xs font-bold text-zinc-700">
+                          No demo bookings match this view
+                        </h3>
+                        <p className="mt-1 text-[10px] text-zinc-400">
+                          New contact-page bookings will start appearing here automatically.
+                        </p>
+                      </div>
+                    ) : (
+                      <table className="min-w-[1120px] w-full border-collapse text-left">
+                        <thead>
+                          <tr className="border-b border-zinc-150 text-[10px] uppercase tracking-wider text-zinc-400">
+                            <th className="pb-3 pl-3 font-bold">Lead</th>
+                            <th className="pb-3 font-bold">Organisation</th>
+                            <th className="pb-3 font-bold">Requested Slot</th>
+                            <th className="pb-3 font-bold">Mode</th>
+                            <th className="pb-3 font-bold">Notes</th>
+                            <th className="pb-3 font-bold">Status</th>
+                            <th className="pb-3 pr-3 text-right font-bold">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100 text-xs text-zinc-700">
+                          {filteredDemoAppointments.map((demo) => (
+                            <tr
+                              key={demo.id}
+                              className="group transition-colors hover:bg-slate-50/50"
+                            >
+                              <td className="py-4 pl-3">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-extrabold text-zinc-900">
+                                      {demo.name}
+                                    </span>
+                                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[9px] font-black text-zinc-600">
+                                      {demo.referenceId}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] font-semibold text-zinc-400">
+                                    <span>{demo.email}</span>
+                                    <span className="mx-1.5">•</span>
+                                    <span>{demo.phone}</span>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="py-4">
+                                <div className="space-y-1">
+                                  <span className="block font-bold text-zinc-800">
+                                    {demo.organization}
+                                  </span>
+                                  <span className="block text-[10px] font-semibold text-zinc-400">
+                                    {demo.city} • {demo.businessType} • {demo.teamSize}
+                                  </span>
+                                </div>
+                              </td>
+
+                              <td className="py-4">
+                                <div className="space-y-1">
+                                  <span className="block font-bold text-zinc-800">
+                                    {formatDate(demo.preferredDate)}
+                                  </span>
+                                  <span className="block text-[10px] font-semibold text-zinc-400">
+                                    {demo.preferredTime}
+                                  </span>
+                                  <span className="block text-[10px] font-semibold text-zinc-400">
+                                    Submitted {formatDate(demo.createdAt, true)}
+                                  </span>
+                                </div>
+                              </td>
+
+                              <td className="py-4">
+                                <span className="inline-flex rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[10px] font-extrabold text-zinc-700">
+                                  {demo.preferredMode}
                                 </span>
-                              </div>
-                              <div className="text-[10px] font-semibold text-zinc-400">
-                                <span>{demo.email}</span>
-                                <span className="mx-1.5">•</span>
-                                <span>{demo.phone}</span>
-                              </div>
-                            </div>
-                          </td>
+                              </td>
 
-                          <td className="py-4">
-                            <div className="space-y-1">
-                              <span className="block font-bold text-zinc-800">{demo.organization}</span>
-                              <span className="block text-[10px] font-semibold text-zinc-400">
-                                {demo.city} • {demo.businessType} • {demo.teamSize}
-                              </span>
-                            </div>
-                          </td>
+                              <td className="py-4">
+                                <p className="max-w-[240px] text-[11px] leading-5 text-zinc-500">
+                                  {demo.message || "No extra workflow notes shared."}
+                                </p>
+                              </td>
 
-                          <td className="py-4">
-                            <div className="space-y-1">
-                              <span className="block font-bold text-zinc-800">
-                                {formatDate(demo.preferredDate)}
-                              </span>
-                              <span className="block text-[10px] font-semibold text-zinc-400">
-                                {demo.preferredTime}
-                              </span>
-                              <span className="block text-[10px] font-semibold text-zinc-400">
-                                Submitted {formatDate(demo.createdAt, true)}
-                              </span>
-                            </div>
-                          </td>
+                              <td className="py-4">
+                                <div className="space-y-2">
+                                  <span
+                                    className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-extrabold border ${
+                                      demo.status === "New"
+                                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                                        : demo.status === "Scheduled"
+                                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                          : demo.status === "Completed"
+                                            ? "border-zinc-300 bg-zinc-100 text-zinc-800"
+                                            : demo.status === "Cancelled"
+                                              ? "border-red-200 bg-red-50 text-red-700"
+                                              : "border-sky-200 bg-sky-50 text-sky-700"
+                                    }`}
+                                  >
+                                    {demo.status}
+                                  </span>
+                                  {demo.lastContactedAt && (
+                                    <span className="block text-[10px] font-semibold text-zinc-400">
+                                      Last touched {formatDate(demo.lastContactedAt, true)}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
 
-                          <td className="py-4">
-                            <span className="inline-flex rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[10px] font-extrabold text-zinc-700">
-                              {demo.preferredMode}
-                            </span>
-                          </td>
-
-                          <td className="py-4">
-                            <p className="max-w-[240px] text-[11px] leading-5 text-zinc-500">
-                              {demo.message || "No extra workflow notes shared."}
-                            </p>
-                          </td>
-
-                          <td className="py-4">
-                            <div className="space-y-2">
-                              <span
-                                className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-extrabold border ${
-                                  demo.status === "New"
-                                    ? "border-amber-200 bg-amber-50 text-amber-700"
-                                    : demo.status === "Scheduled"
-                                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                      : demo.status === "Completed"
-                                        ? "border-zinc-300 bg-zinc-100 text-zinc-800"
-                                        : demo.status === "Cancelled"
-                                          ? "border-red-200 bg-red-50 text-red-700"
-                                          : "border-sky-200 bg-sky-50 text-sky-700"
-                                }`}
-                              >
-                                {demo.status}
-                              </span>
-                              {demo.lastContactedAt && (
-                                <span className="block text-[10px] font-semibold text-zinc-400">
-                                  Last touched {formatDate(demo.lastContactedAt, true)}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          <td className="py-4 pr-3">
-                            <div className="flex items-center justify-end gap-2">
-                              <a
-                                href={`mailto:${demo.email}`}
-                                className="rounded-xl border border-zinc-200 px-3 py-2 text-[10px] font-extrabold text-zinc-700 transition-all hover:border-zinc-300 hover:bg-zinc-50"
-                              >
-                                Email
-                              </a>
-                              <a
-                                href={`tel:${demo.phone}`}
-                                className="rounded-xl border border-zinc-200 px-3 py-2 text-[10px] font-extrabold text-zinc-700 transition-all hover:border-zinc-300 hover:bg-zinc-50"
-                              >
-                                Call
-                              </a>
-                              <select
-                                value={demo.status}
-                                onChange={(e) =>
-                                  handleDemoStatusUpdate(demo, e.target.value as DemoAppointmentStatus)
-                                }
-                                disabled={updatingDemoId === demo.id}
-                                className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[10px] font-extrabold text-zinc-700 focus:outline-none"
-                              >
-                                <option value="New">New</option>
-                                <option value="Contacted">Contacted</option>
-                                <option value="Scheduled">Scheduled</option>
-                                <option value="Completed">Completed</option>
-                                <option value="Cancelled">Cancelled</option>
-                              </select>
-                              {updatingDemoId === demo.id && <Loader2 className="size-4 animate-spin text-zinc-500" />}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
+                              <td className="py-4 pr-3">
+                                <div className="flex items-center justify-end gap-2">
+                                  <a
+                                    href={`mailto:${demo.email}`}
+                                    className="rounded-xl border border-zinc-200 px-3 py-2 text-[10px] font-extrabold text-zinc-700 transition-all hover:border-zinc-300 hover:bg-zinc-50"
+                                  >
+                                    Email
+                                  </a>
+                                  <a
+                                    href={`tel:${demo.phone}`}
+                                    className="rounded-xl border border-zinc-200 px-3 py-2 text-[10px] font-extrabold text-zinc-700 transition-all hover:border-zinc-300 hover:bg-zinc-50"
+                                  >
+                                    Call
+                                  </a>
+                                  <select
+                                    value={demo.status}
+                                    onChange={(e) =>
+                                      handleDemoStatusUpdate(
+                                        demo,
+                                        e.target.value as DemoAppointmentStatus,
+                                      )
+                                    }
+                                    disabled={updatingDemoId === demo.id}
+                                    className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[10px] font-extrabold text-zinc-700 focus:outline-none"
+                                  >
+                                    <option value="New">New</option>
+                                    <option value="Contacted">Contacted</option>
+                                    <option value="Scheduled">Scheduled</option>
+                                    <option value="Completed">Completed</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                  </select>
+                                  {updatingDemoId === demo.id && (
+                                    <Loader2 className="size-4 animate-spin text-zinc-500" />
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
-        )}
-
-
-      </div>
-    </div>
-  </main>
-
-
+        </div>
+      </main>
 
       {/* MODAL: Provision New Tenant */}
       <AnimatePresence>
@@ -3639,7 +4451,9 @@ function AdminDashboardPage() {
               <div className="flex items-center justify-between border-b border-zinc-150 p-6">
                 <div>
                   <h3 className="text-sm font-black text-zinc-950">Provision New Tenant</h3>
-                  <p className="text-[10px] text-zinc-555 mt-0.5">Register and setup new tenant portal access.</p>
+                  <p className="text-[10px] text-zinc-555 mt-0.5">
+                    Register and setup new tenant portal access.
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -3658,47 +4472,69 @@ function AdminDashboardPage() {
                       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 border border-emerald-100">
                         <CheckCircle2 className="size-7 text-emerald-600 animate-bounce" />
                       </div>
-                      <h4 className="text-sm font-black text-zinc-900">Workspace Provisioned Successfully!</h4>
-                      <p className="text-[10px] text-zinc-500 max-w-xs leading-normal">The administrator profile is live. Provide these credentials to the director:</p>
+                      <h4 className="text-sm font-black text-zinc-900">
+                        Workspace Provisioned Successfully!
+                      </h4>
+                      <p className="text-[10px] text-zinc-500 max-w-xs leading-normal">
+                        The administrator profile is live. Provide these credentials to the
+                        director:
+                      </p>
                     </div>
 
                     <div className="rounded-2xl border border-zinc-200 bg-zinc-50/50 p-4 space-y-3.5 shadow-inner">
-                      
                       {/* Workspace Link */}
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-zinc-400 font-bold uppercase tracking-wider text-[9px]">Workspace URL</span>
+                        <span className="text-zinc-400 font-bold uppercase tracking-wider text-[9px]">
+                          Workspace URL
+                        </span>
                         <div className="flex items-center gap-2">
                           <code className="text-zinc-900 font-mono text-[11px] font-bold select-all bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded">
                             {`/book/${createdResult.tenantId}`}
                           </code>
                           <button
-                            onClick={() => copyToClipboard(`/book/${createdResult.tenantId}`, "link")}
+                            onClick={() =>
+                              copyToClipboard(`/book/${createdResult.tenantId}`, "link")
+                            }
                             className="p-1 hover:bg-zinc-200/50 rounded transition-colors text-zinc-500 hover:text-zinc-800"
                             title="Copy link"
                           >
-                            {copiedField === "link" ? <Check className="size-3.5 text-emerald-600" /> : <Clipboard className="size-3.5" />}
+                            {copiedField === "link" ? (
+                              <Check className="size-3.5 text-emerald-600" />
+                            ) : (
+                              <Clipboard className="size-3.5" />
+                            )}
                           </button>
                         </div>
                       </div>
 
                       {/* Admin Email */}
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-zinc-400 font-bold uppercase tracking-wider text-[9px]">Admin Email</span>
+                        <span className="text-zinc-400 font-bold uppercase tracking-wider text-[9px]">
+                          Admin Email
+                        </span>
                         <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-zinc-800 select-all">{createdResult.email}</span>
+                          <span className="font-extrabold text-zinc-800 select-all">
+                            {createdResult.email}
+                          </span>
                           <button
                             onClick={() => copyToClipboard(createdResult.email, "email")}
                             className="p-1 hover:bg-zinc-200/50 rounded transition-colors text-zinc-500 hover:text-zinc-800"
                             title="Copy email"
                           >
-                            {copiedField === "email" ? <Check className="size-3.5 text-emerald-600" /> : <Clipboard className="size-3.5" />}
+                            {copiedField === "email" ? (
+                              <Check className="size-3.5 text-emerald-600" />
+                            ) : (
+                              <Clipboard className="size-3.5" />
+                            )}
                           </button>
                         </div>
                       </div>
 
                       {/* Password */}
                       <div className="flex justify-between items-center text-xs">
-                        <span className="text-zinc-400 font-bold uppercase tracking-wider text-[9px]">Temporary Password</span>
+                        <span className="text-zinc-400 font-bold uppercase tracking-wider text-[9px]">
+                          Temporary Password
+                        </span>
                         <div className="flex items-center gap-2">
                           <code className="font-mono bg-white border border-zinc-250 px-2.5 py-0.5 rounded text-zinc-850 text-[11px] font-black select-all">
                             {createdResult.tempPassword}
@@ -3708,7 +4544,11 @@ function AdminDashboardPage() {
                             className="p-1 hover:bg-zinc-200/50 rounded transition-colors text-zinc-500 hover:text-zinc-800"
                             title="Copy password"
                           >
-                            {copiedField === "password" ? <Check className="size-3.5 text-emerald-600" /> : <Clipboard className="size-3.5" />}
+                            {copiedField === "password" ? (
+                              <Check className="size-3.5 text-emerald-600" />
+                            ) : (
+                              <Clipboard className="size-3.5" />
+                            )}
                           </button>
                         </div>
                       </div>
@@ -3724,7 +4564,9 @@ function AdminDashboardPage() {
                 ) : (
                   <form onSubmit={handleAddSubmit} className="space-y-4">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-zinc-450 uppercase tracking-widest pl-1">Tenant / Facility Name</label>
+                      <label className="text-[10px] font-bold text-zinc-450 uppercase tracking-widest pl-1">
+                        Tenant / Facility Name
+                      </label>
                       <div className="relative">
                         <Building className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
                         <input
@@ -3740,7 +4582,9 @@ function AdminDashboardPage() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-zinc-450 uppercase tracking-widest pl-1">Practice Size</label>
+                      <label className="text-[10px] font-bold text-zinc-450 uppercase tracking-widest pl-1">
+                        Practice Size
+                      </label>
                       <select
                         value={addPracticeSize}
                         onChange={(e) => setAddPracticeSize(e.target.value)}
@@ -3754,7 +4598,9 @@ function AdminDashboardPage() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-zinc-455 uppercase tracking-widest pl-1">Medical Director (Owner Name)</label>
+                      <label className="text-[10px] font-bold text-zinc-455 uppercase tracking-widest pl-1">
+                        Medical Director (Owner Name)
+                      </label>
                       <div className="relative">
                         <UserCheck className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
                         <input
@@ -3771,7 +4617,9 @@ function AdminDashboardPage() {
 
                     <div className="grid grid-cols-2 gap-3.5">
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-zinc-455 uppercase tracking-widest pl-1">Director Email</label>
+                        <label className="text-[10px] font-bold text-zinc-455 uppercase tracking-widest pl-1">
+                          Director Email
+                        </label>
                         <input
                           type="email"
                           placeholder="owner@facility.com"
@@ -3784,7 +4632,9 @@ function AdminDashboardPage() {
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-zinc-455 uppercase tracking-widest pl-1">Phone Number</label>
+                        <label className="text-[10px] font-bold text-zinc-455 uppercase tracking-widest pl-1">
+                          Phone Number
+                        </label>
                         <input
                           type="text"
                           placeholder="e.g. 7745868073"
@@ -3798,7 +4648,9 @@ function AdminDashboardPage() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-zinc-455 uppercase tracking-widest pl-1">Custom Temporary Password (Optional)</label>
+                      <label className="text-[10px] font-bold text-zinc-455 uppercase tracking-widest pl-1">
+                        Custom Temporary Password (Optional)
+                      </label>
                       <input
                         type="text"
                         value={addPassword}
@@ -3852,7 +4704,9 @@ function AdminDashboardPage() {
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-zinc-900">Edit Tenant Information</h3>
-                    <p className="text-[11px] text-zinc-500">{editTenantModal.clinicName} · {editTenantModal.tenantId}</p>
+                    <p className="text-[11px] text-zinc-500">
+                      {editTenantModal.clinicName} · {editTenantModal.tenantId}
+                    </p>
                   </div>
                 </div>
                 <button
@@ -3869,102 +4723,179 @@ function AdminDashboardPage() {
                   <span className="text-xs font-semibold">Loading tenant details...</span>
                 </div>
               ) : (
-                <form onSubmit={handleSaveTenantEdit} className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+                <form
+                  onSubmit={handleSaveTenantEdit}
+                  className="flex-1 overflow-y-auto px-6 py-5 space-y-6"
+                >
                   {/* Director / Account Info */}
                   <div className="space-y-3">
-                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Account & Director</span>
+                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">
+                      Account & Director
+                    </span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-zinc-500">Full Name</label>
-                        <input value={etName} onChange={(e) => setEtName(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                        <input
+                          value={etName}
+                          onChange={(e) => setEtName(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                        />
                       </div>
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-zinc-500">Email Address</label>
-                        <input type="email" value={etEmail} onChange={(e) => setEtEmail(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                        <input
+                          type="email"
+                          value={etEmail}
+                          onChange={(e) => setEtEmail(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                        />
                       </div>
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-zinc-500">Phone Number</label>
-                        <input value={etPhone} onChange={(e) => setEtPhone(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                        <input
+                          value={etPhone}
+                          onChange={(e) => setEtPhone(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                        />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-zinc-500">Profession / Industry</label>
-                        <input value={etProfession} onChange={(e) => setEtProfession(e.target.value)}
+                        <label className="text-[10px] font-bold text-zinc-500">
+                          Profession / Industry
+                        </label>
+                        <input
+                          value={etProfession}
+                          onChange={(e) => setEtProfession(e.target.value)}
                           placeholder="e.g. Healthcare and medical"
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                        />
                       </div>
                     </div>
                   </div>
 
                   {/* Business Info */}
                   <div className="space-y-3">
-                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Business / Clinic</span>
+                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">
+                      Business / Clinic
+                    </span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-zinc-500">Business Name</label>
-                        <input value={etClinicName} onChange={(e) => setEtClinicName(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                        <input
+                          value={etClinicName}
+                          onChange={(e) => setEtClinicName(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                        />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-zinc-500">Practice / Team Size</label>
-                        <input value={etPracticeSize} onChange={(e) => setEtPracticeSize(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                        <label className="text-[10px] font-bold text-zinc-500">
+                          Practice / Team Size
+                        </label>
+                        <input
+                          value={etPracticeSize}
+                          onChange={(e) => setEtPracticeSize(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                        />
                       </div>
                       <div className="space-y-1 sm:col-span-2">
                         <label className="text-[10px] font-bold text-zinc-500">Address</label>
-                        <input value={etAddress} onChange={(e) => setEtAddress(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                        <input
+                          value={etAddress}
+                          onChange={(e) => setEtAddress(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                        />
                       </div>
                       <div className="space-y-1 sm:col-span-2">
-                        <label className="text-[10px] font-bold text-zinc-500">Short Description</label>
-                        <textarea value={etShortDescription} onChange={(e) => setEtShortDescription(e.target.value)} rows={2}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all resize-none" />
+                        <label className="text-[10px] font-bold text-zinc-500">
+                          Short Description
+                        </label>
+                        <textarea
+                          value={etShortDescription}
+                          onChange={(e) => setEtShortDescription(e.target.value)}
+                          rows={2}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all resize-none"
+                        />
                       </div>
                       <div className="space-y-1 sm:col-span-2">
-                        <label className="text-[10px] font-bold text-zinc-500">Services (comma separated)</label>
-                        <textarea value={etServices} onChange={(e) => setEtServices(e.target.value)} rows={2}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all resize-none" />
+                        <label className="text-[10px] font-bold text-zinc-500">
+                          Services (comma separated)
+                        </label>
+                        <textarea
+                          value={etServices}
+                          onChange={(e) => setEtServices(e.target.value)}
+                          rows={2}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all resize-none"
+                        />
                       </div>
                     </div>
                   </div>
 
                   {/* Contact Channels */}
                   <div className="space-y-3">
-                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Contact Channels</span>
+                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">
+                      Contact Channels
+                    </span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-zinc-500">WhatsApp Number</label>
-                        <input value={etWhatsappNo} onChange={(e) => setEtWhatsappNo(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                        <label className="text-[10px] font-bold text-zinc-500">
+                          WhatsApp Number
+                        </label>
+                        <input
+                          value={etWhatsappNo}
+                          onChange={(e) => setEtWhatsappNo(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                        />
                       </div>
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-zinc-500">Landline</label>
-                        <input value={etLandlineNo} onChange={(e) => setEtLandlineNo(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                        <input
+                          value={etLandlineNo}
+                          onChange={(e) => setEtLandlineNo(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                        />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-zinc-500">Alternate Contact No.</label>
-                        <input value={etContactNo} onChange={(e) => setEtContactNo(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                        <label className="text-[10px] font-bold text-zinc-500">
+                          Alternate Contact No.
+                        </label>
+                        <input
+                          value={etContactNo}
+                          onChange={(e) => setEtContactNo(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                        />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-zinc-500">Public / Booking Email</label>
-                        <input type="email" value={etProfileEmail} onChange={(e) => setEtProfileEmail(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                        <label className="text-[10px] font-bold text-zinc-500">
+                          Public / Booking Email
+                        </label>
+                        <input
+                          type="email"
+                          value={etProfileEmail}
+                          onChange={(e) => setEtProfileEmail(e.target.value)}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                        />
                       </div>
                     </div>
                   </div>
 
                   {/* Security */}
                   <div className="space-y-3">
-                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">Security</span>
+                    <span className="block text-[10px] font-extrabold text-zinc-400 uppercase tracking-widest">
+                      Security
+                    </span>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-zinc-500">Reset Password <span className="text-zinc-400 font-medium">(leave blank to keep current)</span></label>
-                      <input type="text" value={etNewPassword} onChange={(e) => setEtNewPassword(e.target.value)}
+                      <label className="text-[10px] font-bold text-zinc-500">
+                        Reset Password{" "}
+                        <span className="text-zinc-400 font-medium">
+                          (leave blank to keep current)
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        value={etNewPassword}
+                        onChange={(e) => setEtNewPassword(e.target.value)}
                         placeholder="Min 6 characters"
-                        className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all" />
+                        className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all"
+                      />
                     </div>
                   </div>
                 </form>
@@ -4011,9 +4942,11 @@ function AdminDashboardPage() {
               </div>
               <h3 className="text-lg font-black text-zinc-950 mb-2">Delete Tenant Data?</h3>
               <p className="text-xs text-zinc-500 leading-relaxed mb-6">
-                Are you sure you want to completely delete the tenant <span className="font-bold text-zinc-800">"{deletingTenant.clinicName}"</span>? This action cannot be undone and will erase all data associated with it.
+                Are you sure you want to completely delete the tenant{" "}
+                <span className="font-bold text-zinc-800">"{deletingTenant.clinicName}"</span>? This
+                action cannot be undone and will erase all data associated with it.
               </p>
-              
+
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -4051,9 +4984,15 @@ function AdminDashboardPage() {
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 border border-red-100 mb-4">
                 <AlertCircle className="size-7 text-red-600" />
               </div>
-              <h3 className="text-lg font-black text-zinc-950 mb-2">Delete {selectedTenantIds.size} Tenant{selectedTenantIds.size === 1 ? "" : "s"}?</h3>
+              <h3 className="text-lg font-black text-zinc-950 mb-2">
+                Delete {selectedTenantIds.size} Tenant{selectedTenantIds.size === 1 ? "" : "s"}?
+              </h3>
               <p className="text-xs text-zinc-500 leading-relaxed mb-6">
-                Are you sure you want to permanently delete <span className="font-bold text-zinc-800">{selectedTenantIds.size} selected tenant{selectedTenantIds.size === 1 ? "" : "s"}</span>? This action cannot be undone and will erase all data associated with each one.
+                Are you sure you want to permanently delete{" "}
+                <span className="font-bold text-zinc-800">
+                  {selectedTenantIds.size} selected tenant{selectedTenantIds.size === 1 ? "" : "s"}
+                </span>
+                ? This action cannot be undone and will erase all data associated with each one.
               </p>
 
               <div className="flex gap-2">
@@ -4093,17 +5032,29 @@ function AdminDashboardPage() {
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 border border-red-100 mb-4">
                 <AlertCircle className="size-7 text-red-600" />
               </div>
-              <h3 className="text-lg font-black text-zinc-950 mb-2">Delete {selectedPaymentIds.size} Payment Record{selectedPaymentIds.size === 1 ? "" : "s"}?</h3>
+              <h3 className="text-lg font-black text-zinc-950 mb-2">
+                Delete {selectedPaymentIds.size} Payment Record
+                {selectedPaymentIds.size === 1 ? "" : "s"}?
+              </h3>
               <p className="text-xs text-zinc-500 leading-relaxed mb-6">
-                This removes the selected payment log{selectedPaymentIds.size === 1 ? "" : "s"} from your records. This action cannot be undone.
+                This removes the selected payment log{selectedPaymentIds.size === 1 ? "" : "s"} from
+                your records. This action cannot be undone.
               </p>
               <div className="flex gap-2">
-                <button type="button" onClick={() => setShowBulkDeletePayments(false)} disabled={isBulkDeletingPayments}
-                  className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkDeletePayments(false)}
+                  disabled={isBulkDeletingPayments}
+                  className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
+                >
                   Cancel
                 </button>
-                <button type="button" onClick={executeBulkDeletePayments} disabled={isBulkDeletingPayments}
-                  className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98]">
+                <button
+                  type="button"
+                  onClick={executeBulkDeletePayments}
+                  disabled={isBulkDeletingPayments}
+                  className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98]"
+                >
                   {isBulkDeletingPayments && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Delete All
                 </button>
@@ -4126,17 +5077,29 @@ function AdminDashboardPage() {
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 border border-red-100 mb-4">
                 <AlertCircle className="size-7 text-red-600" />
               </div>
-              <h3 className="text-lg font-black text-zinc-950 mb-2">Delete {selectedSubIds.size} Subscription{selectedSubIds.size === 1 ? "" : "s"}?</h3>
+              <h3 className="text-lg font-black text-zinc-950 mb-2">
+                Delete {selectedSubIds.size} Subscription{selectedSubIds.size === 1 ? "" : "s"}?
+              </h3>
               <p className="text-xs text-zinc-500 leading-relaxed mb-6">
-                This removes the selected subscription record{selectedSubIds.size === 1 ? "" : "s"} from your dashboard. Note: this does not cancel the mandate on Cashfree. This action cannot be undone.
+                This removes the selected subscription record{selectedSubIds.size === 1 ? "" : "s"}{" "}
+                from your dashboard. Note: this does not cancel the mandate on Cashfree. This action
+                cannot be undone.
               </p>
               <div className="flex gap-2">
-                <button type="button" onClick={() => setShowBulkDeleteSubs(false)} disabled={isBulkDeletingSubs}
-                  className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkDeleteSubs(false)}
+                  disabled={isBulkDeletingSubs}
+                  className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-extrabold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition-all cursor-pointer"
+                >
                   Cancel
                 </button>
-                <button type="button" onClick={executeBulkDeleteSubs} disabled={isBulkDeletingSubs}
-                  className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98]">
+                <button
+                  type="button"
+                  onClick={executeBulkDeleteSubs}
+                  disabled={isBulkDeletingSubs}
+                  className="flex-1 rounded-xl bg-red-600 hover:bg-red-700 py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md active:scale-[0.98]"
+                >
                   {isBulkDeletingSubs && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                   Delete All
                 </button>
@@ -4160,10 +5123,16 @@ function AdminDashboardPage() {
                 <div>
                   <h3 className="text-sm font-black text-zinc-900">Subscription Payments</h3>
                   <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
-                    {subPaymentsModal.subscription?.clinicName || subPaymentsModal.subscription?.customerName || subPaymentsModal.subscription?.subscriptionRef}
+                    {subPaymentsModal.subscription?.clinicName ||
+                      subPaymentsModal.subscription?.customerName ||
+                      subPaymentsModal.subscription?.subscriptionRef}
                   </p>
                 </div>
-                <button type="button" onClick={() => setSubPaymentsModal(null)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setSubPaymentsModal(null)}
+                  className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer"
+                >
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -4172,7 +5141,9 @@ function AdminDashboardPage() {
                 {loadingSubPayments ? (
                   <div className="flex flex-col items-center justify-center py-16 gap-3">
                     <Loader2 className="size-6 text-zinc-900 animate-spin" />
-                    <span className="text-xs text-zinc-400 font-bold">Syncing payments from Cashfree...</span>
+                    <span className="text-xs text-zinc-400 font-bold">
+                      Syncing payments from Cashfree...
+                    </span>
                   </div>
                 ) : subPaymentsModal.payments.length === 0 ? (
                   <div className="text-center py-14 text-xs text-zinc-400 font-semibold">
@@ -4181,21 +5152,57 @@ function AdminDashboardPage() {
                 ) : (
                   <div className="space-y-2.5">
                     {subPaymentsModal.payments.map((p: any) => (
-                      <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-150 bg-zinc-50/40 px-4 py-3">
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-zinc-150 bg-zinc-50/40 px-4 py-3"
+                      >
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-black text-zinc-900">{formatCurrencyInr(p.amount)}</span>
-                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
-                              p.status === "SUCCESS" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
-                              p.status === "FAILED" ? "bg-red-50 text-red-700 border-red-150" :
-                              "bg-amber-50 text-amber-700 border-amber-150"
-                            }`}>{p.status}</span>
-                            {p.paymentType && <span className="text-[9px] font-bold text-zinc-400 uppercase">{p.paymentType}</span>}
+                            <span className="text-sm font-black text-zinc-900">
+                              {formatCurrencyInr(p.amount)}
+                            </span>
+                            <span
+                              className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
+                                p.status === "SUCCESS"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-150"
+                                  : p.status === "FAILED"
+                                    ? "bg-red-50 text-red-700 border-red-150"
+                                    : "bg-amber-50 text-amber-700 border-amber-150"
+                              }`}
+                            >
+                              {p.status}
+                            </span>
+                            {p.paymentType && (
+                              <span className="text-[9px] font-bold text-zinc-400 uppercase">
+                                {p.paymentType}
+                              </span>
+                            )}
                           </div>
                           <div className="text-[10px] text-zinc-400 font-medium mt-1 space-y-0.5 truncate">
-                            <div>{p.paymentMethod || "Cashfree"} · {new Date(p.paidAt || p.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
-                            {p.cfPaymentId && <div>CF Payment: <code className="text-[9px] bg-zinc-100 border border-zinc-200/50 px-1 rounded font-mono">{p.cfPaymentId}</code></div>}
-                            {p.cfTxnId && <div>Txn: <code className="text-[9px] bg-zinc-100 border border-zinc-200/50 px-1 rounded font-mono">{p.cfTxnId}</code></div>}
+                            <div>
+                              {p.paymentMethod || "Cashfree"} ·{" "}
+                              {new Date(p.paidAt || p.createdAt).toLocaleString("en-IN", {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              })}
+                            </div>
+                            {p.cfPaymentId && (
+                              <div>
+                                CF Payment:{" "}
+                                <code className="text-[9px] bg-zinc-100 border border-zinc-200/50 px-1 rounded font-mono">
+                                  {p.cfPaymentId}
+                                </code>
+                              </div>
+                            )}
+                            {p.cfTxnId && (
+                              <div>
+                                Txn:{" "}
+                                <code className="text-[9px] bg-zinc-100 border border-zinc-200/50 px-1 rounded font-mono">
+                                  {p.cfTxnId}
+                                </code>
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="shrink-0 flex items-center gap-1.5">
@@ -4206,14 +5213,30 @@ function AdminDashboardPage() {
                               title={mode === "view" ? "View invoice" : "Download invoice"}
                               onClick={async () => {
                                 try {
-                                  const { viewInvoice, downloadInvoice } = await import("../lib/pdf-invoice");
+                                  const { viewInvoice, downloadInvoice } =
+                                    await import("../lib/pdf-invoice");
                                   const sub = subPaymentsModal.subscription || {};
                                   const data = {
-                                    clinicName: sub.clinicName, customerName: sub.customerName, customerEmail: sub.customerEmail, customerPhone: sub.customerPhone,
-                                    plan: sub.planTier, amount: Number(p.amount), status: p.status, paymentMethod: p.paymentMethod, paymentType: p.paymentType,
-                                    transactionType: p.paymentType === "AUTH" ? "Mandate Registration" : "Subscription Renewal",
-                                    cfPaymentId: p.cfPaymentId, cfTxnId: p.cfTxnId, cfOrderId: p.cfOrderId, subscriptionRef: sub.subscriptionRef,
-                                    transactionRef: p.id, paidAt: p.paidAt, createdAt: p.createdAt,
+                                    clinicName: sub.clinicName,
+                                    customerName: sub.customerName,
+                                    customerEmail: sub.customerEmail,
+                                    customerPhone: sub.customerPhone,
+                                    plan: sub.planTier,
+                                    amount: Number(p.amount),
+                                    status: p.status,
+                                    paymentMethod: p.paymentMethod,
+                                    paymentType: p.paymentType,
+                                    transactionType:
+                                      p.paymentType === "AUTH"
+                                        ? "Mandate Registration"
+                                        : "Subscription Renewal",
+                                    cfPaymentId: p.cfPaymentId,
+                                    cfTxnId: p.cfTxnId,
+                                    cfOrderId: p.cfOrderId,
+                                    subscriptionRef: sub.subscriptionRef,
+                                    transactionRef: p.id,
+                                    paidAt: p.paidAt,
+                                    createdAt: p.createdAt,
                                   };
                                   if (mode === "view") await viewInvoice(data);
                                   else await downloadInvoice(data);
@@ -4223,7 +5246,15 @@ function AdminDashboardPage() {
                               }}
                               className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand hover:border-brand/30 transition-colors cursor-pointer"
                             >
-                              {mode === "view" ? <><Eye className="size-3" /> View</> : <><FileText className="size-3" /> PDF</>}
+                              {mode === "view" ? (
+                                <>
+                                  <Eye className="size-3" /> View
+                                </>
+                              ) : (
+                                <>
+                                  <FileText className="size-3" /> PDF
+                                </>
+                              )}
                             </button>
                           ))}
                         </div>
@@ -4249,42 +5280,62 @@ function AdminDashboardPage() {
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
                 <div>
-                  <h3 className="text-sm font-black text-zinc-900">Record Offline Manual Payment</h3>
-                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Manually log a custom bank transfer, cash, or offline payment.</p>
+                  <h3 className="text-sm font-black text-zinc-900">
+                    Record Offline Manual Payment
+                  </h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                    Manually log a custom bank transfer, cash, or offline payment.
+                  </p>
                 </div>
-                <button type="button" onClick={() => setIsRecordPaymentOpen(false)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setIsRecordPaymentOpen(false)}
+                  className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer"
+                >
                   <X className="h-4 w-4" />
                 </button>
               </div>
 
               <form onSubmit={handleRecordPaymentSubmit} className="overflow-y-auto p-6 space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Select Clinic / Tenant *</label>
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Select Clinic / Tenant *
+                  </label>
                   <select
                     required
                     value={addPayTenantId}
                     onChange={(e) => {
-                      const selected = tenants.find(t => t.tenantId === e.target.value);
+                      const selected = tenants.find((t) => t.tenantId === e.target.value);
                       setAddPayTenantId(e.target.value);
                       if (selected) {
                         setAddPayName(selected.name || "");
                         setAddPayEmail(selected.email || "");
                         setAddPayPhone(selected.phone || "");
-                        setAddPayAmount(selected.subscriptionPlan === "Premium" ? 9999 : selected.subscriptionPlan === "Pro" ? 4999 : 2499);
+                        setAddPayAmount(
+                          selected.subscriptionPlan === "Premium"
+                            ? 9999
+                            : selected.subscriptionPlan === "Pro"
+                              ? 4999
+                              : 2499,
+                        );
                       }
                     }}
                     className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
                   >
                     <option value="">-- Choose Clinic / Tenant --</option>
-                    {tenants.map(t => (
-                      <option key={t.id} value={t.tenantId}>{t.clinicName} ({t.name})</option>
+                    {tenants.map((t) => (
+                      <option key={t.id} value={t.tenantId}>
+                        {t.clinicName} ({t.name})
+                      </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Plan Identifier *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Plan Identifier *
+                    </label>
                     <input
                       type="text"
                       required
@@ -4295,7 +5346,9 @@ function AdminDashboardPage() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Amount (INR) *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Amount (INR) *
+                    </label>
                     <input
                       type="number"
                       required
@@ -4309,7 +5362,9 @@ function AdminDashboardPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Payment Mode *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Payment Mode *
+                    </label>
                     <select
                       value={addPayMethod}
                       onChange={(e) => setAddPayMethod(e.target.value)}
@@ -4323,7 +5378,9 @@ function AdminDashboardPage() {
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Status *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Status *
+                    </label>
                     <select
                       value={addPayStatus}
                       onChange={(e) => setAddPayStatus(e.target.value)}
@@ -4338,7 +5395,9 @@ function AdminDashboardPage() {
                 </div>
 
                 <div className="border-t border-zinc-100 pt-3 space-y-3">
-                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">Customer Details (Overrides)</span>
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">
+                    Customer Details (Overrides)
+                  </span>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-zinc-400">Customer Name</label>
                     <input
@@ -4374,7 +5433,9 @@ function AdminDashboardPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Transaction Date (Backdate)</label>
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Transaction Date (Backdate)
+                  </label>
                   <input
                     type="date"
                     value={addPayDate}
@@ -4417,9 +5478,15 @@ function AdminDashboardPage() {
               <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
                 <div>
                   <h3 className="text-sm font-black text-zinc-900">Adjust Transaction Log</h3>
-                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Order ID: {editingPayment.orderId}</p>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                    Order ID: {editingPayment.orderId}
+                  </p>
                 </div>
-                <button type="button" onClick={() => setEditingPayment(null)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setEditingPayment(null)}
+                  className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer"
+                >
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -4427,7 +5494,9 @@ function AdminDashboardPage() {
               <form onSubmit={handleEditPaymentSubmit} className="overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Amount (INR)</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Amount (INR)
+                    </label>
                     <input
                       type="number"
                       required
@@ -4438,7 +5507,9 @@ function AdminDashboardPage() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Payment Mode</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Payment Mode
+                    </label>
                     <input
                       type="text"
                       placeholder="e.g. UPI, CARD, BANK_TRANSFER"
@@ -4450,7 +5521,9 @@ function AdminDashboardPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Status</label>
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Status
+                  </label>
                   <select
                     value={editPayStatus}
                     onChange={(e) => setEditPayStatus(e.target.value)}
@@ -4464,7 +5537,9 @@ function AdminDashboardPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Remarks / Failure Reason</label>
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Remarks / Failure Reason
+                  </label>
                   <textarea
                     rows={2}
                     placeholder="Enter payment notes, remarks, check number, or gateway failure reason."
@@ -4475,7 +5550,9 @@ function AdminDashboardPage() {
                 </div>
 
                 <div className="border-t border-zinc-100 pt-3 space-y-3">
-                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">Customer Details Override</span>
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">
+                    Customer Details Override
+                  </span>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-zinc-400">Customer Name</label>
                     <input
@@ -4543,9 +5620,17 @@ function AdminDashboardPage() {
               </div>
               <h3 className="text-lg font-black text-zinc-950 mb-2">Delete Payment Record?</h3>
               <p className="text-xs text-zinc-500 leading-relaxed mb-6">
-                Are you sure you want to delete the transaction log for <span className="font-extrabold text-zinc-800">{deletingPayment.customerName || deletingPayment.clinicName}</span> of amount <span className="font-bold text-zinc-800">{formatCurrencyInr(deletingPayment.amount)}</span>? This action is permanent and cannot be undone.
+                Are you sure you want to delete the transaction log for{" "}
+                <span className="font-extrabold text-zinc-800">
+                  {deletingPayment.customerName || deletingPayment.clinicName}
+                </span>{" "}
+                of amount{" "}
+                <span className="font-bold text-zinc-800">
+                  {formatCurrencyInr(deletingPayment.amount)}
+                </span>
+                ? This action is permanent and cannot be undone.
               </p>
-              
+
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -4581,7 +5666,9 @@ function AdminDashboardPage() {
               <div className="px-6 py-5 border-b border-zinc-100 flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-black text-zinc-955">Payment Metadata Specs</h3>
-                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Order ID: {viewPaymentDetails.orderId}</p>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                    Order ID: {viewPaymentDetails.orderId}
+                  </p>
                 </div>
                 <button
                   onClick={() => setViewPaymentDetails(null)}
@@ -4594,23 +5681,35 @@ function AdminDashboardPage() {
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
                 {/* Visual Status Header */}
                 <div className="bg-zinc-50 rounded-2xl border border-zinc-150 p-4 flex items-center gap-3">
-                  <div className={`p-2.5 rounded-xl border ${
-                    viewPaymentDetails.status === "SUCCESS" ? "bg-emerald-50 text-emerald-600 border-emerald-150" :
-                    viewPaymentDetails.status === "FAILED" ? "bg-red-50 text-red-600 border-red-150" :
-                    "bg-amber-50 text-amber-600 border-amber-150"
-                  }`}>
+                  <div
+                    className={`p-2.5 rounded-xl border ${
+                      viewPaymentDetails.status === "SUCCESS"
+                        ? "bg-emerald-50 text-emerald-600 border-emerald-150"
+                        : viewPaymentDetails.status === "FAILED"
+                          ? "bg-red-50 text-red-600 border-red-150"
+                          : "bg-amber-50 text-amber-600 border-amber-150"
+                    }`}
+                  >
                     <CreditCard className="size-5" />
                   </div>
                   <div>
-                    <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">Transaction Amount</span>
-                    <span className="text-lg font-black text-zinc-950 block">{formatCurrencyInr(viewPaymentDetails.amount)}</span>
+                    <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
+                      Transaction Amount
+                    </span>
+                    <span className="text-lg font-black text-zinc-950 block">
+                      {formatCurrencyInr(viewPaymentDetails.amount)}
+                    </span>
                   </div>
                   <div className="ml-auto">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${
-                      viewPaymentDetails.status === "SUCCESS" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
-                      viewPaymentDetails.status === "FAILED" ? "bg-red-50 text-red-700 border-red-150" :
-                      "bg-amber-50 text-amber-700 border-amber-150"
-                    }`}>
+                    <span
+                      className={`inline-flex px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${
+                        viewPaymentDetails.status === "SUCCESS"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-150"
+                          : viewPaymentDetails.status === "FAILED"
+                            ? "bg-red-50 text-red-700 border-red-150"
+                            : "bg-amber-50 text-amber-700 border-amber-150"
+                      }`}
+                    >
                       {viewPaymentDetails.status}
                     </span>
                   </div>
@@ -4618,30 +5717,42 @@ function AdminDashboardPage() {
 
                 {/* Primary Specs */}
                 <div className="space-y-3.5">
-                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Transaction Specs</h4>
+                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Transaction Specs
+                  </h4>
                   <div className="rounded-2xl border border-zinc-155 bg-white divide-y divide-zinc-100 text-xs">
                     <div className="flex items-center justify-between p-3.5">
                       <span className="font-semibold text-zinc-500">Transaction ID</span>
-                      <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">{viewPaymentDetails.id}</code>
+                      <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">
+                        {viewPaymentDetails.id}
+                      </code>
                     </div>
                     <div className="flex items-center justify-between p-3.5">
                       <span className="font-semibold text-zinc-505">Cashfree Order ID</span>
-                      <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">{viewPaymentDetails.orderId}</code>
+                      <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">
+                        {viewPaymentDetails.orderId}
+                      </code>
                     </div>
                     {viewPaymentDetails.cfPaymentId && (
                       <div className="flex items-center justify-between p-3.5">
                         <span className="font-semibold text-zinc-500">CF Payment ID</span>
-                        <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">{viewPaymentDetails.cfPaymentId}</code>
+                        <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">
+                          {viewPaymentDetails.cfPaymentId}
+                        </code>
                       </div>
                     )}
                     <div className="flex items-center justify-between p-3.5">
                       <span className="font-semibold text-zinc-500">Payment Mode</span>
-                      <span className="font-bold text-zinc-800">{viewPaymentDetails.paymentMode || "—"}</span>
+                      <span className="font-bold text-zinc-800">
+                        {viewPaymentDetails.paymentMode || "—"}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between p-3.5">
                       <span className="font-semibold text-zinc-500">Billing Type</span>
                       <span className="font-extrabold text-purple-700 capitalize text-[10px] px-1.5 py-0.5 rounded bg-purple-50 border border-purple-100 uppercase">
-                        {viewPaymentDetails.type === "subscription" ? "AutoPay Recurring" : "Checkout One-time"}
+                        {viewPaymentDetails.type === "subscription"
+                          ? "AutoPay Recurring"
+                          : "Checkout One-time"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between p-3.5">
@@ -4655,21 +5766,31 @@ function AdminDashboardPage() {
 
                 {/* Customer Details */}
                 <div className="space-y-3.5">
-                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Clinician / Subscriber</h4>
+                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Clinician / Subscriber
+                  </h4>
                   <div className="rounded-2xl border border-zinc-150 bg-white p-4 space-y-3 text-xs">
                     <div className="flex items-start gap-2.5">
                       <User className="size-4 text-zinc-400 mt-0.5" />
                       <div>
-                        <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Name</span>
-                        <span className="font-bold text-zinc-900">{viewPaymentDetails.customerName || viewPaymentDetails.clinicName || "—"}</span>
+                        <span className="text-[10px] text-zinc-400 block font-semibold">
+                          Subscriber Name
+                        </span>
+                        <span className="font-bold text-zinc-900">
+                          {viewPaymentDetails.customerName || viewPaymentDetails.clinicName || "—"}
+                        </span>
                       </div>
                     </div>
                     {viewPaymentDetails.customerEmail && (
                       <div className="flex items-start gap-2.5">
                         <Mail className="size-4 text-zinc-400 mt-0.5" />
                         <div>
-                          <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Email</span>
-                          <span className="font-bold text-zinc-900 select-all">{viewPaymentDetails.customerEmail}</span>
+                          <span className="text-[10px] text-zinc-400 block font-semibold">
+                            Subscriber Email
+                          </span>
+                          <span className="font-bold text-zinc-900 select-all">
+                            {viewPaymentDetails.customerEmail}
+                          </span>
                         </div>
                       </div>
                     )}
@@ -4677,8 +5798,12 @@ function AdminDashboardPage() {
                       <div className="flex items-start gap-2.5">
                         <Phone className="size-4 text-zinc-400 mt-0.5" />
                         <div>
-                          <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Contact</span>
-                          <span className="font-bold text-zinc-900">{viewPaymentDetails.customerPhone}</span>
+                          <span className="text-[10px] text-zinc-400 block font-semibold">
+                            Subscriber Contact
+                          </span>
+                          <span className="font-bold text-zinc-900">
+                            {viewPaymentDetails.customerPhone}
+                          </span>
                         </div>
                       </div>
                     )}
@@ -4688,8 +5813,12 @@ function AdminDashboardPage() {
                 {/* Failure reason if failed */}
                 {viewPaymentDetails.failureReason && (
                   <div className="bg-red-50/50 rounded-2xl border border-red-150 p-4 space-y-1">
-                    <span className="text-[10px] font-extrabold text-red-700 uppercase tracking-wider block">Gateway Failure / Remarks Log</span>
-                    <p className="text-xs text-red-950 font-medium leading-relaxed">{viewPaymentDetails.failureReason}</p>
+                    <span className="text-[10px] font-extrabold text-red-700 uppercase tracking-wider block">
+                      Gateway Failure / Remarks Log
+                    </span>
+                    <p className="text-xs text-red-950 font-medium leading-relaxed">
+                      {viewPaymentDetails.failureReason}
+                    </p>
                   </div>
                 )}
               </div>
@@ -4702,7 +5831,8 @@ function AdminDashboardPage() {
                       key={mode}
                       onClick={async () => {
                         try {
-                          const { viewInvoice, downloadInvoice } = await import("../lib/pdf-invoice");
+                          const { viewInvoice, downloadInvoice } =
+                            await import("../lib/pdf-invoice");
                           const data = {
                             clinicName: viewPaymentDetails.clinicName,
                             customerName: viewPaymentDetails.customerName,
@@ -4712,8 +5842,12 @@ function AdminDashboardPage() {
                             amount: Number(viewPaymentDetails.amount),
                             status: viewPaymentDetails.status,
                             paymentMethod: viewPaymentDetails.paymentMode,
-                            paymentType: viewPaymentDetails.type === "subscription" ? "RECURRING" : "CHECKOUT",
-                            transactionType: viewPaymentDetails.type === "subscription" ? "Subscription Renewal" : "Setup Fee / Checkout",
+                            paymentType:
+                              viewPaymentDetails.type === "subscription" ? "RECURRING" : "CHECKOUT",
+                            transactionType:
+                              viewPaymentDetails.type === "subscription"
+                                ? "Subscription Renewal"
+                                : "Setup Fee / Checkout",
                             cfPaymentId: viewPaymentDetails.cfPaymentId,
                             cfOrderId: viewPaymentDetails.orderId,
                             transactionRef: viewPaymentDetails.id,
@@ -4728,7 +5862,15 @@ function AdminDashboardPage() {
                       }}
                       className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white py-3 text-xs font-extrabold text-zinc-700 hover:text-brand hover:border-brand/30 transition-all cursor-pointer active:scale-[0.98] shadow-sm"
                     >
-                      {mode === "view" ? <><Eye className="size-3.5" /> View Invoice</> : <><FileText className="size-3.5" /> Download Invoice</>}
+                      {mode === "view" ? (
+                        <>
+                          <Eye className="size-3.5" /> View Invoice
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="size-3.5" /> Download Invoice
+                        </>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -4750,48 +5892,74 @@ function AdminDashboardPage() {
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
                 <div>
-                  <h3 className="text-sm font-black text-zinc-900">Provision Custom Subscription Mandate</h3>
-                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Establish a manual, recurring SaaS subscription contract for a tenant.</p>
+                  <h3 className="text-sm font-black text-zinc-900">
+                    Provision Custom Subscription Mandate
+                  </h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                    Establish a manual, recurring SaaS subscription contract for a tenant.
+                  </p>
                 </div>
-                <button type="button" onClick={() => setIsProvisionSubOpen(false)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setIsProvisionSubOpen(false)}
+                  className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer"
+                >
                   <X className="h-4 w-4" />
                 </button>
               </div>
 
               <form onSubmit={handleProvisionSubSubmit} className="overflow-y-auto p-6 space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Select Clinic / Tenant *</label>
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Select Clinic / Tenant *
+                  </label>
                   <select
                     required
                     value={addSubTenantId}
                     onChange={(e) => {
-                      const selected = tenants.find(t => t.tenantId === e.target.value);
+                      const selected = tenants.find((t) => t.tenantId === e.target.value);
                       setAddSubTenantId(e.target.value);
                       if (selected) {
                         setAddSubName(selected.name || "");
                         setAddSubEmail(selected.email || "");
                         setAddSubPhone(selected.phone || "");
-                        setAddSubAmount(selected.subscriptionPlan === "Premium" ? 9999 : selected.subscriptionPlan === "Pro" ? 4999 : 2499);
+                        setAddSubAmount(
+                          selected.subscriptionPlan === "Premium"
+                            ? 9999
+                            : selected.subscriptionPlan === "Pro"
+                              ? 4999
+                              : 2499,
+                        );
                         setAddSubPlan(selected.subscriptionPlan || "Pro");
                       }
                     }}
                     className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
                   >
                     <option value="">-- Choose Clinic / Tenant --</option>
-                    {tenants.map(t => (
-                      <option key={t.id} value={t.tenantId}>{t.clinicName} ({t.name})</option>
+                    {tenants.map((t) => (
+                      <option key={t.id} value={t.tenantId}>
+                        {t.clinicName} ({t.name})
+                      </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Plan / Tier *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Plan / Tier *
+                    </label>
                     <select
                       value={addSubPlan}
                       onChange={(e) => {
                         setAddSubPlan(e.target.value);
-                        setAddSubAmount(e.target.value === "Premium" ? 9999 : e.target.value === "Pro" ? 4999 : 2499);
+                        setAddSubAmount(
+                          e.target.value === "Premium"
+                            ? 9999
+                            : e.target.value === "Pro"
+                              ? 4999
+                              : 2499,
+                        );
                       }}
                       className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:bg-white focus:border-zinc-400 focus:outline-none font-bold"
                     >
@@ -4804,7 +5972,9 @@ function AdminDashboardPage() {
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Billing Amount (INR) *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Billing Amount (INR) *
+                    </label>
                     <input
                       type="number"
                       required
@@ -4818,7 +5988,9 @@ function AdminDashboardPage() {
 
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1 space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Interval *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Interval *
+                    </label>
                     <select
                       value={addSubInterval}
                       onChange={(e) => setAddSubInterval(e.target.value)}
@@ -4829,7 +6001,9 @@ function AdminDashboardPage() {
                     </select>
                   </div>
                   <div className="col-span-1 space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Intervals *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Intervals *
+                    </label>
                     <input
                       type="number"
                       required
@@ -4840,7 +6014,9 @@ function AdminDashboardPage() {
                     />
                   </div>
                   <div className="col-span-1 space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Status *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Status *
+                    </label>
                     <select
                       value={addSubStatus}
                       onChange={(e) => setAddSubStatus(e.target.value)}
@@ -4885,7 +6061,9 @@ function AdminDashboardPage() {
                 </div>
 
                 <div className="border-t border-zinc-100 pt-3 space-y-3">
-                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">Customer Overrides</span>
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">
+                    Customer Overrides
+                  </span>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-zinc-400">Subscriber Name</label>
                     <input
@@ -4898,7 +6076,9 @@ function AdminDashboardPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-zinc-400">Subscriber Email</label>
+                      <label className="text-[10px] font-bold text-zinc-400">
+                        Subscriber Email
+                      </label>
                       <input
                         type="email"
                         placeholder="email@example.com"
@@ -4908,7 +6088,9 @@ function AdminDashboardPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-zinc-400">Subscriber Phone</label>
+                      <label className="text-[10px] font-bold text-zinc-400">
+                        Subscriber Phone
+                      </label>
                       <input
                         type="text"
                         placeholder="Phone Number"
@@ -4953,10 +6135,18 @@ function AdminDashboardPage() {
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
                 <div>
-                  <h3 className="text-sm font-black text-zinc-900">Modify Subscription Mandate Specs</h3>
-                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Ref ID: {editingSub.subscriptionRef}</p>
+                  <h3 className="text-sm font-black text-zinc-900">
+                    Modify Subscription Mandate Specs
+                  </h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                    Ref ID: {editingSub.subscriptionRef}
+                  </p>
                 </div>
-                <button type="button" onClick={() => setEditingSub(null)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setEditingSub(null)}
+                  className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer"
+                >
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -4964,7 +6154,9 @@ function AdminDashboardPage() {
               <form onSubmit={handleEditSubSubmit} className="overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Plan Tier</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Plan Tier
+                    </label>
                     <select
                       value={editSubPlan}
                       onChange={(e) => setEditSubPlan(e.target.value)}
@@ -4979,7 +6171,9 @@ function AdminDashboardPage() {
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Price (INR)</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Price (INR)
+                    </label>
                     <input
                       type="number"
                       required
@@ -4993,7 +6187,9 @@ function AdminDashboardPage() {
 
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1 space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Interval</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Interval
+                    </label>
                     <select
                       value={editSubInterval}
                       onChange={(e) => setEditSubInterval(e.target.value)}
@@ -5004,7 +6200,9 @@ function AdminDashboardPage() {
                     </select>
                   </div>
                   <div className="col-span-1 space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Intervals</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Intervals
+                    </label>
                     <input
                       type="number"
                       required
@@ -5015,7 +6213,9 @@ function AdminDashboardPage() {
                     />
                   </div>
                   <div className="col-span-1 space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Status</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Status
+                    </label>
                     <select
                       value={editSubStatus}
                       onChange={(e) => setEditSubStatus(e.target.value)}
@@ -5060,7 +6260,9 @@ function AdminDashboardPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Cancel At Period End?</label>
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Cancel At Period End?
+                  </label>
                   <select
                     value={editSubCancelAtEnd}
                     onChange={(e) => setEditSubCancelAtEnd(Number(e.target.value))}
@@ -5072,7 +6274,9 @@ function AdminDashboardPage() {
                 </div>
 
                 <div className="border-t border-zinc-100 pt-3 space-y-3">
-                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">Customer Details Override</span>
+                  <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider block">
+                    Customer Details Override
+                  </span>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-zinc-400">Subscriber Name</label>
                     <input
@@ -5084,7 +6288,9 @@ function AdminDashboardPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-zinc-400">Subscriber Email</label>
+                      <label className="text-[10px] font-bold text-zinc-400">
+                        Subscriber Email
+                      </label>
                       <input
                         type="email"
                         value={editSubEmail}
@@ -5093,7 +6299,9 @@ function AdminDashboardPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-zinc-400">Subscriber Phone</label>
+                      <label className="text-[10px] font-bold text-zinc-400">
+                        Subscriber Phone
+                      </label>
                       <input
                         type="text"
                         value={editSubPhone}
@@ -5137,10 +6345,18 @@ function AdminDashboardPage() {
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
                 <div>
-                  <h3 className="text-sm font-black text-zinc-900">Log Subscription Charge / Renewal</h3>
-                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Subscriber: {logPaymentSub.clinicName || logPaymentSub.customerName}</p>
+                  <h3 className="text-sm font-black text-zinc-900">
+                    Log Subscription Charge / Renewal
+                  </h3>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                    Subscriber: {logPaymentSub.clinicName || logPaymentSub.customerName}
+                  </p>
                 </div>
-                <button type="button" onClick={() => setLogPaymentSub(null)} className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setLogPaymentSub(null)}
+                  className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 cursor-pointer"
+                >
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -5148,7 +6364,9 @@ function AdminDashboardPage() {
               <form onSubmit={handleLogPaymentSubmit} className="overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Charge Amount (INR) *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Charge Amount (INR) *
+                    </label>
                     <input
                       type="number"
                       required
@@ -5159,7 +6377,9 @@ function AdminDashboardPage() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Payment Mode *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Payment Mode *
+                    </label>
                     <select
                       value={logPayMethod}
                       onChange={(e) => setLogPayMethod(e.target.value)}
@@ -5176,7 +6396,9 @@ function AdminDashboardPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Status *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Status *
+                    </label>
                     <select
                       value={logPayStatus}
                       onChange={(e) => setLogPayStatus(e.target.value)}
@@ -5188,7 +6410,9 @@ function AdminDashboardPage() {
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Txn Type *</label>
+                    <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                      Txn Type *
+                    </label>
                     <select
                       value={logPayType}
                       onChange={(e) => setLogPayType(e.target.value)}
@@ -5201,7 +6425,9 @@ function AdminDashboardPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Paid Date</label>
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Paid Date
+                  </label>
                   <input
                     type="date"
                     value={logPayDate}
@@ -5211,7 +6437,9 @@ function AdminDashboardPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Remarks / Notes</label>
+                  <label className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Remarks / Notes
+                  </label>
                   <textarea
                     rows={2}
                     placeholder="Enter manual cycle references, invoice notes, or receipt metadata."
@@ -5255,11 +6483,18 @@ function AdminDashboardPage() {
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 border border-red-150 mb-4">
                 <AlertCircle className="size-7 text-red-600" />
               </div>
-              <h3 className="text-lg font-black text-zinc-950 mb-2">Delete Subscription Mandate?</h3>
+              <h3 className="text-lg font-black text-zinc-950 mb-2">
+                Delete Subscription Mandate?
+              </h3>
               <p className="text-xs text-zinc-500 leading-relaxed mb-6">
-                Are you sure you want to delete the subscription mandate log for <span className="font-extrabold text-zinc-800">{deletingSub.clinicName || deletingSub.customerName}</span>? This will wipe the billing contract logs from dashboard metrics, but will not cancel any actual live recurring payments in Cashfree.
+                Are you sure you want to delete the subscription mandate log for{" "}
+                <span className="font-extrabold text-zinc-800">
+                  {deletingSub.clinicName || deletingSub.customerName}
+                </span>
+                ? This will wipe the billing contract logs from dashboard metrics, but will not
+                cancel any actual live recurring payments in Cashfree.
               </p>
-              
+
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -5295,7 +6530,9 @@ function AdminDashboardPage() {
               <div className="px-6 py-5 border-b border-zinc-100 flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-black text-zinc-950">Subscription Contract Specs</h3>
-                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">Ref ID: {viewSubDetails.subscriptionRef}</p>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                    Ref ID: {viewSubDetails.subscriptionRef}
+                  </p>
                 </div>
                 <button
                   onClick={() => setViewSubDetails(null)}
@@ -5308,25 +6545,38 @@ function AdminDashboardPage() {
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
                 {/* Visual Status Header */}
                 <div className="bg-zinc-50 rounded-2xl border border-zinc-150 p-4 flex items-center gap-3">
-                  <div className={`p-2.5 rounded-xl border ${
-                    String(viewSubDetails.status).toUpperCase() === "ACTIVE" ? "bg-emerald-50 text-emerald-600 border-emerald-150" :
-                    String(viewSubDetails.status).toUpperCase() === "CANCELLED" ? "bg-zinc-100 text-zinc-600 border-zinc-200" :
-                    "bg-amber-50 text-amber-600 border-amber-150"
-                  }`}>
+                  <div
+                    className={`p-2.5 rounded-xl border ${
+                      String(viewSubDetails.status).toUpperCase() === "ACTIVE"
+                        ? "bg-emerald-50 text-emerald-600 border-emerald-150"
+                        : String(viewSubDetails.status).toUpperCase() === "CANCELLED"
+                          ? "bg-zinc-100 text-zinc-600 border-zinc-200"
+                          : "bg-amber-50 text-amber-600 border-amber-150"
+                    }`}
+                  >
                     <Activity className="size-5" />
                   </div>
                   <div>
-                    <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">{viewSubDetails.planTier} Plan</span>
+                    <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
+                      {viewSubDetails.planTier} Plan
+                    </span>
                     <span className="text-lg font-black text-zinc-950 block">
-                      {formatCurrencyInr(viewSubDetails.amount)} <span className="text-xs font-bold text-zinc-400">/{viewSubDetails.intervalType === "YEAR" ? "yr" : "mo"}</span>
+                      {formatCurrencyInr(viewSubDetails.amount)}{" "}
+                      <span className="text-xs font-bold text-zinc-400">
+                        /{viewSubDetails.intervalType === "YEAR" ? "yr" : "mo"}
+                      </span>
                     </span>
                   </div>
                   <div className="ml-auto">
-                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${
-                      String(viewSubDetails.status).toUpperCase() === "ACTIVE" ? "bg-emerald-50 text-emerald-700 border-emerald-150" :
-                      String(viewSubDetails.status).toUpperCase() === "CANCELLED" ? "bg-zinc-100 text-zinc-650 border-zinc-200" :
-                      "bg-amber-50 text-amber-700 border-amber-150"
-                    }`}>
+                    <span
+                      className={`inline-flex px-2.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase border ${
+                        String(viewSubDetails.status).toUpperCase() === "ACTIVE"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-150"
+                          : String(viewSubDetails.status).toUpperCase() === "CANCELLED"
+                            ? "bg-zinc-100 text-zinc-650 border-zinc-200"
+                            : "bg-amber-50 text-amber-700 border-amber-150"
+                      }`}
+                    >
                       {viewSubDetails.status}
                     </span>
                   </div>
@@ -5339,64 +6589,104 @@ function AdminDashboardPage() {
                     natural next cycle. */}
                 {!loadingViewSubPayments &&
                   String(viewSubDetails.status).toUpperCase() === "ACTIVE" &&
-                  !viewSubPayments.some((p: any) => p.status === "SUCCESS" && String(p.paymentType || "").toUpperCase() === "CHARGE") && (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-2.5">
-                    <div className="flex items-start gap-2.5">
-                      <AlertCircle className="size-4 text-amber-600 mt-0.5 shrink-0" />
-                      <div className="text-xs text-amber-900">
-                        <p className="font-extrabold">No plan payment collected yet</p>
-                        <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
-                          Only the refundable ₹1 mandate authorization has been paid. The {viewSubDetails.planTier} plan
-                          amount ({formatCurrencyInr(viewSubDetails.amount)}) has not been charged — Cashfree has
-                          deferred it to the next scheduled cycle{viewSubDetails.nextChargeAt ? ` (${new Date(viewSubDetails.nextChargeAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })})` : ""}.
-                        </p>
+                  !viewSubPayments.some(
+                    (p: any) =>
+                      p.status === "SUCCESS" &&
+                      String(p.paymentType || "").toUpperCase() === "CHARGE",
+                  ) && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-2.5">
+                      <div className="flex items-start gap-2.5">
+                        <AlertCircle className="size-4 text-amber-600 mt-0.5 shrink-0" />
+                        <div className="text-xs text-amber-900">
+                          <p className="font-extrabold">No plan payment collected yet</p>
+                          <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                            Only the refundable ₹1 mandate authorization has been paid. The{" "}
+                            {viewSubDetails.planTier} plan amount (
+                            {formatCurrencyInr(viewSubDetails.amount)}) has not been charged —
+                            Cashfree has deferred it to the next scheduled cycle
+                            {viewSubDetails.nextChargeAt
+                              ? ` (${new Date(viewSubDetails.nextChargeAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })})`
+                              : ""}
+                            .
+                          </p>
+                        </div>
                       </div>
+                      <button
+                        type="button"
+                        disabled={chargingSubRef === viewSubDetails.subscriptionRef}
+                        onClick={() => handleChargeSubscriptionNow(viewSubDetails.subscriptionRef)}
+                        className="w-full rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        {chargingSubRef === viewSubDetails.subscriptionRef ? (
+                          <>
+                            <Loader2 className="size-3.5 animate-spin" /> Charging{" "}
+                            {formatCurrencyInr(viewSubDetails.amount)} on Cashfree...
+                          </>
+                        ) : (
+                          <>
+                            <IndianRupee className="size-3.5" /> Charge{" "}
+                            {formatCurrencyInr(viewSubDetails.amount)} Now
+                          </>
+                        )}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      disabled={chargingSubRef === viewSubDetails.subscriptionRef}
-                      onClick={() => handleChargeSubscriptionNow(viewSubDetails.subscriptionRef)}
-                      className="w-full rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed py-2.5 text-xs font-extrabold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
-                    >
-                      {chargingSubRef === viewSubDetails.subscriptionRef ? (
-                        <><Loader2 className="size-3.5 animate-spin" /> Charging {formatCurrencyInr(viewSubDetails.amount)} on Cashfree...</>
-                      ) : (
-                        <><IndianRupee className="size-3.5" /> Charge {formatCurrencyInr(viewSubDetails.amount)} Now</>
-                      )}
-                    </button>
-                  </div>
-                )}
+                  )}
 
                 {/* Primary Specs */}
                 <div className="space-y-3.5">
-                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Contract Details</h4>
+                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Contract Details
+                  </h4>
                   <div className="rounded-2xl border border-zinc-150 bg-white divide-y divide-zinc-100 text-xs">
                     <div className="flex items-center justify-between p-3.5">
                       <span className="font-semibold text-zinc-500">Subscription Ref</span>
-                      <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800 select-all">{viewSubDetails.subscriptionRef}</code>
+                      <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800 select-all">
+                        {viewSubDetails.subscriptionRef}
+                      </code>
                     </div>
                     {viewSubDetails.cfSubscriptionId && (
                       <div className="flex items-center justify-between p-3.5">
                         <span className="font-semibold text-zinc-505">Cashfree Sub ID</span>
-                        <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">{viewSubDetails.cfSubscriptionId}</code>
+                        <code className="bg-zinc-50 border border-zinc-200 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-800">
+                          {viewSubDetails.cfSubscriptionId}
+                        </code>
                       </div>
                     )}
                     <div className="flex items-center justify-between p-3.5">
                       <span className="font-semibold text-zinc-505">Billing Cycle</span>
-                      <span className="font-bold text-zinc-800">{viewSubDetails.intervals} {viewSubDetails.intervalType}(s)</span>
+                      <span className="font-bold text-zinc-800">
+                        {viewSubDetails.intervals} {viewSubDetails.intervalType}(s)
+                      </span>
                     </div>
                     <div className="flex items-center justify-between p-3.5">
                       <span className="font-semibold text-zinc-505">Next Charge Date</span>
                       <span className="font-bold text-zinc-700">
-                        {viewSubDetails.nextChargeAt ? new Date(viewSubDetails.nextChargeAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                        {viewSubDetails.nextChargeAt
+                          ? new Date(viewSubDetails.nextChargeAt).toLocaleDateString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })
+                          : "—"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between p-3.5">
                       <span className="font-semibold text-zinc-505">Current Period</span>
                       <span className="font-bold text-zinc-700">
-                        {viewSubDetails.currentPeriodStart ? new Date(viewSubDetails.currentPeriodStart).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—"}
+                        {viewSubDetails.currentPeriodStart
+                          ? new Date(viewSubDetails.currentPeriodStart).toLocaleDateString(
+                              "en-IN",
+                              { day: "numeric", month: "short" },
+                            )
+                          : "—"}
                         {" → "}
-                        {viewSubDetails.currentPeriodEnd ? new Date(viewSubDetails.currentPeriodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                        {viewSubDetails.currentPeriodEnd
+                          ? new Date(viewSubDetails.currentPeriodEnd).toLocaleDateString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })
+                          : "—"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between p-3.5">
@@ -5410,21 +6700,31 @@ function AdminDashboardPage() {
 
                 {/* Subscriber Info */}
                 <div className="space-y-3.5">
-                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Subscriber Clinic</h4>
+                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Subscriber Clinic
+                  </h4>
                   <div className="rounded-2xl border border-zinc-150 bg-white p-4 space-y-3 text-xs">
                     <div className="flex items-start gap-2.5">
                       <User className="size-4 text-zinc-400 mt-0.5" />
                       <div>
-                        <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Name</span>
-                        <span className="font-bold text-zinc-900">{viewSubDetails.customerName || viewSubDetails.clinicName || "—"}</span>
+                        <span className="text-[10px] text-zinc-400 block font-semibold">
+                          Subscriber Name
+                        </span>
+                        <span className="font-bold text-zinc-900">
+                          {viewSubDetails.customerName || viewSubDetails.clinicName || "—"}
+                        </span>
                       </div>
                     </div>
                     {viewSubDetails.customerEmail && (
                       <div className="flex items-start gap-2.5">
                         <Mail className="size-4 text-zinc-400 mt-0.5" />
                         <div>
-                          <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Email</span>
-                          <span className="font-bold text-zinc-900 select-all">{viewSubDetails.customerEmail}</span>
+                          <span className="text-[10px] text-zinc-400 block font-semibold">
+                            Subscriber Email
+                          </span>
+                          <span className="font-bold text-zinc-900 select-all">
+                            {viewSubDetails.customerEmail}
+                          </span>
                         </div>
                       </div>
                     )}
@@ -5432,8 +6732,12 @@ function AdminDashboardPage() {
                       <div className="flex items-start gap-2.5">
                         <Phone className="size-4 text-zinc-400 mt-0.5" />
                         <div>
-                          <span className="text-[10px] text-zinc-400 block font-semibold">Subscriber Contact</span>
-                          <span className="font-bold text-zinc-900">{viewSubDetails.customerPhone}</span>
+                          <span className="text-[10px] text-zinc-400 block font-semibold">
+                            Subscriber Contact
+                          </span>
+                          <span className="font-bold text-zinc-900">
+                            {viewSubDetails.customerPhone}
+                          </span>
                         </div>
                       </div>
                     )}
@@ -5442,33 +6746,52 @@ function AdminDashboardPage() {
 
                 {/* Subscription Payment History Ledger */}
                 <div className="space-y-3.5">
-                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">Payment Ledger History</h4>
+                  <h4 className="text-[10px] font-extrabold uppercase text-zinc-400 tracking-wider">
+                    Payment Ledger History
+                  </h4>
                   {loadingViewSubPayments ? (
                     <div className="flex items-center justify-center py-6 text-zinc-400 text-xs gap-1.5">
                       <Loader2 className="h-4 w-4 animate-spin" /> Load billing history...
                     </div>
                   ) : viewSubPayments.length === 0 ? (
-                    <p className="text-[10px] text-zinc-400 italic">No cycle payments recorded for this mandate yet.</p>
+                    <p className="text-[10px] text-zinc-400 italic">
+                      No cycle payments recorded for this mandate yet.
+                    </p>
                   ) : (
                     <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                       {viewSubPayments.map((p: any) => {
                         const isAuth = String(p.paymentType || "").toUpperCase() === "AUTH";
                         return (
-                          <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-150 bg-zinc-50/50 px-3 py-2 text-xs">
+                          <div
+                            key={p.id}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-zinc-150 bg-zinc-50/50 px-3 py-2 text-xs"
+                          >
                             <div>
                               <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-zinc-900">{formatCurrencyInr(p.amount)}</span>
-                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-black ${
-                                  p.status === "SUCCESS" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-                                }`}>{p.status}</span>
+                                <span className="font-bold text-zinc-900">
+                                  {formatCurrencyInr(p.amount)}
+                                </span>
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[8px] font-black ${
+                                    p.status === "SUCCESS"
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-red-50 text-red-700"
+                                  }`}
+                                >
+                                  {p.status}
+                                </span>
                                 {isAuth && (
-                                  <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-zinc-100 text-zinc-500" title="Refundable mandate authorization, not a real charge">
+                                  <span
+                                    className="px-1.5 py-0.5 rounded text-[8px] font-black bg-zinc-100 text-zinc-500"
+                                    title="Refundable mandate authorization, not a real charge"
+                                  >
                                     MANDATE
                                   </span>
                                 )}
                               </div>
                               <div className="text-[9px] text-zinc-400 font-medium mt-0.5">
-                                {new Date(p.paidAt || p.createdAt).toLocaleDateString("en-IN")} · {p.paymentMethod || "AutoPay"}
+                                {new Date(p.paidAt || p.createdAt).toLocaleDateString("en-IN")} ·{" "}
+                                {p.paymentMethod || "AutoPay"}
                               </div>
                             </div>
                             {p.status === "SUCCESS" && (
@@ -5478,7 +6801,8 @@ function AdminDashboardPage() {
                                     key={mode}
                                     onClick={async () => {
                                       try {
-                                        const { viewInvoice, downloadInvoice } = await import("../lib/pdf-invoice");
+                                        const { viewInvoice, downloadInvoice } =
+                                          await import("../lib/pdf-invoice");
                                         const data = {
                                           clinicName: viewSubDetails.clinicName,
                                           customerName: viewSubDetails.customerName,
@@ -5489,7 +6813,9 @@ function AdminDashboardPage() {
                                           status: p.status,
                                           paymentMethod: p.paymentMethod,
                                           paymentType: p.paymentType,
-                                          transactionType: isAuth ? "Mandate Registration" : "Subscription Renewal",
+                                          transactionType: isAuth
+                                            ? "Mandate Registration"
+                                            : "Subscription Renewal",
                                           cfPaymentId: p.cfPaymentId,
                                           cfOrderId: p.cfOrderId,
                                           subscriptionRef: viewSubDetails.subscriptionRef,
@@ -5506,7 +6832,11 @@ function AdminDashboardPage() {
                                     className="p-1 border border-zinc-200 rounded hover:bg-white text-zinc-505 hover:text-zinc-800 transition-colors"
                                     title={mode === "view" ? "View invoice" : "Download invoice"}
                                   >
-                                    {mode === "view" ? <Eye className="size-3" /> : <FileText className="size-3" />}
+                                    {mode === "view" ? (
+                                      <Eye className="size-3" />
+                                    ) : (
+                                      <FileText className="size-3" />
+                                    )}
                                   </button>
                                 ))}
                               </div>

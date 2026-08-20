@@ -14,11 +14,7 @@ import { verifySession } from "./auth.server";
 import { verifyAdminSession } from "./admin.server";
 import { query, queryOne, execute } from "./db";
 import { sendBillingNotificationEmail } from "./email";
-import {
-  normalizePlan,
-  PLAN_BILLING,
-  type PlanTier,
-} from "./feature-access";
+import { normalizePlan, PLAN_BILLING, type PlanTier } from "./feature-access";
 import {
   getCashfreeConfig,
   ensureCashfreePeriodicPlan,
@@ -49,11 +45,14 @@ function planIdFor(tier: PlanTier, amount: number): string {
  */
 async function resolveRequestOrigin(fallback: string): Promise<string> {
   try {
-    const { getHeaders } = await import("@tanstack/react-start/server");
-    const headers = getHeaders();
-    const originHeader = (headers.origin as string) || (headers.referer ? new URL(headers.referer as string).origin : null);
+    const { getRequestHeaders } = await import("@tanstack/react-start/server");
+    const headers = getRequestHeaders();
+    const referer = headers.get("referer");
+    const originHeader = headers.get("origin") || (referer ? new URL(referer).origin : null);
     if (originHeader) return originHeader;
-  } catch { /* no request context */ }
+  } catch {
+    /* no request context */
+  }
   return fallback;
 }
 
@@ -79,10 +78,12 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
     // Prevent duplicate active/pending subscriptions.
     const existingActive = await queryOne<any>(
       "SELECT subscriptionRef, status FROM Subscription WHERE userId = ? AND status IN ('ACTIVE','BANK_APPROVAL_PENDING') LIMIT 1",
-      [user.id]
+      [user.id],
     );
     if (existingActive) {
-      throw new Error("You already have an active subscription. Cancel it before starting a new one.");
+      throw new Error(
+        "You already have an active subscription. Cancel it before starting a new one.",
+      );
     }
 
     const amount = billing.monthly;
@@ -108,12 +109,16 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
     // Format: Product prefix + type + year + unique 8-char ID derived from timestamp
     const now = new Date();
     const year = now.getFullYear();
-    const uniqueId = Date.now().toString(36).toUpperCase().padStart(8, '0').slice(-8);
+    const uniqueId = Date.now().toString(36).toUpperCase().padStart(8, "0").slice(-8);
     const subscriptionRef = `BMT-SUB-${year}-${uniqueId}`;
 
     // Safe, same-origin return path (defaults to the professional dashboard).
     let basePath = "/dashboards/professional?tab=plans";
-    if (typeof data.returnPath === "string" && data.returnPath.startsWith("/") && !data.returnPath.startsWith("//")) {
+    if (
+      typeof data.returnPath === "string" &&
+      data.returnPath.startsWith("/") &&
+      !data.returnPath.startsWith("//")
+    ) {
       basePath = data.returnPath;
     }
     const origin = await resolveRequestOrigin(cfg.origin);
@@ -131,7 +136,7 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
     // automatically refunded/skipped since the auth amount already covered it.
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
+
     const cfSub = await createCashfreeSubscription({
       subscriptionId: subscriptionRef,
       planId,
@@ -153,13 +158,23 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
           status, sessionId, customerName, customerEmail, customerPhone, gateway, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Cashfree', NOW(), NOW())`,
       [
-        generateId(), user.id, user.tenantId, subscriptionRef,
+        generateId(),
+        user.id,
+        user.tenantId,
+        subscriptionRef,
         cfSub?.cf_subscription_id ? String(cfSub.cf_subscription_id) : null,
-        planId, tier, amount, billing.currency, billing.intervalType, billing.intervals,
+        planId,
+        tier,
+        amount,
+        billing.currency,
+        billing.intervalType,
+        billing.intervals,
         String(cfSub?.subscription_status || "INITIALIZED").toUpperCase(),
         cfSub?.subscription_session_id || null,
-        user.name, user.email, (user as any).phone || null,
-      ]
+        user.name,
+        user.email,
+        (user as any).phone || null,
+      ],
     );
 
     return {
@@ -178,11 +193,13 @@ export const createSubscriptionServerFn = createServerFn({ method: "POST" })
 // Mirrors createCashfreeOrderServerFn's (one-time) username lookup pattern.
 // ─────────────────────────────────────────────────────────────────────────────
 export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST" })
-  .validator((data: { username: string; planTier: "Basic" | "Premium"; returnPath?: string }) => data)
+  .validator(
+    (data: { username: string; planTier: "Basic" | "Premium"; returnPath?: string }) => data,
+  )
   .handler(async ({ data }) => {
     const user = await queryOne<any>(
       "SELECT id, name, email, phone, tenantId FROM User WHERE email = ? OR phone = ? LIMIT 1",
-      [data.username, data.username]
+      [data.username, data.username],
     );
     if (!user) throw new Error("Account not found");
 
@@ -195,10 +212,12 @@ export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST"
     // Prevent duplicate active/pending subscriptions.
     const existingActive = await queryOne<any>(
       "SELECT subscriptionRef, status FROM Subscription WHERE userId = ? AND status IN ('ACTIVE','BANK_APPROVAL_PENDING') LIMIT 1",
-      [user.id]
+      [user.id],
     );
     if (existingActive) {
-      throw new Error("You already have an active subscription. Cancel it before starting a new one.");
+      throw new Error(
+        "You already have an active subscription. Cancel it before starting a new one.",
+      );
     }
 
     const amount = billing.monthly;
@@ -220,13 +239,17 @@ export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST"
     // Generate professional subscription reference: BMT-SUB-YYYY-XXXXXXXX
     const now = new Date();
     const year = now.getFullYear();
-    const uniqueId = Date.now().toString(36).toUpperCase().padStart(8, '0').slice(-8);
+    const uniqueId = Date.now().toString(36).toUpperCase().padStart(8, "0").slice(-8);
     const subscriptionRef = `BMT-SUB-${year}-${uniqueId}`;
 
     // Default return path preserves the /login renewal flow so the same page
     // can verify + show a confirmation without bouncing through the dashboard.
     let basePath = "/login";
-    if (typeof data.returnPath === "string" && data.returnPath.startsWith("/") && !data.returnPath.startsWith("//")) {
+    if (
+      typeof data.returnPath === "string" &&
+      data.returnPath.startsWith("/") &&
+      !data.returnPath.startsWith("//")
+    ) {
       basePath = data.returnPath;
     }
     const origin = await resolveRequestOrigin(cfg.origin);
@@ -239,7 +262,7 @@ export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST"
     // authorizationAmount is the full plan amount, the user pays immediately.
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
+
     const cfSub = await createCashfreeSubscription({
       subscriptionId: subscriptionRef,
       planId,
@@ -259,13 +282,23 @@ export const createRenewalSubscriptionServerFn = createServerFn({ method: "POST"
           status, sessionId, customerName, customerEmail, customerPhone, gateway, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Cashfree', NOW(), NOW())`,
       [
-        generateId(), user.id, user.tenantId, subscriptionRef,
+        generateId(),
+        user.id,
+        user.tenantId,
+        subscriptionRef,
         cfSub?.cf_subscription_id ? String(cfSub.cf_subscription_id) : null,
-        planId, tier, amount, billing.currency, billing.intervalType, billing.intervals,
+        planId,
+        tier,
+        amount,
+        billing.currency,
+        billing.intervalType,
+        billing.intervals,
         String(cfSub?.subscription_status || "INITIALIZED").toUpperCase(),
         cfSub?.subscription_session_id || null,
-        user.name, user.email, user.phone || null,
-      ]
+        user.name,
+        user.email,
+        user.phone || null,
+      ],
     );
 
     return {
@@ -301,7 +334,9 @@ export const verifyRenewalSubscriptionServerFn = createServerFn({ method: "POST"
     await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef);
 
     const status = String(cfSub.subscription_status || "").toUpperCase();
-    const authStatus = String(cfSub?.authorization_details?.authorization_status || "").toUpperCase();
+    const authStatus = String(
+      cfSub?.authorization_details?.authorization_status || "",
+    ).toUpperCase();
     const success = status === "ACTIVE" || authStatus === "ACTIVE";
 
     if (success && local.customerEmail) {
@@ -315,13 +350,19 @@ export const verifyRenewalSubscriptionServerFn = createServerFn({ method: "POST"
           tone: "success",
           details: [
             { label: "Plan", value: tier },
-            { label: "Amount", value: `Rs ${Number(local.amount).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/month` },
+            {
+              label: "Amount",
+              value: `Rs ${Number(local.amount).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/month`,
+            },
             { label: "AutoPay", value: "Active" },
             { label: "Subscription Ref", value: data.subscriptionRef },
           ],
         });
       } catch (mailErr: any) {
-        console.warn(`[Subscription] Failed to send renewal AutoPay confirmation email:`, mailErr.message);
+        console.warn(
+          `[Subscription] Failed to send renewal AutoPay confirmation email:`,
+          mailErr.message,
+        );
       }
     }
 
@@ -350,7 +391,8 @@ export const verifySubscriptionServerFn = createServerFn({ method: "POST" })
 
     const local = await getLocalSubscriptionByRef(data.subscriptionRef);
     if (!local) throw new Error("Subscription not found.");
-    if (local.userId !== user.id) throw new Error("You are not authorized to access this subscription.");
+    if (local.userId !== user.id)
+      throw new Error("You are not authorized to access this subscription.");
 
     const cfSub = await getCashfreeSubscription(data.subscriptionRef);
     if (!cfSub) throw new Error("Unable to fetch subscription status from the payment gateway.");
@@ -362,7 +404,9 @@ export const verifySubscriptionServerFn = createServerFn({ method: "POST" })
     await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef);
 
     const status = String(cfSub.subscription_status || "").toUpperCase();
-    const authStatus = String(cfSub?.authorization_details?.authorization_status || "").toUpperCase();
+    const authStatus = String(
+      cfSub?.authorization_details?.authorization_status || "",
+    ).toUpperCase();
     const success = status === "ACTIVE" || authStatus === "ACTIVE";
 
     // Send an AutoPay activation / payment-received confirmation email on
@@ -378,7 +422,10 @@ export const verifySubscriptionServerFn = createServerFn({ method: "POST" })
           tone: "success",
           details: [
             { label: "Plan", value: tier },
-            { label: "Amount", value: `Rs ${Number(local.amount).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/month` },
+            {
+              label: "Amount",
+              value: `Rs ${Number(local.amount).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/month`,
+            },
             { label: "AutoPay", value: "Active" },
             { label: "Subscription Ref", value: data.subscriptionRef },
           ],
@@ -406,33 +453,36 @@ export const verifySubscriptionServerFn = createServerFn({ method: "POST" })
 // ─────────────────────────────────────────────────────────────────────────────
 // Get the current user's subscription + billing history (billing UI)
 // ─────────────────────────────────────────────────────────────────────────────
-export const getMySubscriptionServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const user = await verifySession();
-    if (!user || !user.tenantId) throw new Error("Unauthorized");
+export const getMySubscriptionServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    const subscription = await queryOne<any>(
-      `SELECT * FROM Subscription WHERE userId = ? ORDER BY
+  const subscription = await queryOne<any>(
+    `SELECT * FROM Subscription WHERE userId = ? ORDER BY
          (status = 'ACTIVE') DESC, createdAt DESC LIMIT 1`,
-      [user.id]
-    );
+    [user.id],
+  );
 
-    // Best-effort refresh of the payment ledger from Cashfree so billing history
-    // stays current even without a configured webhook. Never blocks the read.
-    if (subscription) {
-      try { await syncSubscriptionPaymentsFromCashfree(subscription.subscriptionRef); } catch { /* non-fatal */ }
+  // Best-effort refresh of the payment ledger from Cashfree so billing history
+  // stays current even without a configured webhook. Never blocks the read.
+  if (subscription) {
+    try {
+      await syncSubscriptionPaymentsFromCashfree(subscription.subscriptionRef);
+    } catch {
+      /* non-fatal */
     }
+  }
 
-    const payments = subscription
-      ? await query<any>(
-          `SELECT id, cfPaymentId, cfTxnId, cfOrderId, paymentRef, amount, currency, status, paymentMethod, paymentType, remarks, failureReason, scheduledAt, paidAt, createdAt
+  const payments = subscription
+    ? await query<any>(
+        `SELECT id, cfPaymentId, cfTxnId, cfOrderId, paymentRef, amount, currency, status, paymentMethod, paymentType, remarks, failureReason, scheduledAt, paidAt, createdAt
            FROM SubscriptionPayment WHERE subscriptionRef = ? ORDER BY createdAt DESC LIMIT 50`,
-          [subscription.subscriptionRef]
-        )
-      : [];
+        [subscription.subscriptionRef],
+      )
+    : [];
 
-    return { subscription: subscription || null, payments };
-  });
+  return { subscription: subscription || null, payments };
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Manual sync of a subscription's payments from Cashfree (tenant-owned)
@@ -444,7 +494,8 @@ export const syncSubscriptionPaymentsServerFn = createServerFn({ method: "POST" 
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     const local = await getLocalSubscriptionByRef(data.subscriptionRef);
     if (!local) throw new Error("Subscription not found.");
-    if (local.userId !== user.id) throw new Error("You are not authorized to access this subscription.");
+    if (local.userId !== user.id)
+      throw new Error("You are not authorized to access this subscription.");
     const recorded = await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef);
     return { success: true, recorded };
   });
@@ -457,28 +508,37 @@ export const cancelSubscriptionServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
-    if (user.role && user.role !== "admin") throw new Error("Only the workspace owner can cancel the subscription.");
+    if (user.role && user.role !== "admin")
+      throw new Error("Only the workspace owner can cancel the subscription.");
 
     const local = await getLocalSubscriptionByRef(data.subscriptionRef);
     if (!local) throw new Error("Subscription not found.");
-    if (local.userId !== user.id) throw new Error("You are not authorized to cancel this subscription.");
+    if (local.userId !== user.id)
+      throw new Error("You are not authorized to cancel this subscription.");
 
     await manageCashfreeSubscription(data.subscriptionRef, "CANCEL");
 
     // Keep access until the current period ends; just stop future renewals.
     await execute(
       `UPDATE Subscription SET status = 'CANCELLED', cancelAtPeriodEnd = 1, updatedAt = NOW() WHERE subscriptionRef = ?`,
-      [data.subscriptionRef]
+      [data.subscriptionRef],
     );
     await execute(
       `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
        VALUES (?, ?, 'Active', 'Cancelled', ?, ?, ?, 'monthly', NOW(), 'User')`,
-      [generateId(), user.id, normalizePlan(local.planTier), normalizePlan(local.planTier), local.amount]
+      [
+        generateId(),
+        user.id,
+        normalizePlan(local.planTier),
+        normalizePlan(local.planTier),
+        local.amount,
+      ],
     );
 
     return {
       success: true,
-      message: "AutoPay has been cancelled. You'll keep access until the end of your current billing period.",
+      message:
+        "AutoPay has been cancelled. You'll keep access until the end of your current billing period.",
     };
   });
 
@@ -490,17 +550,22 @@ export const resumeSubscriptionServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
-    if (user.role && user.role !== "admin") throw new Error("Only the workspace owner can resume the subscription.");
+    if (user.role && user.role !== "admin")
+      throw new Error("Only the workspace owner can resume the subscription.");
 
     const local = await getLocalSubscriptionByRef(data.subscriptionRef);
     if (!local) throw new Error("Subscription not found.");
-    if (local.userId !== user.id) throw new Error("You are not authorized to resume this subscription.");
+    if (local.userId !== user.id)
+      throw new Error("You are not authorized to resume this subscription.");
 
     const res = await manageCashfreeSubscription(data.subscriptionRef, "ACTIVATE");
     const cfSub = await getCashfreeSubscription(data.subscriptionRef);
     if (cfSub) await reconcileSubscriptionFromCashfree(data.subscriptionRef, cfSub);
 
-    return { success: true, status: String(res?.subscription_status || cfSub?.subscription_status || "").toUpperCase() };
+    return {
+      success: true,
+      status: String(res?.subscription_status || cfSub?.subscription_status || "").toUpperCase(),
+    };
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -519,7 +584,9 @@ export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
       params.push(data.status);
     }
     if (data.search) {
-      conditions.push("(s.subscriptionRef LIKE ? OR s.customerEmail LIKE ? OR s.customerName LIKE ? OR u.clinicName LIKE ?)");
+      conditions.push(
+        "(s.subscriptionRef LIKE ? OR s.customerEmail LIKE ? OR s.customerName LIKE ? OR u.clinicName LIKE ?)",
+      );
       const like = `%${data.search}%`;
       params.push(like, like, like, like);
     }
@@ -533,7 +600,7 @@ export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
        ${where}
        ORDER BY s.createdAt DESC
        LIMIT ?`,
-      [...params, limit]
+      [...params, limit],
     );
 
     const summary = await queryOne<any>(
@@ -543,7 +610,7 @@ export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
          SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) as cancelledCount,
          SUM(CASE WHEN status = 'ON_HOLD' THEN 1 ELSE 0 END) as onHoldCount,
          SUM(CASE WHEN status = 'ACTIVE' THEN amount ELSE 0 END) as activeMrr
-       FROM Subscription`
+       FROM Subscription`,
     );
 
     // Real collected / failed revenue straight from the recurring payment
@@ -557,7 +624,7 @@ export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
          SUM(CASE WHEN status = 'FAILED' AND COALESCE(paymentType,'') <> 'AUTH' THEN amount ELSE 0 END) as failedAmount,
          SUM(CASE WHEN status = 'FAILED' AND COALESCE(paymentType,'') <> 'AUTH' THEN 1 ELSE 0 END) as failedCount,
          SUM(CASE WHEN status = 'SUCCESS' AND COALESCE(paymentType,'') <> 'AUTH' THEN 1 ELSE 0 END) as successCount
-       FROM SubscriptionPayment`
+       FROM SubscriptionPayment`,
     );
 
     return {
@@ -583,8 +650,8 @@ export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
 // Cashfree, and re-syncs its full payment ledger (AUTH + CHARGE) so the admin
 // sees exact collected/failed amounts and live subscription states even when
 // the webhook is not yet configured. Never throws per-row — best effort.
-export const syncAllSubscriptionsFromCashfreeServerFn = createServerFn({ method: "POST" })
-  .handler(async () => {
+export const syncAllSubscriptionsFromCashfreeServerFn = createServerFn({ method: "POST" }).handler(
+  async () => {
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
@@ -592,7 +659,7 @@ export const syncAllSubscriptionsFromCashfreeServerFn = createServerFn({ method:
       `SELECT subscriptionRef FROM Subscription
        WHERE subscriptionRef IS NOT NULL AND subscriptionRef <> ''
        ORDER BY createdAt DESC
-       LIMIT 500`
+       LIMIT 500`,
     );
 
     let reconciled = 0;
@@ -610,7 +677,10 @@ export const syncAllSubscriptionsFromCashfreeServerFn = createServerFn({ method:
         paymentsSynced += Number(recorded) || 0;
       } catch (err: any) {
         failed++;
-        console.warn(`[CASHFREE][sync-subs] Failed to reconcile ${s.subscriptionRef}:`, err.message);
+        console.warn(
+          `[CASHFREE][sync-subs] Failed to reconcile ${s.subscriptionRef}:`,
+          err.message,
+        );
       }
     }
 
@@ -621,7 +691,8 @@ export const syncAllSubscriptionsFromCashfreeServerFn = createServerFn({ method:
       paymentsSynced,
       failed,
     };
-  });
+  },
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin: raise an on-demand CHARGE for the plan amount right now
@@ -647,18 +718,24 @@ export const chargeSubscriptionNowServerFn = createServerFn({ method: "POST" })
     if (!cfSub) throw new Error("Unable to fetch subscription status from the payment gateway.");
 
     const status = String(cfSub.subscription_status || "").toUpperCase();
-    const authStatus = String(cfSub?.authorization_details?.authorization_status || "").toUpperCase();
+    const authStatus = String(
+      cfSub?.authorization_details?.authorization_status || "",
+    ).toUpperCase();
     if (status !== "ACTIVE" || authStatus !== "ACTIVE") {
-      throw new Error(`Mandate is not active on Cashfree (subscription: ${status}, authorization: ${authStatus}). Cannot charge.`);
+      throw new Error(
+        `Mandate is not active on Cashfree (subscription: ${status}, authorization: ${authStatus}). Cannot charge.`,
+      );
     }
 
     // Guard against double-charging: refuse if a real CHARGE already succeeded.
     const existingCharge = await queryOne<any>(
       "SELECT id FROM SubscriptionPayment WHERE subscriptionRef = ? AND status = 'SUCCESS' AND COALESCE(paymentType,'') = 'CHARGE' LIMIT 1",
-      [data.subscriptionRef]
+      [data.subscriptionRef],
     );
     if (existingCharge) {
-      throw new Error("A successful plan charge already exists for this subscription. Refusing to charge again.");
+      throw new Error(
+        "A successful plan charge already exists for this subscription. Refusing to charge again.",
+      );
     }
 
     const amount = Number(cfSub?.plan_details?.plan_recurring_amount || local.amount);
@@ -678,7 +755,9 @@ export const chargeSubscriptionNowServerFn = createServerFn({ method: "POST" })
     let recorded = 0;
     try {
       recorded = await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef);
-    } catch { /* non-fatal — visible via the manual sync button */ }
+    } catch {
+      /* non-fatal — visible via the manual sync button */
+    }
 
     return {
       success: true,
@@ -703,17 +782,21 @@ export const getAdminSubscriptionPaymentsServerFn = createServerFn({ method: "GE
        FROM Subscription s
        LEFT JOIN User u ON u.id COLLATE utf8mb4_unicode_ci = s.userId COLLATE utf8mb4_unicode_ci
        WHERE s.subscriptionRef = ? LIMIT 1`,
-      [data.subscriptionRef]
+      [data.subscriptionRef],
     );
     if (!subscription) throw new Error("Subscription not found.");
 
     // Pull the latest transaction detail straight from Cashfree, then read back.
-    try { await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef); } catch { /* non-fatal */ }
+    try {
+      await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef);
+    } catch {
+      /* non-fatal */
+    }
 
     const payments = await query<any>(
       `SELECT id, cfPaymentId, cfTxnId, cfOrderId, paymentRef, amount, currency, status, paymentMethod, paymentType, remarks, failureReason, scheduledAt, paidAt, createdAt
        FROM SubscriptionPayment WHERE subscriptionRef = ? ORDER BY createdAt DESC LIMIT 100`,
-      [data.subscriptionRef]
+      [data.subscriptionRef],
     );
 
     return { subscription, payments };
@@ -724,25 +807,27 @@ export const getAdminSubscriptionPaymentsServerFn = createServerFn({ method: "GE
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const createAdminSubscriptionServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    tenantId: string;
-    planTier: string;
-    amount: number;
-    status: string;
-    intervalType: string;
-    intervals: number;
-    nextChargeAt?: string | null;
-    currentPeriodStart?: string | null;
-    currentPeriodEnd?: string | null;
-    customerName?: string;
-    customerEmail?: string;
-    customerPhone?: string;
-  }) => {
-    if (!data.tenantId || !data.planTier || data.amount === undefined || !data.status) {
-      throw new Error("Tenant ID, Plan Tier, Amount, and Status are required");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      tenantId: string;
+      planTier: string;
+      amount: number;
+      status: string;
+      intervalType: string;
+      intervals: number;
+      nextChargeAt?: string | null;
+      currentPeriodStart?: string | null;
+      currentPeriodEnd?: string | null;
+      customerName?: string;
+      customerEmail?: string;
+      customerPhone?: string;
+    }) => {
+      if (!data.tenantId || !data.planTier || data.amount === undefined || !data.status) {
+        throw new Error("Tenant ID, Plan Tier, Amount, and Status are required");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
@@ -750,7 +835,7 @@ export const createAdminSubscriptionServerFn = createServerFn({ method: "POST" }
     // Look up User matching tenantId
     const user = await queryOne<any>(
       "SELECT id, name, email, phone, clinicName FROM User WHERE tenantId = ? LIMIT 1",
-      [data.tenantId]
+      [data.tenantId],
     );
     if (!user) throw new Error(`Tenant not found with ID ${data.tenantId}`);
 
@@ -784,14 +869,21 @@ export const createAdminSubscriptionServerFn = createServerFn({ method: "POST" }
         data.customerName || user.name,
         data.customerEmail || user.email,
         data.customerPhone || user.phone,
-      ]
+      ],
     );
 
     // Log subscription history
     await execute(
       `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
        VALUES (?, ?, 'None', ?, 'None', ?, ?, ?, NOW(), 'SuperAdmin')`,
-      [generateId(), user.id, data.status, data.planTier, Number(data.amount), data.intervalType === "YEAR" ? "yearly" : "monthly"]
+      [
+        generateId(),
+        user.id,
+        data.status,
+        data.planTier,
+        Number(data.amount),
+        data.intervalType === "YEAR" ? "yearly" : "monthly",
+      ],
     );
 
     // Sync with User table status
@@ -800,45 +892,51 @@ export const createAdminSubscriptionServerFn = createServerFn({ method: "POST" }
        SET subscriptionStatus = ?, subscriptionPlan = ?, paymentAmount = ?, billingInterval = ?
        WHERE tenantId = ?`,
       [
-        data.status === "ACTIVE" ? "Active" : data.status === "CANCELLED" ? "Cancelled" : "Trialing",
+        data.status === "ACTIVE"
+          ? "Active"
+          : data.status === "CANCELLED"
+            ? "Cancelled"
+            : "Trialing",
         data.planTier,
         Number(data.amount),
         data.intervalType === "YEAR" ? "yearly" : "monthly",
-        data.tenantId
-      ]
+        data.tenantId,
+      ],
     );
 
     return { success: true, id: subId, subscriptionRef: subRef };
   });
 
 export const updateAdminSubscriptionServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    id: string;
-    planTier: string;
-    amount: number;
-    status: string;
-    intervalType: string;
-    intervals: number;
-    nextChargeAt?: string | null;
-    currentPeriodStart?: string | null;
-    currentPeriodEnd?: string | null;
-    cancelAtPeriodEnd?: number;
-    customerName?: string;
-    customerEmail?: string;
-    customerPhone?: string;
-  }) => {
-    if (!data.id || !data.planTier || data.amount === undefined || !data.status) {
-      throw new Error("ID, Plan Tier, Amount, and Status are required");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      id: string;
+      planTier: string;
+      amount: number;
+      status: string;
+      intervalType: string;
+      intervals: number;
+      nextChargeAt?: string | null;
+      currentPeriodStart?: string | null;
+      currentPeriodEnd?: string | null;
+      cancelAtPeriodEnd?: number;
+      customerName?: string;
+      customerEmail?: string;
+      customerPhone?: string;
+    }) => {
+      if (!data.id || !data.planTier || data.amount === undefined || !data.status) {
+        throw new Error("ID, Plan Tier, Amount, and Status are required");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
     const prev = await queryOne<any>(
       "SELECT userId, status, planTier, amount, intervalType FROM Subscription WHERE id = ? LIMIT 1",
-      [data.id]
+      [data.id],
     );
     if (!prev) throw new Error("Subscription not found");
 
@@ -866,28 +964,38 @@ export const updateAdminSubscriptionServerFn = createServerFn({ method: "POST" }
         data.customerEmail || null,
         data.customerPhone || null,
         data.id,
-      ]
+      ],
     );
 
     // Update the base User subscription parameters if it matches
-    const sub = await queryOne<any>("SELECT tenantId FROM Subscription WHERE id = ? LIMIT 1", [data.id]);
+    const sub = await queryOne<any>("SELECT tenantId FROM Subscription WHERE id = ? LIMIT 1", [
+      data.id,
+    ]);
     if (sub?.tenantId) {
       await execute(
         `UPDATE User
          SET subscriptionStatus = ?, subscriptionPlan = ?, paymentAmount = ?, billingInterval = ?
          WHERE tenantId = ?`,
         [
-          data.status === "ACTIVE" ? "Active" : data.status === "CANCELLED" ? "Cancelled" : "Trialing",
+          data.status === "ACTIVE"
+            ? "Active"
+            : data.status === "CANCELLED"
+              ? "Cancelled"
+              : "Trialing",
           data.planTier,
           Number(data.amount),
           data.intervalType === "YEAR" ? "yearly" : "monthly",
-          sub.tenantId
-        ]
+          sub.tenantId,
+        ],
       );
     }
 
     // Log history
-    if (prev.status !== data.status || prev.planTier !== data.planTier || prev.amount !== data.amount) {
+    if (
+      prev.status !== data.status ||
+      prev.planTier !== data.planTier ||
+      prev.amount !== data.amount
+    ) {
       await execute(
         `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'SuperAdmin')`,
@@ -900,7 +1008,7 @@ export const updateAdminSubscriptionServerFn = createServerFn({ method: "POST" }
           data.planTier,
           Number(data.amount),
           data.intervalType === "YEAR" ? "yearly" : "monthly",
-        ]
+        ],
       );
     }
 
@@ -916,10 +1024,15 @@ export const deleteAdminSubscriptionServerFn = createServerFn({ method: "POST" }
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
-    const sub = await queryOne<any>("SELECT subscriptionRef FROM Subscription WHERE id = ? LIMIT 1", [data.id]);
+    const sub = await queryOne<any>(
+      "SELECT subscriptionRef FROM Subscription WHERE id = ? LIMIT 1",
+      [data.id],
+    );
     if (sub?.subscriptionRef) {
       // Clean up linked payments
-      await execute("DELETE FROM SubscriptionPayment WHERE subscriptionRef = ?", [sub.subscriptionRef]);
+      await execute("DELETE FROM SubscriptionPayment WHERE subscriptionRef = ?", [
+        sub.subscriptionRef,
+      ]);
     }
     await execute("DELETE FROM Subscription WHERE id = ?", [data.id]);
 
@@ -927,25 +1040,30 @@ export const deleteAdminSubscriptionServerFn = createServerFn({ method: "POST" }
   });
 
 export const createAdminSubscriptionPaymentServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    subscriptionRef: string;
-    amount: number;
-    status: string;
-    paymentMethod: string;
-    paymentType: string; // AUTH | CHARGE
-    paidAt?: string | null;
-    remarks?: string | null;
-  }) => {
-    if (!data.subscriptionRef || data.amount === undefined || !data.status) {
-      throw new Error("Subscription Reference, Amount, and Status are required");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      subscriptionRef: string;
+      amount: number;
+      status: string;
+      paymentMethod: string;
+      paymentType: string; // AUTH | CHARGE
+      paidAt?: string | null;
+      remarks?: string | null;
+    }) => {
+      if (!data.subscriptionRef || data.amount === undefined || !data.status) {
+        throw new Error("Subscription Reference, Amount, and Status are required");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
-    const sub = await queryOne<any>("SELECT userId, tenantId, cfSubscriptionId FROM Subscription WHERE subscriptionRef = ? LIMIT 1", [data.subscriptionRef]);
+    const sub = await queryOne<any>(
+      "SELECT userId, tenantId, cfSubscriptionId FROM Subscription WHERE subscriptionRef = ? LIMIT 1",
+      [data.subscriptionRef],
+    );
     if (!sub) throw new Error("Subscription not found");
 
     const payId = generateId();
@@ -973,8 +1091,8 @@ export const createAdminSubscriptionPaymentServerFn = createServerFn({ method: "
         data.paymentType || "CHARGE",
         data.remarks || "Manual charge entry",
         paidDate,
-        paidDate
-      ]
+        paidDate,
+      ],
     );
 
     return { success: true, paymentId: payId };

@@ -62,7 +62,8 @@ interface MultiLocationSettingsProps {
 
 const defaultLabels = {
   sectionTitle: "Multi-Location Branches",
-  sectionDescription: "Create separate login credentials for each location/branch. Each location can log in with its own email and password to access the workspace dashboard.",
+  sectionDescription:
+    "Create separate login credentials for each location/branch. Each location can log in with its own email and password to access the workspace dashboard.",
   singular: "Location",
   plural: "Locations",
 };
@@ -76,8 +77,10 @@ function getDisplayPlan(plan: string | undefined | null): string {
 
 function getPlanInfoText(limits: LocationLimits | null): string {
   if (!limits) return "";
-  if (limits.tier === "basic") return "Multi-Location is not available on the Basic plan. Upgrade to Premium or Enterprise to add branches.";
-  if (limits.tier === "premium") return "Premium plan allows up to 1 sub-location. Upgrade to Enterprise for unlimited locations.";
+  if (limits.tier === "basic")
+    return "Multi-Location is not available on the Basic plan. Upgrade to Premium or Enterprise to add branches.";
+  if (limits.tier === "premium")
+    return "Premium plan allows up to 1 sub-location. Upgrade to Enterprise for unlimited locations.";
   return "Enterprise plan allows unlimited locations.";
 }
 
@@ -121,10 +124,7 @@ export default function MultiLocationSettings({
   const refresh = async () => {
     setLoading(true);
     try {
-      const [locs, lims] = await Promise.all([
-        getLocationsServerFn(),
-        getLocationLimitsServerFn(),
-      ]);
+      const [locs, lims] = await Promise.all([getLocationsServerFn(), getLocationLimitsServerFn()]);
       setLocations(locs as LocationRow[]);
       setLimits(lims as LocationLimits);
     } catch (e) {
@@ -187,14 +187,32 @@ export default function MultiLocationSettings({
     setErrorMsg("");
     setSuccessMsg("");
 
-    if (!form.name.trim()) { setErrorMsg("Location name is required"); return; }
-    if (!editing) {
-      if (!form.email.trim()) { setErrorMsg("Login email is required"); return; }
-      if (!/\S+@\S+\.\S+/.test(form.email)) { setErrorMsg("Please enter a valid login email address"); return; }
-      if (!form.password) { setErrorMsg("Password is required"); return; }
+    if (!form.name.trim()) {
+      setErrorMsg("Location name is required");
+      return;
     }
-    if (form.password && form.password.length < 8) { setErrorMsg("Password must be at least 8 characters"); return; }
-    if (form.password && form.password !== form.confirmPassword) { setErrorMsg("Passwords do not match"); return; }
+    if (!editing) {
+      if (!form.email.trim()) {
+        setErrorMsg("Login email is required");
+        return;
+      }
+      if (!/\S+@\S+\.\S+/.test(form.email)) {
+        setErrorMsg("Please enter a valid login email address");
+        return;
+      }
+      if (!form.password) {
+        setErrorMsg("Password is required");
+        return;
+      }
+    }
+    if (form.password && form.password.length < 8) {
+      setErrorMsg("Password must be at least 8 characters");
+      return;
+    }
+    if (form.password && form.password !== form.confirmPassword) {
+      setErrorMsg("Passwords do not match");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -270,7 +288,7 @@ export default function MultiLocationSettings({
     ? locations.filter((l) =>
         [l.name, l.email, l.city, l.managerName]
           .filter(Boolean)
-          .some((s) => (s as string).toLowerCase().includes(search.toLowerCase()))
+          .some((s) => (s as string).toLowerCase().includes(search.toLowerCase())),
       )
     : locations;
 
@@ -295,7 +313,9 @@ export default function MultiLocationSettings({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-2">
           <MapPin className="h-4 w-4 text-brand" />
-          <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{labels.sectionTitle}</h4>
+          <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+            {labels.sectionTitle}
+          </h4>
         </div>
         <button
           type="button"
@@ -332,7 +352,8 @@ export default function MultiLocationSettings({
                 Current plan: <span className="text-brand">{displayPlan}</span>
                 {limits.max !== null && (
                   <span className="text-zinc-500 font-semibold">
-                    {" "}— {limits.count} of {limits.max} location{limits.max === 1 ? "" : "s"} used
+                    {" "}
+                    — {limits.count} of {limits.max} location{limits.max === 1 ? "" : "s"} used
                   </span>
                 )}
                 {limits.max === null && (
@@ -342,15 +363,16 @@ export default function MultiLocationSettings({
               <p className="text-zinc-500 leading-relaxed">{getPlanInfoText(limits)}</p>
             </div>
           </div>
-          {(limits.tier === "basic" || (reachedLimit && limits.tier === "premium")) && onSwitchToPlans && (
-            <button
-              type="button"
-              onClick={onSwitchToPlans}
-              className="shrink-0 rounded-full bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-1.5 text-[10px] font-bold transition-all cursor-pointer shadow-sm active:scale-[0.98]"
-            >
-              Upgrade Plan
-            </button>
-          )}
+          {(limits.tier === "basic" || (reachedLimit && limits.tier === "premium")) &&
+            onSwitchToPlans && (
+              <button
+                type="button"
+                onClick={onSwitchToPlans}
+                className="shrink-0 rounded-full bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-1.5 text-[10px] font-bold transition-all cursor-pointer shadow-sm active:scale-[0.98]"
+              >
+                Upgrade Plan
+              </button>
+            )}
         </div>
       )}
 
@@ -371,7 +393,9 @@ export default function MultiLocationSettings({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="block">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">{labels.singular} Name *</span>
+                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                  {labels.singular} Name *
+                </span>
                 <input
                   type="text"
                   value={form.name}
@@ -381,7 +405,9 @@ export default function MultiLocationSettings({
                 />
               </label>
               <label className="block">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Login Email *</span>
+                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                  Login Email *
+                </span>
                 <input
                   type="email"
                   value={form.email}
@@ -392,7 +418,9 @@ export default function MultiLocationSettings({
                 />
               </label>
               <label className="block">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Phone (optional)</span>
+                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                  Phone (optional)
+                </span>
                 <input
                   type="tel"
                   value={form.phone}
@@ -402,7 +430,9 @@ export default function MultiLocationSettings({
                 />
               </label>
               <label className="block">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Manager Name (optional)</span>
+                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                  Manager Name (optional)
+                </span>
                 <input
                   type="text"
                   value={form.managerName}
@@ -443,7 +473,9 @@ export default function MultiLocationSettings({
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">Pincode</span>
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                    Pincode
+                  </span>
                   <input
                     type="text"
                     value={form.pincode}
@@ -490,7 +522,12 @@ export default function MultiLocationSettings({
               <div className="rounded-2xl bg-red-50 border border-red-100 p-3.5 text-[11px] font-bold text-red-700 text-left space-y-2 flex flex-col items-start w-full">
                 <div className="flex items-center gap-1.5 text-red-800">
                   <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
-                  <span>{errorMsg.toLowerCase().includes("upgrade") || errorMsg.toLowerCase().includes("plan") ? "Plan Restriction" : "Error"}</span>
+                  <span>
+                    {errorMsg.toLowerCase().includes("upgrade") ||
+                    errorMsg.toLowerCase().includes("plan")
+                      ? "Plan Restriction"
+                      : "Error"}
+                  </span>
                 </div>
                 <p className="leading-relaxed font-medium">{errorMsg}</p>
                 {errorMsg.toLowerCase().includes("upgrade") && onSwitchToPlans && (
@@ -530,7 +567,11 @@ export default function MultiLocationSettings({
                 onClick={handleSave}
                 className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 disabled:opacity-60 cursor-pointer flex items-center gap-1.5"
               >
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                {saving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
                 {editing ? `Update ${labels.singular}` : `Create ${labels.singular}`}
               </button>
             </div>
@@ -577,11 +618,21 @@ export default function MultiLocationSettings({
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-zinc-100 bg-zinc-50">
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Location</th>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider hidden sm:table-cell">Login</th>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider hidden lg:table-cell">City</th>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider hidden md:table-cell">Status</th>
-                <th className="px-4 py-3 text-center text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Actions</th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                  Location
+                </th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider hidden sm:table-cell">
+                  Login
+                </th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider hidden lg:table-cell">
+                  City
+                </th>
+                <th className="px-4 py-3 text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider hidden md:table-cell">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-center text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -593,7 +644,9 @@ export default function MultiLocationSettings({
                         <MapPin className="h-3 w-3" />
                       </div>
                       <div className="min-w-0">
-                        <span className="block font-semibold text-zinc-800 truncate max-w-[160px]">{loc.name}</span>
+                        <span className="block font-semibold text-zinc-800 truncate max-w-[160px]">
+                          {loc.name}
+                        </span>
                         {loc.managerName && (
                           <span className="block text-[9px] text-zinc-400 font-normal truncate max-w-[160px]">
                             Manager: {loc.managerName}
@@ -604,7 +657,9 @@ export default function MultiLocationSettings({
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell">
                     <span className="text-zinc-500 truncate max-w-[180px] block">{loc.email}</span>
-                    {loc.phone && <span className="text-zinc-400 text-[10px] block">{loc.phone}</span>}
+                    {loc.phone && (
+                      <span className="text-zinc-400 text-[10px] block">{loc.phone}</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell">
                     <span className="text-zinc-500">{loc.city || "—"}</span>
@@ -612,10 +667,14 @@ export default function MultiLocationSettings({
                   <td className="px-4 py-3 hidden md:table-cell">
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold ${
-                        loc.isActive ? "bg-emerald-50 text-emerald-600" : "bg-zinc-100 text-zinc-400"
+                        loc.isActive
+                          ? "bg-emerald-50 text-emerald-600"
+                          : "bg-zinc-100 text-zinc-400"
                       }`}
                     >
-                      <span className={`h-1.5 w-1.5 rounded-full ${loc.isActive ? "bg-emerald-500" : "bg-zinc-300"}`} />
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${loc.isActive ? "bg-emerald-500" : "bg-zinc-300"}`}
+                      />
                       {loc.isActive ? "Active" : "Inactive"}
                     </span>
                   </td>
@@ -720,13 +779,21 @@ export default function MultiLocationSettings({
                     { label: "Phone", value: viewing.phone || "—", icon: Phone },
                     { label: "Manager", value: viewing.managerName || "—", icon: UserCog },
                     { label: "Address", value: viewing.address || "—", icon: MapPin },
-                    { label: "City / State", value: [viewing.city, viewing.state].filter(Boolean).join(", ") || "—", icon: Building2 },
+                    {
+                      label: "City / State",
+                      value: [viewing.city, viewing.state].filter(Boolean).join(", ") || "—",
+                      icon: Building2,
+                    },
                     { label: "Pincode", value: viewing.pincode || "—", icon: Info },
                   ].map(({ label, value, icon: Icon }) => (
                     <div key={label} className="flex items-start gap-3 px-4 py-2.5">
                       <Icon className="h-3.5 w-3.5 shrink-0 text-zinc-400 mt-0.5" />
-                      <span className="text-[10px] font-bold text-zinc-400 w-20 shrink-0 pt-px">{label}</span>
-                      <span className="text-xs font-semibold text-zinc-700 break-words">{value}</span>
+                      <span className="text-[10px] font-bold text-zinc-400 w-20 shrink-0 pt-px">
+                        {label}
+                      </span>
+                      <span className="text-xs font-semibold text-zinc-700 break-words">
+                        {value}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -781,7 +848,9 @@ export default function MultiLocationSettings({
                 <div>
                   <h3 className="text-sm font-bold text-zinc-900">Delete Location?</h3>
                   <p className="mt-1 text-xs text-zinc-500">
-                    This will permanently remove <strong className="text-zinc-800">{toDelete.name}</strong> and its login credentials. This action cannot be undone.
+                    This will permanently remove{" "}
+                    <strong className="text-zinc-800">{toDelete.name}</strong> and its login
+                    credentials. This action cannot be undone.
                   </p>
                 </div>
               </div>
@@ -800,7 +869,11 @@ export default function MultiLocationSettings({
                   disabled={deleting}
                   className="rounded-full bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-xs font-bold cursor-pointer disabled:opacity-60 flex items-center gap-1.5"
                 >
-                  {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  {deleting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
                   Delete
                 </button>
               </div>

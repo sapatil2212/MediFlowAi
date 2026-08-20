@@ -14,7 +14,9 @@ function TermsPage() {
     <SiteShell>
       <Nav />
       <div className="mx-auto max-w-3xl px-6 py-24">
-        <h1 className="text-4xl font-bold tracking-tight text-zinc-900 mb-8">Terms &amp; Conditions</h1>
+        <h1 className="text-4xl font-bold tracking-tight text-zinc-900 mb-8">
+          Terms &amp; Conditions
+        </h1>
         <div className="prose prose-zinc prose-sm sm:prose-base text-zinc-600">
           <p className="text-sm text-zinc-500 mb-2">Effective Date: July 1, 2026</p>
           <p className="text-sm text-zinc-500 mb-2">Last Updated: July 1, 2026</p>
@@ -24,18 +26,19 @@ function TermsPage() {
 
           <p className="mb-4">
             Welcome to BookMyTime ("BookMyTime", "Company", "we", "our", or "us"). These Terms &amp;
-            Conditions ("Terms") govern your access to and use of the BookMyTime website, applications,
-            APIs, software, and related services (collectively referred to as the "Platform").
+            Conditions ("Terms") govern your access to and use of the BookMyTime website,
+            applications, APIs, software, and related services (collectively referred to as the
+            "Platform").
           </p>
           <p className="mb-6">
-            By accessing or using BookMyTime, you acknowledge that you have read, understood, and agree to
-            be legally bound by these Terms.
+            By accessing or using BookMyTime, you acknowledge that you have read, understood, and
+            agree to be legally bound by these Terms.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">1. About BookMyTime</h2>
           <p>
-            BookMyTime is a Software-as-a-Service (SaaS) platform that enables businesses and professionals
-            to manage:
+            BookMyTime is a Software-as-a-Service (SaaS) platform that enables businesses and
+            professionals to manage:
           </p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Online Appointment Scheduling</li>
@@ -69,7 +72,9 @@ function TermsPage() {
             <li>Maintain confidentiality of login credentials.</li>
             <li>Notify us immediately of unauthorized account access.</li>
           </ul>
-          <p className="mb-6">You are responsible for all activities performed through your account.</p>
+          <p className="mb-6">
+            You are responsible for all activities performed through your account.
+          </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">4. Subscription Plans</h2>
           <p className="mb-2">BookMyTime offers both free and paid subscription plans.</p>
@@ -82,16 +87,20 @@ function TermsPage() {
           </ul>
           <p className="mb-2">Features available depend on your selected subscription.</p>
           <p className="mb-6">
-            New users may be eligible for a 7-day free trial. The availability, features, and duration of
-            the trial are determined by BookMyTime and may be modified or withdrawn at any time without
-            prior notice.
+            New users may be eligible for a 7-day free trial. The availability, features, and
+            duration of the trial are determined by BookMyTime and may be modified or withdrawn at
+            any time without prior notice.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">5. Payments</h2>
           <ul className="list-disc pl-5 space-y-1 mb-6">
-            <li>All subscription payments are processed securely through authorized payment gateways.</li>
+            <li>
+              All subscription payments are processed securely through authorized payment gateways.
+            </li>
             <li>Applicable taxes may be charged as required by law.</li>
-            <li>Failure to complete payment may result in suspension or termination of paid services.</li>
+            <li>
+              Failure to complete payment may result in suspension or termination of paid services.
+            </li>
           </ul>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">6. Automatic Renewal</h2>
@@ -106,8 +115,8 @@ function TermsPage() {
             contacting support.
           </p>
           <p className="mb-6">
-            Cancellation prevents future renewals but does not automatically entitle users to refunds
-            unless specifically stated in the Refund Policy.
+            Cancellation prevents future renewals but does not automatically entitle users to
+            refunds unless specifically stated in the Refund Policy.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">8. Acceptable Use</h2>
@@ -134,8 +143,8 @@ function TermsPage() {
             <li>Business Information</li>
           </ul>
           <p className="mb-6">
-            By uploading content, you grant BookMyTime permission to process and store such information
-            solely for providing the services.
+            By uploading content, you grant BookMyTime permission to process and store such
+            information solely for providing the services.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">10. Data Responsibility</h2>
@@ -148,10 +157,12 @@ function TermsPage() {
           </ul>
           <p className="mb-6">BookMyTime acts only as a technology platform.</p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">11. Intellectual Property</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            11. Intellectual Property
+          </h2>
           <p className="mb-2">
-            All software, trademarks, logos, source code, designs, graphics, and documentation remain the
-            exclusive property of BookMyTime.
+            All software, trademarks, logos, source code, designs, graphics, and documentation
+            remain the exclusive property of BookMyTime.
           </p>
           <p>Users may not:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
@@ -166,13 +177,17 @@ function TermsPage() {
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">12. Availability</h2>
           <p className="mb-2">
-            We strive to provide uninterrupted services but do not guarantee continuous availability.
+            We strive to provide uninterrupted services but do not guarantee continuous
+            availability.
           </p>
           <p className="mb-6">
-            Scheduled maintenance, upgrades, or unforeseen technical issues may temporarily affect access.
+            Scheduled maintenance, upgrades, or unforeseen technical issues may temporarily affect
+            access.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">13. Third-Party Services</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            13. Third-Party Services
+          </h2>
           <p>BookMyTime may integrate with:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Payment Gateways</li>
@@ -182,10 +197,13 @@ function TermsPage() {
             <li>Analytics Providers</li>
           </ul>
           <p className="mb-6">
-            We are not responsible for the services, policies, or availability of third-party providers.
+            We are not responsible for the services, policies, or availability of third-party
+            providers.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">14. Limitation of Liability</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            14. Limitation of Liability
+          </h2>
           <p>To the maximum extent permitted by law, BookMyTime shall not be liable for:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Loss of profits</li>
@@ -200,8 +218,9 @@ function TermsPage() {
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">15. Indemnification</h2>
           <p>
-            You agree to indemnify and hold harmless BookMyTime, its directors, employees, affiliates, and
-            partners from any claims, damages, liabilities, or expenses arising from:
+            You agree to indemnify and hold harmless BookMyTime, its directors, employees,
+            affiliates, and partners from any claims, damages, liabilities, or expenses arising
+            from:
           </p>
           <ul className="list-disc pl-5 space-y-1 mb-6">
             <li>Violation of these Terms</li>
@@ -210,9 +229,12 @@ function TermsPage() {
             <li>Infringement of third-party rights</li>
           </ul>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">16. Suspension and Termination</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            16. Suspension and Termination
+          </h2>
           <p>
-            BookMyTime reserves the right to suspend or terminate accounts without prior notice if users:
+            BookMyTime reserves the right to suspend or terminate accounts without prior notice if
+            users:
           </p>
           <ul className="list-disc pl-5 space-y-1 mb-6">
             <li>Violate these Terms.</li>
@@ -225,7 +247,11 @@ function TermsPage() {
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">17. Privacy</h2>
           <p className="mb-2">
             Your use of BookMyTime is also governed by our{" "}
-            <a href="/privacy" className="text-brand hover:underline font-medium" style={{ color: "#0059C6" }}>
+            <a
+              href="/privacy"
+              className="text-brand hover:underline font-medium"
+              style={{ color: "#0059C6" }}
+            >
               Privacy Policy
             </a>
             .
@@ -263,12 +289,12 @@ function TermsPage() {
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">21. Dispute Resolution</h2>
           <p className="mb-2">
-            Any dispute arising out of these Terms shall first be attempted to be resolved through mutual
-            discussion.
+            Any dispute arising out of these Terms shall first be attempted to be resolved through
+            mutual discussion.
           </p>
           <p className="mb-6">
-            If unresolved, disputes shall be subject to the exclusive jurisdiction of the competent courts
-            located in Pune, Maharashtra, India.
+            If unresolved, disputes shall be subject to the exclusive jurisdiction of the competent
+            courts located in Pune, Maharashtra, India.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">22. Contact Information</h2>
@@ -299,14 +325,15 @@ function TermsPage() {
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">23. Entire Agreement</h2>
           <p className="mb-6">
-            These Terms constitute the complete agreement between you and BookMyTime regarding your use of
-            the Platform and supersede all prior agreements or understandings related to the services.
+            These Terms constitute the complete agreement between you and BookMyTime regarding your
+            use of the Platform and supersede all prior agreements or understandings related to the
+            services.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">Acceptance</h2>
           <p className="mb-6">
-            By accessing or using BookMyTime, you confirm that you have read, understood, and agree to
-            these Terms &amp; Conditions.
+            By accessing or using BookMyTime, you confirm that you have read, understood, and agree
+            to these Terms &amp; Conditions.
           </p>
         </div>
       </div>

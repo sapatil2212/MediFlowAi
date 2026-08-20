@@ -58,7 +58,10 @@ export interface VideoTransport {
   publishSignal(kind: SignalKind, payload: string): Promise<void>;
   poll(afterSeq: number, peerState: PeerState): Promise<PollResult>;
   fetchIce(): Promise<IceConfigLike>;
-  reportEvent(kind: string, extra?: { peerState?: PeerState; connectedMs?: number; detail?: string }): Promise<void>;
+  reportEvent(
+    kind: string,
+    extra?: { peerState?: PeerState; connectedMs?: number; detail?: string },
+  ): Promise<void>;
   end(reason: string): Promise<void>;
 }
 
@@ -163,7 +166,10 @@ export class VideoPeer {
       if (!this.audioOnly) {
         try {
           this.audioOnly = true;
-          this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          this.localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: false,
+          });
         } catch (err2: any) {
           this.cb.onError?.(mapMediaError(err2), err2?.message ?? "Media access failed");
           return false;
@@ -256,7 +262,10 @@ export class VideoPeer {
 
     this.pc.onconnectionstatechange = () => this.handleConnectionState();
     this.pc.oniceconnectionstatechange = () => {
-      if (this.pc?.iceConnectionState === "disconnected" || this.pc?.iceConnectionState === "failed") {
+      if (
+        this.pc?.iceConnectionState === "disconnected" ||
+        this.pc?.iceConnectionState === "failed"
+      ) {
         this.onDisconnected();
       }
     };
@@ -377,8 +386,11 @@ export class VideoPeer {
         // Back off to a heartbeat instead.
       }
 
-      const base = result ? result.nextPollMs ?? CONNECTED_POLL_INTERVAL_MS : 2000;
-      const delay = this.consecutivePollErrors > 0 ? Math.min(base * Math.pow(2, Math.min(this.consecutivePollErrors, 3)), 15000) : base;
+      const base = result ? (result.nextPollMs ?? CONNECTED_POLL_INTERVAL_MS) : 2000;
+      const delay =
+        this.consecutivePollErrors > 0
+          ? Math.min(base * Math.pow(2, Math.min(this.consecutivePollErrors, 3)), 15000)
+          : base;
       this.pollTimer = setTimeout(tick, delay);
     };
     void tick();
@@ -491,7 +503,10 @@ export class VideoPeer {
     for (const tx of this.pc.getTransceivers()) {
       // `receiver.track` exists from creation and is the reliable kind marker;
       // `sender.track` is null until we attach one.
-      const kind = (tx.receiver.track?.kind ?? tx.sender.track?.kind) as "audio" | "video" | undefined;
+      const kind = (tx.receiver.track?.kind ?? tx.sender.track?.kind) as
+        | "audio"
+        | "video"
+        | undefined;
       if (kind !== "audio" && kind !== "video") continue;
 
       try {
@@ -520,7 +535,10 @@ export class VideoPeer {
     if (!this.pc) return "";
     return this.pc
       .getTransceivers()
-      .map((t, i) => `${i}:${t.receiver.track?.kind ?? "?"}=${t.direction}/${t.currentDirection ?? "-"}`)
+      .map(
+        (t, i) =>
+          `${i}:${t.receiver.track?.kind ?? "?"}=${t.direction}/${t.currentDirection ?? "-"}`,
+      )
       .join(" ");
   }
 
@@ -622,11 +640,15 @@ export class VideoPeer {
     if (this.disconnectedSince === null) this.disconnectedSince = Date.now();
 
     this.cb.onReconnecting?.(true);
-    void this.transport.reportEvent("reconnecting", { peerState: this.currentPeerState(), connectedMs: this.reportedConnectedMs });
+    void this.transport.reportEvent("reconnecting", {
+      peerState: this.currentPeerState(),
+      connectedMs: this.reportedConnectedMs,
+    });
     this.resumePolling();
 
     // End if we've exhausted the cumulative disconnect budget (Req 10.5).
-    const totalDisc = this.disconnectedTotalMs + (this.disconnectedSince ? Date.now() - this.disconnectedSince : 0);
+    const totalDisc =
+      this.disconnectedTotalMs + (this.disconnectedSince ? Date.now() - this.disconnectedSince : 0);
     if (shouldEndForDisconnect(totalDisc)) {
       void this.transport.end("connection_lost");
       this.cb.onEnded?.("connection_lost");
@@ -643,7 +665,8 @@ export class VideoPeer {
     // each one drew another answer; the disconnect budget in `onDisconnected` is
     // what ends a call that cannot recover.
     if (this.reconnectAttempt >= MAX_ICE_RESTARTS) return;
-    const spacing = RECONNECT_SPACING_MS[Math.min(this.reconnectAttempt, RECONNECT_SPACING_MS.length - 1)];
+    const spacing =
+      RECONNECT_SPACING_MS[Math.min(this.reconnectAttempt, RECONNECT_SPACING_MS.length - 1)];
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
       this.reconnectAttempt++;
@@ -671,12 +694,18 @@ export class VideoPeer {
         await this.transport.publishSignal("offer", JSON.stringify(this.pc.localDescription));
       } else {
         // Patient asks the doctor to re-offer.
-        await this.transport.publishSignal("renegotiate", JSON.stringify({ reason: "ice_restart" }));
+        await this.transport.publishSignal(
+          "renegotiate",
+          JSON.stringify({ reason: "ice_restart" }),
+        );
       }
       // Refresh ICE servers (credentials may have expired).
       try {
         const ice = await this.transport.fetchIce();
-        this.pc.setConfiguration({ iceServers: ice.iceServers ?? [], iceTransportPolicy: ice.iceTransportPolicy ?? "all" });
+        this.pc.setConfiguration({
+          iceServers: ice.iceServers ?? [],
+          iceTransportPolicy: ice.iceTransportPolicy ?? "all",
+        });
       } catch {
         /* keep existing config */
       }
@@ -692,7 +721,9 @@ export class VideoPeer {
       if (this.closed) return;
       if (this.currentPeerState() !== "connected") {
         this.cb.onError?.("connection_failed", "Could not connect within the expected time.");
-        void this.transport.reportEvent("connection_failed", { peerState: this.currentPeerState() });
+        void this.transport.reportEvent("connection_failed", {
+          peerState: this.currentPeerState(),
+        });
       }
     }, CONNECT_DEADLINE_MS);
   }
@@ -717,7 +748,11 @@ export class VideoPeer {
         let packetsReceived = 0;
         let packetsLost = 0;
         stats.forEach((report: any) => {
-          if (report.type === "candidate-pair" && report.state === "succeeded" && report.currentRoundTripTime != null) {
+          if (
+            report.type === "candidate-pair" &&
+            report.state === "succeeded" &&
+            report.currentRoundTripTime != null
+          ) {
             rtt = report.currentRoundTripTime * 1000;
           }
           if (report.type === "inbound-rtp" && !report.isRemote) {
@@ -738,7 +773,10 @@ export class VideoPeer {
 
         const level = classifyQuality({ rttMs: rtt, packetLossPct: lossPct, jitterMs });
         this.cb.onQuality?.(level);
-        void this.transport.reportEvent("quality", { detail: level, connectedMs: this.totalConnectedMs() });
+        void this.transport.reportEvent("quality", {
+          detail: level,
+          connectedMs: this.totalConnectedMs(),
+        });
       } catch {
         /* stats unavailable this tick */
       }
@@ -769,12 +807,16 @@ export class VideoPeer {
           ? { audio: { deviceId: { exact: deviceId } } }
           : { video: { deviceId: { exact: deviceId } } };
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      const newTrack = kind === "audio" ? newStream.getAudioTracks()[0] : newStream.getVideoTracks()[0];
+      const newTrack =
+        kind === "audio" ? newStream.getAudioTracks()[0] : newStream.getVideoTracks()[0];
       if (!newTrack) return;
       const sender = kind === "audio" ? this.audioSender : this.videoSender;
       await sender?.replaceTrack(newTrack);
       // Swap into the local stream for preview and stop the old track.
-      const old = kind === "audio" ? this.localStream?.getAudioTracks()[0] : this.localStream?.getVideoTracks()[0];
+      const old =
+        kind === "audio"
+          ? this.localStream?.getAudioTracks()[0]
+          : this.localStream?.getVideoTracks()[0];
       if (old && this.localStream) {
         this.localStream.removeTrack(old);
         old.stop();

@@ -19,10 +19,11 @@ async function main() {
     console.log("\nParent Tenant User:");
     console.log(user);
 
-    const joined = await conn.query("SELECT su.*, u.subscriptionStatus, u.subscriptionExpiresAt FROM SubUser su JOIN User u ON su.tenantId = u.tenantId WHERE su.email = 'lumsid123@gmail.com'");
+    const joined = await conn.query(
+      "SELECT su.*, u.subscriptionStatus, u.subscriptionExpiresAt FROM SubUser su JOIN User u ON su.tenantId = u.tenantId WHERE su.email = 'lumsid123@gmail.com'",
+    );
     console.log("\nJoined Result:");
     console.log(joined);
-
   } catch (err) {
     console.error("Error:", err);
   } finally {

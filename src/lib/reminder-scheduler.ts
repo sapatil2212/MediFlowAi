@@ -16,11 +16,7 @@
 // affect the others.
 // ─────────────────────────────────────────────────────────────────────────────
 import { query, execute } from "./db";
-import {
-  isWhatsAppReady,
-  buildAppointmentMessage,
-  type AptNotifyKind,
-} from "./appointment-notify";
+import { isWhatsAppReady, buildAppointmentMessage, type AptNotifyKind } from "./appointment-notify";
 import { enqueueWA } from "./whatsapp";
 
 const globalForScheduler = globalThis as unknown as {
@@ -37,14 +33,22 @@ export function startReminderScheduler() {
   globalForScheduler.reminderSchedulerStarted = true;
 
   console.log("[Reminder Scheduler] Started — WhatsApp appointment reminders every 5 min.");
-  setTimeout(() => { void runReminderCycle(); }, FIRST_RUN_DELAY_MS);
-  setInterval(() => { void runReminderCycle(); }, CYCLE_MS);
+  setTimeout(() => {
+    void runReminderCycle();
+  }, FIRST_RUN_DELAY_MS);
+  setInterval(() => {
+    void runReminderCycle();
+  }, CYCLE_MS);
 }
 
 function isSameLocalDay(a: number, b: number): boolean {
   const da = new Date(a);
   const db = new Date(b);
-  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
 }
 
 async function runReminderCycle(): Promise<void> {
@@ -72,7 +76,7 @@ async function runReminderCycle(): Promise<void> {
        LEFT JOIN User u ON u.tenantId = a.tenantId
        LEFT JOIN Doctor d ON d.id = a.doctorId
        WHERE a.dateTime BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 26 HOUR)
-         AND a.status NOT IN ('Cancelled', 'Completed')`
+         AND a.status NOT IN ('Cancelled', 'Completed')`,
     );
 
     if (!rows || rows.length === 0) return;
@@ -103,13 +107,17 @@ async function runReminderCycle(): Promise<void> {
         let column: string | null = null;
 
         if (mins <= 75 && !Number(apt.rem1h)) {
-          kind = "reminder1h"; column = "rem1h";
+          kind = "reminder1h";
+          column = "rem1h";
         } else if (mins <= 135 && !Number(apt.rem2h)) {
-          kind = "reminder2h"; column = "rem2h";
+          kind = "reminder2h";
+          column = "rem2h";
         } else if (sameDay && hour >= 8 && mins > 150 && !Number(apt.remDayOf)) {
-          kind = "reminderDayOf"; column = "remDayOf";
+          kind = "reminderDayOf";
+          column = "remDayOf";
         } else if (!sameDay && mins <= 1500 && !Number(apt.remDayBefore)) {
-          kind = "reminderDayBefore"; column = "remDayBefore";
+          kind = "reminderDayBefore";
+          column = "remDayBefore";
         }
 
         if (!kind || !column) continue;
@@ -126,7 +134,8 @@ async function runReminderCycle(): Promise<void> {
         let joinLink: string | null = null;
         if (apt.consultationMode === "video") {
           try {
-            const { loadRoomByAppointment, issueJoinToken, ensureVideoRoom } = await import("./video.server");
+            const { loadRoomByAppointment, issueJoinToken, ensureVideoRoom } =
+              await import("./video.server");
             let room = await loadRoomByAppointment(apt.id, apt.tenantId);
             if (!room) room = await ensureVideoRoom(apt.id, apt.tenantId);
             const issued = await issueJoinToken(room.id, apt.tenantId, "reminder");
@@ -150,7 +159,9 @@ async function runReminderCycle(): Promise<void> {
         await enqueueWA(apt.tenantId, phone, body);
         // Mark this reminder as sent so it never repeats.
         await execute(`UPDATE Appointment SET ${column} = 1 WHERE id = ?`, [apt.id]);
-        console.log(`[Reminder Scheduler] Sent ${kind} for appointment ${apt.id} (${apt.tenantId})`);
+        console.log(
+          `[Reminder Scheduler] Sent ${kind} for appointment ${apt.id} (${apt.tenantId})`,
+        );
       } catch (rowErr: any) {
         console.error("[Reminder Scheduler] row error:", rowErr?.message);
       }

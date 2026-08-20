@@ -13,10 +13,14 @@ async function main() {
   let conn;
   try {
     conn = await pool.getConnection();
-    const users = await conn.query("SELECT id, name, email, tenantId, password FROM User WHERE tenantId = 'clinic-290547'");
+    const users = await conn.query(
+      "SELECT id, name, email, tenantId, password FROM User WHERE tenantId = 'clinic-290547'",
+    );
     console.log("Users:", users);
 
-    const subusers = await conn.query("SELECT id, name, email, role, tenantId FROM SubUser WHERE tenantId = 'clinic-290547'");
+    const subusers = await conn.query(
+      "SELECT id, name, email, role, tenantId FROM SubUser WHERE tenantId = 'clinic-290547'",
+    );
     console.log("Subusers:", subusers);
   } catch (err) {
     console.error("Error:", err);

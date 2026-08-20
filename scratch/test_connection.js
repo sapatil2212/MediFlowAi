@@ -1,5 +1,5 @@
-require('dotenv').config();
-const mariadb = require('mariadb');
+require("dotenv").config();
+const mariadb = require("mariadb");
 
 async function testConnection() {
   console.log("Testing connection with fallback env variables...");
@@ -7,7 +7,7 @@ async function testConnection() {
   console.log("Port:", process.env.DB_PORT);
   console.log("User:", process.env.DB_USER);
   console.log("Database:", process.env.DB_NAME);
-  
+
   let dbHost = process.env.DB_HOST || "localhost";
   let dbPort = parseInt(process.env.DB_PORT || "3306");
   let dbUser = process.env.DB_USER || "root";
@@ -31,7 +31,7 @@ async function testConnection() {
   }
 
   console.log("Creating pool with host:", dbHost, "user:", dbUser, "database:", dbName);
-  
+
   const pool = mariadb.createPool({
     host: dbHost,
     port: dbPort,

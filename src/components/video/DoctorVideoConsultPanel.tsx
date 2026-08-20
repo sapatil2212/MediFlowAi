@@ -62,7 +62,14 @@ const MAX_POLL_ERRORS = 4;
 
 type Source =
   | { kind: "appointment"; appointmentId: string; label: string; when: string; patientId?: string }
-  | { kind: "meeting"; roomId: string; label: string; when: string | null; state: string; meetingCode: string | null };
+  | {
+      kind: "meeting";
+      roomId: string;
+      label: string;
+      when: string | null;
+      state: string;
+      meetingCode: string | null;
+    };
 
 export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPanelProps) {
   const videoAppointments = appointments.filter((a) => a.consultationMode === "video");
@@ -108,7 +115,13 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
     if (selected) return;
     if (videoAppointments[0]) {
       const a = videoAppointments[0];
-      setSelected({ kind: "appointment", appointmentId: a.id, label: a.name, when: a.dateTime, patientId: a.patientId });
+      setSelected({
+        kind: "appointment",
+        appointmentId: a.id,
+        label: a.name,
+        when: a.dateTime,
+        patientId: a.patientId,
+      });
     } else if (meetings[0]) {
       const m = meetings[0];
       setSelected({
@@ -155,7 +168,9 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
     (async () => {
       setBusy(true);
       try {
-        const r = await createVideoRoomServerFn({ data: { appointmentId: selected.appointmentId } });
+        const r = await createVideoRoomServerFn({
+          data: { appointmentId: selected.appointmentId },
+        });
         if (cancelled) return;
         setDetail({ exists: true, ...(r as any) });
         if ((r as any).joinLink && (r as any).room?.id) {
@@ -215,7 +230,8 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
     };
   }, [selected, inCallRoomId]);
 
-  const roomId: string | null = detail?.room?.id ?? (selected?.kind === "meeting" ? selected.roomId : null);
+  const roomId: string | null =
+    detail?.room?.id ?? (selected?.kind === "meeting" ? selected.roomId : null);
   /** The issued link, but only when it belongs to the room on screen. */
   const shareLink = issuedLink && roomId && issuedLink.roomId === roomId ? issuedLink.link : null;
 
@@ -337,9 +353,13 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
           <VideoCallShell
             role="doctor"
             transport={buildDoctorTransport(activeId)}
-            fetchIce={async () => (await getIceConfigurationServerFn({ data: { roomId: activeId } })) as any}
+            fetchIce={async () =>
+              (await getIceConfigurationServerFn({ data: { roomId: activeId } })) as any
+            }
             peerName={detail?.appointment?.name ?? detail?.guestName ?? "patient"}
-            meetingCode={detail?.meetingCode ?? (selected?.kind === "meeting" ? selected.meetingCode : null)}
+            meetingCode={
+              detail?.meetingCode ?? (selected?.kind === "meeting" ? selected.meetingCode : null)
+            }
             // Matched against the room actually in the call, not the selection.
             shareLink={issuedLink?.roomId === activeId ? issuedLink.link : null}
             onEnded={(reason) => {
@@ -370,7 +390,9 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
                   <div className="min-w-0">
                     <p className="truncate text-sm font-bold text-zinc-900">
                       {p.displayName ?? "Patient"}
-                      {p.displayAge ? <span className="font-medium text-zinc-500">, {p.displayAge}</span> : null}
+                      {p.displayAge ? (
+                        <span className="font-medium text-zinc-500">, {p.displayAge}</span>
+                      ) : null}
                     </p>
                     <p className="text-xs text-zinc-500">wants to join</p>
                   </div>
@@ -440,7 +462,10 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
         </div>
       )}
 
-      <NewMeetingPanel onStartCall={(id, link, meta) => void joinCall(id, link, meta)} onCreated={loadMeetings} />
+      <NewMeetingPanel
+        onStartCall={(id, link, meta) => void joinCall(id, link, meta)}
+        onCreated={loadMeetings}
+      />
 
       {/* Relay status — only when no relay path at all (public fallback also counts) */}
       {detail?.turnConfigured === false && !showTest && (
@@ -487,7 +512,13 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
                 minute: "2-digit",
               }),
               onClick: () =>
-                setSelected({ kind: "appointment", appointmentId: a.id, label: a.name, when: a.dateTime, patientId: a.patientId }),
+                setSelected({
+                  kind: "appointment",
+                  appointmentId: a.id,
+                  label: a.name,
+                  when: a.dateTime,
+                  patientId: a.patientId,
+                }),
             }))}
           />
           <ListCard
@@ -534,7 +565,9 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
             <div>
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <h2 className="text-lg font-bold text-zinc-900">{detail?.title || selected.label}</h2>
+                  <h2 className="text-lg font-bold text-zinc-900">
+                    {detail?.title || selected.label}
+                  </h2>
                   <p className="text-sm text-zinc-500">
                     {selected.when
                       ? new Date(selected.when).toLocaleString(undefined, {
@@ -563,7 +596,11 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
                     disabled={busy}
                     className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <VideoIcon className="h-4 w-4" />}
+                    {busy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <VideoIcon className="h-4 w-4" />
+                    )}
                     Create consultation room &amp; link
                   </button>
                 </div>
@@ -576,59 +613,70 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
                     <div className="mt-4 rounded-xl border border-zinc-100 bg-zinc-50 p-3">
                       <p className="text-xs text-zinc-600">
                         This consultation has finished and its join links are no longer valid. Use
-                        <span className="font-semibold"> New consultation</span> above to start another one.
+                        <span className="font-semibold"> New consultation</span> above to start
+                        another one.
                       </p>
                     </div>
                   ) : (
-                  <div className="mt-4 rounded-xl border border-zinc-100 bg-zinc-50 p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Patient join link</p>
-                    {shareLink ? (
-                      <div className="mt-2 flex items-center gap-2">
-                        <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1.5 text-xs text-zinc-700 ring-1 ring-zinc-200">
-                          {shareLink}
-                        </code>
+                    <div className="mt-4 rounded-xl border border-zinc-100 bg-zinc-50 p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                        Patient join link
+                      </p>
+                      {shareLink ? (
+                        <div className="mt-2 flex items-center gap-2">
+                          <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1.5 text-xs text-zinc-700 ring-1 ring-zinc-200">
+                            {shareLink}
+                          </code>
+                          <button
+                            onClick={copy}
+                            className="flex shrink-0 items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800"
+                          >
+                            {copied ? (
+                              <Check className="h-3.5 w-3.5" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                            {copied ? "Copied" : "Copy"}
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {detail?.linkActive
+                            ? "A link is active for this consultation. Links can't be read back, so use Get link to copy a fresh one."
+                            : "No link has been issued yet."}
+                        </p>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-2">
                         <button
-                          onClick={copy}
-                          className="flex shrink-0 items-center gap-1 rounded-lg bg-zinc-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800"
+                          onClick={getLink}
+                          disabled={busy}
+                          className="flex items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:opacity-50"
                         >
-                          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                          {copied ? "Copied" : "Copy"}
+                          <Link2 className="h-3.5 w-3.5" /> {shareLink ? "New link" : "Get link"}
+                        </button>
+                        <button
+                          onClick={resetLink}
+                          disabled={busy}
+                          title="Invalidate every previously shared link and issue a fresh one"
+                          className="flex items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:opacity-50"
+                        >
+                          <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} /> Reset
+                          & resend
                         </button>
                       </div>
-                    ) : (
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {detail?.linkActive
-                          ? "A link is active for this consultation. Links can't be read back, so use Get link to copy a fresh one."
-                          : "No link has been issued yet."}
+                      <p className="mt-2 text-[10px] leading-relaxed text-zinc-400">
+                        Links are stored hashed and can't be read back, so "Get link" issues an
+                        additional valid link. Use "Reset" to invalidate everything shared
+                        previously.
                       </p>
-                    )}
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <button
-                        onClick={getLink}
-                        disabled={busy}
-                        className="flex items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:opacity-50"
-                      >
-                        <Link2 className="h-3.5 w-3.5" /> {shareLink ? "New link" : "Get link"}
-                      </button>
-                      <button
-                        onClick={resetLink}
-                        disabled={busy}
-                        title="Invalidate every previously shared link and issue a fresh one"
-                        className="flex items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:opacity-50"
-                      >
-                        <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} /> Reset & resend
-                      </button>
                     </div>
-                    <p className="mt-2 text-[10px] leading-relaxed text-zinc-400">
-                      Links are stored hashed and can't be read back, so "Get link" issues an additional valid link.
-                      Use "Reset" to invalidate everything shared previously.
-                    </p>
-                  </div>
                   )}
 
                   {/* Waiting room */}
                   <div className="mt-4">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Waiting room</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                      Waiting room
+                    </p>
                     {(detail?.waiting?.length ?? 0) === 0 ? (
                       <p className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
                         <Clock className="h-4 w-4" /> No one is waiting yet.
@@ -636,10 +684,15 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
                     ) : (
                       <div className="mt-2 space-y-2">
                         {detail.waiting.map((p: any) => (
-                          <div key={p.id} className="flex items-center justify-between rounded-xl border border-zinc-100 p-3">
+                          <div
+                            key={p.id}
+                            className="flex items-center justify-between rounded-xl border border-zinc-100 p-3"
+                          >
                             <span className="text-sm font-medium text-zinc-800">
                               {p.displayName ?? "Patient"}
-                              {p.displayAge ? <span className="text-zinc-500">, {p.displayAge}</span> : null}
+                              {p.displayAge ? (
+                                <span className="text-zinc-500">, {p.displayAge}</span>
+                              ) : null}
                             </span>
                             <div className="flex gap-2">
                               <button
@@ -671,25 +724,30 @@ export function DoctorVideoConsultPanel({ appointments }: DoctorVideoConsultPane
                         className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
                       >
                         <PhoneCall className="h-4 w-4" />
-                        {detail?.room?.state === "active" ? "Rejoin consultation" : "Join consultation"}
+                        {detail?.room?.state === "active"
+                          ? "Rejoin consultation"
+                          : "Join consultation"}
                       </button>
                     )}
-                    {selected.kind === "meeting" && roomId && !isTerminalState(detail?.room?.state) && (
-                      <button
-                        onClick={cancelMeeting}
-                        disabled={busy}
-                        className="flex items-center gap-1.5 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
-                      >
-                        <Trash2 className="h-4 w-4" /> Cancel meeting
-                      </button>
-                    )}
+                    {selected.kind === "meeting" &&
+                      roomId &&
+                      !isTerminalState(detail?.room?.state) && (
+                        <button
+                          onClick={cancelMeeting}
+                          disabled={busy}
+                          className="flex items-center gap-1.5 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                        >
+                          <Trash2 className="h-4 w-4" /> Cancel meeting
+                        </button>
+                      )}
                   </div>
 
                   {/* Outcome summary once finished */}
                   {isTerminalState(detail?.room?.state) && (
                     <div className="mt-4 rounded-xl bg-zinc-50 p-3 text-xs text-zinc-600">
                       <p>
-                        <span className="font-semibold">Outcome:</span> {detail?.room?.outcome ?? "—"}
+                        <span className="font-semibold">Outcome:</span>{" "}
+                        {detail?.room?.outcome ?? "—"}
                       </p>
                       <p>
                         <span className="font-semibold">Duration:</span>{" "}

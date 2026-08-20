@@ -22,13 +22,7 @@ import {
 } from "lucide-react";
 
 type Persona = "doctor" | "clinic" | "hospital";
-type Priority =
-  | "scheduling"
-  | "notes"
-  | "reception"
-  | "billing"
-  | "analytics"
-  | "compliance";
+type Priority = "scheduling" | "notes" | "reception" | "billing" | "analytics" | "compliance";
 
 const personas: {
   id: Persona;
@@ -170,12 +164,10 @@ export function OnboardingWizard() {
           Personalize in 30 seconds
         </div>
         <h2 className="mt-4 text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl dark:text-zinc-50">
-          See BookMyTime built for{" "}
-          <span className="text-gradient-brand">your practice</span>
+          See BookMyTime built for <span className="text-gradient-brand">your practice</span>
         </h2>
         <p className="mt-3 text-zinc-600 dark:text-zinc-400">
-          Answer 3 quick questions and we'll tailor the platform, plan, and ROI
-          to your workflow.
+          Answer 3 quick questions and we'll tailor the platform, plan, and ROI to your workflow.
         </p>
       </div>
 
@@ -206,9 +198,7 @@ export function OnboardingWizard() {
               </div>
             ))}
           </div>
-          <span className="text-xs text-zinc-500">
-            Step {Math.min(step + 1, 3)} of 3
-          </span>
+          <span className="text-xs text-zinc-500">Step {Math.min(step + 1, 3)} of 3</span>
         </div>
 
         <div className="relative min-h-[420px] p-6 sm:p-10">
@@ -259,9 +249,7 @@ export function OnboardingWizard() {
                         <div className="mt-4 font-semibold text-zinc-900 dark:text-zinc-50">
                           {p.title}
                         </div>
-                        <div className="mt-1 text-sm text-zinc-500">
-                          {p.subtitle}
-                        </div>
+                        <div className="mt-1 text-sm text-zinc-500">{p.subtitle}</div>
                         {selected && (
                           <motion.div
                             layoutId="persona-check"
@@ -290,8 +278,7 @@ export function OnboardingWizard() {
                   Tell us about your {personaData.title.toLowerCase()}
                 </h3>
                 <p className="mt-1 text-sm text-zinc-500">
-                  Pick a specialty and team size — this shapes templates and
-                  pricing.
+                  Pick a specialty and team size — this shapes templates and pricing.
                 </p>
 
                 <div className="mt-6">
@@ -363,8 +350,7 @@ export function OnboardingWizard() {
                   What should we automate first?
                 </h3>
                 <p className="mt-1 text-sm text-zinc-500">
-                  Pick everything that hurts today. We'll prioritize them in
-                  onboarding.
+                  Pick everything that hurts today. We'll prioritize them in onboarding.
                 </p>
                 <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {priorities.map((p) => {
@@ -390,9 +376,7 @@ export function OnboardingWizard() {
                           <Icon className="h-4.5 w-4.5" />
                         </span>
                         <span className="font-medium">{p.label}</span>
-                        {sel && (
-                          <Check className="ml-auto h-4 w-4 text-teal-600" />
-                        )}
+                        {sel && <Check className="ml-auto h-4 w-4 text-teal-600" />}
                       </button>
                     );
                   })}
@@ -414,13 +398,12 @@ export function OnboardingWizard() {
                   Tailored for you
                 </div>
                 <h3 className="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-                  BookMyTime{" "}
-                  <span className="text-gradient-brand">{rec.plan}</span> is the
-                  right fit
+                  BookMyTime <span className="text-gradient-brand">{rec.plan}</span> is the right
+                  fit
                 </h3>
                 <p className="mt-1 text-sm text-zinc-500">
-                  Based on a {personaData.title.toLowerCase()} ({size}) focused
-                  on {chosen.length} workflow{chosen.length === 1 ? "" : "s"}.
+                  Based on a {personaData.title.toLowerCase()} ({size}) focused on {chosen.length}{" "}
+                  workflow{chosen.length === 1 ? "" : "s"}.
                 </p>
 
                 <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -532,8 +515,7 @@ function ResultCard({
 }) {
   const accents: Record<string, string> = {
     teal: "from-teal-500/10 to-teal-500/0 text-teal-700 dark:text-teal-300",
-    emerald:
-      "from-emerald-500/10 to-emerald-500/0 text-emerald-700 dark:text-emerald-300",
+    emerald: "from-emerald-500/10 to-emerald-500/0 text-emerald-700 dark:text-emerald-300",
     cyan: "from-cyan-500/10 to-cyan-500/0 text-cyan-700 dark:text-cyan-300",
   };
   return (

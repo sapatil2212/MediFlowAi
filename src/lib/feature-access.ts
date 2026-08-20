@@ -38,7 +38,9 @@ export type FeatureId =
   | "users" // multi-user / sub-user management
   | "locations" // multi-location management
   | "plans" // billing/plan management
-  | "video"; // first-party video consultation (healthcare professions only)
+  | "video" // first-party video consultation (healthcare professions only)
+  | "restaurant_config" // restaurant profile, operating hours, tables, booking rules
+  | "restaurant_bookings"; // booking status changes, reassignment, walk-ins
 
 /** Permission level for an available feature. */
 export type Permission = "operate" | "view_only" | "none";
@@ -79,6 +81,8 @@ export const FEATURE_IDS: FeatureId[] = [
   "locations",
   "plans",
   "video",
+  "restaurant_config",
+  "restaurant_bookings",
 ];
 
 /** All canonical plan tiers, ordered from least to most entitled. */
@@ -110,7 +114,13 @@ export interface PlanBilling {
 export const PLAN_BILLING: Record<PlanTier, PlanBilling> = {
   Basic: { monthly: 999, currency: "INR", intervalType: "MONTH", intervals: 1, selfServe: true },
   Premium: { monthly: 1499, currency: "INR", intervalType: "MONTH", intervals: 1, selfServe: true },
-  Enterprise: { monthly: 0, currency: "INR", intervalType: "MONTH", intervals: 1, selfServe: false },
+  Enterprise: {
+    monthly: 0,
+    currency: "INR",
+    intervalType: "MONTH",
+    intervals: 1,
+    selfServe: false,
+  },
 };
 
 /** Returns the monthly recurring amount (INR) for a raw/aliased plan value. */
@@ -184,6 +194,8 @@ export const PLAN_FEATURES: Record<PlanTier, Record<FeatureId, boolean>> = {
     locations: false,
     plans: true,
     video: false,
+    restaurant_config: true,
+    restaurant_bookings: true,
   },
   Premium: {
     whatsapp: true,
@@ -193,6 +205,8 @@ export const PLAN_FEATURES: Record<PlanTier, Record<FeatureId, boolean>> = {
     locations: true,
     plans: true,
     video: true,
+    restaurant_config: true,
+    restaurant_bookings: true,
   },
   Enterprise: {
     whatsapp: true,
@@ -202,6 +216,8 @@ export const PLAN_FEATURES: Record<PlanTier, Record<FeatureId, boolean>> = {
     locations: true,
     plans: true,
     video: true,
+    restaurant_config: true,
+    restaurant_bookings: true,
   },
 };
 
@@ -265,6 +281,23 @@ export const ROLE_PERMISSIONS: Record<FeatureId, Record<AccountRole, Permission>
     doctor: "operate",
     reception: "none",
     location: "none",
+  },
+  // Restaurant configuration (profile, operating hours, tables, booking rules):
+  // the owner and a branch account configure; reception may look but not change;
+  // a doctor-role account has no business in a restaurant's configuration.
+  restaurant_config: {
+    admin: "operate",
+    reception: "view_only",
+    doctor: "none",
+    location: "operate",
+  },
+  // Day-to-day booking management (status changes, reassignment, walk-ins):
+  // front-of-house reception operates it; a doctor-role account may only view.
+  restaurant_bookings: {
+    admin: "operate",
+    reception: "operate",
+    doctor: "view_only",
+    location: "operate",
   },
 };
 

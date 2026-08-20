@@ -15,7 +15,9 @@ async function main() {
   try {
     conn = await pool.getConnection();
     const hash = await bcrypt.hash("password123", 10);
-    await conn.query("UPDATE User SET password = ? WHERE email = 'swapnilpatil221298@gmail.com'", [hash]);
+    await conn.query("UPDATE User SET password = ? WHERE email = 'swapnilpatil221298@gmail.com'", [
+      hash,
+    ]);
     console.log("Successfully updated password of swapnilpatil221298@gmail.com to password123");
   } catch (err) {
     console.error("Error:", err);

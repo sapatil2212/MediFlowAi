@@ -170,11 +170,12 @@ export function PageHeader({
       <div className="relative mx-auto max-w-4xl px-6 text-center">
         <SectionEyebrow tone={dark ? "dark" : "brand"}>{eyebrow}</SectionEyebrow>
         <h1 className="mt-5 text-balance text-4xl font-semibold tracking-tight md:text-6xl">
-          {title}{" "}
-          {highlight && <span className="text-gradient-brand">{highlight}</span>}
+          {title} {highlight && <span className="text-gradient-brand">{highlight}</span>}
         </h1>
         {subtitle && (
-          <p className={`mx-auto mt-5 max-w-2xl text-lg ${dark ? "text-zinc-400" : "text-zinc-600"}`}>
+          <p
+            className={`mx-auto mt-5 max-w-2xl text-lg ${dark ? "text-zinc-400" : "text-zinc-600"}`}
+          >
             {subtitle}
           </p>
         )}
@@ -192,15 +193,39 @@ export function Hero() {
     action: "booked Consultation",
     tenant: "Aarogya Clinic",
     city: "Delhi",
-    time: "Just now"
+    time: "Just now",
   });
 
   useEffect(() => {
     const notifications = [
-      { name: "Priya Sharma", action: "booked Hair Spa", tenant: "Glam Room", city: "Bengaluru", time: "Just now" },
-      { name: "Rohan Mehta", action: "booked Personal Training", tenant: "FitLife Gym", city: "Mumbai", time: "Just now" },
-      { name: "Suresh Iyer", action: "booked Physics Batch", tenant: "Apex Academy", city: "Chennai", time: "Just now" },
-      { name: "Amit Verma", action: "booked Doctor Consultation", tenant: "Aarogya Clinic", city: "Delhi", time: "Just now" }
+      {
+        name: "Priya Sharma",
+        action: "booked Hair Spa",
+        tenant: "Glam Room",
+        city: "Bengaluru",
+        time: "Just now",
+      },
+      {
+        name: "Rohan Mehta",
+        action: "booked Personal Training",
+        tenant: "FitLife Gym",
+        city: "Mumbai",
+        time: "Just now",
+      },
+      {
+        name: "Suresh Iyer",
+        action: "booked Physics Batch",
+        tenant: "Apex Academy",
+        city: "Chennai",
+        time: "Just now",
+      },
+      {
+        name: "Amit Verma",
+        action: "booked Doctor Consultation",
+        tenant: "Aarogya Clinic",
+        city: "Delhi",
+        time: "Just now",
+      },
     ];
     let idx = 0;
     const interval = setInterval(() => {
@@ -211,26 +236,60 @@ export function Hero() {
   }, []);
 
   const features = [
-    "Dedicated Tenant Booking Link", "Unique QR Code for Every Business",
-    "WhatsApp Booking Confirmations", "AI Booking Assistant Chatbot",
-    "Independent Tenant Administration", "Multi-Location & Multi-Staff Sync",
-    "Custom Business Branding", "Unified CRM & Analytics Dashboard"
+    "Dedicated Tenant Booking Link",
+    "Unique QR Code for Every Business",
+    "WhatsApp Booking Confirmations",
+    "AI Booking Assistant Chatbot",
+    "Independent Tenant Administration",
+    "Multi-Location & Multi-Staff Sync",
+    "Custom Business Branding",
+    "Unified CRM & Analytics Dashboard",
   ];
 
   return (
     <section
       className="relative overflow-hidden pt-16 pb-20 lg:pt-20 lg:pb-28"
-      style={{ background: "linear-gradient(170deg, #EEF5FF 0%, #F5F9FF 35%, #EAF2FF 65%, #F0F6FF 100%)" }}
+      style={{
+        background: "linear-gradient(170deg, #EEF5FF 0%, #F5F9FF 35%, #EAF2FF 65%, #F0F6FF 100%)",
+      }}
     >
-      <div className="absolute top-[-80px] left-1/2 -translate-x-1/2 w-[900px] h-[550px] pointer-events-none z-0" style={{ background: "radial-gradient(ellipse, rgba(255,255,255,0.9) 0%, transparent 60%)" }} />
-      <div className="absolute top-[60px] right-[-60px] w-[400px] h-[400px] pointer-events-none z-0" style={{ background: "radial-gradient(circle, rgba(13,131,255,0.14) 0%, transparent 65%)" }} />
-      <div className="absolute top-[80px] left-[-60px] w-[360px] h-[360px] pointer-events-none z-0" style={{ background: "radial-gradient(circle, rgba(0,89,198,0.1) 0%, transparent 65%)" }} />
+      <div
+        className="absolute top-[-80px] left-1/2 -translate-x-1/2 w-[900px] h-[550px] pointer-events-none z-0"
+        style={{
+          background: "radial-gradient(ellipse, rgba(255,255,255,0.9) 0%, transparent 60%)",
+        }}
+      />
+      <div
+        className="absolute top-[60px] right-[-60px] w-[400px] h-[400px] pointer-events-none z-0"
+        style={{ background: "radial-gradient(circle, rgba(13,131,255,0.14) 0%, transparent 65%)" }}
+      />
+      <div
+        className="absolute top-[80px] left-[-60px] w-[360px] h-[360px] pointer-events-none z-0"
+        style={{ background: "radial-gradient(circle, rgba(0,89,198,0.1) 0%, transparent 65%)" }}
+      />
 
       {/* Rotating stamp */}
       <div className="absolute right-[2%] top-[15px] w-24 h-24 z-10 hidden md:block select-none pointer-events-none">
-        <motion.svg viewBox="0 0 96 96" className="w-24 h-24" animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 18, ease: "linear" }}>
-          <defs><path id="bmt-sp" d="M 48,48 m -37,0 a 37,37 0 1,1 74,0 a 37,37 0 1,1 -74,0" fill="none" /></defs>
-          <text fill="#0059C6" fontSize="9" fontWeight="600" letterSpacing="1.6" fontFamily="Inter, sans-serif">
+        <motion.svg
+          viewBox="0 0 96 96"
+          className="w-24 h-24"
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 18, ease: "linear" }}
+        >
+          <defs>
+            <path
+              id="bmt-sp"
+              d="M 48,48 m -37,0 a 37,37 0 1,1 74,0 a 37,37 0 1,1 -74,0"
+              fill="none"
+            />
+          </defs>
+          <text
+            fill="#0059C6"
+            fontSize="9"
+            fontWeight="600"
+            letterSpacing="1.6"
+            fontFamily="Inter, sans-serif"
+          >
             <textPath href="#bmt-sp">BookMyTime • Automate • Grow • Book •</textPath>
           </text>
         </motion.svg>
@@ -246,38 +305,50 @@ export function Hero() {
 
       <div className="relative z-10 mx-auto max-w-7xl px-6">
         <div className="grid lg:grid-cols-2 gap-16 items-center">
-
           {/* Left */}
           <div>
             <motion.div
-              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/90 border border-[#0059C6]/20 text-xs font-semibold text-[#0059C6] mb-7 shadow-[0_2px_10px_rgba(0,89,198,0.08)] backdrop-blur-md"
             >
-              <Zap className="size-3 text-[#0059C6]" /> Trusted by Indian Businesses & Multi-Branch Groups
+              <Zap className="size-3 text-[#0059C6]" /> Trusted by Indian Businesses & Multi-Branch
+              Groups
             </motion.div>
 
             <motion.h1
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 }}
               className="text-4xl md:text-5xl lg:text-[52px] font-semibold leading-[1.12] tracking-tight text-[#0F172A] mb-5"
             >
-              The Multi-Tenant <span className="text-gradient-brand">Booking Platform</span> for Modern Businesses
+              The Multi-Tenant <span className="text-gradient-brand">Booking Platform</span> for
+              Modern Businesses
             </motion.h1>
 
             <motion.p
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
               className="text-sm md:text-base text-[#64748B] leading-relaxed max-w-[540px] mb-6 font-normal"
             >
-              Automate bookings across all locations and staff. Launch your custom-branded booking portal, send automatic WhatsApp reminders, and track operations in real time.
+              Automate bookings across all locations and staff. Launch your custom-branded booking
+              portal, send automatic WhatsApp reminders, and track operations in real time.
             </motion.p>
 
             <motion.div
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
               className="flex flex-wrap items-center gap-3 mb-6"
             >
-              <Link to="/signup" className="group inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:-translate-y-[1px]"
+              <Link
+                to="/signup"
+                className="group inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:-translate-y-[1px]"
                 style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
               >
-                Get Started Free <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+                Get Started Free{" "}
+                <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
               </Link>
             </motion.div>
           </div>
@@ -291,25 +362,43 @@ export function Hero() {
           >
             <motion.div
               className="absolute -left-12 bottom-12 bg-white rounded-lg shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-2.5 border border-[#A7D3FF]/60 min-w-[130px] z-20 hidden md:block"
-              animate={{ y: [0, -8, 0] }} transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+              animate={{ y: [0, -8, 0] }}
+              transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
             >
               <div className="flex items-center gap-0.5 mb-1">
-                {[...Array(5)].map((_, i) => <Star key={i} className="size-[9px] fill-[#F59E0B] stroke-[#F59E0B]" />)}
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} className="size-[9px] fill-[#F59E0B] stroke-[#F59E0B]" />
+                ))}
                 <span className="text-[9px] font-bold text-[#0F172A] ml-1">4.9</span>
               </div>
-              <div className="text-[9px] font-bold text-[#0F172A] mb-1.5">from verified reviews</div>
+              <div className="text-[9px] font-bold text-[#0F172A] mb-1.5">
+                from verified reviews
+              </div>
               <div className="flex -space-x-1">
-                {["BS","RK","AP","SM"].map((init, i) => (
-                  <div key={i} className="w-4 h-4 rounded-full border border-white text-[6px] font-bold text-white flex items-center justify-center" style={{ background: ["#0059C6","#0D83FF","#00246D","#A7D3FF"][i], color: i === 3 ? "#00246D" : "white" }}>{init}</div>
+                {["BS", "RK", "AP", "SM"].map((init, i) => (
+                  <div
+                    key={i}
+                    className="w-4 h-4 rounded-full border border-white text-[6px] font-bold text-white flex items-center justify-center"
+                    style={{
+                      background: ["#0059C6", "#0D83FF", "#00246D", "#A7D3FF"][i],
+                      color: i === 3 ? "#00246D" : "white",
+                    }}
+                  >
+                    {init}
+                  </div>
                 ))}
               </div>
             </motion.div>
 
             <motion.div
               className="absolute -right-12 top-10 bg-white rounded-lg shadow-[0_8px_28px_rgba(0,0,0,0.12)] p-2.5 border border-[#A7D3FF]/60 flex items-center gap-2 z-20 hidden md:flex"
-              animate={{ y: [0, -8, 0] }} transition={{ repeat: Infinity, duration: 4, ease: "easeInOut", delay: 1.5 }}
+              animate={{ y: [0, -8, 0] }}
+              transition={{ repeat: Infinity, duration: 4, ease: "easeInOut", delay: 1.5 }}
             >
-              <div className="w-[26px] h-[26px] rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, #0D83FF, #0059C6)" }}>
+              <div
+                className="w-[26px] h-[26px] rounded-full flex items-center justify-center shrink-0"
+                style={{ background: "linear-gradient(135deg, #0D83FF, #0059C6)" }}
+              >
                 <Check className="size-[13px] text-white stroke-[3px]" />
               </div>
               <div>
@@ -326,19 +415,24 @@ export function Hero() {
                     <div className="w-6 h-6 rounded bg-[#0059C6] flex items-center justify-center">
                       <LayoutDashboard className="w-3.5 h-3.5 text-white" />
                     </div>
-                    <span className="text-[11px] font-bold text-zinc-900 tracking-tight">BookMyTime</span>
+                    <span className="text-[11px] font-bold text-zinc-900 tracking-tight">
+                      BookMyTime
+                    </span>
                   </div>
-                  
+
                   {[
                     { icon: Home, label: "Overview", active: true },
                     { icon: Calendar, label: "Calendar" },
                     { icon: Users, label: "Customers" },
                     { icon: MessageSquare, label: "Messages" },
-                    { icon: Settings, label: "Settings" }
+                    { icon: Settings, label: "Settings" },
                   ].map((item, i) => {
                     const Icon = item.icon;
                     return (
-                      <div key={i} className={`flex items-center gap-2 px-2.5 py-2 rounded-lg ${item.active ? 'bg-[#0059C6]/10 text-[#0059C6]' : 'text-zinc-500'}`}>
+                      <div
+                        key={i}
+                        className={`flex items-center gap-2 px-2.5 py-2 rounded-lg ${item.active ? "bg-[#0059C6]/10 text-[#0059C6]" : "text-zinc-500"}`}
+                      >
                         <Icon className="w-3.5 h-3.5" />
                         <span className="text-[9px] font-bold">{item.label}</span>
                       </div>
@@ -350,23 +444,31 @@ export function Hero() {
                 <div className="flex-1 flex flex-col min-w-0">
                   {/* Top Bar */}
                   <div className="h-12 bg-white border-b border-zinc-200/80 flex items-center justify-between px-4 shrink-0">
-                     <span className="text-[11px] font-bold text-zinc-800">Tenant Dashboard</span>
-                     <div className="flex items-center gap-2.5">
-                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-50 border border-emerald-100">
-                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          <span className="text-[8px] font-bold text-emerald-700">Live Sync</span>
-                        </div>
-                        <div className="w-6 h-6 rounded-full bg-[#0059C6]/10 text-[9px] flex items-center justify-center font-bold text-[#0059C6]">SA</div>
-                     </div>
+                    <span className="text-[11px] font-bold text-zinc-800">Tenant Dashboard</span>
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-50 border border-emerald-100">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[8px] font-bold text-emerald-700">Live Sync</span>
+                      </div>
+                      <div className="w-6 h-6 rounded-full bg-[#0059C6]/10 text-[9px] flex items-center justify-center font-bold text-[#0059C6]">
+                        SA
+                      </div>
+                    </div>
                   </div>
 
                   <div className="p-4 space-y-3 overflow-y-auto">
                     {/* Active branches selector */}
                     <div className="flex items-center justify-between bg-white rounded-xl border border-zinc-200/80 px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                      <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Active Locations:</span>
+                      <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">
+                        Active Locations:
+                      </span>
                       <div className="flex gap-1.5">
-                        <span className="text-[8px] bg-[#0059C6]/10 text-[#0059C6] font-bold px-2 py-0.5 rounded">HSR Layout (Blr)</span>
-                        <span className="text-[8px] bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded font-bold">Bandra (Mum)</span>
+                        <span className="text-[8px] bg-[#0059C6]/10 text-[#0059C6] font-bold px-2 py-0.5 rounded">
+                          HSR Layout (Blr)
+                        </span>
+                        <span className="text-[8px] bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded font-bold">
+                          Bandra (Mum)
+                        </span>
                       </div>
                     </div>
 
@@ -378,43 +480,89 @@ export function Hero() {
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                         </span>
                         <div className="text-left leading-normal">
-                          <span className="text-[9px] font-extrabold text-zinc-800">{bookingNotification.name} </span>
-                          <span className="text-[8px] text-zinc-500">{bookingNotification.action} at </span>
-                          <span className="text-[9px] font-bold text-[#0059C6]">{bookingNotification.tenant} ({bookingNotification.city})</span>
+                          <span className="text-[9px] font-extrabold text-zinc-800">
+                            {bookingNotification.name}{" "}
+                          </span>
+                          <span className="text-[8px] text-zinc-500">
+                            {bookingNotification.action} at{" "}
+                          </span>
+                          <span className="text-[9px] font-bold text-[#0059C6]">
+                            {bookingNotification.tenant} ({bookingNotification.city})
+                          </span>
                         </div>
                       </div>
-                      <span className="text-[8px] text-emerald-600 font-bold bg-emerald-100 px-1.5 py-0.5 rounded">{bookingNotification.time}</span>
+                      <span className="text-[8px] text-emerald-600 font-bold bg-emerald-100 px-1.5 py-0.5 rounded">
+                        {bookingNotification.time}
+                      </span>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2.5">
                       {[
-                        { label: "Today's Bookings", value: "84", icon: Calendar, bg: "#EEF5FF", color: "#0059C6" },
-                        { label: "Active Customers", value: "3,842", icon: Users, bg: "#FEF3C7", color: "#D97706" },
-                        { label: "This Month (INR)", value: "₹2,48,200", icon: TrendingUp, bg: "#ECFDF5", color: "#059669" },
-                        { label: "Completion Rate", value: "98.2%", icon: Check, bg: "#EEF2FF", color: "#4F46E5" },
+                        {
+                          label: "Today's Bookings",
+                          value: "84",
+                          icon: Calendar,
+                          bg: "#EEF5FF",
+                          color: "#0059C6",
+                        },
+                        {
+                          label: "Active Customers",
+                          value: "3,842",
+                          icon: Users,
+                          bg: "#FEF3C7",
+                          color: "#D97706",
+                        },
+                        {
+                          label: "This Month (INR)",
+                          value: "₹2,48,200",
+                          icon: TrendingUp,
+                          bg: "#ECFDF5",
+                          color: "#059669",
+                        },
+                        {
+                          label: "Completion Rate",
+                          value: "98.2%",
+                          icon: Check,
+                          bg: "#EEF2FF",
+                          color: "#4F46E5",
+                        },
                       ].map((s, i) => {
                         const Icon = s.icon;
                         return (
-                          <div key={i} className="bg-white rounded-xl border border-zinc-200/80 p-2.5 flex items-center gap-2.5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] hover:border-[#0059C6]/30 transition-colors">
+                          <div
+                            key={i}
+                            className="bg-white rounded-xl border border-zinc-200/80 p-2.5 flex items-center gap-2.5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] hover:border-[#0059C6]/30 transition-colors"
+                          >
                             <div className="p-1.5 rounded-lg" style={{ background: s.bg }}>
                               <Icon className="h-3.5 w-3.5" style={{ color: s.color }} />
                             </div>
                             <div>
-                              <p className="text-[9px] text-zinc-400 font-semibold mb-0.5">{s.label}</p>
-                              <p className="text-xs font-black text-zinc-900 leading-none">{s.value}</p>
+                              <p className="text-[9px] text-zinc-400 font-semibold mb-0.5">
+                                {s.label}
+                              </p>
+                              <p className="text-xs font-black text-zinc-900 leading-none">
+                                {s.value}
+                              </p>
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                    
+
                     <div className="bg-white rounded-xl border border-zinc-200/80 p-3 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                      <p className="text-[9px] font-bold uppercase tracking-wider mb-2" style={{ color: "#0059C6" }}>Core Features</p>
+                      <p
+                        className="text-[9px] font-bold uppercase tracking-wider mb-2"
+                        style={{ color: "#0059C6" }}
+                      >
+                        Core Features
+                      </p>
                       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
                         {features.map((f) => (
                           <div key={f} className="flex items-center gap-1.5">
                             <Check className="h-2.5 w-2.5 shrink-0" style={{ color: "#0059C6" }} />
-                            <span className="text-[8.5px] text-zinc-600 font-medium leading-none">{f}</span>
+                            <span className="text-[8.5px] text-zinc-600 font-medium leading-none">
+                              {f}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -424,7 +572,6 @@ export function Hero() {
               </div>
             </div>
           </motion.div>
-
         </div>
       </div>
     </section>
@@ -461,7 +608,10 @@ export function LogosMarquee() {
           {[...logos, ...logos].map((l, i) => {
             const Icon = l.icon;
             return (
-              <div key={i} className="flex items-center gap-2 text-zinc-500 transition-colors hover:text-brand whitespace-nowrap">
+              <div
+                key={i}
+                className="flex items-center gap-2 text-zinc-500 transition-colors hover:text-brand whitespace-nowrap"
+              >
                 <Icon className="size-4 shrink-0" />
                 <span className="text-sm font-semibold tracking-tight">{l.label}</span>
               </div>
@@ -580,7 +730,9 @@ export function BenefitsSection() {
                   transition={{ delay: i * 0.05 }}
                   className="flex items-start gap-3 text-sm text-zinc-700"
                 >
-                  <span className="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-500 text-[10px] font-bold">✕</span>
+                  <span className="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-500 text-[10px] font-bold">
+                    ✕
+                  </span>
                   <span>{b}</span>
                 </motion.li>
               ))}
@@ -592,10 +744,21 @@ export function BenefitsSection() {
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
             className="relative overflow-hidden rounded-2xl border p-8 ring-1"
-            style={{ borderColor: "rgba(0,89,198,0.2)", background: "linear-gradient(135deg, rgba(0,89,198,0.04) 0%, #ffffff 50%, rgba(167,211,255,0.15) 100%)", boxShadow: "0 0 0 1px rgba(0,89,198,0.1)" }}
+            style={{
+              borderColor: "rgba(0,89,198,0.2)",
+              background:
+                "linear-gradient(135deg, rgba(0,89,198,0.04) 0%, #ffffff 50%, rgba(167,211,255,0.15) 100%)",
+              boxShadow: "0 0 0 1px rgba(0,89,198,0.1)",
+            }}
           >
-            <div className="absolute -right-20 -top-20 size-64 rounded-full blur-3xl" style={{ background: "rgba(13,131,255,0.08)" }} />
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider" style={{ color: "#0059C6" }}>
+            <div
+              className="absolute -right-20 -top-20 size-64 rounded-full blur-3xl"
+              style={{ background: "rgba(13,131,255,0.08)" }}
+            />
+            <p
+              className="mb-1 text-xs font-semibold uppercase tracking-wider"
+              style={{ color: "#0059C6" }}
+            >
               With BookMyTime
             </p>
             <h3 className="mb-6 text-xl font-semibold text-zinc-900">The Smart Advantage</h3>
@@ -609,7 +772,10 @@ export function BenefitsSection() {
                   transition={{ delay: i * 0.05 }}
                   className="flex items-start gap-3 text-sm text-zinc-800"
                 >
-                  <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full text-white" style={{ background: "#0059C6" }}>
+                  <span
+                    className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full text-white"
+                    style={{ background: "#0059C6" }}
+                  >
                     <Check className="size-3" />
                   </span>
                   <span className="font-medium">{a}</span>
@@ -637,45 +803,78 @@ export function QRShowcase() {
   return (
     <section className="relative overflow-hidden py-20 bg-zinc-950">
       {/* Subtle dot grid */}
-      <div className="pointer-events-none absolute inset-0 opacity-10"
-        style={{ backgroundImage: "radial-gradient(rgba(167,211,255,0.6) 1px, transparent 1px)", backgroundSize: "28px 28px" }} />
+      <div
+        className="pointer-events-none absolute inset-0 opacity-10"
+        style={{
+          backgroundImage: "radial-gradient(rgba(167,211,255,0.6) 1px, transparent 1px)",
+          backgroundSize: "28px 28px",
+        }}
+      />
       {/* Top glow */}
-      <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[400px] rounded-full blur-3xl"
-        style={{ background: "radial-gradient(ellipse, rgba(0,89,198,0.3) 0%, transparent 70%)" }} />
+      <div
+        className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[400px] rounded-full blur-3xl"
+        style={{ background: "radial-gradient(ellipse, rgba(0,89,198,0.3) 0%, transparent 70%)" }}
+      />
 
       <div className="relative mx-auto max-w-6xl px-6">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
-
           {/* ── Left: content ── */}
           <div>
             <motion.span
-              initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+              initial={{ opacity: 0, y: 10 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold tracking-widest mb-5"
-              style={{ background: "rgba(167,211,255,0.1)", color: "#A7D3FF", border: "1px solid rgba(167,211,255,0.2)" }}
+              style={{
+                background: "rgba(167,211,255,0.1)",
+                color: "#A7D3FF",
+                border: "1px solid rgba(167,211,255,0.2)",
+              }}
             >
               <QrCode className="size-3" /> QR CODE BOOKING
             </motion.span>
 
             <motion.h2
-              initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.05 }}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.05 }}
               className="text-3xl md:text-4xl font-bold leading-tight tracking-tight text-white mb-4"
             >
               Turn Every{" "}
               <span className="relative inline-block">
                 <span className="text-gradient-brand">Walk-In</span>
-                <motion.svg viewBox="0 0 100 8" className="absolute -bottom-1 left-0 w-full" preserveAspectRatio="none">
-                  <motion.path d="M 0 6 Q 50 0 100 6" stroke="#0D83FF" strokeWidth="2" strokeLinecap="round" fill="none"
-                    initial={{ pathLength: 0, opacity: 0 }} whileInView={{ pathLength: 1, opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.4 }} />
+                <motion.svg
+                  viewBox="0 0 100 8"
+                  className="absolute -bottom-1 left-0 w-full"
+                  preserveAspectRatio="none"
+                >
+                  <motion.path
+                    d="M 0 6 Q 50 0 100 6"
+                    stroke="#0D83FF"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    fill="none"
+                    initial={{ pathLength: 0, opacity: 0 }}
+                    whileInView={{ pathLength: 1, opacity: 1 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.7, delay: 0.4 }}
+                  />
                 </motion.svg>
               </span>{" "}
               <span className="text-gradient-brand">Into a Future Customer</span>
             </motion.h2>
 
             <motion.p
-              initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}
-              className="text-sm leading-relaxed mb-8" style={{ color: "rgba(167,211,255,0.75)" }}
+              initial={{ opacity: 0, y: 12 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.1 }}
+              className="text-sm leading-relaxed mb-8"
+              style={{ color: "rgba(167,211,255,0.75)" }}
             >
-              One QR code. Infinite bookings. Print it, share it, pin it — and let customers schedule themselves while you focus on serving them.
+              One QR code. Infinite bookings. Print it, share it, pin it — and let customers
+              schedule themselves while you focus on serving them.
             </motion.p>
 
             <ul className="space-y-3 mb-8">
@@ -684,11 +883,19 @@ export function QRShowcase() {
                 return (
                   <motion.li
                     key={p.text}
-                    initial={{ opacity: 0, x: -16 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.12 + i * 0.07 }}
+                    initial={{ opacity: 0, x: -16 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.12 + i * 0.07 }}
                     className="flex items-center gap-3"
                   >
-                    <div className="flex size-7 shrink-0 items-center justify-center rounded-lg"
-                      style={{ background: "rgba(167,211,255,0.12)", border: "1px solid rgba(167,211,255,0.2)" }}>
+                    <div
+                      className="flex size-7 shrink-0 items-center justify-center rounded-lg"
+                      style={{
+                        background: "rgba(167,211,255,0.12)",
+                        border: "1px solid rgba(167,211,255,0.2)",
+                      }}
+                    >
                       <Icon className="size-3.5" style={{ color: "#A7D3FF" }} />
                     </div>
                     <span className="text-sm text-white/90">{p.text}</span>
@@ -699,9 +906,16 @@ export function QRShowcase() {
 
             <motion.a
               href="/signup"
-              initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.45 }}
+              initial={{ opacity: 0, y: 10 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.45 }}
               className="inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition-all hover:-translate-y-[1px]"
-              style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)", color: "#ffffff", boxShadow: "0 4px 24px rgba(0,89,198,0.4)" }}
+              style={{
+                background: "linear-gradient(135deg, #0059C6, #0D83FF)",
+                color: "#ffffff",
+                boxShadow: "0 4px 24px rgba(0,89,198,0.4)",
+              }}
             >
               <QrCode className="size-4" /> Get Your Free QR Code
             </motion.a>
@@ -710,7 +924,10 @@ export function QRShowcase() {
           {/* ── Right: QR code card ── */}
           <div className="flex items-center justify-center">
             <motion.div
-              initial={{ opacity: 0, scale: 0.92 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ duration: 0.6, delay: 0.15 }}
+              initial={{ opacity: 0, scale: 0.92 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.15 }}
               className="relative"
             >
               {/* Outer glow */}
@@ -722,20 +939,38 @@ export function QRShowcase() {
               />
 
               {/* Card */}
-              <div className="relative rounded-3xl p-7 shadow-2xl overflow-hidden"
-                style={{ background: "linear-gradient(135deg, #0a0f1e 0%, #0d1a3a 50%, #0a1628 100%)", boxShadow: "0 25px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,89,198,0.3)" }}>
+              <div
+                className="relative rounded-3xl p-7 shadow-2xl overflow-hidden"
+                style={{
+                  background: "linear-gradient(135deg, #0a0f1e 0%, #0d1a3a 50%, #0a1628 100%)",
+                  boxShadow: "0 25px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,89,198,0.3)",
+                }}
+              >
                 {/* Subtle circuit grid overlay */}
-                <div className="pointer-events-none absolute inset-0 opacity-10"
-                  style={{ backgroundImage: "radial-gradient(rgba(13,131,255,0.8) 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
+                <div
+                  className="pointer-events-none absolute inset-0 opacity-10"
+                  style={{
+                    backgroundImage: "radial-gradient(rgba(13,131,255,0.8) 1px, transparent 1px)",
+                    backgroundSize: "20px 20px",
+                  }}
+                />
                 {/* Blue glow top-right */}
-                <div className="pointer-events-none absolute -top-10 -right-10 w-40 h-40 rounded-full blur-2xl" style={{ background: "rgba(13,131,255,0.2)" }} />
+                <div
+                  className="pointer-events-none absolute -top-10 -right-10 w-40 h-40 rounded-full blur-2xl"
+                  style={{ background: "rgba(13,131,255,0.2)" }}
+                />
                 {/* Header */}
                 <div className="relative flex items-center justify-between mb-5">
                   <div>
                     <p className="text-xs font-bold text-white leading-none">BookMyTime</p>
-                    <p className="text-[10px] mt-0.5" style={{ color: "rgba(167,211,255,0.7)" }}>Scan to book instantly</p>
+                    <p className="text-[10px] mt-0.5" style={{ color: "rgba(167,211,255,0.7)" }}>
+                      Scan to book instantly
+                    </p>
                   </div>
-                  <div className="flex size-8 items-center justify-center rounded-lg" style={{ background: "#0059C6" }}>
+                  <div
+                    className="flex size-8 items-center justify-center rounded-lg"
+                    style={{ background: "#0059C6" }}
+                  >
                     <QrCode className="size-4 text-white" />
                   </div>
                 </div>
@@ -743,38 +978,37 @@ export function QRShowcase() {
                 {/* QR pattern — proper 21x21 matrix */}
                 <div className="relative mx-auto">
                   {(() => {
-                    const M = 9, Q = 6, color = "#A7D3FF";
+                    const M = 9,
+                      Q = 6,
+                      color = "#A7D3FF";
                     const matrix = [
-                      [1,1,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1],
-                      [1,0,0,0,0,0,1,0,0,1,0,1,0,0,1,0,0,0,0,0,1],
-                      [1,0,1,1,1,0,1,0,1,0,1,0,1,0,1,0,1,1,1,0,1],
-                      [1,0,1,1,1,0,1,0,0,1,0,1,0,0,1,0,1,1,1,0,1],
-                      [1,0,1,1,1,0,1,0,1,0,1,0,1,0,1,0,1,1,1,0,1],
-                      [1,0,0,0,0,0,1,0,0,0,0,1,0,0,1,0,0,0,0,0,1],
-                      [1,1,1,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,1,1,1],
-                      [0,0,0,0,0,0,0,0,1,1,0,1,0,1,0,0,0,0,0,0,0],
-                      [1,1,0,1,1,0,1,1,0,0,1,0,1,0,1,0,1,1,0,1,1],
-                      [0,1,0,0,1,0,0,1,1,0,0,1,0,1,0,0,1,0,1,1,0],
-                      [1,0,1,1,0,1,1,0,0,1,1,0,1,1,0,1,0,0,1,0,1],
-                      [0,1,1,0,1,0,0,1,0,1,0,1,0,0,1,0,1,1,0,1,0],
-                      [1,0,0,1,0,1,1,0,1,0,1,0,1,1,0,0,1,0,1,0,1],
-                      [0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,1,0,1,1,0,0],
-                      [1,1,1,1,1,1,1,0,0,1,1,0,1,0,1,0,1,0,0,1,0],
-                      [1,0,0,0,0,0,1,0,1,0,0,1,0,1,0,1,0,0,1,0,1],
-                      [1,0,1,1,1,0,1,1,0,1,1,0,1,0,0,0,1,0,0,1,0],
-                      [1,0,1,1,1,0,1,0,0,1,0,1,1,1,0,1,0,1,0,0,1],
-                      [1,0,1,1,1,0,1,0,1,0,1,0,0,0,1,0,1,0,1,1,0],
-                      [1,0,0,0,0,0,1,0,0,1,0,1,0,1,0,1,0,0,0,1,0],
-                      [1,1,1,1,1,1,1,0,1,0,1,0,1,0,1,0,0,1,1,0,1],
+                      [1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+                      [1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+                      [1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1],
+                      [1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1],
+                      [1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1],
+                      [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+                      [1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1],
+                      [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+                      [1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1],
+                      [0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0],
+                      [1, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1],
+                      [0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0],
+                      [1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1],
+                      [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0],
+                      [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0],
+                      [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1],
+                      [1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0],
+                      [1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1],
+                      [1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0],
+                      [1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0],
+                      [1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1],
                     ] as const;
                     const els: React.ReactElement[] = [];
                     (matrix as readonly (readonly number[])[]).forEach((row, r) => {
                       row.forEach((cell, c) => {
                         if (!cell) return;
-                        const inFinder =
-                          (r < 7 && c < 7) ||
-                          (r < 7 && c > 13) ||
-                          (r > 13 && c < 7);
+                        const inFinder = (r < 7 && c < 7) || (r < 7 && c > 13) || (r > 13 && c < 7);
                         els.push(
                           <rect
                             key={`${r}-${c}`}
@@ -784,13 +1018,17 @@ export function QRShowcase() {
                             height={M - 1}
                             rx={inFinder ? 0 : 2}
                             fill={color}
-                          />
+                          />,
                         );
                       });
                     });
                     return (
-                      <svg viewBox={`0 0 ${Q*2+21*M} ${Q*2+21*M}`} className="w-64 h-64" xmlns="http://www.w3.org/2000/svg">
-                        <rect width={Q*2+21*M} height={Q*2+21*M} fill="#0d1a3a"/>
+                      <svg
+                        viewBox={`0 0 ${Q * 2 + 21 * M} ${Q * 2 + 21 * M}`}
+                        className="w-64 h-64"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <rect width={Q * 2 + 21 * M} height={Q * 2 + 21 * M} fill="#0d1a3a" />
                         {els}
                       </svg>
                     );
@@ -798,16 +1036,18 @@ export function QRShowcase() {
                   {/* Scan laser */}
                   <motion.div
                     className="absolute left-1 right-1 h-[2px] rounded-full pointer-events-none"
-                    style={{ background: "linear-gradient(90deg, transparent, #0D83FF 30%, #0D83FF 70%, transparent)", boxShadow: "0 0 8px 2px rgba(13,131,255,0.55)" }}
+                    style={{
+                      background:
+                        "linear-gradient(90deg, transparent, #0D83FF 30%, #0D83FF 70%, transparent)",
+                      boxShadow: "0 0 8px 2px rgba(13,131,255,0.55)",
+                    }}
                     animate={{ top: ["4%", "93%", "4%"] }}
                     transition={{ repeat: Infinity, duration: 2.4, ease: "easeInOut" }}
                   />
                 </div>
-
               </div>
             </motion.div>
           </div>
-
         </div>
       </div>
     </section>
@@ -872,7 +1112,7 @@ export function WhatsAppSection() {
   const [active, setActive] = useState(0);
 
   useEffect(() => {
-    const id = setInterval(() => setActive(p => (p + 1) % messages.length), 2800);
+    const id = setInterval(() => setActive((p) => (p + 1) % messages.length), 2800);
     return () => clearInterval(id);
   }, []);
 
@@ -882,7 +1122,6 @@ export function WhatsAppSection() {
 
       <div className="relative mx-auto max-w-7xl px-6">
         <div className="grid gap-12 lg:gap-16 lg:grid-cols-[auto_1fr] items-center">
-
           {/* ── Left: Phone mockup ── */}
           <motion.div
             initial={{ opacity: 0, x: -30 }}
@@ -891,8 +1130,13 @@ export function WhatsAppSection() {
             className="flex justify-center lg:justify-start"
           >
             <div className="relative">
-              <div className="absolute inset-0 rounded-[3rem] blur-3xl scale-90"
-                style={{ background: "radial-gradient(circle, rgba(37,211,102,0.12) 0%, rgba(0,89,198,0.08) 60%, transparent 100%)" }} />
+              <div
+                className="absolute inset-0 rounded-[3rem] blur-3xl scale-90"
+                style={{
+                  background:
+                    "radial-gradient(circle, rgba(37,211,102,0.12) 0%, rgba(0,89,198,0.08) 60%, transparent 100%)",
+                }}
+              />
               <div className="relative w-60 rounded-[2rem] border-[5px] border-zinc-900 bg-zinc-900 shadow-2xl overflow-hidden">
                 {/* Status bar */}
                 <div className="bg-zinc-900 px-4 pt-2.5 pb-1 flex justify-between items-center">
@@ -901,29 +1145,49 @@ export function WhatsAppSection() {
                   <div className="w-2.5 h-1.5 rounded-sm bg-white opacity-70" />
                 </div>
                 {/* WhatsApp header */}
-                <div className="flex items-center gap-2 px-2.5 py-2" style={{ background: "#075E54" }}>
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-black shrink-0"
-                    style={{ background: "linear-gradient(135deg, #25D366, #128C7E)" }}>B</div>
+                <div
+                  className="flex items-center gap-2 px-2.5 py-2"
+                  style={{ background: "#075E54" }}
+                >
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-black shrink-0"
+                    style={{ background: "linear-gradient(135deg, #25D366, #128C7E)" }}
+                  >
+                    B
+                  </div>
                   <div>
                     <p className="text-[10px] font-bold text-white leading-none">BookMyTime</p>
-                    <p className="text-[8px]" style={{ color: "#A8E6B0" }}>Business · Online</p>
+                    <p className="text-[8px]" style={{ color: "#A8E6B0" }}>
+                      Business · Online
+                    </p>
                   </div>
                 </div>
                 {/* Chat area */}
-                <div className="px-2.5 py-2.5 space-y-2 min-h-[320px]" style={{ background: "#E5DDD5" }}>
-                  <p className="text-center text-[7px] text-zinc-500 bg-white/60 rounded-full px-2 py-0.5 w-fit mx-auto">Today</p>
+                <div
+                  className="px-2.5 py-2.5 space-y-2 min-h-[320px]"
+                  style={{ background: "#E5DDD5" }}
+                >
+                  <p className="text-center text-[7px] text-zinc-500 bg-white/60 rounded-full px-2 py-0.5 w-fit mx-auto">
+                    Today
+                  </p>
                   <AnimatePresence mode="wait">
                     {messages.map((msg, i) =>
                       i === active ? (
-                        <motion.div key={msg.label}
+                        <motion.div
+                          key={msg.label}
                           initial={{ opacity: 0, y: 10, scale: 0.97 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, y: -6, scale: 0.97 }}
                           transition={{ duration: 0.3 }}
                           className="flex justify-end"
                         >
-                          <div className="max-w-[88%] rounded-xl rounded-tr-sm px-2.5 py-1.5 shadow-sm" style={{ background: "#DCF8C6" }}>
-                            <p className="text-[7px] font-bold mb-0.5" style={{ color: msg.color }}>{msg.label}</p>
+                          <div
+                            className="max-w-[88%] rounded-xl rounded-tr-sm px-2.5 py-1.5 shadow-sm"
+                            style={{ background: "#DCF8C6" }}
+                          >
+                            <p className="text-[7px] font-bold mb-0.5" style={{ color: msg.color }}>
+                              {msg.label}
+                            </p>
                             <p className="text-[8px] text-zinc-800 leading-relaxed">{msg.text}</p>
                             <div className="flex items-center justify-end gap-1 mt-0.5">
                               <span className="text-[6px] text-zinc-400">{msg.time}</span>
@@ -931,13 +1195,15 @@ export function WhatsAppSection() {
                             </div>
                           </div>
                         </motion.div>
-                      ) : null
+                      ) : null,
                     )}
                   </AnimatePresence>
                   <div className="flex justify-start">
                     <div className="bg-white rounded-xl rounded-tl-sm px-2 py-1.5 shadow-sm flex items-center gap-1">
-                      {[0,1,2].map(i => (
-                        <motion.div key={i} className="w-1 h-1 rounded-full bg-zinc-400"
+                      {[0, 1, 2].map((i) => (
+                        <motion.div
+                          key={i}
+                          className="w-1 h-1 rounded-full bg-zinc-400"
                           animate={{ y: [0, -3, 0] }}
                           transition={{ repeat: Infinity, duration: 0.7, delay: i * 0.15 }}
                         />
@@ -946,9 +1212,17 @@ export function WhatsAppSection() {
                   </div>
                 </div>
                 {/* Input bar */}
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5" style={{ background: "#F0F0F0" }}>
-                  <div className="flex-1 bg-white rounded-full px-2.5 py-1 text-[8px] text-zinc-400">Type a message</div>
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "#25D366" }}>
+                <div
+                  className="flex items-center gap-1.5 px-2.5 py-1.5"
+                  style={{ background: "#F0F0F0" }}
+                >
+                  <div className="flex-1 bg-white rounded-full px-2.5 py-1 text-[8px] text-zinc-400">
+                    Type a message
+                  </div>
+                  <div
+                    className="w-6 h-6 rounded-full flex items-center justify-center"
+                    style={{ background: "#25D366" }}
+                  >
                     <Send className="size-2.5 text-white" />
                   </div>
                 </div>
@@ -956,18 +1230,25 @@ export function WhatsAppSection() {
               {/* Floating open rate */}
               <motion.div
                 className="absolute -right-4 top-12 bg-white rounded-lg shadow-lg px-2.5 py-1.5 border border-zinc-100"
-                animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+                animate={{ y: [0, -5, 0] }}
+                transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
               >
                 <p className="text-[8px] text-zinc-400">Open Rate</p>
-                <p className="text-base font-black leading-none" style={{ color: "#25D366" }}>98%</p>
+                <p className="text-base font-black leading-none" style={{ color: "#25D366" }}>
+                  98%
+                </p>
                 <p className="text-[7px] text-zinc-400">vs 22% email</p>
               </motion.div>
               {/* Floating auto-sent */}
               <motion.div
                 className="absolute -left-4 bottom-16 bg-white rounded-lg shadow-lg px-2.5 py-1.5 border border-zinc-100 flex items-center gap-1.5"
-                animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 3.5, ease: "easeInOut", delay: 1 }}
+                animate={{ y: [0, -4, 0] }}
+                transition={{ repeat: Infinity, duration: 3.5, ease: "easeInOut", delay: 1 }}
               >
-                <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(37,211,102,0.15)" }}>
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                  style={{ background: "rgba(37,211,102,0.15)" }}
+                >
                   <Send className="size-2.5" style={{ color: "#25D366" }} />
                 </div>
                 <div>
@@ -981,15 +1262,24 @@ export function WhatsAppSection() {
           {/* ── Right: Content ── */}
           <div className="lg:pl-10">
             <motion.span
-              initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+              initial={{ opacity: 0, y: 10 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
               className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold mb-3 border"
-              style={{ background: "rgba(37,211,102,0.08)", color: "#128C7E", borderColor: "rgba(37,211,102,0.2)" }}
+              style={{
+                background: "rgba(37,211,102,0.08)",
+                color: "#128C7E",
+                borderColor: "rgba(37,211,102,0.2)",
+              }}
             >
               <MessageSquare className="size-2.5" /> WHATSAPP AUTOMATION
             </motion.span>
 
             <motion.h2
-              initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.05 }}
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.05 }}
               className="text-2xl md:text-3xl font-semibold leading-tight tracking-tight text-zinc-900 mb-2"
             >
               Never Let Customers{" "}
@@ -997,10 +1287,14 @@ export function WhatsAppSection() {
             </motion.h2>
 
             <motion.p
-              initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}
+              initial={{ opacity: 0, y: 12 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.1 }}
               className="text-xs text-zinc-500 leading-relaxed mb-5"
             >
-              BookMyTime sends automated WhatsApp messages at every stage — so you never follow up manually again.
+              BookMyTime sends automated WhatsApp messages at every stage — so you never follow up
+              manually again.
             </motion.p>
 
             {/* Feature list */}
@@ -1023,12 +1317,16 @@ export function WhatsAppSection() {
                       border: isActive ? "1px solid rgba(0,89,198,0.2)" : "1px solid transparent",
                     }}
                   >
-                    <div className="flex size-7 shrink-0 items-center justify-center rounded-lg"
-                      style={{ background: `${msg.color}18` }}>
+                    <div
+                      className="flex size-7 shrink-0 items-center justify-center rounded-lg"
+                      style={{ background: `${msg.color}18` }}
+                    >
                       <Icon className="size-3.5" style={{ color: msg.color }} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-zinc-900 leading-tight">{msg.label}</p>
+                      <p className="text-xs font-semibold text-zinc-900 leading-tight">
+                        {msg.label}
+                      </p>
                       <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">{msg.text}</p>
                     </div>
                   </motion.button>
@@ -1036,7 +1334,6 @@ export function WhatsAppSection() {
               })}
             </div>
           </div>
-
         </div>
       </div>
     </section>
@@ -1071,7 +1368,10 @@ export function BeforeAfter() {
         <div className="text-center mb-16">
           <SectionEyebrow>BEFORE VS AFTER</SectionEyebrow>
           <motion.h2
-            initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.05 }}
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.05 }}
             className="mt-5 text-balance text-3xl md:text-5xl font-semibold tracking-tight text-zinc-900"
           >
             See the <span className="text-gradient-brand">difference BookMyTime makes</span>
@@ -1080,7 +1380,6 @@ export function BeforeAfter() {
 
         {/* Cards Container */}
         <div className="relative grid md:grid-cols-2 gap-8 lg:gap-12 items-stretch">
-          
           {/* VS Badge (Desktop) */}
           <div className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 size-16 items-center justify-center rounded-full bg-white border border-zinc-100">
             <span className="text-sm font-black text-zinc-400">VS</span>
@@ -1088,7 +1387,10 @@ export function BeforeAfter() {
 
           {/* Before Card */}
           <motion.div
-            initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, ease: "easeOut" }}
+            initial={{ opacity: 0, x: -30 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
             className="relative flex flex-col rounded-3xl border border-zinc-200 bg-white p-8 md:p-10"
           >
             <div className="flex items-center gap-4 mb-8">
@@ -1101,10 +1403,15 @@ export function BeforeAfter() {
               {before.map((item, i) => (
                 <motion.li
                   key={item}
-                  initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 + i * 0.1 }}
+                  initial={{ opacity: 0, x: -20 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.2 + i * 0.1 }}
                   className="flex items-start gap-4 text-[15px] text-zinc-500 font-medium"
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-400 text-xs font-black mt-0.5">✕</span>
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-400 text-xs font-black mt-0.5">
+                    ✕
+                  </span>
                   <span className="leading-relaxed">{item}</span>
                 </motion.li>
               ))}
@@ -1113,15 +1420,24 @@ export function BeforeAfter() {
 
           {/* After Card */}
           <motion.div
-            initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
+            initial={{ opacity: 0, x: 30 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
             className="relative flex flex-col rounded-3xl p-8 md:p-10 overflow-hidden group"
-            style={{ background: "linear-gradient(145deg, #ffffff 0%, #f4f9ff 100%)", border: "1px solid rgba(0,89,198,0.15)" }}
+            style={{
+              background: "linear-gradient(145deg, #ffffff 0%, #f4f9ff 100%)",
+              border: "1px solid rgba(0,89,198,0.15)",
+            }}
           >
             {/* Animated Glow */}
             <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-[#0D83FF]/10 blur-3xl transition-transform duration-700 group-hover:scale-150" />
-            
+
             <div className="relative flex items-center gap-4 mb-8 z-10">
-              <div className="flex size-12 items-center justify-center rounded-2xl shadow-lg shadow-[#0059C6]/20 transition-transform duration-500 group-hover:scale-110" style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}>
+              <div
+                className="flex size-12 items-center justify-center rounded-2xl shadow-lg shadow-[#0059C6]/20 transition-transform duration-500 group-hover:scale-110"
+                style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
+              >
                 <Check className="size-5 text-white" strokeWidth={3} />
               </div>
               <h3 className="text-xl font-bold text-zinc-900">After BookMyTime</h3>
@@ -1130,22 +1446,31 @@ export function BeforeAfter() {
               {after.map((item, i) => (
                 <motion.li
                   key={item}
-                  initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.3 + i * 0.1 }}
+                  initial={{ opacity: 0, x: 20 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.3 + i * 0.1 }}
                   className="flex items-start gap-4 text-[15px] text-zinc-800 font-semibold"
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full text-white text-xs shadow-md mt-0.5"
-                    style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}>✓</span>
+                  <span
+                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-white text-xs shadow-md mt-0.5"
+                    style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
+                  >
+                    ✓
+                  </span>
                   <span className="leading-relaxed">{item}</span>
                 </motion.li>
               ))}
             </ul>
           </motion.div>
-
         </div>
 
         {/* Bottom connector */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.6 }}
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5, delay: 0.6 }}
           className="mt-16 flex justify-center"
         >
           <a
@@ -1171,7 +1496,11 @@ export function AIFlowSection() {
     { icon: QrCode, label: "Scan / Access Link", sub: "Client opens custom tenant portal" },
     { icon: Bot, label: "AI Booking Assistant", sub: "Conversational slot check & lock 24/7" },
     { icon: Calendar, label: "Smart Calendar Sync", sub: "Updates provider schedules instantly" },
-    { icon: MessageSquare, label: "WhatsApp Confirmation", sub: "Auto-sends slot summary & payment link" },
+    {
+      icon: MessageSquare,
+      label: "WhatsApp Confirmation",
+      sub: "Auto-sends slot summary & payment link",
+    },
     { icon: Bell, label: "Smart Reminders", sub: "Timely alerts prevent missed appointments" },
   ];
   return (
@@ -1181,10 +1510,12 @@ export function AIFlowSection() {
         <div className="mx-auto max-w-2xl text-center">
           <SectionEyebrow>HOW IT WORKS</SectionEyebrow>
           <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
-            From scan to checkout: <span className="text-gradient-brand">Automated booking lifecycle</span>
+            From scan to checkout:{" "}
+            <span className="text-gradient-brand">Automated booking lifecycle</span>
           </h2>
           <p className="mt-4 text-zinc-600">
-            The complete customer journey — automated, personalized, and synced across all your devices.
+            The complete customer journey — automated, personalized, and synced across all your
+            devices.
           </p>
         </div>
 
@@ -1202,27 +1533,25 @@ export function AIFlowSection() {
               >
                 {/* Background Accent */}
                 <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-[#0059C6]/5 to-transparent rounded-bl-[4rem] -z-10 transition-all duration-500 group-hover:scale-150 group-hover:from-[#0D83FF]/10" />
-                
+
                 {/* Large Watermark Number */}
                 <div className="text-5xl font-black text-[#0F172A]/[0.03] absolute -top-1 right-2 select-none transition-colors duration-300 group-hover:text-[#0059C6]/5">
                   0{i + 1}
                 </div>
-                
+
                 {/* Icon Container */}
-                <div 
+                <div
                   className="mb-8 w-12 h-12 rounded-xl flex items-center justify-center shadow-[0_4px_12px_rgba(0,89,198,0.2)] transition-transform duration-500 group-hover:rotate-[10deg] group-hover:scale-110"
                   style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
                 >
                   <s.icon className="size-5 text-white" strokeWidth={2.5} />
                 </div>
-                
+
                 {/* Content */}
                 <h3 className="text-sm font-bold text-[#0F172A] leading-snug mb-2 transition-colors group-hover:text-[#0059C6]">
                   {s.label}
                 </h3>
-                <p className="text-[11px] text-[#64748B] leading-relaxed font-medium">
-                  {s.sub}
-                </p>
+                <p className="text-[11px] text-[#64748B] leading-relaxed font-medium">{s.sub}</p>
               </motion.div>
             ))}
           </div>
@@ -1411,7 +1740,8 @@ export function SpecialtiesSection() {
             Built for <span className="text-gradient-brand">every industry</span>
           </h2>
           <p className="mt-4 text-zinc-600">
-            Customized tenant portals, specialized booking flows, and templates that match how your specific business operates.
+            Customized tenant portals, specialized booking flows, and templates that match how your
+            specific business operates.
           </p>
         </div>
         <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)]">
@@ -1501,10 +1831,8 @@ export function Testimonials() {
   return (
     <section id="customers" className="relative bg-white py-24 overflow-hidden">
       <div className="mx-auto max-w-7xl px-6">
-
         {/* Two-column grid — heading + quote left, image right, both top-aligned */}
         <div className="grid gap-12 lg:grid-cols-2 lg:items-start">
-
           {/* Left column */}
           <div className="flex flex-col">
             {/* Heading — top-aligned with image */}
@@ -1574,9 +1902,7 @@ export function Testimonials() {
                       onClick={() => go(i)}
                       aria-label={`Testimonial ${i + 1}`}
                       className={`rounded-full transition-all duration-300 ${
-                        i === active
-                          ? "w-5 h-2 bg-brand"
-                          : "w-2 h-2 bg-zinc-300 hover:bg-zinc-400"
+                        i === active ? "w-5 h-2 bg-brand" : "w-2 h-2 bg-zinc-300 hover:bg-zinc-400"
                       }`}
                     />
                   ))}
@@ -1609,7 +1935,6 @@ export function Testimonials() {
               </div>
             </motion.div>
           </AnimatePresence>
-
         </div>
       </div>
     </section>
@@ -1680,9 +2005,7 @@ export function Pricing() {
           <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
             Predictable as your <span className="text-gradient-brand">network grows</span>
           </h2>
-          <p className="mt-4 text-zinc-600">
-            No hidden fees. 7-day free trial. Cancel anytime.
-          </p>
+          <p className="mt-4 text-zinc-600">No hidden fees. 7-day free trial. Cancel anytime.</p>
         </div>
         <div className="grid gap-6 lg:grid-cols-3">
           {tiers.map((t, i) => (
@@ -1849,19 +2172,19 @@ export function ROICalculator() {
             <ROIMetric
               icon={Clock}
               label="Hours saved weekly"
-              value={`${hoursSaved.toLocaleString('en-IN')} hrs`}
+              value={`${hoursSaved.toLocaleString("en-IN")} hrs`}
               tint="from-brand to-brand-light"
             />
             <ROIMetric
               icon={TrendingUp}
               label="Extra annual bookings captured"
-              value={extraVisits.toLocaleString('en-IN')}
+              value={extraVisits.toLocaleString("en-IN")}
               tint="from-cyan-500 to-sky-400"
             />
             <ROIMetric
               icon={CreditCard}
               label="Estimated annual ROI"
-              value={`₹${totalROI.toLocaleString('en-IN')}`}
+              value={`₹${totalROI.toLocaleString("en-IN")}`}
               tint="from-emerald-500 to-teal-400"
               highlight
             />
@@ -1950,7 +2273,9 @@ function ROIMetric({
       }`}
     >
       <div className="flex items-center gap-4">
-        <div className={`flex size-11 items-center justify-center rounded-xl bg-gradient-to-br ${tint}`}>
+        <div
+          className={`flex size-11 items-center justify-center rounded-xl bg-gradient-to-br ${tint}`}
+        >
           <Icon className="size-5 text-white" />
         </div>
         <div>
@@ -2054,7 +2379,8 @@ export function CTA() {
           Ready to Simplify Your <span className="text-gradient-brand">Booking Process?</span>
         </motion.h2>
         <p className="mt-6 text-lg text-zinc-300">
-          Automate scheduling, reduce no-shows, and deliver a seamless booking experience with BookMyTime. Let AI handle the bookings while you focus on growing your business.
+          Automate scheduling, reduce no-shows, and deliver a seamless booking experience with
+          BookMyTime. Let AI handle the bookings while you focus on growing your business.
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
@@ -2071,7 +2397,6 @@ export function CTA() {
             Talk to sales
           </Link>
         </div>
-
       </div>
     </section>
   );
@@ -2264,7 +2589,7 @@ export function BuiltForSection() {
       <div className="pointer-events-none absolute inset-0 bg-grid-dark bg-radial-fade opacity-40" />
       <div className="pointer-events-none absolute -top-40 left-[20%] size-[500px] rounded-full bg-[#0059C6]/20 blur-[120px]" />
       <div className="pointer-events-none absolute top-[40%] right-[10%] size-[400px] rounded-full bg-[#0D83FF]/20 blur-[100px]" />
-      
+
       <div className="relative mx-auto max-w-7xl px-6">
         <div className="mb-20 text-center">
           <SectionEyebrow tone="dark">BUILT FOR EVERY WORKFLOW</SectionEyebrow>
@@ -2290,12 +2615,16 @@ export function BuiltForSection() {
               >
                 {/* Decorative hover gradient inside card */}
                 <div className="absolute -right-20 -top-20 size-40 rounded-full bg-[#0D83FF]/10 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                
+
                 <div className="mb-6 flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#0059C6] to-[#0D83FF] text-white shadow-lg shadow-[#0059C6]/20 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-3">
                   <Icon className="size-5" strokeWidth={2.5} />
                 </div>
-                <h3 className="text-base font-bold text-white mb-2 tracking-wide group-hover:text-[#A7D3FF] transition-colors duration-300">{ind.title}</h3>
-                <p className="text-[13px] text-zinc-400 leading-relaxed group-hover:text-zinc-300 transition-colors duration-300">{ind.copy}</p>
+                <h3 className="text-base font-bold text-white mb-2 tracking-wide group-hover:text-[#A7D3FF] transition-colors duration-300">
+                  {ind.title}
+                </h3>
+                <p className="text-[13px] text-zinc-400 leading-relaxed group-hover:text-zinc-300 transition-colors duration-300">
+                  {ind.copy}
+                </p>
               </motion.div>
             );
           })}
@@ -2304,4 +2633,3 @@ export function BuiltForSection() {
     </section>
   );
 }
-

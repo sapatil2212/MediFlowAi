@@ -57,8 +57,7 @@ const posts: {
   {
     title: "The 2026 State of AI in Healthcare Operations",
     kind: "Guide",
-    excerpt:
-      "We surveyed 1,200 clinics on AI adoption, ROI, and what's actually working.",
+    excerpt: "We surveyed 1,200 clinics on AI adoption, ROI, and what's actually working.",
     read: "18 min",
     author: "Dr. Anika Rao",
     tag: "Featured",
@@ -67,8 +66,7 @@ const posts: {
   {
     title: "How Sunrise Dental cut no-shows by 64% in 60 days",
     kind: "Case study",
-    excerpt:
-      "WhatsApp reminders + AI voice confirmations replaced their entire front desk.",
+    excerpt: "WhatsApp reminders + AI voice confirmations replaced their entire front desk.",
     read: "6 min",
     author: "Marcus Chen",
     tag: "Customer",
@@ -77,8 +75,7 @@ const posts: {
   {
     title: "Designing a HIPAA-eligible AI scribe from scratch",
     kind: "Article",
-    excerpt:
-      "Inside the architecture decisions that keep PHI out of foundation models.",
+    excerpt: "Inside the architecture decisions that keep PHI out of foundation models.",
     read: "12 min",
     author: "Engineering",
     tag: "Engineering",
@@ -87,8 +84,7 @@ const posts: {
   {
     title: "Webinar: Multi-tenant ops for hospital networks",
     kind: "Webinar",
-    excerpt:
-      "Live walk-through with the COO of a 14-site cardiology network.",
+    excerpt: "Live walk-through with the COO of a 14-site cardiology network.",
     read: "45 min",
     author: "Dr. Lena Park",
     tag: "Live event",
@@ -97,8 +93,7 @@ const posts: {
   {
     title: "Playbook: launching a med-spa chain in 30 days",
     kind: "Guide",
-    excerpt:
-      "Templates, automations, and SOPs for aesthetic centers from solo to scale.",
+    excerpt: "Templates, automations, and SOPs for aesthetic centers from solo to scale.",
     read: "22 min",
     author: "Customer Success",
     tag: "Playbook",
@@ -107,8 +102,7 @@ const posts: {
   {
     title: "Why we ditched per-seat pricing for hospital plans",
     kind: "Article",
-    excerpt:
-      "The pricing experiment that took us from 22 to 4,200 clinics.",
+    excerpt: "The pricing experiment that took us from 22 to 4,200 clinics.",
     read: "5 min",
     author: "Marcus Chen",
     tag: "Product",
@@ -144,12 +138,11 @@ function ResourcesPage() {
             <BookOpen className="h-3.5 w-3.5" /> Resources
           </div>
           <h1 className="mx-auto mt-5 max-w-3xl text-5xl font-bold tracking-tight text-zinc-900 sm:text-6xl">
-            Learn from clinics already{" "}
-            <span className="text-gradient-brand">running on AI</span>
+            Learn from clinics already <span className="text-gradient-brand">running on AI</span>
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-zinc-600">
-            Field-tested playbooks, technical deep-dives, and customer stories
-            from teams operating at the edge of modern healthcare.
+            Field-tested playbooks, technical deep-dives, and customer stories from teams operating
+            at the edge of modern healthcare.
           </p>
 
           <div className="mx-auto mt-8 flex max-w-xl items-center gap-2 rounded-2xl border border-zinc-200 bg-white p-2 focus-within:border-teal-400">
@@ -195,15 +188,15 @@ function ResourcesPage() {
             animate={{ opacity: 1, y: 0 }}
             className="mt-10 grid overflow-hidden rounded-3xl border border-zinc-200 bg-white lg:grid-cols-2"
           >
-            <div className={`relative flex min-h-[260px] items-end bg-gradient-to-br ${featured.gradient} p-8 text-white`}>
+            <div
+              className={`relative flex min-h-[260px] items-end bg-gradient-to-br ${featured.gradient} p-8 text-white`}
+            >
               <div className="absolute inset-0 bg-grid opacity-20" />
               <div className="relative">
                 <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide backdrop-blur">
                   {featured.tag}
                 </span>
-                <h2 className="mt-4 text-3xl font-bold leading-tight">
-                  {featured.title}
-                </h2>
+                <h2 className="mt-4 text-3xl font-bold leading-tight">{featured.title}</h2>
               </div>
             </div>
             <div className="flex flex-col justify-between p-8">
@@ -267,12 +260,10 @@ function ResourcesPage() {
         <div className="rounded-3xl border border-zinc-200 bg-gradient-to-br from-teal-600 to-emerald-600 p-10 text-white">
           <div className="grid items-center gap-6 lg:grid-cols-2">
             <div>
-              <h2 className="text-3xl font-bold tracking-tight">
-                The Friday Chart Note
-              </h2>
+              <h2 className="text-3xl font-bold tracking-tight">The Friday Chart Note</h2>
               <p className="mt-2 text-white/80">
-                One short email every Friday. Trends, playbooks, and one
-                interesting clinic story. Read in 3 minutes.
+                One short email every Friday. Trends, playbooks, and one interesting clinic story.
+                Read in 3 minutes.
               </p>
             </div>
             <form

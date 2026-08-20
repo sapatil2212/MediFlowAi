@@ -23,26 +23,27 @@ function CookiesPage() {
           </p>
 
           <p className="mb-4">
-            This Cookie Policy explains how BookMyTime ("BookMyTime", "we", "our", or "us") uses cookies and
-            similar technologies when you visit our website, web application, or use our services.
+            This Cookie Policy explains how BookMyTime ("BookMyTime", "we", "our", or "us") uses
+            cookies and similar technologies when you visit our website, web application, or use our
+            services.
           </p>
           <p className="mb-6">
-            By continuing to use BookMyTime, you consent to our use of cookies in accordance with this
-            Cookie Policy.
+            By continuing to use BookMyTime, you consent to our use of cookies in accordance with
+            this Cookie Policy.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">1. What Are Cookies?</h2>
           <p className="mb-2">
-            Cookies are small text files stored on your computer, tablet, or mobile device when you visit a
-            website.
+            Cookies are small text files stored on your computer, tablet, or mobile device when you
+            visit a website.
           </p>
           <p className="mb-2">
-            Cookies help websites remember information about your visit, making your experience faster,
-            more secure, and more personalized.
+            Cookies help websites remember information about your visit, making your experience
+            faster, more secure, and more personalized.
           </p>
           <p className="mb-6">
-            Cookies do not typically contain information that directly identifies you, but they may be
-            linked to information associated with your account.
+            Cookies do not typically contain information that directly identifies you, but they may
+            be linked to information associated with your account.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">2. Why We Use Cookies</h2>
@@ -59,12 +60,14 @@ function CookiesPage() {
             <li>Detect suspicious or fraudulent activity.</li>
           </ul>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">3. Types of Cookies We Use</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            3. Types of Cookies We Use
+          </h2>
 
           <h3 className="text-base font-semibold mt-6 mb-2 text-zinc-900">Essential Cookies</h3>
           <p className="mb-2">
-            These cookies are required for the proper functioning of the website. They enable features such
-            as:
+            These cookies are required for the proper functioning of the website. They enable
+            features such as:
           </p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Secure Login</li>
@@ -76,7 +79,9 @@ function CookiesPage() {
           <p className="mb-6">Without these cookies, the Platform may not function correctly.</p>
 
           <h3 className="text-base font-semibold mt-6 mb-2 text-zinc-900">Performance Cookies</h3>
-          <p className="mb-2">These cookies help us understand how visitors use BookMyTime. Examples include:</p>
+          <p className="mb-2">
+            These cookies help us understand how visitors use BookMyTime. Examples include:
+          </p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Page Visits</li>
             <li>Feature Usage</li>
@@ -121,8 +126,8 @@ function CookiesPage() {
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">4. Third-Party Cookies</h2>
           <p className="mb-2">
-            Some third-party services integrated with BookMyTime may place cookies on your device. These
-            may include services for:
+            Some third-party services integrated with BookMyTime may place cookies on your device.
+            These may include services for:
           </p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Payment Processing</li>
@@ -148,7 +153,9 @@ function CookiesPage() {
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">6. Browser Controls</h2>
-          <p className="mb-2">You can manage cookies through your browser settings. Common browsers include:</p>
+          <p className="mb-2">
+            You can manage cookies through your browser settings. Common browsers include:
+          </p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Google Chrome</li>
             <li>Mozilla Firefox</li>
@@ -160,7 +167,9 @@ function CookiesPage() {
             Refer to your browser's help documentation for instructions on managing cookies.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">7. Impact of Disabling Cookies</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            7. Impact of Disabling Cookies
+          </h2>
           <p>If cookies are disabled:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Login sessions may not persist.</li>
@@ -171,9 +180,7 @@ function CookiesPage() {
           <p className="mb-6">For the best experience, we recommend enabling cookies.</p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">8. Similar Technologies</h2>
-          <p>
-            In addition to cookies, BookMyTime may use similar technologies such as:
-          </p>
+          <p>In addition to cookies, BookMyTime may use similar technologies such as:</p>
           <ul className="list-disc pl-5 space-y-1 mb-2">
             <li>Local Storage</li>
             <li>Session Storage</li>
@@ -185,17 +192,21 @@ function CookiesPage() {
             functionality.
           </p>
 
-          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">9. Updates to This Policy</h2>
+          <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">
+            9. Updates to This Policy
+          </h2>
           <p className="mb-2">
-            BookMyTime may update this Cookie Policy from time to time to reflect changes in technology,
-            legal requirements, or our services.
+            BookMyTime may update this Cookie Policy from time to time to reflect changes in
+            technology, legal requirements, or our services.
           </p>
           <p className="mb-6">
             Any updates will be published on this page with the revised effective date.
           </p>
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">10. Contact Us</h2>
-          <p className="mb-2">If you have any questions regarding our use of cookies, please contact us.</p>
+          <p className="mb-2">
+            If you have any questions regarding our use of cookies, please contact us.
+          </p>
           <p className="mb-6">
             <strong className="text-zinc-900">BookMyTime Support</strong>
             <br />
@@ -222,8 +233,8 @@ function CookiesPage() {
 
           <h2 className="text-xl font-semibold mt-8 mb-4 text-zinc-900">Consent</h2>
           <p className="mb-6">
-            By continuing to use BookMyTime, you acknowledge that you have read and understood this Cookie
-            Policy and consent to our use of cookies as described herein.
+            By continuing to use BookMyTime, you acknowledge that you have read and understood this
+            Cookie Policy and consent to our use of cookies as described herein.
           </p>
         </div>
       </div>

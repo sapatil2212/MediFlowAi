@@ -48,7 +48,9 @@ export function startWhatsAppServer() {
     });
 
     child.on("exit", (code, signal) => {
-      console.log(`[WA Launcher] WhatsApp server process exited with code ${code} and signal ${signal}`);
+      console.log(
+        `[WA Launcher] WhatsApp server process exited with code ${code} and signal ${signal}`,
+      );
       if (globalForWa.waServerProcess === child) {
         globalForWa.waServerProcess = undefined;
         console.log("[WA Launcher] Restarting WhatsApp server process in 5 seconds...");

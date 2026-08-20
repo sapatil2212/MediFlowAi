@@ -40,8 +40,8 @@ export function Footer() {
               <img src={bmtLogo} alt="BMT Logo" className="h-20 w-auto object-contain" />
             </Link>
             <p className="max-w-xs text-xs leading-relaxed text-zinc-500">
-              The AI-Powered Booking Engine for Modern Businesses.
-              Automate appointments, deliver seamless booking experiences with intelligent scheduling and customer engagement.
+              The AI-Powered Booking Engine for Modern Businesses. Automate appointments, deliver
+              seamless booking experiences with intelligent scheduling and customer engagement.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-8 md:grid-cols-3">
@@ -83,7 +83,6 @@ export function Footer() {
                 Contact Us
               </p>
               <ul className="space-y-4">
-
                 <li>
                   <p className="text-xs text-zinc-600 leading-relaxed">
                     <span className="block font-semibold text-zinc-900">Email:</span>
@@ -110,8 +109,7 @@ export function Footer() {
           <p className="text-[11px] text-zinc-500">
             Copyright © 2026 BookMyTime All rights reserved.
             <span className="hidden sm:inline"> | </span>
-            <br className="sm:hidden" />
-            A product of Brightwave Digital Products LLP.
+            <br className="sm:hidden" />A product of Brightwave Digital Products LLP.
           </p>
         </div>
       </div>

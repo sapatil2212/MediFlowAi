@@ -15,8 +15,14 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
     // 1. Resolve clinic details and business profession
     let clinicName = "";
     let profession = "Healthcare and medical";
-    const profile = await queryOne<any>("SELECT clinicName FROM ClinicProfile WHERE tenantId = ? LIMIT 1", [data.tenantId]);
-    const userClinic = await queryOne<any>("SELECT clinicName, profession FROM User WHERE tenantId = ? LIMIT 1", [data.tenantId]);
+    const profile = await queryOne<any>(
+      "SELECT clinicName FROM ClinicProfile WHERE tenantId = ? LIMIT 1",
+      [data.tenantId],
+    );
+    const userClinic = await queryOne<any>(
+      "SELECT clinicName, profession FROM User WHERE tenantId = ? LIMIT 1",
+      [data.tenantId],
+    );
     if (userClinic) {
       profession = userClinic.profession || "Healthcare and medical";
       clinicName = profile ? profile.clinicName : userClinic.clinicName;
@@ -27,7 +33,10 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
     }
 
     // 2. Resolve active departments
-    const departments = await query<any>("SELECT * FROM Department WHERE tenantId = ? ORDER BY name ASC", [data.tenantId]);
+    const departments = await query<any>(
+      "SELECT * FROM Department WHERE tenantId = ? ORDER BY name ASC",
+      [data.tenantId],
+    );
 
     // 3. Resolve active doctors
     const doctors = await query<any>(
@@ -36,17 +45,22 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
        LEFT JOIN Department dept ON d.departmentId = dept.id
        WHERE d.tenantId = ?
        ORDER BY d.name ASC`,
-      [data.tenantId]
+      [data.tenantId],
     );
 
     // 3b. Resolve active multi-location branches (publicly visible only when isActive)
-    let locations: Array<{ id: string; name: string; city: string | null; address: string | null }> = [];
+    let locations: Array<{
+      id: string;
+      name: string;
+      city: string | null;
+      address: string | null;
+    }> = [];
     try {
       locations = await query<any>(
         `SELECT id, name, city, address FROM Location
          WHERE tenantId = ? AND isActive = 1
          ORDER BY name ASC`,
-        [data.tenantId]
+        [data.tenantId],
       );
     } catch {
       // Location table may not exist on older deployments — silently treat as no locations
@@ -54,7 +68,7 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
     }
 
     // 4. If date and doctorId are selected, compute dynamic available slots
-    let slots: string[] = [];
+    const slots: string[] = [];
     const isEducation = profession === "Education institutions";
     const isGym = profession === "Fitness Gym etc";
 
@@ -66,9 +80,11 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
       // A. Check if the clinic/institution/gym is closed on this day
       const clinicHours = await queryOne<any>(
         "SELECT * FROM ClinicHours WHERE tenantId = ? AND dayOfWeek = ? LIMIT 1",
-        [data.tenantId, dayOfWeek]
+        [data.tenantId, dayOfWeek],
       );
-      const clinicClosed = clinicHours ? !!clinicHours.isClosed : (dayOfWeek === 0 || dayOfWeek === 6);
+      const clinicClosed = clinicHours
+        ? !!clinicHours.isClosed
+        : dayOfWeek === 0 || dayOfWeek === 6;
 
       if (!clinicClosed) {
         if (isEducation || isGym) {
@@ -89,7 +105,7 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
             const existingBookings = await query<any>(
               `SELECT timeSlot FROM Appointment
                WHERE tenantId = ? AND DATE(dateTime) = ? AND status != 'Cancelled'`,
-              [data.tenantId, dateStr]
+              [data.tenantId, dateStr],
             );
             const bookedSlots = existingBookings.map((b: any) => b.timeSlot || "");
 
@@ -98,7 +114,7 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
               const slotTimeStr = temp.toLocaleTimeString("en-US", {
                 hour: "2-digit",
                 minute: "2-digit",
-                hour12: true
+                hour12: true,
               });
               if (!bookedSlots.includes(slotTimeStr)) {
                 slots.push(slotTimeStr);
@@ -111,14 +127,14 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
           // B. Check if the doctor is on holiday/leave on this date
           const leave = await queryOne<any>(
             "SELECT id FROM DoctorLeave WHERE doctorId = ? AND leaveDate = ? LIMIT 1",
-            [data.doctorId, dateStr]
+            [data.doctorId, dateStr],
           );
 
           if (!leave) {
             // C. Get doctor schedule for this day
             const docSchedule = await queryOne<any>(
               "SELECT * FROM DoctorSchedule WHERE doctorId = ? AND dayOfWeek = ? LIMIT 1",
-              [data.doctorId, dayOfWeek]
+              [data.doctorId, dayOfWeek],
             );
 
             if (docSchedule) {
@@ -139,7 +155,7 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
               const existingBookings = await query<any>(
                 `SELECT dateTime, timeSlot FROM Appointment
                  WHERE doctorId = ? AND DATE(dateTime) = ? AND status != 'Cancelled'`,
-                [data.doctorId, dateStr]
+                [data.doctorId, dateStr],
               );
               const bookedSlots = existingBookings.map((b: any) => b.timeSlot || "");
 
@@ -149,7 +165,7 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
                 const slotTimeStr = temp.toLocaleTimeString("en-US", {
                   hour: "2-digit",
                   minute: "2-digit",
-                  hour12: true
+                  hour12: true,
                 });
                 if (!bookedSlots.includes(slotTimeStr)) {
                   slots.push(slotTimeStr);
@@ -179,7 +195,7 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
       doctors,
       locations,
       slots,
-      videoAvailable
+      videoAvailable,
     };
   });
 
@@ -187,25 +203,27 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
 // Public: Create Appointment (no auth needed)
 // ──────────────────────────────────────────────
 export const createAppointmentPublicServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    tenantId: string;
-    name: string;
-    email?: string;
-    phone?: string;
-    dateTime: string;
-    reason: string;
-    doctorId?: string;
-    timeSlot?: string;
-    whatsapp?: string;
-    appointmentType?: string;
-    locationId?: string;
-    consultationMode?: string;
-  }) => {
-    if (!data.tenantId || !data.name || !data.dateTime || !data.reason) {
-      throw new Error("Required booking fields missing");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      tenantId: string;
+      name: string;
+      email?: string;
+      phone?: string;
+      dateTime: string;
+      reason: string;
+      doctorId?: string;
+      timeSlot?: string;
+      whatsapp?: string;
+      appointmentType?: string;
+      locationId?: string;
+      consultationMode?: string;
+    }) => {
+      if (!data.tenantId || !data.name || !data.dateTime || !data.reason) {
+        throw new Error("Required booking fields missing");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const id = crypto.randomUUID();
     const dateVal = new Date(data.dateTime);
@@ -232,7 +250,7 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
       try {
         const loc = await queryOne<any>(
           "SELECT id FROM Location WHERE id = ? AND tenantId = ? AND isActive = 1 LIMIT 1",
-          [data.locationId, data.tenantId]
+          [data.locationId, data.tenantId],
         );
         if (loc) locId = loc.id;
       } catch {
@@ -244,47 +262,78 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     // Auto-assign sequential token number per tenant + date
     const tokenRow = await queryOne<any>(
       "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?)",
-      [data.tenantId, dateVal]
+      [data.tenantId, dateVal],
     );
     const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
 
     await execute(
       `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, locationId, consultationMode, createdAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [id, data.tenantId, data.name, data.email || "", data.phone || "", dateVal, data.reason, docId, tSlot, data.whatsapp || null, data.appointmentType || null, tokenNo, locId, consultationMode]
+      [
+        id,
+        data.tenantId,
+        data.name,
+        data.email || "",
+        data.phone || "",
+        dateVal,
+        data.reason,
+        docId,
+        tSlot,
+        data.whatsapp || null,
+        data.appointmentType || null,
+        tokenNo,
+        locId,
+        consultationMode,
+      ],
     );
 
     // Queue WhatsApp notification if WA microservice is connected
     if (typeof window === "undefined") {
       try {
-        const waConfig = await queryOne<any>("SELECT isEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1", [data.tenantId]);
+        const waConfig = await queryOne<any>(
+          "SELECT isEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1",
+          [data.tenantId],
+        );
         if (waConfig && waConfig.isEnabled) {
           const waStatus = await getWAStatus(data.tenantId);
           if (waStatus.state === "CONNECTED") {
-            const clinic = await queryOne<any>("SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1", [data.tenantId]);
+            const clinic = await queryOne<any>(
+              "SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1",
+              [data.tenantId],
+            );
             const clinicName = clinic ? clinic.clinicName : "Clinic";
 
             let docName = "";
             if (docId) {
-              const doc = await queryOne<any>("SELECT name FROM Doctor WHERE id = ? LIMIT 1", [docId]);
+              const doc = await queryOne<any>("SELECT name FROM Doctor WHERE id = ? LIMIT 1", [
+                docId,
+              ]);
               if (doc) docName = doc.name;
             }
 
             let locName = "";
             if (locId) {
               try {
-                const loc = await queryOne<any>("SELECT name FROM Location WHERE id = ? LIMIT 1", [locId]);
+                const loc = await queryOne<any>("SELECT name FROM Location WHERE id = ? LIMIT 1", [
+                  locId,
+                ]);
                 if (loc) locName = loc.name;
               } catch {}
             }
 
-            const dateStr = dateVal.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-            const timeStr = tSlot || dateVal.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+            const dateStr = dateVal.toLocaleDateString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            });
+            const timeStr =
+              tSlot || dateVal.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
             const docText = docName ? ` with *${docName}*` : "";
             const locText = locName ? `\n📍 *Location:* ${locName}` : "";
 
             const waMessage = `Hello *${data.name}*,\n\nYour appointment at *${clinicName}*${docText} is confirmed for *${dateStr}* at *${timeStr}*.${locText}\n\n🎫 *Your Token No: #${tokenNo}*\n\nThank you for choosing HealthSync AI!\n\n_This is an automated notification message._`;
-            await enqueueWA(data.tenantId, data.phone, waMessage);
+            if (data.phone) await enqueueWA(data.tenantId, data.phone, waMessage);
           }
         }
       } catch (waErr: any) {

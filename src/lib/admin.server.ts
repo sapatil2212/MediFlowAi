@@ -11,7 +11,7 @@ export async function verifyAdminSession() {
      JOIN SuperAdmin a ON s.adminId = a.id
      WHERE s.token = ? AND s.expiresAt > ?
      LIMIT 1`,
-    [token, new Date()]
+    [token, new Date()],
   );
 
   if (!session) return null;

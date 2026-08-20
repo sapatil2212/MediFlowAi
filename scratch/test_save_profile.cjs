@@ -1,5 +1,5 @@
-const mariadb = require('mariadb');
-require('dotenv').config();
+const mariadb = require("mariadb");
+require("dotenv").config();
 
 async function run() {
   const pool = mariadb.createPool({
@@ -9,10 +9,10 @@ async function run() {
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     ssl: { rejectUnauthorized: false },
-    connectionLimit: 1
+    connectionLimit: 1,
   });
 
-  const tenantId = 'clinic-118827'; // Test Clinician's tenantId
+  const tenantId = "clinic-118827"; // Test Clinician's tenantId
 
   try {
     const conn = await pool.getConnection();
@@ -50,8 +50,8 @@ async function run() {
         testAddress,
         testContactDetails,
         testShortDesc,
-        testServices
-      ]
+        testServices,
+      ],
     );
     console.log("✅ Successfully updated clinic profile in database.");
 
@@ -65,7 +65,7 @@ async function run() {
       address: row.address,
       contactDetails: row.contactDetails,
       shortDescription: row.shortDescription,
-      services: row.services
+      services: row.services,
     });
 
     conn.release();

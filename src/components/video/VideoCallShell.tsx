@@ -102,7 +102,8 @@ export function VideoCallShell({
   const inviteMessage = shareLink
     ? `Join your video consultation: ${shareLink}${meetingCode ? `\n\nMeeting code: ${meetingCode}` : ""}`
     : "";
-  const canNativeShare = typeof navigator !== "undefined" && typeof (navigator as any).share === "function";
+  const canNativeShare =
+    typeof navigator !== "undefined" && typeof (navigator as any).share === "function";
 
   const copyInvite = async () => {
     if (!shareLink) return;
@@ -243,13 +244,18 @@ export function VideoCallShell({
           ref={remoteRef}
           autoPlay
           playsInline
-          className={cn("h-full w-full bg-zinc-950 object-contain", !showRemoteStage && "opacity-0")}
+          className={cn(
+            "h-full w-full bg-zinc-950 object-contain",
+            !showRemoteStage && "opacity-0",
+          )}
         />
         {!showRemoteStage && !showLobby && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-zinc-400">
             <Loader2 className="h-8 w-8 animate-spin" />
             <p className="text-sm font-medium">
-              {connecting ? `Connecting${peerName ? ` to ${peerName}` : ""}…` : `Waiting for ${peerName ?? "the other participant"}…`}
+              {connecting
+                ? `Connecting${peerName ? ` to ${peerName}` : ""}…`
+                : `Waiting for ${peerName ?? "the other participant"}…`}
             </p>
           </div>
         )}
@@ -271,16 +277,24 @@ export function VideoCallShell({
 
               {role === "doctor" && shareLink && (
                 <div className="mt-5 text-left">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Patient join link</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    Patient join link
+                  </p>
                   <div className="mt-1.5 rounded-xl border border-white/10 bg-black/30 p-2">
-                    <code className="block break-all text-xs leading-relaxed text-zinc-300">{shareLink}</code>
+                    <code className="block break-all text-xs leading-relaxed text-zinc-300">
+                      {shareLink}
+                    </code>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button
                       onClick={copyInvite}
                       className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-zinc-900 hover:bg-zinc-200"
                     >
-                      {linkCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {linkCopied ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
                       {linkCopied ? "Copied" : "Copy link"}
                     </button>
                     {canNativeShare && (
@@ -337,7 +351,12 @@ export function VideoCallShell({
         {/* Top status bar */}
         <div className="absolute left-0 right-0 top-0 flex flex-wrap items-center justify-between gap-2 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={cn("flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold", QUALITY_STYLES[quality])}>
+            <span
+              className={cn(
+                "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold",
+                QUALITY_STYLES[quality],
+              )}
+            >
               <Wifi className="h-3 w-3" /> {quality}
             </span>
             <span className="flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-zinc-200">
@@ -402,15 +421,26 @@ export function VideoCallShell({
       {/* Controls — meeting code on the left, controls centred (Meet layout) */}
       <div className="relative flex items-center justify-center gap-3 border-t border-white/10 bg-zinc-900 px-4 py-4">
         {meetingCode && (
-          <span className="absolute left-4 hidden font-mono text-xs text-zinc-500 sm:block">{meetingCode}</span>
+          <span className="absolute left-4 hidden font-mono text-xs text-zinc-500 sm:block">
+            {meetingCode}
+          </span>
         )}
         <ControlButton active={micOn} onClick={toggleMic} label={micOn ? "Mute" : "Unmute"}>
           {micOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
         </ControlButton>
-        <ControlButton active={camOn} onClick={toggleCam} label={camOn ? "Camera off" : "Camera on"} disabled={audioOnly}>
+        <ControlButton
+          active={camOn}
+          onClick={toggleCam}
+          label={camOn ? "Camera off" : "Camera on"}
+          disabled={audioOnly}
+        >
           {camOn ? <VideoIcon className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
         </ControlButton>
-        <ControlButton active={showSettings} onClick={() => setShowSettings((v) => !v)} label="Devices">
+        <ControlButton
+          active={showSettings}
+          onClick={() => setShowSettings((v) => !v)}
+          label="Devices"
+        >
           <Settings className="h-5 w-5" />
         </ControlButton>
         <button
@@ -448,7 +478,9 @@ function ControlButton({
       title={label}
       className={cn(
         "flex h-12 w-12 items-center justify-center rounded-full transition",
-        active ? "bg-white/15 text-white hover:bg-white/25" : "bg-red-600/20 text-red-400 hover:bg-red-600/30",
+        active
+          ? "bg-white/15 text-white hover:bg-white/25"
+          : "bg-red-600/20 text-red-400 hover:bg-red-600/30",
         disabled && "cursor-not-allowed opacity-40",
       )}
     >

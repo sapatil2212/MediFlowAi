@@ -42,7 +42,13 @@ export function buildDoctorTransport(roomId: string): VideoTransport {
     },
     async reportEvent(kind, extra) {
       await reportCallEventServerFn({
-        data: { roomId, kind, detail: extra?.detail, peerState: extra?.peerState, connectedMs: extra?.connectedMs },
+        data: {
+          roomId,
+          kind,
+          detail: extra?.detail,
+          peerState: extra?.peerState,
+          connectedMs: extra?.connectedMs,
+        },
       });
     },
     async end(reason: string) {
@@ -72,7 +78,13 @@ export function buildPatientTransport(token: string): VideoTransport {
     },
     async reportEvent(kind, extra) {
       await patientReportEventServerFn({
-        data: { token, kind, detail: extra?.detail, peerState: extra?.peerState, connectedMs: extra?.connectedMs },
+        data: {
+          token,
+          kind,
+          detail: extra?.detail,
+          peerState: extra?.peerState,
+          connectedMs: extra?.connectedMs,
+        },
       });
     },
     async end(reason: string) {

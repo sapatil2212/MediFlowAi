@@ -11,10 +11,9 @@ function generateId(): string {
 // ──────────────────────────────────────────────
 // Admin Session Verification Server Function
 // ──────────────────────────────────────────────
-export const getSuperAdminSessionServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    return await verifyAdminSession();
-  });
+export const getSuperAdminSessionServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  return await verifyAdminSession();
+});
 
 // ──────────────────────────────────────────────
 // Login Server Function
@@ -33,7 +32,7 @@ export const loginSuperAdminServerFn = createServerFn({ method: "POST" })
 
     const admin = await queryOne<any>(
       "SELECT id, name, email, password FROM SuperAdmin WHERE email = ? LIMIT 1",
-      [data.email]
+      [data.email],
     );
 
     if (!admin) throw new Error("Invalid admin credentials");
@@ -46,7 +45,7 @@ export const loginSuperAdminServerFn = createServerFn({ method: "POST" })
 
     await execute(
       "INSERT INTO SuperAdminSession (id, adminId, token, expiresAt) VALUES (?, ?, ?, ?)",
-      [generateId(), admin.id, token, expiresAt]
+      [generateId(), admin.id, token, expiresAt],
     );
 
     const { setCookie } = await import("@tanstack/react-start/server");
@@ -63,20 +62,19 @@ export const loginSuperAdminServerFn = createServerFn({ method: "POST" })
         id: admin.id,
         name: admin.name,
         email: admin.email,
-      }
+      },
     };
   });
 
 // ──────────────────────────────────────────────
 // Get Public Config Hint Server Function
 // ──────────────────────────────────────────────
-export const getAdminConfigServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    return {
-      adminEmail: process.env.SUPER_ADMIN_EMAIL || "admin@bookmytime.ai",
-      hasSecurityKey: !!process.env.SUPER_ADMIN_SECURITY_KEY,
-    };
-  });
+export const getAdminConfigServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  return {
+    adminEmail: process.env.SUPER_ADMIN_EMAIL || "admin@bookmytime.ai",
+    hasSecurityKey: !!process.env.SUPER_ADMIN_SECURITY_KEY,
+  };
+});
 
 // ──────────────────────────────────────────────
 // Control WhatsApp Session Server Function
@@ -103,25 +101,24 @@ export const controlWhatsAppServerFn = createServerFn({ method: "POST" })
 // ──────────────────────────────────────────────
 // Logout Server Function
 // ──────────────────────────────────────────────
-export const logoutSuperAdminServerFn = createServerFn({ method: "POST" })
-  .handler(async () => {
-    const { getCookie, deleteCookie } = await import("@tanstack/react-start/server");
-    const token = getCookie("admin_session_token");
+export const logoutSuperAdminServerFn = createServerFn({ method: "POST" }).handler(async () => {
+  const { getCookie, deleteCookie } = await import("@tanstack/react-start/server");
+  const token = getCookie("admin_session_token");
 
-    if (token) {
-      await execute("DELETE FROM SuperAdminSession WHERE token = ?", [token]);
-      deleteCookie("admin_session_token", { path: "/" });
-    }
+  if (token) {
+    await execute("DELETE FROM SuperAdminSession WHERE token = ?", [token]);
+    deleteCookie("admin_session_token", { path: "/" });
+  }
 
-    return { success: true };
-  });
+  return { success: true };
+});
 
 // ──────────────────────────────────────────────
 // Get Dashboard Data Server Function
 // ──────────────────────────────────────────────
 
-export const getSuperAdminDashboardDataServerFn = createServerFn({ method: "GET" })
-  .handler(async () => {
+export const getSuperAdminDashboardDataServerFn = createServerFn({ method: "GET" }).handler(
+  async () => {
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
@@ -161,7 +158,7 @@ export const getSuperAdminDashboardDataServerFn = createServerFn({ method: "GET"
               paymentMethod, paymentAmount, billingInterval,
               virtualPhoneNumber, callLimit, callsHandled, createdAt
        FROM User 
-       ORDER BY createdAt DESC`
+       ORDER BY createdAt DESC`,
     );
 
     // MRR: Sum of monthly equivalents for active paid plans
@@ -171,14 +168,12 @@ export const getSuperAdminDashboardDataServerFn = createServerFn({ method: "GET"
            WHEN billingInterval = 'yearly' THEN paymentAmount / 12 
            ELSE paymentAmount 
          END
-       ) as total FROM User WHERE subscriptionStatus = 'Active'`
+       ) as total FROM User WHERE subscriptionStatus = 'Active'`,
     );
     const totalMRR = parseFloat(mrrResult?.total || 0);
 
     // Call metrics
-    const callsResult = await queryOne<any>(
-      "SELECT SUM(callsHandled) as total FROM User"
-    );
+    const callsResult = await queryOne<any>("SELECT SUM(callsHandled) as total FROM User");
     const totalCallsHandled = parseInt(callsResult?.total || 0);
 
     // Calculate dynamic past 6 months cumulative signup trend
@@ -200,7 +195,7 @@ export const getSuperAdminDashboardDataServerFn = createServerFn({ method: "GET"
 
     let baseCount = tenants.filter((t: any) => new Date(t.createdAt) < sixMonthsAgo).length;
 
-    const signupTrends = monthsList.map(m => {
+    const signupTrends = monthsList.map((m) => {
       const monthSignups = tenants.filter((t: any) => {
         const d = new Date(t.createdAt);
         return d.getMonth() === m.month && d.getFullYear() === m.year;
@@ -223,11 +218,11 @@ export const getSuperAdminDashboardDataServerFn = createServerFn({ method: "GET"
         // (amount > 0 and a real payment method) — matches the hasPaid/isTrialing
         // logic used across every client dashboard. subscriptionStatus alone is
         // not a reliable signal since new signups are inserted as 'Active'.
-        activePaid: tenants.filter(t => {
+        activePaid: tenants.filter((t) => {
           const pm = String(t.paymentMethod || "").toLowerCase();
           return Number(t.paymentAmount) > 0 && pm !== "none" && pm !== "trial";
         }).length,
-        trialing: tenants.filter(t => {
+        trialing: tenants.filter((t) => {
           const pm = String(t.paymentMethod || "").toLowerCase();
           return !(Number(t.paymentAmount) > 0 && pm !== "none" && pm !== "trial");
         }).length,
@@ -241,28 +236,31 @@ export const getSuperAdminDashboardDataServerFn = createServerFn({ method: "GET"
         whatsappQueue: waStatus.queueCount,
         whatsappLogs: waStatus.sentLog || [],
         smtpState,
-      }
+      },
     };
-  });
+  },
+);
 
 // Update Tenant SaaS Settings Server Function
 // ──────────────────────────────────────────────
 export const updateTenantSaasServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    id: string;
-    subscriptionStatus: string;
-    subscriptionPlan: string;
-    subscriptionExpiresAt: string | null;
-    paymentMethod: string;
-    paymentAmount: number;
-    billingInterval: string;
-    virtualPhoneNumber: string;
-    callLimit: number;
-    callsHandled: number;
-  }) => {
-    if (!data.id) throw new Error("Tenant ID is required");
-    return data;
-  })
+  .validator(
+    (data: {
+      id: string;
+      subscriptionStatus: string;
+      subscriptionPlan: string;
+      subscriptionExpiresAt: string | null;
+      paymentMethod: string;
+      paymentAmount: number;
+      billingInterval: string;
+      virtualPhoneNumber: string;
+      callLimit: number;
+      callsHandled: number;
+    }) => {
+      if (!data.id) throw new Error("Tenant ID is required");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
@@ -272,7 +270,7 @@ export const updateTenantSaasServerFn = createServerFn({ method: "POST" })
     // Fetch previous status to log changes
     const prev = await queryOne<any>(
       "SELECT subscriptionStatus, subscriptionPlan FROM User WHERE id = ? LIMIT 1",
-      [data.id]
+      [data.id],
     );
 
     await execute(
@@ -299,7 +297,7 @@ export const updateTenantSaasServerFn = createServerFn({ method: "POST" })
         data.callLimit,
         data.callsHandled,
         data.id,
-      ]
+      ],
     );
 
     // Insert history record
@@ -315,8 +313,8 @@ export const updateTenantSaasServerFn = createServerFn({ method: "POST" })
           prev.subscriptionPlan,
           data.subscriptionPlan,
           data.paymentAmount,
-          data.billingInterval
-        ]
+          data.billingInterval,
+        ],
       );
     }
 
@@ -331,26 +329,28 @@ export const updateTenantSaasServerFn = createServerFn({ method: "POST" })
 // Enforces email/phone uniqueness across other accounts. Optionally resets the
 // login password. All fields are optional — only provided values are written.
 export const updateTenantFullServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    id: string;
-    name?: string;
-    email?: string;
-    phone?: string;
-    clinicName?: string;
-    practiceSize?: string;
-    profession?: string;
-    address?: string;
-    whatsappNo?: string;
-    landlineNo?: string;
-    contactNo?: string;
-    profileEmail?: string;
-    shortDescription?: string;
-    services?: string;
-    newPassword?: string;
-  }) => {
-    if (!data.id) throw new Error("Tenant ID is required");
-    return data;
-  })
+  .validator(
+    (data: {
+      id: string;
+      name?: string;
+      email?: string;
+      phone?: string;
+      clinicName?: string;
+      practiceSize?: string;
+      profession?: string;
+      address?: string;
+      whatsappNo?: string;
+      landlineNo?: string;
+      contactNo?: string;
+      profileEmail?: string;
+      shortDescription?: string;
+      services?: string;
+      newPassword?: string;
+    }) => {
+      if (!data.id) throw new Error("Tenant ID is required");
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
@@ -360,11 +360,17 @@ export const updateTenantFullServerFn = createServerFn({ method: "POST" })
 
     // Uniqueness guards — email/phone must not collide with other accounts.
     if (data.email && data.email !== user.email) {
-      const dupe = await queryOne<any>("SELECT id FROM User WHERE email = ? AND id <> ? LIMIT 1", [data.email, data.id]);
+      const dupe = await queryOne<any>("SELECT id FROM User WHERE email = ? AND id <> ? LIMIT 1", [
+        data.email,
+        data.id,
+      ]);
       if (dupe) throw new Error("That email is already used by another account.");
     }
     if (data.phone && data.phone !== user.phone) {
-      const dupe = await queryOne<any>("SELECT id FROM User WHERE phone = ? AND id <> ? LIMIT 1", [data.phone, data.id]);
+      const dupe = await queryOne<any>("SELECT id FROM User WHERE phone = ? AND id <> ? LIMIT 1", [
+        data.phone,
+        data.id,
+      ]);
       if (dupe) throw new Error("That phone number is already used by another account.");
     }
 
@@ -372,7 +378,10 @@ export const updateTenantFullServerFn = createServerFn({ method: "POST" })
     const userFields: string[] = [];
     const userVals: any[] = [];
     const setIf = (col: string, val: any) => {
-      if (val !== undefined && val !== null) { userFields.push(`${col} = ?`); userVals.push(val); }
+      if (val !== undefined && val !== null) {
+        userFields.push(`${col} = ?`);
+        userVals.push(val);
+      }
     };
     setIf("name", data.name);
     setIf("email", data.email);
@@ -389,19 +398,28 @@ export const updateTenantFullServerFn = createServerFn({ method: "POST" })
 
     if (userFields.length > 0) {
       userVals.push(data.id);
-      await execute(`UPDATE User SET ${userFields.join(", ")}, updatedAt = NOW() WHERE id = ?`, userVals);
+      await execute(
+        `UPDATE User SET ${userFields.join(", ")}, updatedAt = NOW() WHERE id = ?`,
+        userVals,
+      );
     }
 
     // Update / upsert the ClinicProfile row for this tenant.
     const tId = user.tenantId;
     if (tId) {
-      const profile = await queryOne<any>("SELECT id FROM ClinicProfile WHERE tenantId = ? LIMIT 1", [tId]);
+      const profile = await queryOne<any>(
+        "SELECT id FROM ClinicProfile WHERE tenantId = ? LIMIT 1",
+        [tId],
+      );
 
       if (profile) {
         const pFields: string[] = [];
         const pVals: any[] = [];
         const setP = (col: string, val: any) => {
-          if (val !== undefined && val !== null) { pFields.push(`${col} = ?`); pVals.push(val); }
+          if (val !== undefined && val !== null) {
+            pFields.push(`${col} = ?`);
+            pVals.push(val);
+          }
         };
         // Keep clinicName/clinicianName/phone in sync with the User record too.
         setP("clinicName", data.clinicName);
@@ -419,7 +437,10 @@ export const updateTenantFullServerFn = createServerFn({ method: "POST" })
 
         if (pFields.length > 0) {
           pVals.push(tId);
-          await execute(`UPDATE ClinicProfile SET ${pFields.join(", ")}, updatedAt = NOW() WHERE tenantId = ?`, pVals);
+          await execute(
+            `UPDATE ClinicProfile SET ${pFields.join(", ")}, updatedAt = NOW() WHERE tenantId = ?`,
+            pVals,
+          );
         }
       } else {
         // Create a profile if none exists yet.
@@ -427,7 +448,8 @@ export const updateTenantFullServerFn = createServerFn({ method: "POST" })
           `INSERT INTO ClinicProfile (id, tenantId, clinicName, clinicianName, phone, practiceSize, profession, address, whatsappNo, landlineNo, contactNo, email, shortDescription, services, createdAt, updatedAt)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
           [
-            generateId(), tId,
+            generateId(),
+            tId,
             data.clinicName || user.clinicName,
             data.name || user.name,
             data.phone || user.phone,
@@ -440,7 +462,7 @@ export const updateTenantFullServerFn = createServerFn({ method: "POST" })
             data.profileEmail || null,
             data.shortDescription || null,
             data.services || null,
-          ]
+          ],
         );
       }
     }
@@ -452,31 +474,37 @@ export const updateTenantFullServerFn = createServerFn({ method: "POST" })
 // Create Tenant (Clinician User) Server Function
 // ──────────────────────────────────────────────
 export const createTenantAdminServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    name: string;
-    email: string;
-    phone: string;
-    clinicName: string;
-    practiceSize: string;
-    password?: string;
-  }) => {
-    if (!data.name || !data.email || !data.phone || !data.clinicName || !data.practiceSize) {
-      throw new Error("Missing required fields");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      name: string;
+      email: string;
+      phone: string;
+      clinicName: string;
+      practiceSize: string;
+      password?: string;
+    }) => {
+      if (!data.name || !data.email || !data.phone || !data.clinicName || !data.practiceSize) {
+        throw new Error("Missing required fields");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
     // Check email or phone duplicate
-    const existing = await queryOne("SELECT id FROM User WHERE email = ? OR phone = ? LIMIT 1", [data.email, data.phone]);
+    const existing = await queryOne("SELECT id FROM User WHERE email = ? OR phone = ? LIMIT 1", [
+      data.email,
+      data.phone,
+    ]);
     if (existing) {
       throw new Error("Clinic email or phone is already registered.");
     }
 
     const userId = generateId();
-    const tenantId = "clinic-" + crypto.createHash("md5").update(userId).digest("hex").substring(0, 6);
+    const tenantId =
+      "clinic-" + crypto.createHash("md5").update(userId).digest("hex").substring(0, 6);
 
     const plainPassword = data.password || "clinic123";
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
@@ -496,17 +524,23 @@ export const createTenantAdminServerFn = createServerFn({ method: "POST" })
         data.clinicName,
         data.practiceSize,
         hashedPassword,
-      ]
+      ],
     );
 
     // Log initial active subscription log
     await execute(
       `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
        VALUES (?, ?, 'None', 'Active', 'None', 'Trial', 0.00, 'monthly', NOW(), 'System')`,
-      [generateId(), userId]
+      [generateId(), userId],
     );
 
-    return { success: true, tenantId, clinicName: data.clinicName, email: data.email, tempPassword: plainPassword };
+    return {
+      success: true,
+      tenantId,
+      clinicName: data.clinicName,
+      email: data.email,
+      tempPassword: plainPassword,
+    };
   });
 
 // ──────────────────────────────────────────────
@@ -571,7 +605,10 @@ export const bulkDeleteTenantsServerFn = createServerFn({ method: "POST" })
     for (const id of data.ids) {
       try {
         const user = await queryOne<any>("SELECT tenantId FROM User WHERE id = ? LIMIT 1", [id]);
-        if (!user) { failed++; continue; }
+        if (!user) {
+          failed++;
+          continue;
+        }
 
         const tId = user.tenantId;
         if (tId) {
@@ -608,17 +645,17 @@ export const toggleTenantStatusServerFn = createServerFn({ method: "POST" })
 
     const prev = await queryOne<any>(
       "SELECT subscriptionStatus, subscriptionPlan FROM User WHERE id = ? LIMIT 1",
-      [data.id]
+      [data.id],
     );
 
     if (!prev) throw new Error("Tenant not found");
 
-    const newStatus = prev.subscriptionStatus === 'Active' ? 'Cancelled' : 'Active';
+    const newStatus = prev.subscriptionStatus === "Active" ? "Cancelled" : "Active";
 
-    await execute(
-      "UPDATE User SET subscriptionStatus = ?, updatedAt = NOW() WHERE id = ?",
-      [newStatus, data.id]
-    );
+    await execute("UPDATE User SET subscriptionStatus = ?, updatedAt = NOW() WHERE id = ?", [
+      newStatus,
+      data.id,
+    ]);
 
     await execute(
       `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
@@ -630,7 +667,7 @@ export const toggleTenantStatusServerFn = createServerFn({ method: "POST" })
         newStatus,
         prev.subscriptionPlan,
         prev.subscriptionPlan,
-      ]
+      ],
     );
 
     return { success: true, newStatus };
@@ -653,7 +690,9 @@ export const getPaymentHistoryServerFn = createServerFn({ method: "GET" })
       params.push(data.status);
     }
     if (data.search) {
-      conditions.push("(combined.orderId LIKE ? OR combined.customerEmail LIKE ? OR combined.customerName LIKE ? OR combined.customerPhone LIKE ? OR combined.cfPaymentId LIKE ? OR combined.clinicName LIKE ?)");
+      conditions.push(
+        "(combined.orderId LIKE ? OR combined.customerEmail LIKE ? OR combined.customerName LIKE ? OR combined.customerPhone LIKE ? OR combined.cfPaymentId LIKE ? OR combined.clinicName LIKE ?)",
+      );
       const like = `%${data.search}%`;
       params.push(like, like, like, like, like, like);
     }
@@ -703,7 +742,7 @@ export const getPaymentHistoryServerFn = createServerFn({ method: "GET" })
        ${where}
        ORDER BY combined.createdAt DESC
        LIMIT ?`,
-      [...params, limit]
+      [...params, limit],
     );
 
     // Summary counts + totals for the header cards (unified across both one-time and AutoPay)
@@ -722,7 +761,7 @@ export const getPaymentHistoryServerFn = createServerFn({ method: "GET" })
          SELECT status, amount FROM PaymentHistory
          UNION ALL
          SELECT status, amount FROM SubscriptionPayment
-       ) AS combined`
+       ) AS combined`,
     );
 
     return {
@@ -748,8 +787,8 @@ export const getPaymentHistoryServerFn = createServerFn({ method: "GET" })
 // finalized locally (webhook not configured, user abandoned the return trip,
 // etc.). SUCCESS is terminal and skipped. Never mutates user access — purely
 // reconciles the ledger so the admin sees exact collected/failed/cancelled.
-export const syncAllPaymentsFromCashfreeServerFn = createServerFn({ method: "POST" })
-  .handler(async () => {
+export const syncAllPaymentsFromCashfreeServerFn = createServerFn({ method: "POST" }).handler(
+  async () => {
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
@@ -773,7 +812,7 @@ export const syncAllPaymentsFromCashfreeServerFn = createServerFn({ method: "POS
              WHERE ph.tenantId COLLATE utf8mb4_unicode_ci = u.tenantId COLLATE utf8mb4_unicode_ci
                AND ph.status = 'SUCCESS'
            )
-         LIMIT 500`
+         LIMIT 500`,
       );
 
       for (const u of paidUsers) {
@@ -786,11 +825,18 @@ export const syncAllPaymentsFromCashfreeServerFn = createServerFn({ method: "POS
                amount = VALUES(amount), status = 'SUCCESS', orderStatus = 'PAID',
                paymentMode = COALESCE(VALUES(paymentMode), paymentMode), updatedAt = NOW()`,
             [
-              crypto.randomUUID(), u.id, u.tenantId, `backfill_${u.tenantId}`,
-              u.subscriptionPlan || null, Number(u.paymentAmount) || 0,
-              u.paymentMethod || "Cashfree", u.name || null, u.email || null, u.phone || null,
+              crypto.randomUUID(),
+              u.id,
+              u.tenantId,
+              `backfill_${u.tenantId}`,
+              u.subscriptionPlan || null,
+              Number(u.paymentAmount) || 0,
+              u.paymentMethod || "Cashfree",
+              u.name || null,
+              u.email || null,
+              u.phone || null,
               u.updatedAt ? new Date(u.updatedAt) : new Date(),
-            ]
+            ],
           );
           backfilled++;
         } catch (e: any) {
@@ -807,7 +853,7 @@ export const syncAllPaymentsFromCashfreeServerFn = createServerFn({ method: "POS
        WHERE status <> 'SUCCESS' AND orderId IS NOT NULL AND orderId <> ''
          AND orderId NOT LIKE 'backfill_%'
        ORDER BY createdAt DESC
-       LIMIT 300`
+       LIMIT 300`,
     );
 
     const { reconcileOrderPaymentHistory } = await import("./payment-reconcile.server");
@@ -834,7 +880,8 @@ export const syncAllPaymentsFromCashfreeServerFn = createServerFn({ method: "POS
       failed,
       backfilled,
     };
-  });
+  },
+);
 
 // ──────────────────────────────────────────────
 // Fetch Subscription History for Clinic Server Function
@@ -853,7 +900,7 @@ export const getSubscriptionHistoryServerFn = createServerFn({ method: "GET" })
        FROM SubscriptionHistory 
        WHERE userId = ? 
        ORDER BY changedAt DESC`,
-      [userId]
+      [userId],
     );
   });
 
@@ -870,11 +917,8 @@ export const getTenantFullProfileServerFn = createServerFn({ method: "GET" })
     if (!admin) throw new Error("Unauthorized");
 
     // 1. Fetch base User record
-    const user = await queryOne<any>(
-      "SELECT * FROM User WHERE id = ? LIMIT 1",
-      [userId]
-    );
-    
+    const user = await queryOne<any>("SELECT * FROM User WHERE id = ? LIMIT 1", [userId]);
+
     if (!user) throw new Error("Tenant not found");
 
     const tId = user.tenantId;
@@ -882,25 +926,37 @@ export const getTenantFullProfileServerFn = createServerFn({ method: "GET" })
     // 2. Fetch ClinicProfile
     let profile = null;
     if (tId) {
-      profile = await queryOne<any>(
-        "SELECT * FROM ClinicProfile WHERE tenantId = ? LIMIT 1",
-        [tId]
-      );
+      profile = await queryOne<any>("SELECT * FROM ClinicProfile WHERE tenantId = ? LIMIT 1", [
+        tId,
+      ]);
     }
 
     // 3. Aggregate metrics
-    let docCount: any = { count: 0 }, patientCount: any = { count: 0 }, apptCount: any = { count: 0 }, soapCount: any = { count: 0 };
+    let docCount: any = { count: 0 },
+      patientCount: any = { count: 0 },
+      apptCount: any = { count: 0 },
+      soapCount: any = { count: 0 };
     if (tId) {
-      const docRes = await query<any>("SELECT COUNT(*) as count FROM Doctor WHERE tenantId = ?", [tId]);
+      const docRes = await query<any>("SELECT COUNT(*) as count FROM Doctor WHERE tenantId = ?", [
+        tId,
+      ]);
       if (docRes.length > 0) docCount = docRes[0];
 
-      const patRes = await query<any>("SELECT COUNT(*) as count FROM Patient WHERE tenantId = ?", [tId]);
+      const patRes = await query<any>("SELECT COUNT(*) as count FROM Patient WHERE tenantId = ?", [
+        tId,
+      ]);
       if (patRes.length > 0) patientCount = patRes[0];
 
-      const appRes = await query<any>("SELECT COUNT(*) as count FROM Appointment WHERE tenantId = ?", [tId]);
+      const appRes = await query<any>(
+        "SELECT COUNT(*) as count FROM Appointment WHERE tenantId = ?",
+        [tId],
+      );
       if (appRes.length > 0) apptCount = appRes[0];
 
-      const soapRes = await query<any>("SELECT COUNT(*) as count FROM SoapNote WHERE tenantId = ?", [tId]);
+      const soapRes = await query<any>(
+        "SELECT COUNT(*) as count FROM SoapNote WHERE tenantId = ?",
+        [tId],
+      );
       if (soapRes.length > 0) soapCount = soapRes[0];
     }
 
@@ -910,7 +966,7 @@ export const getTenantFullProfileServerFn = createServerFn({ method: "GET" })
        FROM SubscriptionHistory 
        WHERE userId = ? 
        ORDER BY changedAt DESC`,
-      [user.id]
+      [user.id],
     );
 
     return {
@@ -922,7 +978,7 @@ export const getTenantFullProfileServerFn = createServerFn({ method: "GET" })
         appointments: apptCount?.count || apptCount?.COUNT || 0,
         soapNotes: soapCount?.count || soapCount?.COUNT || 0,
       },
-      history
+      history,
     };
   });
 
@@ -931,22 +987,24 @@ export const getTenantFullProfileServerFn = createServerFn({ method: "GET" })
 // ──────────────────────────────────────────────
 
 export const createPaymentServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    tenantId: string;
-    plan: string;
-    amount: number;
-    status: string;
-    paymentMode: string;
-    customerName?: string;
-    customerEmail?: string;
-    customerPhone?: string;
-    createdAt?: string;
-  }) => {
-    if (!data.tenantId || !data.status || data.amount === undefined) {
-      throw new Error("Tenant ID, status, and amount are required");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      tenantId: string;
+      plan: string;
+      amount: number;
+      status: string;
+      paymentMode: string;
+      customerName?: string;
+      customerEmail?: string;
+      customerPhone?: string;
+      createdAt?: string;
+    }) => {
+      if (!data.tenantId || !data.status || data.amount === undefined) {
+        throw new Error("Tenant ID, status, and amount are required");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
@@ -954,7 +1012,7 @@ export const createPaymentServerFn = createServerFn({ method: "POST" })
     // Look up the base User matching the tenantId
     const user = await queryOne<any>(
       "SELECT id, name, email, phone FROM User WHERE tenantId = ? LIMIT 1",
-      [data.tenantId]
+      [data.tenantId],
     );
 
     const userId = user?.id || null;
@@ -983,30 +1041,32 @@ export const createPaymentServerFn = createServerFn({ method: "POST" })
         name,
         email,
         phone,
-        date
-      ]
+        date,
+      ],
     );
 
     return { success: true, paymentId, orderId };
   });
 
 export const updatePaymentServerFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    id: string;
-    type: "one_time" | "subscription";
-    amount: number;
-    status: string;
-    paymentMode: string;
-    failureReason?: string;
-    customerName?: string;
-    customerEmail?: string;
-    customerPhone?: string;
-  }) => {
-    if (!data.id || !data.type || !data.status) {
-      throw new Error("ID, type, and status are required");
-    }
-    return data;
-  })
+  .validator(
+    (data: {
+      id: string;
+      type: "one_time" | "subscription";
+      amount: number;
+      status: string;
+      paymentMode: string;
+      failureReason?: string;
+      customerName?: string;
+      customerEmail?: string;
+      customerPhone?: string;
+    }) => {
+      if (!data.id || !data.type || !data.status) {
+        throw new Error("ID, type, and status are required");
+      }
+      return data;
+    },
+  )
   .handler(async ({ data }) => {
     const admin = await verifyAdminSession();
     if (!admin) throw new Error("Unauthorized");
@@ -1016,13 +1076,7 @@ export const updatePaymentServerFn = createServerFn({ method: "POST" })
         `UPDATE SubscriptionPayment
          SET status = ?, amount = ?, paymentMethod = ?, failureReason = ?
          WHERE id = ?`,
-        [
-          data.status,
-          Number(data.amount),
-          data.paymentMode,
-          data.failureReason || null,
-          data.id,
-        ]
+        [data.status, Number(data.amount), data.paymentMode, data.failureReason || null, data.id],
       );
     } else {
       await execute(
@@ -1038,7 +1092,7 @@ export const updatePaymentServerFn = createServerFn({ method: "POST" })
           data.customerEmail || null,
           data.customerPhone || null,
           data.id,
-        ]
+        ],
       );
     }
 

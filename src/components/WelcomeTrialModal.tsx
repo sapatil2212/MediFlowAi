@@ -122,14 +122,18 @@ export default function WelcomeTrialModal({
           <p className="mt-1.5 text-xs text-zinc-500 font-medium max-w-md mx-auto leading-relaxed">
             Your account is ready. Your{" "}
             {trialExpired ? (
-              <span className="font-bold text-red-600">free trial of the {currentTier} plan has ended</span>
+              <span className="font-bold text-red-600">
+                free trial of the {currentTier} plan has ended
+              </span>
             ) : (
               <>
-                <span className="font-bold text-amber-600">free trial of the {currentTier} plan is active</span>
+                <span className="font-bold text-amber-600">
+                  free trial of the {currentTier} plan is active
+                </span>
                 {` for ${trialEndsInDays} more day${trialEndsInDays === 1 ? "" : "s"}`}
               </>
-            )}.
-            Activate anytime below to keep your workspace running without interruption.
+            )}
+            . Activate anytime below to keep your workspace running without interruption.
           </p>
         </div>
 

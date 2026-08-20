@@ -28,6 +28,7 @@ import { Route as CookiesRouteImport } from './routes/cookies'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashboardsRestaurantRouteImport } from './routes/dashboards/restaurant'
 import { Route as DashboardsProfessionalRouteImport } from './routes/dashboards/professional'
 import { Route as DashboardsMedicalRouteImport } from './routes/dashboards/medical'
 import { Route as DashboardsGymRouteImport } from './routes/dashboards/gym'
@@ -133,6 +134,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardsRestaurantRoute = DashboardsRestaurantRouteImport.update({
+  id: '/dashboards/restaurant',
+  path: '/dashboards/restaurant',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardsProfessionalRoute = DashboardsProfessionalRouteImport.update({
   id: '/dashboards/professional',
   path: '/dashboards/professional',
@@ -208,6 +214,7 @@ export interface FileRoutesByFullPath {
   '/dashboards/gym': typeof DashboardsGymRoute
   '/dashboards/medical': typeof DashboardsMedicalRoute
   '/dashboards/professional': typeof DashboardsProfessionalRoute
+  '/dashboards/restaurant': typeof DashboardsRestaurantRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -238,6 +245,7 @@ export interface FileRoutesByTo {
   '/dashboards/gym': typeof DashboardsGymRoute
   '/dashboards/medical': typeof DashboardsMedicalRoute
   '/dashboards/professional': typeof DashboardsProfessionalRoute
+  '/dashboards/restaurant': typeof DashboardsRestaurantRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -269,6 +277,7 @@ export interface FileRoutesById {
   '/dashboards/gym': typeof DashboardsGymRoute
   '/dashboards/medical': typeof DashboardsMedicalRoute
   '/dashboards/professional': typeof DashboardsProfessionalRoute
+  '/dashboards/restaurant': typeof DashboardsRestaurantRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -301,6 +310,7 @@ export interface FileRouteTypes {
     | '/dashboards/gym'
     | '/dashboards/medical'
     | '/dashboards/professional'
+    | '/dashboards/restaurant'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -331,6 +341,7 @@ export interface FileRouteTypes {
     | '/dashboards/gym'
     | '/dashboards/medical'
     | '/dashboards/professional'
+    | '/dashboards/restaurant'
   id:
     | '__root__'
     | '/'
@@ -361,6 +372,7 @@ export interface FileRouteTypes {
     | '/dashboards/gym'
     | '/dashboards/medical'
     | '/dashboards/professional'
+    | '/dashboards/restaurant'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -392,6 +404,7 @@ export interface RootRouteChildren {
   DashboardsGymRoute: typeof DashboardsGymRoute
   DashboardsMedicalRoute: typeof DashboardsMedicalRoute
   DashboardsProfessionalRoute: typeof DashboardsProfessionalRoute
+  DashboardsRestaurantRoute: typeof DashboardsRestaurantRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -529,6 +542,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboards/restaurant': {
+      id: '/dashboards/restaurant'
+      path: '/dashboards/restaurant'
+      fullPath: '/dashboards/restaurant'
+      preLoaderRoute: typeof DashboardsRestaurantRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboards/professional': {
       id: '/dashboards/professional'
       path: '/dashboards/professional'
@@ -624,6 +644,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardsGymRoute: DashboardsGymRoute,
   DashboardsMedicalRoute: DashboardsMedicalRoute,
   DashboardsProfessionalRoute: DashboardsProfessionalRoute,
+  DashboardsRestaurantRoute: DashboardsRestaurantRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

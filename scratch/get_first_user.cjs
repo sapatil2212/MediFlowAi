@@ -1,5 +1,5 @@
-const mariadb = require('mariadb');
-require('dotenv').config();
+const mariadb = require("mariadb");
+require("dotenv").config();
 
 async function run() {
   const pool = mariadb.createPool({
@@ -9,7 +9,7 @@ async function run() {
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     ssl: { rejectUnauthorized: false },
-    connectionLimit: 1
+    connectionLimit: 1,
   });
 
   try {

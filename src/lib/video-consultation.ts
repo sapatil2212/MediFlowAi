@@ -29,7 +29,12 @@ export type ConsultationMode = "in_person" | "video";
 export type SignalKind = "offer" | "answer" | "ice_candidate" | "renegotiate";
 export type ParticipantRole = "doctor" | "patient";
 export type ParticipantStatus = "requested" | "admitted" | "declined" | "left" | "removed";
-export type CallOutcome = "completed" | "abandoned" | "patient_no_show" | "doctor_no_show" | "cancelled";
+export type CallOutcome =
+  | "completed"
+  | "abandoned"
+  | "patient_no_show"
+  | "doctor_no_show"
+  | "cancelled";
 export type EndReason =
   | "doctor_ended"
   | "patient_ended"
@@ -54,11 +59,20 @@ export const ROOM_STATES: readonly RoomState[] = [
   "cancelled",
 ] as const;
 
-export const TERMINAL_ROOM_STATES: readonly RoomState[] = ["ended", "expired", "cancelled"] as const;
+export const TERMINAL_ROOM_STATES: readonly RoomState[] = [
+  "ended",
+  "expired",
+  "cancelled",
+] as const;
 
 export const CONSULTATION_MODES: readonly ConsultationMode[] = ["in_person", "video"] as const;
 
-export const SIGNAL_KINDS: readonly SignalKind[] = ["offer", "answer", "ice_candidate", "renegotiate"] as const;
+export const SIGNAL_KINDS: readonly SignalKind[] = [
+  "offer",
+  "answer",
+  "ice_candidate",
+  "renegotiate",
+] as const;
 
 /** Maximum signal payload size in bytes (Req 7.11). */
 export const MAX_SIGNAL_PAYLOAD_BYTES = 64 * 1024;
@@ -182,7 +196,11 @@ export interface SignalRecord {
  * OTHER role (its own were echoed back would be noise), so same-role messages
  * are filtered out.
  */
-export function selectSignalsAfter(all: SignalRecord[], cursor: number, forRole: ParticipantRole): SignalRecord[] {
+export function selectSignalsAfter(
+  all: SignalRecord[],
+  cursor: number,
+  forRole: ParticipantRole,
+): SignalRecord[] {
   return all
     .filter((s) => s.seq > cursor && s.senderRole !== forRole)
     .sort((a, b) => a.seq - b.seq);
@@ -199,10 +217,8 @@ export function nextCursor(selected: SignalRecord[], cursor: number): number {
 
 export function validateSignalPayload(
   kind: string,
-  payload: string
-):
-  | { ok: true; kind: SignalKind }
-  | { ok: false; reason: "unknown_kind" | "too_large" | "empty" } {
+  payload: string,
+): { ok: true; kind: SignalKind } | { ok: false; reason: "unknown_kind" | "too_large" | "empty" } {
   if (!SIGNAL_KINDS.includes(kind as SignalKind)) {
     return { ok: false, reason: "unknown_kind" };
   }
@@ -296,15 +312,11 @@ export function classifyQuality(s: QualitySample): QualityLevel {
   const jitter = s.jitterMs;
 
   const poor =
-    (rtt !== null && rtt > 400) ||
-    (loss !== null && loss > 5) ||
-    (jitter !== null && jitter > 100);
+    (rtt !== null && rtt > 400) || (loss !== null && loss > 5) || (jitter !== null && jitter > 100);
   if (poor) return "poor";
 
   const fair =
-    (rtt !== null && rtt > 200) ||
-    (loss !== null && loss > 2) ||
-    (jitter !== null && jitter > 40);
+    (rtt !== null && rtt > 200) || (loss !== null && loss > 2) || (jitter !== null && jitter > 40);
   if (fair) return "fair";
 
   return "good";
@@ -314,7 +326,11 @@ export function classifyQuality(s: QualitySample): QualityLevel {
 // Polling cadence (Req 7.7-7.9)
 // ---------------------------------------------------------------------------
 
-export function shouldStopPolling(roomState: RoomState, localPeer: PeerState, remotePeer: PeerState): boolean {
+export function shouldStopPolling(
+  roomState: RoomState,
+  localPeer: PeerState,
+  remotePeer: PeerState,
+): boolean {
   return roomState === "active" && localPeer === "connected" && remotePeer === "connected";
 }
 
@@ -349,7 +365,7 @@ export function nextPollDelayMs(i: {
 // ---------------------------------------------------------------------------
 
 export function normalizeConsultationMode(
-  v: unknown
+  v: unknown,
 ): { ok: true; mode: ConsultationMode } | { ok: false; reason: "invalid" } {
   if (typeof v !== "string") return { ok: false, reason: "invalid" };
   const trimmed = v.trim().toLowerCase();
@@ -390,7 +406,11 @@ export function shouldEndForDisconnect(totalDisconnectedMs: number): boolean {
   return totalDisconnectedMs >= DISCONNECT_END_BUDGET_MS;
 }
 
-export function isTokenScopedTo(tokenRoomId: string, requestedRoomId: string, tokenRevoked: boolean): boolean {
+export function isTokenScopedTo(
+  tokenRoomId: string,
+  requestedRoomId: string,
+  tokenRevoked: boolean,
+): boolean {
   if (tokenRevoked) return false;
   return tokenRoomId === requestedRoomId;
 }
@@ -410,7 +430,7 @@ export interface RateLimitState {
  */
 export function evaluateRateLimit(
   state: RateLimitState,
-  nowMs: number
+  nowMs: number,
 ): { allowed: boolean; state: RateLimitState } {
   const cutoff = nowMs - RATE_LIMIT_WINDOW_MS;
   const recent = (state.hits ?? []).filter((t) => t > cutoff);
@@ -457,9 +477,9 @@ export function projectForPatient(i: {
   const redacted = i.status === "invalid" || i.status === "rate_limited";
   return {
     status: i.status,
-    clinicName: redacted ? null : i.clinicName ?? null,
-    doctorName: redacted ? null : i.doctorName ?? null,
-    appointmentAt: redacted ? null : i.appointmentAt ?? null,
+    clinicName: redacted ? null : (i.clinicName ?? null),
+    doctorName: redacted ? null : (i.doctorName ?? null),
+    appointmentAt: redacted ? null : (i.appointmentAt ?? null),
     noticeVersion: i.noticeVersion ?? "v1",
   };
 }
