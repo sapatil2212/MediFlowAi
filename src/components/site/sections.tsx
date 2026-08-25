@@ -71,6 +71,7 @@ import {
   CheckCheck,
   Send,
   X,
+  UtensilsCrossed,
 } from "lucide-react";
 import {
   AreaChart,
@@ -1944,7 +1945,16 @@ export function Testimonials() {
  * PRICING + ROI Calculator
  * ======================================================= */
 export function Pricing() {
-  const tiers = [
+  const tiers: {
+    name: string;
+    price: string;
+    blurb: string;
+    features: string[];
+    addons?: { label: string; icon: typeof Stethoscope; items: string[] }[];
+    cta: string;
+    popular?: boolean;
+    variant?: "default" | "dark";
+  }[] = [
     {
       name: "Basic",
       price: "₹999",
@@ -1957,8 +1967,19 @@ export function Pricing() {
         "Standard AI assistant",
         "Standard Support",
       ],
+      addons: [
+        {
+          label: "For Restaurants",
+          icon: UtensilsCrossed,
+          items: [
+            "Tables & dining areas registry",
+            "Visual table-layout booking",
+            "Walk-ins & table reassignment",
+          ],
+        },
+      ],
       cta: "Start free trial",
-      variant: "default" as const,
+      variant: "default",
     },
     {
       name: "Premium",
@@ -1972,6 +1993,30 @@ export function Pricing() {
         "WhatsApp alerts included",
         "Advanced AI assistant",
         "Priority Support",
+      ],
+      addons: [
+        {
+          label: "For Doctors",
+          icon: Stethoscope,
+          items: [
+            "Consultation tracking",
+            "AI-based Voice Rx",
+            "Video consultation — patients join from a browser link, no app or login",
+            "Doctor-controlled waiting room & in-call controls",
+            "Multi-user dashboards (Reception & Doctors)",
+          ],
+        },
+        {
+          label: "For Restaurants",
+          icon: UtensilsCrossed,
+          items: [
+            "Tables & dining areas registry",
+            "Visual table-layout booking",
+            "Combine tables for large parties",
+            "Turn time, party limits & closure days",
+            "WhatsApp booking confirmations",
+          ],
+        },
       ],
       cta: "Start free trial",
       popular: true,
@@ -1991,8 +2036,19 @@ export function Pricing() {
         "Dedicated AI fine-tuning",
         "Priority Support & Dedicated CSM",
       ],
+      addons: [
+        {
+          label: "All Industry Modules",
+          icon: Building2,
+          items: [
+            "Every doctor module, video consultation included",
+            "Every restaurant module, across every outlet",
+            "Multi-location tables, guests & reporting",
+          ],
+        },
+      ],
       cta: "Contact sales",
-      variant: "dark" as const,
+      variant: "dark",
     },
   ];
 
@@ -2059,27 +2115,29 @@ export function Pricing() {
                   </li>
                 ))}
               </ul>
-              {t.name === "Premium" && (
-                <div className="mt-5 p-3.5 rounded-xl border border-[#0D83FF]/30 bg-[#0D83FF]/10 text-xs text-left">
+              {t.addons?.map((addon) => (
+                <div
+                  key={addon.label}
+                  className="mt-5 p-3.5 rounded-xl border border-[#0D83FF]/30 bg-[#0D83FF]/10 text-xs text-left"
+                >
                   <p className="font-bold text-[#0D83FF] flex items-center gap-1.5 mb-2.5 uppercase tracking-wider text-[10px]">
-                    <Stethoscope className="size-3.5" /> For Doctors
+                    <addon.icon className="size-3.5" /> {addon.label}
                   </p>
                   <ul className="space-y-2">
-                    <li className="flex items-start gap-2 text-zinc-300 font-medium leading-tight">
-                      <Check className="size-3.5 text-[#0D83FF] shrink-0 mt-0.5" />
-                      <span>Consultation tracking</span>
-                    </li>
-                    <li className="flex items-start gap-2 text-zinc-300 font-medium leading-tight">
-                      <Check className="size-3.5 text-[#0D83FF] shrink-0 mt-0.5" />
-                      <span>AI-based Voice Rx</span>
-                    </li>
-                    <li className="flex items-start gap-2 text-zinc-300 font-medium leading-tight">
-                      <Check className="size-3.5 text-[#0D83FF] shrink-0 mt-0.5" />
-                      <span>Multi-user dashboards (Reception & Doctors)</span>
-                    </li>
+                    {addon.items.map((item) => (
+                      <li
+                        key={item}
+                        className={`flex items-start gap-2 font-medium leading-tight ${
+                          t.popular ? "text-zinc-300" : "text-zinc-700"
+                        }`}
+                      >
+                        <Check className="size-3.5 text-[#0D83FF] shrink-0 mt-0.5" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
                   </ul>
                 </div>
-              )}
+              ))}
               {t.price === "Custom" ? (
                 <Link
                   to="/contact"
@@ -2111,6 +2169,11 @@ export function Pricing() {
             </motion.div>
           ))}
         </div>
+        <p className="mt-8 text-center text-xs text-zinc-500">
+          Industry modules switch on automatically for your business type. Video consultation is
+          available to healthcare workspaces on Premium and Enterprise; table booking is available
+          to Restaurant &amp; Dining workspaces on every plan.
+        </p>
       </div>
     </section>
   );
@@ -2304,6 +2367,14 @@ export function FAQ() {
     {
       q: "Can I manage multiple locations and staff from one dashboard?",
       a: "Yes. Premium and Enterprise plans support sub-locations and multi-user dashboards, so receptionists and doctors can log in with their own role-based access while you manage everything centrally.",
+    },
+    {
+      q: "How does video consultation work?",
+      a: "Video consultation is available to healthcare workspaces on Premium and Enterprise. You start the call from your dashboard and the patient joins from a browser link — no app, no account, no password. You admit them from a waiting room, and audio/video runs peer-to-peer on our own infrastructure, so no third-party video vendor sits in the media path. Calls are not recorded.",
+    },
+    {
+      q: "Do you support restaurants and table bookings?",
+      a: "Yes. Restaurant & Dining is a dedicated workspace type. Register your tables and dining areas with seat capacity, set operating hours, slot interval, turn time, party limits and closure days, and guests pick a table from a visual layout with live availability on your public booking link. Large parties combine multiple tables, and staff can add walk-ins or reassign tables from the dashboard. Table booking is included on every plan; WhatsApp confirmations start at Premium.",
     },
     {
       q: "How accurate is the AI scribe?",
