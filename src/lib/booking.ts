@@ -137,11 +137,30 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
               [data.doctorId, dayOfWeek],
             );
 
-            if (docSchedule) {
-              const startTimeStr = docSchedule.startTime;
-              const endTimeStr = docSchedule.endTime;
-              const duration = docSchedule.slotDuration || 30;
+            // Resolve working hours: prefer DoctorSchedule, then fall back to
+            // ClinicHours so doctors added without explicit weekly hours still
+            // show available slots on the booking portal.
+            let startTimeStr: string | null = null;
+            let endTimeStr: string | null = null;
+            let duration = 30;
 
+            if (docSchedule) {
+              startTimeStr = docSchedule.startTime;
+              endTimeStr = docSchedule.endTime;
+              duration = docSchedule.slotDuration || 30;
+            } else if (clinicHours && clinicHours.openTime && clinicHours.closeTime) {
+              // Fallback: use ClinicHours for this tenant & day
+              startTimeStr = clinicHours.openTime;
+              endTimeStr = clinicHours.closeTime;
+              duration = clinicHours.slotDuration || 30;
+            } else {
+              // Last resort: sensible defaults (Mon–Sat 09:00–17:00)
+              startTimeStr = "09:00";
+              endTimeStr = "17:00";
+              duration = 30;
+            }
+
+            if (startTimeStr && endTimeStr) {
               const [startHour, startMin] = startTimeStr.split(":").map(Number);
               const [endHour, endMin] = endTimeStr.split(":").map(Number);
 

@@ -78,7 +78,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -150,6 +150,7 @@ import {
   savePrescriptionServerFn,
   aiAssistConsultationServerFn,
   voiceRxAnalyzeServerFn,
+  sendPrescriptionEmailServerFn,
   uploadProfilePhotoServerFn,
 } from "../../lib/auth";
 import WhatsAppHub from "../../components/WhatsAppHub";
@@ -1169,6 +1170,7 @@ function MedicalDashboardPage() {
   const [consultationPrivateNotes, setConsultationPrivateNotes] = useState("");
   const [recordingField, setRecordingField] = useState<string | null>(null);
   const [isAIAssisting, setIsAIAssisting] = useState(false);
+  const [isEmailingPrescription, setIsEmailingPrescription] = useState(false);
 
   // Voice Rx popup modal states
   const [isVoiceRxModalOpen, setIsVoiceRxModalOpen] = useState(false);
@@ -1620,6 +1622,8 @@ function MedicalDashboardPage() {
     status: "Pending",
   });
   const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const profileDropdownRef = useRef<HTMLDivElement>(null);
 
   // Sub-Users State
   const [subUsers, setSubUsers] = useState<any[]>([]);
@@ -2593,6 +2597,18 @@ function MedicalDashboardPage() {
     document.addEventListener("click", handleOutsideClick);
     return () => document.removeEventListener("click", handleOutsideClick);
   }, [isSchedulingApt]);
+
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    if (!profileDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(e.target as Node)) {
+        setProfileDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [profileDropdownOpen]);
 
   // ──────────────────────────────────────────────
   // 1. Session Verification
@@ -3884,27 +3900,60 @@ function MedicalDashboardPage() {
   };
 
   const handleSaveConsultationAndPrescription = async () => {
-    const targetId = selectedPatient?.id || scribePatientId;
-    if (!targetId) {
-      showToast("error", "No patient selected for this consultation.");
-      return;
-    }
-
     setIsSavingPrescription(true);
     try {
+      let targetId = selectedPatient?.id || scribePatientId;
+
+      // If no targetId was resolved yet, attempt to find or create the Patient record on the fly
+      if (!targetId && selectedAptForConsultation) {
+        // 1. Try finding in loaded patientsList
+        const existing = patientsList.find(
+          (p) =>
+            (selectedAptForConsultation.patientId && p.id === selectedAptForConsultation.patientId) ||
+            (p.name && selectedAptForConsultation.name && p.name.toLowerCase() === selectedAptForConsultation.name.toLowerCase()) ||
+            (p.phone && selectedAptForConsultation.phone && p.phone === selectedAptForConsultation.phone) ||
+            (p.email && selectedAptForConsultation.email && p.email.toLowerCase() === selectedAptForConsultation.email.toLowerCase()),
+        );
+        if (existing) {
+          targetId = existing.id;
+        } else if (selectedAptForConsultation.name) {
+          // 2. Auto-create patient record so EHR chart and prescription have a real target
+          try {
+            const newPatientRes = await createPatientServerFn({
+              data: {
+                name: selectedAptForConsultation.name,
+                phone: selectedAptForConsultation.phone || null,
+                email: selectedAptForConsultation.email || null,
+                chiefComplaint: consultationChiefComplaint || selectedAptForConsultation.reason || undefined,
+              },
+            });
+            if (newPatientRes.success && newPatientRes.patientId) {
+              targetId = newPatientRes.patientId;
+            }
+          } catch (createErr) {
+            console.warn("[Patient auto-create]:", createErr);
+          }
+        }
+      }
+
+      if (!targetId) {
+        showToast("error", "Please select or enter patient details to save the consultation.");
+        return;
+      }
+
       // 1. Save SOAP Note
-      const vitalsText = `BP: ${vitalBP}, Pulse: ${vitalPulse} bpm, Temp: ${vitalTemp}°F, Wt: ${vitalWeight} kg, Ht: ${vitalHeight} cm, SpO2: ${vitalSpO2}%, RR: ${vitalRespRate}/min`;
+      const vitalsText = `BP: ${vitalBP || "120/80"}, Pulse: ${vitalPulse || "72"} bpm, Temp: ${vitalTemp || "98.6"}°F, Wt: ${vitalWeight || "70"} kg, Ht: ${vitalHeight || "170"} cm, SpO2: ${vitalSpO2 || "98"}%, RR: ${vitalRespRate || "16"}/min`;
       const planText = `Advice: ${consultationAdvice}\nFollow-up: ${consultationFollowUpDate ? `${consultationFollowUpDate} (${consultationFollowUpNotes})` : "None"}\nLab Tests: ${consultationLabTests.map((t) => t.name).join(", ") || "None"}\nReferrals: ${consultationReferrals.map((r) => r.departmentId).join(", ") || "None"}`;
 
       await saveSoapNoteServerFn({
         data: {
           patientId: targetId,
           specialty: scribeSpecialty,
-          subjective: consultationChiefComplaint,
+          subjective: consultationChiefComplaint || "General Consultation",
           objective: vitalsText,
-          assessment: consultationDiagnosis,
+          assessment: consultationDiagnosis || "Clinical Assessment Completed",
           plan: planText,
-          rawTranscript: liveTranscript,
+          rawTranscript: liveTranscript || consultationChiefComplaint || "",
         },
       });
 
@@ -3921,11 +3970,24 @@ function MedicalDashboardPage() {
 
       // 3. Mark appointment as completed
       if (selectedAptForConsultation) {
+        const aptDateStr = selectedAptForConsultation.dateTime
+          ? (typeof selectedAptForConsultation.dateTime === "string" ? selectedAptForConsultation.dateTime : new Date(selectedAptForConsultation.dateTime).toISOString())
+          : new Date().toISOString();
+
         await updateAppointmentServerFn({
           data: {
-            ...selectedAptForConsultation,
+            id: selectedAptForConsultation.id,
+            name: selectedAptForConsultation.name,
+            email: selectedAptForConsultation.email || "",
+            phone: selectedAptForConsultation.phone || "N/A",
+            dateTime: aptDateStr,
+            reason: consultationChiefComplaint || selectedAptForConsultation.reason || "Consultation Completed",
             status: "Completed",
-            reason: consultationChiefComplaint,
+            doctorId: selectedAptForConsultation.doctorId || undefined,
+            timeSlot: selectedAptForConsultation.timeSlot || undefined,
+            whatsapp: selectedAptForConsultation.whatsapp || undefined,
+            appointmentType: selectedAptForConsultation.appointmentType || undefined,
+            patientId: targetId,
           },
         });
       }
@@ -3956,260 +4018,301 @@ function MedicalDashboardPage() {
   };
 
   const handleDownloadPrescriptionPDF = () => {
-    const doc = new jsPDF();
-    const clinicName = user?.clinicName || "BookMyTime Medical Center";
-    const doctorName = user?.name || "Dr. Staff Clinician";
-    const doctorQualifications = (user as any)?.qualifications || "M.D., General Medicine";
+    try {
+      const doc = new jsPDF();
+      const clinicName = user?.clinicName || "BookMyTime Medical Center";
+      const doctorName = user?.name || "Dr. Staff Clinician";
+      const doctorQualifications = (user as any)?.qualifications || "M.D., General Medicine";
 
-    // Colors
-    const primaryColor = [12, 114, 114]; // Brand dark teal
-    const textDark = [33, 37, 41];
-    const textGray = [100, 110, 120];
+      // Colors
+      const primaryColor: [number, number, number] = [12, 114, 114]; // Brand dark teal
+      const textDark: [number, number, number] = [33, 37, 41];
+      const textGray: [number, number, number] = [100, 110, 120];
 
-    // Header
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(22);
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.text(clinicName, 14, 20);
+      // Header
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(22);
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.text(clinicName, 14, 20);
 
-    doc.setFont("Helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(textGray[0], textGray[1], textGray[2]);
-    doc.text("HEALTHCARE MANAGEMENT SYSTEM PRESCRIPTION PAD", 14, 26);
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(textGray[0], textGray[1], textGray[2]);
+      doc.text("HEALTHCARE MANAGEMENT SYSTEM PRESCRIPTION PAD", 14, 26);
 
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(14);
-    doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-    doc.text(doctorName, 196, 20, { align: "right" });
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(14);
+      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+      doc.text(doctorName, 196, 20, { align: "right" });
 
-    doc.setFont("Helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(textGray[0], textGray[1], textGray[2]);
-    doc.text(doctorQualifications, 196, 25, { align: "right" });
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(textGray[0], textGray[1], textGray[2]);
+      doc.text(doctorQualifications, 196, 25, { align: "right" });
 
-    // Divider
-    doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.setLineWidth(1.5);
-    doc.line(14, 29, 196, 29);
+      // Divider
+      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setLineWidth(1.5);
+      doc.line(14, 29, 196, 29);
 
-    // Patient Details
-    const targetPatient =
-      patientsList.find((p) => p.id === (selectedPatient?.id || scribePatientId)) ||
-      selectedPatient;
-    const patientName = targetPatient?.name || selectedAptForConsultation?.name || "N/A";
-    const patientID =
-      targetPatient?.patientNo || selectedAptForConsultation?.patientId || "PT-TEMP";
-    const patientPhone = targetPatient?.phone || selectedAptForConsultation?.phone || "N/A";
-    const aptDate = selectedAptForConsultation?.dateTime
-      ? new Date(selectedAptForConsultation.dateTime).toLocaleDateString("en-US", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        })
-      : "N/A";
-    const aptTime = selectedAptForConsultation?.timeSlot || "N/A";
-    const aptToken = selectedAptForConsultation?.tokenNo
-      ? `#${selectedAptForConsultation.tokenNo}`
-      : "N/A";
-    const aptType = selectedAptForConsultation?.appointmentType || "OPD";
+      // Patient Details
+      const targetPatient =
+        patientsList.find((p) => p.id === (selectedPatient?.id || scribePatientId)) ||
+        selectedPatient;
+      const patientName = targetPatient?.name || selectedAptForConsultation?.name || "N/A";
+      const patientID =
+        targetPatient?.patientNo || selectedAptForConsultation?.patientId || "PT-TEMP";
+      const patientPhone = targetPatient?.phone || selectedAptForConsultation?.phone || "N/A";
+      const aptDate = selectedAptForConsultation?.dateTime
+        ? new Date(selectedAptForConsultation.dateTime).toLocaleDateString("en-US", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        : new Date().toLocaleDateString("en-US", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          });
+      const aptTime = selectedAptForConsultation?.timeSlot || "N/A";
+      const aptToken = selectedAptForConsultation?.tokenNo
+        ? `#${selectedAptForConsultation.tokenNo}`
+        : "N/A";
+      const aptType = selectedAptForConsultation?.appointmentType || "OPD";
 
-    doc.setFillColor(248, 250, 252); // Light slate background
-    doc.rect(14, 34, 182, 28, "F");
-    doc.setDrawColor(226, 232, 240);
-    doc.setLineWidth(0.5);
-    doc.rect(14, 34, 182, 28, "D");
+      doc.setFillColor(248, 250, 252); // Light slate background
+      doc.rect(14, 34, 182, 28, "F");
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.5);
+      doc.rect(14, 34, 182, 28, "D");
 
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(10);
-    doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-    doc.text(`Patient: ${patientName}`, 18, 40);
-    doc.text(`ID: ${patientID}`, 18, 46);
-    doc.text(`Phone: ${patientPhone}`, 18, 52);
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+      doc.text(`Patient: ${patientName}`, 18, 40);
+      doc.text(`ID: ${patientID}`, 18, 46);
+      doc.text(`Phone: ${patientPhone}`, 18, 52);
 
-    doc.text(`Date: ${aptDate}`, 110, 40);
-    doc.text(`Time: ${aptTime}`, 110, 46);
-    doc.text(`Token: ${aptToken}`, 110, 52);
-    doc.text(`Type: ${aptType}`, 110, 58);
+      doc.text(`Date: ${aptDate}`, 110, 40);
+      doc.text(`Time: ${aptTime}`, 110, 46);
+      doc.text(`Token: ${aptToken}`, 110, 52);
+      doc.text(`Type: ${aptType}`, 110, 58);
 
-    let currentY = 70;
+      let currentY = 70;
 
-    // Vitals Section
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    doc.text("PATIENT VITALS", 14, currentY);
-
-    doc.setDrawColor(226, 232, 240);
-    doc.line(14, currentY + 2, 196, currentY + 2);
-
-    doc.setFont("Helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-    doc.text(`Blood Pressure: ${vitalBP} mmHg`, 14, currentY + 8);
-    doc.text(`Pulse: ${vitalPulse} bpm`, 70, currentY + 8);
-    doc.text(`Temp: ${vitalTemp}°F`, 120, currentY + 8);
-
-    doc.text(`Weight: ${vitalWeight} kg`, 14, currentY + 14);
-    doc.text(`Height: ${vitalHeight} cm`, 70, currentY + 14);
-    doc.text(`SpO2: ${vitalSpO2}%`, 120, currentY + 14);
-    doc.text(`Resp Rate: ${vitalRespRate}/min`, 160, currentY + 14);
-
-    currentY += 22;
-
-    // Chief Complaint & Diagnosis
-    if (consultationChiefComplaint) {
+      // Vitals Section
       doc.setFont("Helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text("CHIEF COMPLAINT", 14, currentY);
+      doc.text("PATIENT VITALS", 14, currentY);
+
+      doc.setDrawColor(226, 232, 240);
       doc.line(14, currentY + 2, 196, currentY + 2);
 
       doc.setFont("Helvetica", "normal");
-      doc.setFontSize(9.5);
+      doc.setFontSize(9);
       doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-      const ccLines = doc.splitTextToSize(consultationChiefComplaint, 182);
-      doc.text(ccLines, 14, currentY + 7);
-      currentY += ccLines.length * 5 + 10;
-    }
+      doc.text(`Blood Pressure: ${vitalBP || "N/A"} mmHg`, 14, currentY + 8);
+      doc.text(`Pulse: ${vitalPulse || "N/A"} bpm`, 70, currentY + 8);
+      doc.text(`Temp: ${vitalTemp || "N/A"}°F`, 120, currentY + 8);
 
-    if (consultationDiagnosis) {
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text("PRIMARY DIAGNOSIS", 14, currentY);
-      doc.line(14, currentY + 2, 196, currentY + 2);
+      doc.text(`Weight: ${vitalWeight || "N/A"} kg`, 14, currentY + 14);
+      doc.text(`Height: ${vitalHeight || "N/A"} cm`, 70, currentY + 14);
+      doc.text(`SpO2: ${vitalSpO2 || "N/A"}%`, 120, currentY + 14);
+      doc.text(`Resp Rate: ${vitalRespRate || "N/A"}/min`, 160, currentY + 14);
 
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(9.5);
-      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-      const diagLines = doc.splitTextToSize(consultationDiagnosis, 182);
-      doc.text(diagLines, 14, currentY + 7);
-      currentY += diagLines.length * 5 + 10;
-    }
+      currentY += 22;
 
-    // Rx Medications Table
-    if (prescriptionMedications.length > 0) {
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(12);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text("Rx (MEDICATIONS)", 14, currentY);
-      doc.line(14, currentY + 2, 196, currentY + 2);
+      // Chief Complaint & Diagnosis
+      if (consultationChiefComplaint) {
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text("CHIEF COMPLAINT", 14, currentY);
+        doc.line(14, currentY + 2, 196, currentY + 2);
 
-      const tableHeaders = [
-        ["Drug Name", "Dosage", "Frequency", "Route", "Duration", "Instructions"],
-      ];
-      const tableRows = prescriptionMedications.map((m) => [
-        m.name,
-        m.dosage,
-        m.frequency,
-        m.route,
-        m.duration,
-        m.instructions,
-      ]);
-
-      (doc as any).autoTable({
-        startY: currentY + 5,
-        head: tableHeaders,
-        body: tableRows,
-        theme: "striped",
-        headStyles: { fillColor: primaryColor },
-        margin: { left: 14, right: 14 },
-        styles: { fontSize: 8.5 },
-      });
-
-      currentY = (doc as any).lastAutoTable.finalY + 12;
-    }
-
-    // Lab Tests
-    if (consultationLabTests.length > 0) {
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text("RECOMMENDED LAB TESTS", 14, currentY);
-      doc.line(14, currentY + 2, 196, currentY + 2);
-
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(9.5);
-      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-      consultationLabTests.forEach((t, idx) => {
-        doc.text(
-          `${idx + 1}. ${t.name} ${t.instructions ? `(${t.instructions})` : ""}`,
-          14,
-          currentY + 8 + idx * 5,
-        );
-      });
-      currentY += consultationLabTests.length * 5 + 12;
-    }
-
-    // Advice & Instructions
-    if (consultationAdvice) {
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text("ADVICE & INSTRUCTIONS", 14, currentY);
-      doc.line(14, currentY + 2, 196, currentY + 2);
-
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(9.5);
-      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-      const adviceLines = doc.splitTextToSize(consultationAdvice, 182);
-      doc.text(adviceLines, 14, currentY + 7);
-      currentY += adviceLines.length * 5 + 12;
-    }
-
-    // Follow-up
-    if (consultationFollowUpDate) {
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text("FOLLOW-UP DETAILS", 14, currentY);
-      doc.line(14, currentY + 2, 196, currentY + 2);
-
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(9.5);
-      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-      doc.text(
-        `Follow-up Date: ${new Date(consultationFollowUpDate).toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" })}`,
-        14,
-        currentY + 7,
-      );
-      if (consultationFollowUpNotes) {
-        doc.text(`Notes: ${consultationFollowUpNotes}`, 14, currentY + 12);
-        currentY += 5;
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(9.5);
+        doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+        const ccLines = doc.splitTextToSize(consultationChiefComplaint, 182);
+        doc.text(ccLines, 14, currentY + 7);
+        currentY += ccLines.length * 5 + 10;
       }
-      currentY += 14;
+
+      if (consultationDiagnosis) {
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text("PRIMARY DIAGNOSIS", 14, currentY);
+        doc.line(14, currentY + 2, 196, currentY + 2);
+
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(9.5);
+        doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+        const diagLines = doc.splitTextToSize(consultationDiagnosis, 182);
+        doc.text(diagLines, 14, currentY + 7);
+        currentY += diagLines.length * 5 + 10;
+      }
+
+      // Rx Medications Table
+      if (prescriptionMedications.length > 0) {
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text("Rx (MEDICATIONS)", 14, currentY);
+        doc.line(14, currentY + 2, 196, currentY + 2);
+
+        const tableHeaders = [
+          ["Drug Name", "Dosage", "Frequency", "Route", "Duration", "Instructions"],
+        ];
+        const tableRows = prescriptionMedications.map((m) => [
+          m.name || "",
+          m.dosage || "",
+          m.frequency || "",
+          m.route || "",
+          m.duration || "",
+          m.instructions || "",
+        ]);
+
+        autoTable(doc, {
+          startY: currentY + 5,
+          head: tableHeaders,
+          body: tableRows,
+          theme: "striped",
+          headStyles: { fillColor: primaryColor as any },
+          margin: { left: 14, right: 14 },
+          styles: { fontSize: 8.5 },
+        });
+
+        currentY = ((doc as any).lastAutoTable?.finalY ?? (currentY + tableRows.length * 7 + 10)) + 12;
+      }
+
+      // Lab Tests
+      if (consultationLabTests.length > 0) {
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text("RECOMMENDED LAB TESTS", 14, currentY);
+        doc.line(14, currentY + 2, 196, currentY + 2);
+
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(9.5);
+        doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+        consultationLabTests.forEach((t, idx) => {
+          doc.text(
+            `${idx + 1}. ${t.name} ${t.instructions ? `(${t.instructions})` : ""}`,
+            14,
+            currentY + 8 + idx * 5,
+          );
+        });
+        currentY += consultationLabTests.length * 5 + 12;
+      }
+
+      // Advice & Instructions
+      if (consultationAdvice) {
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text("ADVICE & INSTRUCTIONS", 14, currentY);
+        doc.line(14, currentY + 2, 196, currentY + 2);
+
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(9.5);
+        doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+        const adviceLines = doc.splitTextToSize(consultationAdvice, 182);
+        doc.text(adviceLines, 14, currentY + 7);
+        currentY += adviceLines.length * 5 + 12;
+      }
+
+      // Follow-up
+      if (consultationFollowUpDate) {
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text("FOLLOW-UP DETAILS", 14, currentY);
+        doc.line(14, currentY + 2, 196, currentY + 2);
+
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(9.5);
+        doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+        doc.text(
+          `Follow-up Date: ${new Date(consultationFollowUpDate).toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" })}`,
+          14,
+          currentY + 7,
+        );
+        if (consultationFollowUpNotes) {
+          doc.text(`Notes: ${consultationFollowUpNotes}`, 14, currentY + 12);
+          currentY += 5;
+        }
+        currentY += 14;
+      }
+
+      // Signature Area
+      const pageHeight = doc.internal.pageSize.height;
+      if (currentY > pageHeight - 40) {
+        doc.addPage();
+        currentY = 30;
+      }
+
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+      doc.line(140, pageHeight - 30, 190, pageHeight - 30);
+      doc.text("Authorized Signature", 140, pageHeight - 25);
+      doc.setFont("Helvetica", "italic");
+      doc.setFontSize(8);
+      doc.text(doctorName, 140, pageHeight - 21);
+
+      // Footer info
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(textGray[0], textGray[1], textGray[2]);
+      doc.text(
+        "This is an electronically generated prescription. No physical signature required.",
+        14,
+        pageHeight - 15,
+      );
+
+      doc.save(
+        `Prescription_${patientName.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.pdf`,
+      );
+      showToast("success", "Prescription downloaded successfully!");
+    } catch (pdfErr: any) {
+      console.error("[PDF Export Error]:", pdfErr);
+      showToast("error", pdfErr.message || "Failed to generate prescription PDF.");
+    }
+  };
+
+  const handleEmailPrescription = async () => {
+    const targetEmail = selectedAptForConsultation?.email || selectedPatient?.email;
+    if (!targetEmail || !targetEmail.includes("@")) {
+      showToast("error", "No valid patient email address found for this consultation.");
+      return;
     }
 
-    // Signature Area
-    const pageHeight = doc.internal.pageSize.height;
-    if (currentY > pageHeight - 40) {
-      doc.addPage();
-      currentY = 30;
+    setIsEmailingPrescription(true);
+    try {
+      const res = await sendPrescriptionEmailServerFn({
+        data: {
+          patientEmail: targetEmail,
+          patientName: selectedAptForConsultation?.name || selectedPatient?.name || "Patient",
+          doctorName: user?.name || "Dr. Staff Clinician",
+          clinicName: user?.clinicName || "BookMyTime Medical Center",
+          chiefComplaint: consultationChiefComplaint,
+          diagnosis: consultationDiagnosis,
+          medications: prescriptionMedications,
+          advice: consultationAdvice,
+        },
+      });
+      if (res.success) {
+        showToast("success", `Prescription successfully emailed to ${targetEmail}!`);
+      }
+    } catch (emailErr: any) {
+      console.error("[Email Prescription Error]:", emailErr);
+      showToast("error", emailErr.message || "Failed to email prescription.");
+    } finally {
+      setIsEmailingPrescription(false);
     }
-
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(10);
-    doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-    doc.line(140, pageHeight - 30, 190, pageHeight - 30);
-    doc.text("Authorized Signature", 140, pageHeight - 25);
-    doc.setFont("Helvetica", "italic");
-    doc.setFontSize(8);
-    doc.text(doctorName, 140, pageHeight - 21);
-
-    // Footer info
-    doc.setFont("Helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(textGray[0], textGray[1], textGray[2]);
-    doc.text(
-      "This is an electronically generated prescription. No physical signature required.",
-      14,
-      pageHeight - 15,
-    );
-
-    doc.save(
-      `Prescription_${patientName.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.pdf`,
-    );
-    showToast("success", "Prescription downloaded successfully!");
   };
 
   const handlePrintPrescription = () => {
@@ -5293,54 +5396,103 @@ function MedicalDashboardPage() {
             </button>
           </div>
 
-          {/* Right side — profile */}
+          {/* Right side — profile dropdown */}
           <div className="flex items-center gap-2.5">
-            {/* Profile pill */}
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab("settings");
-                setSettingsSubTab("profile");
-              }}
-              className="flex items-center gap-2.5 rounded-xl border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 px-2.5 py-1.5 transition-colors cursor-pointer group"
-            >
-              {/* Avatar */}
-              <div
-                className="h-8 w-8 rounded-lg flex items-center justify-center text-white text-[11px] font-black shrink-0 overflow-hidden"
-                style={{
-                  background: user?.profilePhoto
-                    ? "transparent"
-                    : "linear-gradient(135deg, #14b8a6 0%, #6366f1 100%)",
-                }}
+            {/* Profile pill with dropdown */}
+            <div className="relative" ref={profileDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setProfileDropdownOpen((v) => !v)}
+                className="flex items-center gap-2.5 rounded-xl border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 px-2.5 py-1.5 transition-colors cursor-pointer group"
               >
-                {user?.profilePhoto ? (
-                  <img
-                    src={user.profilePhoto}
-                    alt={user.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : user?.name ? (
-                  user.name
-                    .split(" ")
-                    .map((n: string) => n[0])
-                    .slice(0, 2)
-                    .join("")
-                    .toUpperCase()
-                ) : (
-                  "DR"
+                {/* Avatar */}
+                <div
+                  className="h-8 w-8 rounded-lg flex items-center justify-center text-white text-[11px] font-black shrink-0 overflow-hidden"
+                  style={{
+                    background: user?.profilePhoto
+                      ? "transparent"
+                      : "linear-gradient(135deg, #14b8a6 0%, #6366f1 100%)",
+                  }}
+                >
+                  {user?.profilePhoto ? (
+                    <img
+                      src={user.profilePhoto}
+                      alt={user.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : user?.name ? (
+                    user.name
+                      .split(" ")
+                      .map((n: string) => n[0])
+                      .slice(0, 2)
+                      .join("")
+                      .toUpperCase()
+                  ) : (
+                    "DR"
+                  )}
+                </div>
+                {/* Name + role */}
+                <div className="text-left hidden sm:block">
+                  <p className="text-xs font-bold text-zinc-900 leading-tight truncate max-w-[80px]">
+                    {user?.name ? user.name.split(" ")[0] + "." : "Dr."}
+                  </p>
+                  <p className="text-[10px] text-zinc-400 leading-tight truncate max-w-[80px]">
+                    {user?.role === "admin" ? "Hosp. Admin" : user?.role || "Doctor"}
+                  </p>
+                </div>
+                <ChevronDown className={`h-3.5 w-3.5 text-zinc-400 hidden sm:block transition-transform duration-200 ${profileDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {/* Profile Dropdown Menu */}
+              <AnimatePresence>
+                {profileDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    className="absolute right-0 top-[calc(100%+6px)] z-50 w-52 rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden"
+                  >
+                    {/* User info header */}
+                    <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/50">
+                      <p className="text-xs font-bold text-zinc-900 truncate">
+                        {user?.name || "Dr. Clinician"}
+                      </p>
+                      <p className="text-[10px] text-zinc-400 truncate mt-0.5">
+                        {user?.email || ""}
+                      </p>
+                    </div>
+                    {/* Menu items */}
+                    <div className="py-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab("settings");
+                          setSettingsSubTab("profile");
+                          setProfileDropdownOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors cursor-pointer"
+                      >
+                        <Settings className="h-3.5 w-3.5 text-zinc-400" />
+                        Settings
+                      </button>
+                      <div className="border-t border-zinc-100 mx-2" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileDropdownOpen(false);
+                          handleLogout();
+                        }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                        Log Out
+                      </button>
+                    </div>
+                  </motion.div>
                 )}
-              </div>
-              {/* Name + role */}
-              <div className="text-left hidden sm:block">
-                <p className="text-xs font-bold text-zinc-900 leading-tight truncate max-w-[80px]">
-                  {user?.name ? user.name.split(" ")[0] + "." : "Dr."}
-                </p>
-                <p className="text-[10px] text-zinc-400 leading-tight truncate max-w-[80px]">
-                  {user?.role === "admin" ? "Hosp. Admin" : user?.role || "Doctor"}
-                </p>
-              </div>
-              <ChevronRight className="h-3.5 w-3.5 text-zinc-400 rotate-90 hidden sm:block group-hover:text-zinc-600 transition-colors" />
-            </button>
+              </AnimatePresence>
+            </div>
           </div>
         </header>
 
@@ -6416,16 +6568,21 @@ function MedicalDashboardPage() {
 
                             <button
                               type="button"
-                              onClick={() => {
-                                showToast(
-                                  "success",
-                                  "Prescription emailed to patient successfully!",
-                                );
-                              }}
-                              className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-extrabold rounded-full transition-all cursor-pointer active:scale-95 shadow-none"
+                              onClick={handleEmailPrescription}
+                              disabled={isEmailingPrescription}
+                              className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-extrabold rounded-full transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-none"
                             >
-                              <Mail className="h-3.5 w-3.5 text-zinc-500" />
-                              Email
+                              {isEmailingPrescription ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />
+                                  Emailing...
+                                </>
+                              ) : (
+                                <>
+                                  <Mail className="h-3.5 w-3.5 text-zinc-500" />
+                                  Email
+                                </>
+                              )}
                             </button>
 
                             <button

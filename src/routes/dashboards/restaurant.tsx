@@ -31,6 +31,7 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -4161,6 +4162,8 @@ function RestaurantDashboardPage() {
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const profileDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const showToast = useCallback((type: ToastKind, message: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -4225,6 +4228,18 @@ function RestaurantDashboardPage() {
         setCheckingAuth(false);
       });
   }, [navigate]);
+
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    if (!profileDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(e.target as Node)) {
+        setProfileDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [profileDropdownOpen]);
 
   // Feature access resolved once from the session. `null` means it could not be
   // resolved, which `deriveRestaurantNavigation` turns into the core-only
@@ -4553,44 +4568,95 @@ function RestaurantDashboardPage() {
             </button>
           </div>
 
-          {/* Right side — profile */}
+          {/* Right side — profile dropdown */}
           <div className="flex items-center gap-2.5">
-            {/* Profile pill */}
-            <button
-              type="button"
-              onClick={() => setActiveTab("Settings")}
-              className="flex items-center gap-2.5 rounded-xl border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 px-2.5 py-1.5 transition-colors cursor-pointer group"
-            >
-              {/* Avatar */}
-              <div
-                className="h-8 w-8 rounded-lg flex items-center justify-center text-white text-[11px] font-black shrink-0 overflow-hidden"
-                style={{
-                  background: user.profilePhoto
-                    ? "transparent"
-                    : "linear-gradient(135deg, #14b8a6 0%, #6366f1 100%)",
-                }}
+            {/* Profile pill with dropdown */}
+            <div className="relative" ref={profileDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setProfileDropdownOpen((v) => !v)}
+                className="flex items-center gap-2.5 rounded-xl border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 px-2.5 py-1.5 transition-colors cursor-pointer group"
               >
-                {user.profilePhoto ? (
-                  <img
-                    src={user.profilePhoto}
-                    alt={user.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  initials
+                {/* Avatar */}
+                <div
+                  className="h-8 w-8 rounded-lg flex items-center justify-center text-white text-[11px] font-black shrink-0 overflow-hidden"
+                  style={{
+                    background: user.profilePhoto
+                      ? "transparent"
+                      : "linear-gradient(135deg, #14b8a6 0%, #6366f1 100%)",
+                  }}
+                >
+                  {user.profilePhoto ? (
+                    <img
+                      src={user.profilePhoto}
+                      alt={user.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    initials
+                  )}
+                </div>
+                {/* Name + role */}
+                <div className="text-left hidden sm:block">
+                  <p className="text-xs font-bold text-zinc-900 leading-tight truncate max-w-[120px]">
+                    {user.name || "Restaurant"}
+                  </p>
+                  <p className="text-[10px] text-zinc-400 leading-tight truncate max-w-[120px]">
+                    {roleLabel}
+                  </p>
+                </div>
+                <ChevronDown className={`h-3.5 w-3.5 text-zinc-400 hidden sm:block transition-transform duration-200 ${profileDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {/* Profile Dropdown Menu */}
+              <AnimatePresence>
+                {profileDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    className="absolute right-0 top-[calc(100%+6px)] z-50 w-52 rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden"
+                  >
+                    {/* User info header */}
+                    <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/50">
+                      <p className="text-xs font-bold text-zinc-900 truncate">
+                        {user?.name || "Restaurant"}
+                      </p>
+                      <p className="text-[10px] text-zinc-400 truncate mt-0.5">
+                        {user?.email || ""}
+                      </p>
+                    </div>
+                    {/* Menu items */}
+                    <div className="py-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab("Settings");
+                          setProfileDropdownOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors cursor-pointer"
+                      >
+                        <SettingsIcon className="h-3.5 w-3.5 text-zinc-400" />
+                        Settings
+                      </button>
+                      <div className="border-t border-zinc-100 mx-2" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileDropdownOpen(false);
+                          void handleLogout();
+                        }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                        Log Out
+                      </button>
+                    </div>
+                  </motion.div>
                 )}
-              </div>
-              {/* Name + role */}
-              <div className="text-left hidden sm:block">
-                <p className="text-xs font-bold text-zinc-900 leading-tight truncate max-w-[120px]">
-                  {user.name || "Restaurant"}
-                </p>
-                <p className="text-[10px] text-zinc-400 leading-tight truncate max-w-[120px]">
-                  {roleLabel}
-                </p>
-              </div>
-              <ChevronRight className="h-3.5 w-3.5 text-zinc-400 rotate-90 hidden sm:block group-hover:text-zinc-600 transition-colors" />
-            </button>
+              </AnimatePresence>
+            </div>
           </div>
         </header>
 

@@ -575,7 +575,26 @@ export const getClinicProfileServerFn = createServerFn({ method: "GET" }).handle
     user.tenantId,
   ]);
 
-  return profile || null;
+  if (profile) return profile;
+
+  // Fallback: no ClinicProfile row yet (newly registered users).
+  // Return the registration data stored in the User table so the settings
+  // form fields are pre-populated instead of appearing empty.
+  const userRow = await queryOne<any>(
+    "SELECT name, phone, clinicName, practiceSize, profession FROM User WHERE tenantId = ? LIMIT 1",
+    [user.tenantId],
+  );
+  if (userRow) {
+    return {
+      clinicianName: userRow.name || "",
+      phone: userRow.phone || "",
+      clinicName: userRow.clinicName || "",
+      practiceSize: userRow.practiceSize || "",
+      profession: userRow.profession || "",
+    };
+  }
+
+  return null;
 });
 
 export const updateProfileServerFn = createServerFn({ method: "POST" })
@@ -1654,6 +1673,54 @@ export const saveDoctorServerFn = createServerFn({ method: "POST" })
           data.subjectsTaught || null,
         ],
       );
+
+      // Auto-create default DoctorSchedule entries (Mon–Sat) so that the
+      // doctor is immediately bookable on the public booking portal.
+      // If ClinicHours are configured for the tenant we use those times;
+      // otherwise fall back to sensible defaults (09:00–17:00, 30-min slots).
+      try {
+        const clinicHoursRows = await query<any>(
+          "SELECT dayOfWeek, openTime, closeTime, isClosed FROM ClinicHours WHERE tenantId = ? ORDER BY dayOfWeek ASC",
+          [user.tenantId],
+        );
+        const clinicHoursMap = new Map<number, any>();
+        for (const ch of clinicHoursRows) {
+          clinicHoursMap.set(ch.dayOfWeek, ch);
+        }
+
+        // Days 1-6 = Mon-Sat (skip Sunday = 0 by default)
+        for (let day = 0; day <= 6; day++) {
+          const ch = clinicHoursMap.get(day);
+
+          // If ClinicHours marks this day as closed, skip it
+          if (ch && ch.isClosed) continue;
+
+          // Default: skip Sunday if no ClinicHours override says it's open
+          if (day === 0 && !ch) continue;
+
+          const startTime = ch?.openTime || "09:00";
+          const endTime = ch?.closeTime || "17:00";
+
+          await execute(
+            `INSERT INTO DoctorSchedule (id, doctorId, dayOfWeek, startTime, endTime, slotDuration, breaks)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE startTime = VALUES(startTime), endTime = VALUES(endTime)`,
+            [
+              crypto.randomUUID(),
+              id,
+              day,
+              startTime,
+              endTime,
+              30,
+              "[]",
+            ],
+          );
+        }
+      } catch (schedErr: any) {
+        // Non-fatal: doctor is still created; schedule can be set manually
+        console.error("[Doctor] Failed to auto-create default schedule:", schedErr.message);
+      }
+
       return { success: true, doctorId: id };
     }
   });
@@ -2001,11 +2068,27 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
             [data.doctorId, dayOfWeek],
           );
 
-          if (docSchedule) {
-            const startTimeStr = docSchedule.startTime; // e.g. "09:00"
-            const endTimeStr = docSchedule.endTime; // e.g. "17:00"
-            const duration = docSchedule.slotDuration || 30; // in minutes
+          // Resolve working hours: prefer DoctorSchedule, then fall back to
+          // ClinicHours so doctors without explicit weekly hours still show slots.
+          let startTimeStr: string | null = null;
+          let endTimeStr: string | null = null;
+          let duration = 30;
 
+          if (docSchedule) {
+            startTimeStr = docSchedule.startTime;
+            endTimeStr = docSchedule.endTime;
+            duration = docSchedule.slotDuration || 30;
+          } else if (clinicHours && clinicHours.openTime && clinicHours.closeTime) {
+            startTimeStr = clinicHours.openTime;
+            endTimeStr = clinicHours.closeTime;
+            duration = clinicHours.slotDuration || 30;
+          } else {
+            startTimeStr = "09:00";
+            endTimeStr = "17:00";
+            duration = 30;
+          }
+
+          if (startTimeStr && endTimeStr) {
             // Parse start and end times
             const [startHour, startMin] = startTimeStr.split(":").map(Number);
             const [endHour, endMin] = endTimeStr.split(":").map(Number);
@@ -2772,6 +2855,30 @@ Voice Instructions:
     }
   });
 
+function cleanAndExtractJson(content: string): any {
+  let cleaned = String(content || "").trim();
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+  }
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && (firstBrace > 0 || lastBrace < cleaned.length - 1)) {
+    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+  }
+  return JSON.parse(cleaned);
+}
+
+const AI_FALLBACK_MODELS = [
+  "google/gemini-2.5-flash",
+  "google/gemini-2.0-flash-001",
+  "google/gemini-2.0-flash-lite-preview-02-05:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "openrouter/free",
+];
+
 export const aiAssistConsultationServerFn = createServerFn({ method: "POST" })
   .validator((data: { chiefComplaint: string; vitals?: string }) => {
     if (!data.chiefComplaint) throw new Error("Chief complaint is required for AI Assist.");
@@ -2811,49 +2918,52 @@ Format the output in raw JSON format with the exact structure below:
 
 Only return a valid JSON object matching this structure. Do not wrap the JSON in markdown code blocks or add any other text outside the JSON object.`;
 
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "http://localhost:8080",
-          "X-Title": "HealthSync AI",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            { role: "system", content: "You output only clean JSON." },
-            { role: "user", content: prompt },
-          ],
-          response_format: { type: "json_object" },
-          max_tokens: 1500,
-        }),
-      });
+    let lastError: Error | null = null;
+    for (const model of AI_FALLBACK_MODELS) {
+      try {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8080",
+            "X-Title": "HealthSync AI",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: "You output only clean JSON." },
+              { role: "user", content: prompt },
+            ],
+            response_format: { type: "json_object" },
+            max_tokens: 1000,
+          }),
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("OpenRouter API error in AI Assist:", errorText);
-        throw new Error(`OpenRouter API error: ${response.statusText}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.warn(`[AI Assist] Model ${model} returned ${response.status}:`, errorText);
+          continue;
+        }
+
+        const resJson = await response.json();
+        const content = resJson.choices?.[0]?.message?.content;
+        if (!content) continue;
+
+        const parsed = cleanAndExtractJson(content);
+        return {
+          success: true,
+          diagnosis: parsed.diagnosis || "",
+          medications: Array.isArray(parsed.medications) ? parsed.medications : [],
+          advice: parsed.advice || "",
+        };
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[AI Assist] Failed with model ${model}:`, err.message);
       }
-
-      const resJson = await response.json();
-      const content = resJson.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error("Empty response from AI Assist model.");
-      }
-
-      const parsed = JSON.parse(content.trim());
-      return {
-        success: true,
-        diagnosis: parsed.diagnosis || "",
-        medications: parsed.medications || [],
-        advice: parsed.advice || "",
-      };
-    } catch (e: any) {
-      console.error("Failed to generate AI Assist suggestions:", e);
-      throw new Error(e.message || "Failed to generate suggestions.");
     }
+
+    throw new Error(lastError?.message || "Failed to generate AI recommendations. Please check API credits or try again.");
   });
 
 export const voiceRxAnalyzeServerFn = createServerFn({ method: "POST" })
@@ -2907,67 +3017,192 @@ Format the output in raw JSON format with the exact structure below:
 
 Only return a valid JSON object matching this structure. Do not wrap the JSON in markdown code blocks or add any other text outside the JSON object.`;
 
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "http://localhost:8080",
-          "X-Title": "HealthSync AI",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            { role: "system", content: "You output only clean JSON." },
-            { role: "user", content: prompt },
-          ],
-          response_format: { type: "json_object" },
-          max_tokens: 1500,
-        }),
-      });
+    let lastError: Error | null = null;
+    for (const model of AI_FALLBACK_MODELS) {
+      try {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8080",
+            "X-Title": "HealthSync AI",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: "You output only clean JSON." },
+              { role: "user", content: prompt },
+            ],
+            response_format: { type: "json_object" },
+            max_tokens: 1000,
+          }),
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("OpenRouter API error in Voice Rx analysis:", errorText);
-        throw new Error(`OpenRouter API error: ${response.statusText}`);
-      }
-
-      const resJson = await response.json();
-      const content = resJson.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error("Empty response from Voice Rx model.");
-      }
-
-      // Be resilient to models that wrap JSON in markdown code fences or add
-      // stray prose around the object despite instructions.
-      let cleaned = String(content).trim();
-      if (cleaned.startsWith("```")) {
-        cleaned = cleaned
-          .replace(/^```(?:json)?\s*/i, "")
-          .replace(/\s*```$/i, "")
-          .trim();
-      }
-      const firstBrace = cleaned.indexOf("{");
-      const lastBrace = cleaned.lastIndexOf("}");
-      if (firstBrace > 0 || lastBrace < cleaned.length - 1) {
-        if (firstBrace !== -1 && lastBrace !== -1) {
-          cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.warn(`[Voice Rx] Model ${model} returned ${response.status}:`, errorText);
+          continue;
         }
-      }
 
-      const parsed = JSON.parse(cleaned);
-      return {
-        success: true,
-        chiefComplaint: parsed.chiefComplaint || "",
-        diagnosis: parsed.diagnosis || "",
-        medications: Array.isArray(parsed.medications) ? parsed.medications : [],
-        advice: parsed.advice || "",
-      };
-    } catch (e: any) {
-      console.error("Failed to analyze Voice Rx transcript:", e);
-      throw new Error(e.message || "Failed to analyze transcript.");
+        const resJson = await response.json();
+        const content = resJson.choices?.[0]?.message?.content;
+        if (!content) continue;
+
+        const parsed = cleanAndExtractJson(content);
+        return {
+          success: true,
+          chiefComplaint: parsed.chiefComplaint || "",
+          diagnosis: parsed.diagnosis || "",
+          medications: Array.isArray(parsed.medications) ? parsed.medications : [],
+          advice: parsed.advice || "",
+        };
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[Voice Rx] Failed with model ${model}:`, err.message);
+      }
     }
+
+    throw new Error(lastError?.message || "Failed to analyze transcript. Please check API credits or try again.");
+  });
+
+export const sendPrescriptionEmailServerFn = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      patientEmail: string;
+      patientName: string;
+      doctorName?: string;
+      clinicName?: string;
+      chiefComplaint?: string;
+      diagnosis?: string;
+      medications: Array<{
+        name: string;
+        dosage: string;
+        frequency: string;
+        route?: string;
+        duration: string;
+        instructions?: string;
+      }>;
+      advice?: string;
+    }) => {
+      if (!data.patientEmail) throw new Error("Patient email address is required.");
+      return data;
+    },
+  )
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const { transporter } = await import("./email");
+    const clinicName = data.clinicName || user.clinicName || "BookMyTime Healthcare";
+    const doctorName = data.doctorName || user.name || "Attending Physician";
+
+    const medsRows =
+      data.medications && data.medications.length > 0
+        ? data.medications
+            .map(
+              (m, i) => `
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 8px; font-weight: 600; color: #1e293b;">${i + 1}. ${m.name}</td>
+            <td style="padding: 10px 8px; color: #334155;">${m.dosage || "-"}</td>
+            <td style="padding: 10px 8px; color: #334155;">${m.frequency || "-"}</td>
+            <td style="padding: 10px 8px; color: #334155;">${m.duration || "-"}</td>
+            <td style="padding: 10px 8px; color: #64748b; font-size: 11px;">${m.instructions || "-"}</td>
+          </tr>
+        `,
+            )
+            .join("")
+        : `<tr><td colspan="5" style="padding: 12px; text-align: center; color: #94a3b8;">No medications listed.</td></tr>`;
+
+    const htmlContent = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 620px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
+        <div style="background: linear-gradient(135deg, #0d9488, #0f766e); padding: 24px 28px; color: #ffffff;">
+          <h1 style="margin: 0 0 4px; font-size: 22px; font-weight: 700;">${clinicName}</h1>
+          <p style="margin: 0; font-size: 12px; opacity: 0.9;">Official Clinical Prescription &amp; Consultation Summary</p>
+        </div>
+
+        <div style="padding: 24px 28px;">
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; margin-bottom: 20px;">
+            <table style="width: 100%; font-size: 12px;">
+              <tr>
+                <td style="color: #64748b; width: 50%;"><strong>Patient:</strong> ${data.patientName}</td>
+                <td style="color: #64748b; text-align: right;"><strong>Doctor:</strong> ${doctorName}</td>
+              </tr>
+              <tr>
+                <td style="color: #64748b; padding-top: 6px;"><strong>Date:</strong> ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</td>
+                <td style="color: #64748b; text-align: right; padding-top: 6px;"><strong>Diagnosis:</strong> ${data.diagnosis || "General Consultation"}</td>
+              </tr>
+            </table>
+          </div>
+
+          ${
+            data.chiefComplaint
+              ? `
+            <div style="margin-bottom: 18px;">
+              <h3 style="margin: 0 0 6px; font-size: 13px; font-weight: 700; color: #0f766e; text-transform: uppercase; letter-spacing: 0.5px;">Chief Complaint</h3>
+              <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.5;">${data.chiefComplaint}</p>
+            </div>
+          `
+              : ""
+          }
+
+          ${
+            data.diagnosis
+              ? `
+            <div style="margin-bottom: 18px;">
+              <h3 style="margin: 0 0 6px; font-size: 13px; font-weight: 700; color: #0f766e; text-transform: uppercase; letter-spacing: 0.5px;">Primary Diagnosis</h3>
+              <p style="margin: 0; font-size: 13px; color: #334155; font-weight: 600; line-height: 1.5;">${data.diagnosis}</p>
+            </div>
+          `
+              : ""
+          }
+
+          <div style="margin-bottom: 20px;">
+            <h3 style="margin: 0 0 10px; font-size: 13px; font-weight: 700; color: #0f766e; text-transform: uppercase; letter-spacing: 0.5px;">Rx (Prescribed Medications)</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+              <thead>
+                <tr style="background: #f1f5f9; text-align: left; font-size: 11px; color: #475569;">
+                  <th style="padding: 8px;">Drug</th>
+                  <th style="padding: 8px;">Dosage</th>
+                  <th style="padding: 8px;">Frequency</th>
+                  <th style="padding: 8px;">Duration</th>
+                  <th style="padding: 8px;">Instructions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${medsRows}
+              </tbody>
+            </table>
+          </div>
+
+          ${
+            data.advice
+              ? `
+            <div style="margin-bottom: 20px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px 18px;">
+              <h3 style="margin: 0 0 6px; font-size: 12px; font-weight: 700; color: #166534; text-transform: uppercase; letter-spacing: 0.5px;">Doctor's Advice &amp; Instructions</h3>
+              <p style="margin: 0; font-size: 12px; color: #15803d; line-height: 1.6;">${data.advice}</p>
+            </div>
+          `
+              : ""
+          }
+
+          <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 24px; text-align: center; font-size: 11px; color: #94a3b8;">
+            <p style="margin: 0;">Prescription electronically generated by <strong>${doctorName}</strong> at <strong>${clinicName}</strong>.</p>
+            <p style="margin: 4px 0 0;">Powered by BookMyTime Healthcare System</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    await transporter.sendMail({
+      from: `"${clinicName}" <${process.env.EMAIL_USERNAME}>`,
+      to: data.patientEmail,
+      bcc: process.env.EMAIL_BCC || undefined,
+      subject: `Your Prescription & Consultation Summary — ${clinicName}`,
+      html: htmlContent,
+    });
+
+    return { success: true };
   });
 
 export const savePrescriptionServerFn = createServerFn({ method: "POST" })
