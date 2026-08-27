@@ -399,6 +399,7 @@ function DayScheduleCard({
               onChange={(e) => onUpdateField(idx, "slotDuration", parseInt(e.target.value))}
               className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
             >
+              <option value={8}>8 min</option>
               <option value={15}>15 min</option>
               <option value={30}>30 min</option>
               <option value={45}>45 min</option>
@@ -4236,6 +4237,10 @@ function MedicalDashboardPage() {
 
   const handleLogout = async () => {
     try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("bmt_active_tab");
+        localStorage.removeItem("bmt_admin_active_tab");
+      }
       await logoutServerFn();
       navigate({ to: "/login" });
     } catch (e) {
@@ -8500,6 +8505,7 @@ function MedicalDashboardPage() {
                                     defaultValue="30"
                                     className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
                                   >
+                                    <option value={8}>8 min slots</option>
                                     <option value={15}>15 min slots</option>
                                     <option value={30}>30 min slots</option>
                                     <option value={45}>45 min slots</option>

@@ -4270,6 +4270,10 @@ function RestaurantDashboardPage() {
 
   const handleLogout = useCallback(async () => {
     try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("bmt_active_tab");
+        localStorage.removeItem("bmt_admin_active_tab");
+      }
       await logoutServerFn();
       navigate({ to: "/login" });
     } catch (err) {

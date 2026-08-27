@@ -31,6 +31,9 @@ function DashboardRouterGateway() {
         }
 
         const profession = u.profession || "Healthcare and medical";
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("bmt_active_tab");
+        }
         if (profession === "Fitness Gym etc") {
           navigate({ to: "/dashboards/gym" });
         } else if (profession === "Beauty and wellness") {

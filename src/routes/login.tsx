@@ -302,6 +302,8 @@ function LoginPage() {
           localStorage.removeItem("remembered_username");
           localStorage.removeItem("remember_me_checked");
         }
+        localStorage.removeItem("bmt_active_tab");
+        localStorage.removeItem("bmt_admin_active_tab");
         setIsLoginSuccess(true);
         setSuccessName(result.user.name);
         setTimeout(() => {

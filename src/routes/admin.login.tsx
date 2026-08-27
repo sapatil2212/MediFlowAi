@@ -60,6 +60,10 @@ function AdminLoginPage() {
         },
       });
       if (result.success) {
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("bmt_admin_active_tab");
+          localStorage.removeItem("bmt_active_tab");
+        }
         toast.success(`Welcome, ${result.admin.name}! Redirecting to control console...`);
         setTimeout(() => {
           window.location.href = "/admin/dashboard";

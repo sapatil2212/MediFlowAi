@@ -42,7 +42,6 @@ import {
   Database,
   Search,
   Bell,
-  Home,
   Package,
   User,
   Settings,
@@ -236,16 +235,6 @@ export function Hero() {
     return () => clearInterval(interval);
   }, []);
 
-  const features = [
-    "Dedicated Tenant Booking Link",
-    "Unique QR Code for Every Business",
-    "WhatsApp Booking Confirmations",
-    "AI Booking Assistant Chatbot",
-    "Independent Tenant Administration",
-    "Multi-Location & Multi-Staff Sync",
-    "Custom Business Branding",
-    "Unified CRM & Analytics Dashboard",
-  ];
 
   return (
     <section
@@ -408,141 +397,154 @@ export function Hero() {
               </div>
             </motion.div>
 
-            <div className="rounded-3xl border border-white bg-white/80 p-2 shadow-[0_-4px_60px_rgba(0,89,198,0.1),0_24px_80px_rgba(0,0,0,0.07)] backdrop-blur-xl ring-1 ring-[#0059C6]/10 overflow-hidden">
-              <div className="bg-slate-50 rounded-2xl flex overflow-hidden border border-zinc-200 h-[400px]">
-                {/* Sidebar */}
-                <div className="w-36 bg-white border-r border-zinc-200/80 p-3 flex flex-col gap-1 shrink-0 hidden sm:flex">
-                  <div className="flex items-center gap-2 mb-4 px-1 mt-1">
-                    <div className="w-6 h-6 rounded bg-[#0059C6] flex items-center justify-center">
-                      <LayoutDashboard className="w-3.5 h-3.5 text-white" />
+            <div className="rounded-3xl border border-white bg-white/80 p-2 shadow-[0_-4px_60px_rgba(0,89,198,0.1),0_24px_80px_rgba(0,0,0,0.07)] backdrop-blur-xl ring-1 ring-[#0059C6]/10 overflow-hidden select-none pointer-events-none">
+              <div className="bg-slate-50 rounded-2xl flex overflow-hidden border border-zinc-200 h-[340px] sm:h-[400px]">
+                {/* Sidebar — mirroring the medical dashboard */}
+                <div className="w-36 bg-white border-r border-zinc-200/80 p-3 flex flex-col justify-between shrink-0 hidden sm:flex">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 mb-4 px-1 mt-1">
+                      <div className="w-6 h-6 rounded bg-zinc-950 flex items-center justify-center">
+                        <HeartPulse className="w-3.5 h-3.5 text-white" />
+                      </div>
+                      <span className="text-[11px] font-bold text-zinc-900 tracking-tight">
+                        BookMyTime
+                      </span>
                     </div>
-                    <span className="text-[11px] font-bold text-zinc-900 tracking-tight">
-                      BookMyTime
-                    </span>
+
+                    {[
+                      { icon: LayoutDashboard, label: "Overview", active: true },
+                      { icon: ClipboardList, label: "Consultation" },
+                      { icon: Calendar, label: "Calendar" },
+                      { icon: Users, label: "Patient Records" },
+                      { icon: Activity, label: "Analytics" },
+                      { icon: Settings, label: "Settings" },
+                      { icon: CreditCard, label: "Manage Plans" },
+                    ].map((item, i) => {
+                      const Icon = item.icon;
+                      return (
+                        <div
+                          key={i}
+                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full ${item.active ? "bg-zinc-950 text-white" : "text-zinc-500"}`}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          <span className="text-[9px] font-bold">{item.label}</span>
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  {[
-                    { icon: Home, label: "Overview", active: true },
-                    { icon: Calendar, label: "Calendar" },
-                    { icon: Users, label: "Customers" },
-                    { icon: MessageSquare, label: "Messages" },
-                    { icon: Settings, label: "Settings" },
-                  ].map((item, i) => {
-                    const Icon = item.icon;
-                    return (
-                      <div
-                        key={i}
-                        className={`flex items-center gap-2 px-2.5 py-2 rounded-lg ${item.active ? "bg-[#0059C6]/10 text-[#0059C6]" : "text-zinc-500"}`}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                        <span className="text-[9px] font-bold">{item.label}</span>
-                      </div>
-                    );
-                  })}
+                  {/* Bottom clinician card */}
+                  <div className="rounded-xl bg-zinc-50 border border-zinc-200/60 p-2 flex items-center gap-2">
+                    <div className="h-7 w-7 rounded-full text-white text-[8px] font-black flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, #14b8a6 0%, #6366f1 100%)" }}>
+                      DR
+                    </div>
+                    <div className="overflow-hidden min-w-0">
+                      <p className="text-[9px] font-bold text-zinc-800 truncate leading-tight">Dr. Clinician</p>
+                      <p className="text-[7px] text-zinc-400 truncate">Medical Group</p>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Main Content Area */}
+                {/* Main Content Area — medical overview */}
                 <div className="flex-1 flex flex-col min-w-0">
                   {/* Top Bar */}
-                  <div className="h-12 bg-white border-b border-zinc-200/80 flex items-center justify-between px-4 shrink-0">
-                    <span className="text-[11px] font-bold text-zinc-800">Tenant Dashboard</span>
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-50 border border-emerald-100">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-[8px] font-bold text-emerald-700">Live Sync</span>
+                  <div className="h-10 sm:h-12 bg-white border-b border-zinc-200/80 flex items-center justify-between px-3 sm:px-4 shrink-0">
+                    <span className="text-[11px] font-bold text-zinc-800 hidden sm:inline">Clinician Dashboard</span>
+                    <div className="flex items-center gap-1.5 sm:hidden">
+                      <div className="w-5 h-5 rounded-lg border border-zinc-200 flex items-center justify-center">
+                        <HeartPulse className="w-3 h-3 text-zinc-500" />
                       </div>
-                      <div className="w-6 h-6 rounded-full bg-[#0059C6]/10 text-[9px] flex items-center justify-center font-bold text-[#0059C6]">
-                        SA
+                      <span className="text-[10px] font-bold text-zinc-800">BookMyTime</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-100">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[7px] font-bold text-emerald-700">Live</span>
+                      </div>
+                      <div className="w-6 h-6 rounded-lg text-white text-[8px] font-black flex items-center justify-center" style={{ background: "linear-gradient(135deg, #14b8a6 0%, #6366f1 100%)" }}>
+                        DR
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-4 space-y-3 overflow-y-auto">
-                    {/* Active branches selector */}
-                    <div className="flex items-center justify-between bg-white rounded-xl border border-zinc-200/80 px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                      <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">
-                        Active Locations:
-                      </span>
-                      <div className="flex gap-1.5">
-                        <span className="text-[8px] bg-[#0059C6]/10 text-[#0059C6] font-bold px-2 py-0.5 rounded">
-                          HSR Layout (Blr)
-                        </span>
-                        <span className="text-[8px] bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded font-bold">
-                          Bandra (Mum)
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Real-time incoming bookings simulation */}
-                    <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/40 rounded-xl p-2.5 flex items-center justify-between shadow-[0_2px_8px_rgba(5,150,105,0.03)]">
+                  <div className="p-3 sm:p-4 space-y-2.5 sm:space-y-3 overflow-y-auto">
+                    {/* Real-time incoming booking notification */}
+                    <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/40 rounded-xl p-2 sm:p-2.5 flex items-center justify-between shadow-[0_2px_8px_rgba(5,150,105,0.03)]">
                       <div className="flex items-center gap-2">
-                        <span className="relative flex h-2 w-2">
+                        <span className="relative flex h-2 w-2 shrink-0">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                         </span>
-                        <div className="text-left leading-normal">
-                          <span className="text-[9px] font-extrabold text-zinc-800">
+                        <div className="text-left leading-normal min-w-0">
+                          <span className="text-[8px] sm:text-[9px] font-extrabold text-zinc-800">
                             {bookingNotification.name}{" "}
                           </span>
-                          <span className="text-[8px] text-zinc-500">
+                          <span className="text-[7px] sm:text-[8px] text-zinc-500">
                             {bookingNotification.action} at{" "}
                           </span>
-                          <span className="text-[9px] font-bold text-[#0059C6]">
-                            {bookingNotification.tenant} ({bookingNotification.city})
+                          <span className="text-[8px] sm:text-[9px] font-bold text-[#0059C6]">
+                            {bookingNotification.tenant}
                           </span>
                         </div>
                       </div>
-                      <span className="text-[8px] text-emerald-600 font-bold bg-emerald-100 px-1.5 py-0.5 rounded">
+                      <span className="text-[7px] sm:text-[8px] text-emerald-600 font-bold bg-emerald-100 px-1.5 py-0.5 rounded shrink-0">
                         {bookingNotification.time}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2.5">
+                    {/* Statistics Cards — matching medical dashboard overview */}
+                    <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
                       {[
                         {
-                          label: "Today's Bookings",
-                          value: "84",
+                          label: "Today's Schedule",
+                          value: "12 Bookings",
+                          info: "3 pending",
                           icon: Calendar,
-                          bg: "#EEF5FF",
-                          color: "#0059C6",
+                          color: "text-[#0059C6] bg-[#EEF5FF] border-[#0059C6]/10",
                         },
                         {
-                          label: "Active Customers",
-                          value: "3,842",
+                          label: "Active Patients",
+                          value: "1,248",
+                          info: "Registered",
                           icon: Users,
-                          bg: "#FEF3C7",
-                          color: "#D97706",
+                          color: "text-amber-600 bg-amber-50 border-amber-100",
                         },
                         {
-                          label: "This Month (INR)",
-                          value: "₹2,48,200",
-                          icon: TrendingUp,
-                          bg: "#ECFDF5",
-                          color: "#059669",
+                          label: "All-Time Appts",
+                          value: "8,634",
+                          info: "7,102 completed",
+                          icon: ClipboardList,
+                          color: "text-emerald-600 bg-emerald-50 border-emerald-100",
                         },
                         {
                           label: "Completion Rate",
-                          value: "98.2%",
-                          icon: Check,
-                          bg: "#EEF2FF",
-                          color: "#4F46E5",
+                          value: "94%",
+                          info: "vs cancelled",
+                          icon: TrendingUp,
+                          color: "text-indigo-600 bg-indigo-50 border-indigo-100",
                         },
                       ].map((s, i) => {
                         const Icon = s.icon;
+                        const colorParts = s.color.split(" ");
                         return (
                           <div
                             key={i}
-                            className="bg-white rounded-xl border border-zinc-200/80 p-2.5 flex items-center gap-2.5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] hover:border-[#0059C6]/30 transition-colors"
+                            className="rounded-xl border border-zinc-200/80 bg-white p-2 sm:p-2.5 space-y-1.5"
                           >
-                            <div className="p-1.5 rounded-lg" style={{ background: s.bg }}>
-                              <Icon className="h-3.5 w-3.5" style={{ color: s.color }} />
+                            <div className="flex items-center justify-between">
+                              <span className="text-[7px] sm:text-[8px] font-bold tracking-tight text-zinc-400 uppercase leading-none">
+                                {s.label}
+                              </span>
+                              <div className={`p-1 rounded-md border ${colorParts.slice(0, 3).join(" ")}`}>
+                                <Icon className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                              </div>
                             </div>
                             <div>
-                              <p className="text-[9px] text-zinc-400 font-semibold mb-0.5">
-                                {s.label}
-                              </p>
-                              <p className="text-xs font-black text-zinc-900 leading-none">
+                              <p className="text-[10px] sm:text-xs font-extrabold text-zinc-900 leading-none">
                                 {s.value}
+                              </p>
+                              <p className="text-[6px] sm:text-[7px] font-semibold text-zinc-400 mt-0.5">
+                                {s.info}
                               </p>
                             </div>
                           </div>
@@ -550,20 +552,70 @@ export function Hero() {
                       })}
                     </div>
 
-                    <div className="bg-white rounded-xl border border-zinc-200/80 p-3 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-                      <p
-                        className="text-[9px] font-bold uppercase tracking-wider mb-2"
-                        style={{ color: "#0059C6" }}
-                      >
-                        Core Features
+                    {/* Mini Chart Area — appointment volume trend */}
+                    <div className="rounded-xl border border-zinc-200/80 bg-white p-2.5 sm:p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[8px] sm:text-[9px] font-bold text-zinc-700 uppercase tracking-wider">
+                          Appointment Volume
+                        </p>
+                        <span className="text-[7px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100 px-1.5 py-0.5 rounded-full">
+                          +18% ↑
+                        </span>
+                      </div>
+                      <div className="h-[60px] sm:h-[80px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart
+                            data={[
+                              { d: "Mon", v: 18 },
+                              { d: "Tue", v: 24 },
+                              { d: "Wed", v: 20 },
+                              { d: "Thu", v: 28 },
+                              { d: "Fri", v: 32 },
+                              { d: "Sat", v: 22 },
+                              { d: "Sun", v: 14 },
+                            ]}
+                            margin={{ top: 2, right: 4, left: -20, bottom: 0 }}
+                          >
+                            <defs>
+                              <linearGradient id="heroChartGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#0059C6" stopOpacity={0.2} />
+                                <stop offset="100%" stopColor="#0059C6" stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <XAxis dataKey="d" tick={{ fontSize: 7, fill: "#a1a1aa" }} axisLine={false} tickLine={false} />
+                            <Area type="monotone" dataKey="v" stroke="#0059C6" strokeWidth={1.5} fill="url(#heroChartGrad)" />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Upcoming Appointments mini-list */}
+                    <div className="rounded-xl border border-zinc-200/80 bg-white p-2.5 sm:p-3 hidden sm:block">
+                      <p className="text-[8px] sm:text-[9px] font-bold text-zinc-700 uppercase tracking-wider mb-2">
+                        Upcoming Appointments
                       </p>
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                        {features.map((f) => (
-                          <div key={f} className="flex items-center gap-1.5">
-                            <Check className="h-2.5 w-2.5 shrink-0" style={{ color: "#0059C6" }} />
-                            <span className="text-[8.5px] text-zinc-600 font-medium leading-none">
-                              {f}
-                            </span>
+                      <div className="space-y-1.5">
+                        {[
+                          { name: "Rajesh Kumar", time: "10:00 AM", reason: "Follow-up", status: "Confirmed" },
+                          { name: "Priya Sharma", time: "10:30 AM", reason: "Consultation", status: "Pending" },
+                          { name: "Amit Verma", time: "11:00 AM", reason: "Lab Review", status: "Confirmed" },
+                        ].map((apt, i) => (
+                          <div key={i} className="flex items-center justify-between py-1 border-b border-zinc-100 last:border-0">
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-full bg-zinc-100 flex items-center justify-center text-[7px] font-bold text-zinc-500">
+                                {apt.name.split(" ").map(n => n[0]).join("")}
+                              </div>
+                              <div>
+                                <p className="text-[8px] font-bold text-zinc-800 leading-tight">{apt.name}</p>
+                                <p className="text-[7px] text-zinc-400">{apt.reason}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[8px] font-bold text-zinc-700">{apt.time}</p>
+                              <p className={`text-[6px] font-bold ${apt.status === "Confirmed" ? "text-emerald-600" : "text-amber-500"}`}>
+                                {apt.status}
+                              </p>
+                            </div>
                           </div>
                         ))}
                       </div>
