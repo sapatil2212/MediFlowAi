@@ -758,11 +758,11 @@ async function initClient(tenantId, force = false) {
       console.log(`[WA] [${tenantId}] Using browser executable: ${detectedExecutable}`);
     }
 
-    // Watchdog timer: If Puppeteer hangs during launch/page load on VPS (> 60s),
+    // Watchdog timer: If Puppeteer hangs during launch/page load on VPS (> 120s),
     // transition to ERROR so it does not hang indefinitely on "CONNECTING"
     const initWatchdog = setTimeout(async () => {
       if (session.state === "CONNECTING") {
-        console.error(`[WA] [${tenantId}] ⚠️ Initialization timed out after 60s (no QR received).`);
+        console.error(`[WA] [${tenantId}] ⚠️ Initialization timed out after 120s (no QR received).`);
         if (process.platform === "linux") {
           console.error(`[WA] [${tenantId}] 💡 Hint for Linux VPS: Make sure Chromium dependencies are installed:`);
           console.error(`     sudo apt-get update && sudo apt-get install -y chromium-browser libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libgbm1 libasound2`);
@@ -774,13 +774,15 @@ async function initClient(tenantId, force = false) {
           session.client = null;
         }
       }
-    }, 60000);
+    }, 120000);
 
     session.client = new Client({
       authStrategy: new LocalAuth({
         clientId: tenantId,
         dataPath: path.resolve("./.wwebjs_auth"),
       }),
+      authTimeoutMs: 120000,
+      qrMaxRetries: 10,
       // Use "none" to directly load https://web.whatsapp.com without relying on
       // external raw.githubusercontent.com which frequently hangs/times out on VPS
       webVersionCache: {
@@ -803,6 +805,10 @@ async function initClient(tenantId, force = false) {
           "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         ],
       },
+    });
+
+    session.client.on("loading_screen", (percent, message) => {
+      console.log(`[WA] [${tenantId}] ⏳ Loading: ${percent}% — ${message}`);
     });
 
     session.client.on("qr", async (qr) => {
@@ -1374,7 +1380,7 @@ const server = http.createServer(async (req, res) => {
 // ──────────────────────────────────────────────
 // Startup Restoration of Existing Active Sessions
 // ──────────────────────────────────────────────
-function autoRestoreSessions() {
+async function autoRestoreSessions() {
   const authDir = path.resolve("./.wwebjs_auth");
   if (!fs.existsSync(authDir)) return;
 
@@ -1389,6 +1395,8 @@ function autoRestoreSessions() {
           initClient(tenantId).catch((err) => {
             console.error(`[WA Startup] Failed to restore session for ${tenantId}:`, err.message);
           });
+          // Stagger restorations by 3 seconds to avoid CPU and Chromium launch spikes
+          await new Promise((r) => setTimeout(r, 3000));
         }
       }
     }
