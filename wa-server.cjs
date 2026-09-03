@@ -636,6 +636,56 @@ RULES:
 const clients = new Map();
 
 // ──────────────────────────────────────────────
+// Helper: Auto-detect Chrome/Chromium binary on Linux VPS
+// ──────────────────────────────────────────────
+function findChromeExecutable() {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  if (process.platform === "linux") {
+    const candidates = [
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/google-chrome",
+      "/usr/bin/chromium-browser",
+      "/usr/bin/chromium",
+      "/snap/bin/chromium",
+      "/usr/bin/google-chrome-unstable",
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
+  }
+  return undefined;
+}
+
+// ──────────────────────────────────────────────
+// Helper: Clean stale Chromium Singleton lock files on Linux VPS
+// ──────────────────────────────────────────────
+function cleanStaleChromiumLocks(tenantId) {
+  const baseDir = path.resolve(`./.wwebjs_auth/session-${tenantId}`);
+  if (!fs.existsSync(baseDir)) return;
+  const lockFiles = ["SingletonLock", "SingletonCookie", "SingletonSocket"];
+  for (const lock of lockFiles) {
+    const rootLock = path.join(baseDir, lock);
+    if (fs.existsSync(rootLock)) {
+      try {
+        fs.unlinkSync(rootLock);
+        console.log(`[WA] Cleaned stale ${lock} for tenant: ${tenantId}`);
+      } catch (_) {}
+    }
+    const defaultLock = path.join(baseDir, "Default", lock);
+    if (fs.existsSync(defaultLock)) {
+      try {
+        fs.unlinkSync(defaultLock);
+        console.log(`[WA] Cleaned stale Default/${lock} for tenant: ${tenantId}`);
+      } catch (_) {}
+    }
+  }
+}
+
+// ──────────────────────────────────────────────
 // Initialize WhatsApp Client per Tenant
 // ──────────────────────────────────────────────
 async function initClient(tenantId, force = false) {
@@ -671,6 +721,9 @@ async function initClient(tenantId, force = false) {
       fs.mkdirSync(sessionDir, { recursive: true });
     }
 
+    // Clean stale lock files from previous crashes or ungraceful terminations
+    cleanStaleChromiumLocks(tenantId);
+
     if (session.client) {
       try {
         await session.client.destroy();
@@ -678,19 +731,42 @@ async function initClient(tenantId, force = false) {
       session.client = null;
     }
 
+    const detectedExecutable = findChromeExecutable();
+    if (detectedExecutable) {
+      console.log(`[WA] [${tenantId}] Using browser executable: ${detectedExecutable}`);
+    }
+
+    // Watchdog timer: If Puppeteer hangs during launch/page load on VPS (> 60s),
+    // transition to ERROR so it does not hang indefinitely on "CONNECTING"
+    const initWatchdog = setTimeout(async () => {
+      if (session.state === "CONNECTING") {
+        console.error(`[WA] [${tenantId}] ⚠️ Initialization timed out after 60s (no QR received).`);
+        if (process.platform === "linux") {
+          console.error(`[WA] [${tenantId}] 💡 Hint for Linux VPS: Make sure Chromium dependencies are installed:`);
+          console.error(`     sudo apt-get update && sudo apt-get install -y chromium-browser libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libgbm1 libasound2`);
+        }
+        session.state = "ERROR";
+        session.isInitializing = false;
+        if (session.client) {
+          try { await session.client.destroy(); } catch (_) {}
+          session.client = null;
+        }
+      }
+    }, 60000);
+
     session.client = new Client({
       authStrategy: new LocalAuth({
         clientId: tenantId,
         dataPath: path.resolve("./.wwebjs_auth"),
       }),
+      // Use "none" to directly load https://web.whatsapp.com without relying on
+      // external raw.githubusercontent.com which frequently hangs/times out on VPS
       webVersionCache: {
-        type: "remote",
-        remotePath:
-          "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html",
+        type: "none",
       },
       puppeteer: {
         headless: true,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        executablePath: detectedExecutable || undefined,
         // NOTE: do NOT use --single-process or --no-zygote here. On Linux servers
         // those flags break WhatsApp Web's linking handshake and cause the phone
         // to show "Couldn't link device, try again later" when scanning the QR.
@@ -702,15 +778,13 @@ async function initClient(tenantId, force = false) {
           "--no-first-run",
           "--disable-gpu",
           "--disable-extensions",
-          "--disable-background-networking",
-          "--disable-default-apps",
-          "--disable-sync",
-          "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+          "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         ],
       },
     });
 
     session.client.on("qr", async (qr) => {
+      clearTimeout(initWatchdog);
       session.state = "QR_READY";
       session.isInitializing = false;
       session.lastActive = Date.now();
@@ -723,6 +797,7 @@ async function initClient(tenantId, force = false) {
     });
 
     session.client.on("ready", () => {
+      clearTimeout(initWatchdog);
       session.state = "CONNECTED";
       session.qrDataUrl = "";
       session.connectedNumber = session.client.info?.wid?.user || "Connected";
@@ -733,10 +808,12 @@ async function initClient(tenantId, force = false) {
     });
 
     session.client.on("authenticated", () => {
+      clearTimeout(initWatchdog);
       console.log(`[WA] [${tenantId}] ✅ Authenticated`);
     });
 
     session.client.on("auth_failure", (msg) => {
+      clearTimeout(initWatchdog);
       session.state = "ERROR";
       session.isInitializing = false;
       console.error(`[WA] [${tenantId}] ❌ Auth failure:`, msg);
@@ -753,6 +830,7 @@ async function initClient(tenantId, force = false) {
     });
 
     session.client.on("disconnected", (reason) => {
+      clearTimeout(initWatchdog);
       session.state = "DISCONNECTED";
       session.connectedNumber = "";
       session.qrDataUrl = "";
@@ -836,6 +914,15 @@ async function initClient(tenantId, force = false) {
     session.state = "ERROR";
     session.isInitializing = false;
     console.error(`[WA] [${tenantId}] ❌ Init failed:`, err.message);
+    if (process.platform === "linux") {
+      console.error(`[WA] [${tenantId}] 💡 VPS Troubleshooting:`);
+      console.error(`     1. Install Chromium & system dependencies:`);
+      console.error(`        sudo apt-get update && sudo apt-get install -y chromium-browser libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libgbm1 libasound2`);
+      console.error(`     2. Or download Puppeteer Chrome:`);
+      console.error(`        npx puppeteer browsers install chrome`);
+      console.error(`     3. If memory is constrained (<1GB RAM), add swap:`);
+      console.error(`        sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`);
+    }
     console.log(`[WA] [${tenantId}] ♻️ Retrying initialization in 10 seconds...`);
     setTimeout(() => {
       initClient(tenantId, true).catch(console.error);
