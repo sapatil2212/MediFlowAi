@@ -1901,14 +1901,28 @@ export const getWhatsAppStatusServerFn = createServerFn({ method: "GET" }).handl
   }
 
   let status = await getWAStatus(user.tenantId);
-  // If the session is fully disconnected (and not currently initializing or paired),
+  // If the session is fully disconnected or errored out,
   // trigger initialization automatically so the user is immediately presented with a QR code.
-  if (status.state === "DISCONNECTED") {
+  if (status.state === "DISCONNECTED" || status.state === "ERROR") {
     await initializeWA(user.tenantId);
     status = await getWAStatus(user.tenantId);
   }
 
   return status;
+});
+
+export const initializeWhatsAppServerFn = createServerFn({ method: "POST" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  const ctx = buildAccountContext(user);
+  if (!canUseFeature(ctx, "whatsapp")) {
+    throw new Error("Your plan does not include WhatsApp alerts.");
+  }
+  if (!canOperateFeature(ctx, "whatsapp")) {
+    throw new Error("You do not have permission to perform this action.");
+  }
+  await initializeWA(user.tenantId);
+  return { success: true };
 });
 
 export const disconnectWhatsAppServerFn = createServerFn({ method: "POST" }).handler(async () => {

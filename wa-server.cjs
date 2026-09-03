@@ -655,7 +655,7 @@ async function initClient(tenantId, force = false) {
     clients.set(tenantId, session);
   }
 
-  if (session.isInitializing) return;
+  if (!force && session.isInitializing) return;
   if (!force && session.state === "CONNECTED") return;
   if (!force && (session.state === "QR_READY" || session.state === "CONNECTING")) return;
 
@@ -712,6 +712,7 @@ async function initClient(tenantId, force = false) {
 
     session.client.on("qr", async (qr) => {
       session.state = "QR_READY";
+      session.isInitializing = false;
       session.lastActive = Date.now();
       try {
         session.qrDataUrl = await qrcode.toDataURL(qr);
@@ -759,7 +760,7 @@ async function initClient(tenantId, force = false) {
       console.log(`[WA] [${tenantId}] 🔌 Disconnected:`, reason);
       console.log(`[WA] [${tenantId}] ♻️ Attempting to auto-reconnect in 5 seconds...`);
       setTimeout(() => {
-        initClient(tenantId).catch(console.error);
+        initClient(tenantId, true).catch(console.error);
       }, 5000);
     });
 
@@ -837,7 +838,7 @@ async function initClient(tenantId, force = false) {
     console.error(`[WA] [${tenantId}] ❌ Init failed:`, err.message);
     console.log(`[WA] [${tenantId}] ♻️ Retrying initialization in 10 seconds...`);
     setTimeout(() => {
-      initClient(tenantId).catch(console.error);
+      initClient(tenantId, true).catch(console.error);
     }, 10000);
   }
 }
@@ -849,7 +850,14 @@ async function disconnect(tenantId) {
   console.log(`[WA] [${tenantId}] 🔌 Disconnecting...`);
   const session = clients.get(tenantId);
   if (session) {
+    // Prevent auto-reconnect from firing while we tear down
+    session.isInitializing = true;
     if (session.client) {
+      // Remove all listeners first to prevent 'disconnected' handler from
+      // firing and triggering auto-reconnect during teardown
+      try {
+        session.client.removeAllListeners("disconnected");
+      } catch (_) {}
       try {
         await session.client.logout();
       } catch (_) {}
@@ -864,16 +872,22 @@ async function disconnect(tenantId) {
     session.isInitializing = false;
   }
 
+  // Give Puppeteer/Chrome a moment to fully exit before clearing files
+  await new Promise((r) => setTimeout(r, 1500));
+
   // Clear session directories
   const sessionDir = path.resolve(`./.wwebjs_auth/session-${tenantId}`);
   if (fs.existsSync(sessionDir)) {
     try {
       fs.rmSync(sessionDir, { recursive: true, force: true });
-    } catch (_) {}
+    } catch (e) {
+      console.warn(`[WA] [${tenantId}] Could not fully clear session folder:`, e.message);
+    }
     console.log(`[WA] [${tenantId}] Session folder cleared`);
   }
 
   clients.delete(tenantId);
+  console.log(`[WA] [${tenantId}] ✅ Disconnect complete — ready for fresh initialization`);
 }
 
 // ──────────────────────────────────────────────

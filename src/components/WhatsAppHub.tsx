@@ -150,7 +150,11 @@ export default function WhatsAppHub({
       () => {
         fetchStatus();
       },
-      waStatus === "CONNECTING" || waStatus === "QR_READY" ? 3000 : 10000,
+      waStatus === "CONNECTING" || waStatus === "QR_READY"
+        ? 3000
+        : waStatus === "CONNECTED"
+          ? 10000
+          : 4000,
     );
     return () => clearInterval(interval);
   }, [waStatus]);
@@ -1508,7 +1512,7 @@ export default function WhatsAppHub({
                           try {
                             await disconnectWhatsAppServerFn();
                             showToast("success", "Session disconnected");
-                            fetchStatus();
+                            setTimeout(() => fetchStatus(), 2000);
                           } catch (e: any) {
                             showToast("error", "Disconnect failed: " + e.message);
                           }

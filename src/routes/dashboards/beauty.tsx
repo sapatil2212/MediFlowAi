@@ -2440,7 +2440,7 @@ function BeautyDashboardPage() {
           ? 3000
           : waStatus === "CONNECTED"
             ? 10000
-            : 0;
+            : 5000;
       if (pollMs > 0) {
         interval = setInterval(fetchWhatsAppStatus, pollMs);
       }
@@ -2873,7 +2873,9 @@ function BeautyDashboardPage() {
   const handleDisconnectWhatsApp = async () => {
     try {
       await disconnectWhatsAppServerFn();
-      fetchWhatsAppStatus();
+      // Brief delay to allow the WA microservice to fully clean up the old
+      // session before the next status fetch triggers auto-initialization.
+      setTimeout(() => fetchWhatsAppStatus(), 2000);
     } catch (e) {
       console.error(e);
     }
@@ -9163,7 +9165,11 @@ function BeautyDashboardPage() {
                                       <div className="h-2.5 w-32 rounded-full bg-zinc-200 animate-pulse" />
                                       <div className="h-2 w-48 rounded-full bg-zinc-200 animate-pulse" />
                                       <p className="text-[10px] text-zinc-400 font-semibold">
-                                        Starting WhatsApp browser session...
+                                        {waStatus === "ERROR"
+                                          ? "WhatsApp session encountered an error. Retrying..."
+                                          : waStatus === "DISCONNECTED"
+                                            ? "Preparing new WhatsApp session..."
+                                            : "Starting WhatsApp browser session..."}
                                       </p>
                                     </div>
                                   </div>
