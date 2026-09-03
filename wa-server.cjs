@@ -686,6 +686,18 @@ function cleanStaleChromiumLocks(tenantId) {
 }
 
 // ──────────────────────────────────────────────
+// Helper: Kill any orphaned Chrome processes holding locks on this tenant's profile
+// ──────────────────────────────────────────────
+function killOrphanedTenantChrome(tenantId) {
+  if (process.platform !== "linux") return;
+  try {
+    const { execSync } = require("child_process");
+    execSync(`pkill -9 -f "session-${tenantId}" || true`, { stdio: "ignore" });
+    console.log(`[WA] Cleaned any orphaned browser processes for tenant: ${tenantId}`);
+  } catch (_) {}
+}
+
+// ──────────────────────────────────────────────
 // Initialize WhatsApp Client per Tenant
 // ──────────────────────────────────────────────
 async function initClient(tenantId, force = false) {
@@ -700,6 +712,7 @@ async function initClient(tenantId, force = false) {
       sentLog: [],
       isProcessingQueue: false,
       isInitializing: false,
+      retryTimer: null,
       lastActive: Date.now(),
     };
     clients.set(tenantId, session);
@@ -708,6 +721,12 @@ async function initClient(tenantId, force = false) {
   if (!force && session.isInitializing) return;
   if (!force && session.state === "CONNECTED") return;
   if (!force && (session.state === "QR_READY" || session.state === "CONNECTING")) return;
+
+  // Clear any existing retry timer to prevent overlapping loops
+  if (session.retryTimer) {
+    clearTimeout(session.retryTimer);
+    session.retryTimer = null;
+  }
 
   session.isInitializing = true;
   session.state = "CONNECTING";
@@ -720,6 +739,9 @@ async function initClient(tenantId, force = false) {
     if (!fs.existsSync(sessionDir)) {
       fs.mkdirSync(sessionDir, { recursive: true });
     }
+
+    // Terminate any stuck or orphaned Chrome processes holding this profile
+    killOrphanedTenantChrome(tenantId);
 
     // Clean stale lock files from previous crashes or ungraceful terminations
     cleanStaleChromiumLocks(tenantId);
@@ -923,8 +945,12 @@ async function initClient(tenantId, force = false) {
       console.error(`     3. If memory is constrained (<1GB RAM), add swap:`);
       console.error(`        sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`);
     }
+    if (session.retryTimer) {
+      clearTimeout(session.retryTimer);
+    }
     console.log(`[WA] [${tenantId}] ♻️ Retrying initialization in 10 seconds...`);
-    setTimeout(() => {
+    session.retryTimer = setTimeout(() => {
+      session.retryTimer = null;
       initClient(tenantId, true).catch(console.error);
     }, 10000);
   }
@@ -937,6 +963,10 @@ async function disconnect(tenantId) {
   console.log(`[WA] [${tenantId}] 🔌 Disconnecting...`);
   const session = clients.get(tenantId);
   if (session) {
+    if (session.retryTimer) {
+      clearTimeout(session.retryTimer);
+      session.retryTimer = null;
+    }
     // Prevent auto-reconnect from firing while we tear down
     session.isInitializing = true;
     if (session.client) {
@@ -958,6 +988,9 @@ async function disconnect(tenantId) {
     session.connectedNumber = "";
     session.isInitializing = false;
   }
+
+  // Force-terminate any remaining Chrome processes for this tenant
+  killOrphanedTenantChrome(tenantId);
 
   // Give Puppeteer/Chrome a moment to fully exit before clearing files
   await new Promise((r) => setTimeout(r, 1500));
