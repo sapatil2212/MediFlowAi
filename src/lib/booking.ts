@@ -1,53 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import crypto from "crypto";
 import { query, queryOne, execute } from "./db";
-import { enqueueWA, getWAStatus } from "./whatsapp";
-import { isRestaurantProfession } from "./restaurant-availability";
-
-// ──────────────────────────────────────────────
-// Daily token numbering (shared by every clinic booking path)
-// ──────────────────────────────────────────────
-/**
- * Recomputes the daily token numbers for a tenant so tokens follow the
- * appointment *time* order — the earliest slot of the day gets #1, the next #2,
- * and so on — regardless of the order in which the bookings were actually made.
- * Appointments that share the exact same slot time fall back to creation order
- * (then id) so the result is stable.
- *
- * This is what makes a 6:00 PM booking that arrives *after* a 6:08 PM booking
- * still take the lower token. Because earlier-slot arrivals shift the later
- * ones, every create/update/delete on a clinic day calls this to keep the
- * sequence correct.
- *
- * Restaurant tenants are intentionally skipped: their tokens are a
- * first-come-first-served queue assigned by a dedicated counter and must never
- * be reordered by slot time.
- */
-export async function renumberDailyTokens(tenantId: string, date: Date | string): Promise<void> {
-  const dateVal = date instanceof Date ? date : new Date(date);
-  if (Number.isNaN(dateVal.getTime())) return;
-
-  // Never reorder restaurant queues (they use booking-order tokens by design).
-  const prof = await queryOne<any>("SELECT profession FROM User WHERE tenantId = ? LIMIT 1", [
-    tenantId,
-  ]);
-  if (isRestaurantProfession(prof?.profession)) return;
-
-  // Rank the day's appointments by slot time and write the rank back as the
-  // token. The derived table is materialised, so updating the same table it
-  // reads from is safe in MariaDB/MySQL.
-  await execute(
-    `UPDATE Appointment a
-       JOIN (
-         SELECT id,
-                ROW_NUMBER() OVER (ORDER BY dateTime ASC, createdAt ASC, id ASC) AS rn
-           FROM Appointment
-          WHERE tenantId = ? AND DATE(dateTime) = DATE(?)
-       ) ranked ON ranked.id = a.id
-        SET a.tokenNo = ranked.rn`,
-    [tenantId, dateVal],
-  );
-}
 
 // ──────────────────────────────────────────────
 // Public: Get Clinic Info + Dynamic Available Slots
@@ -354,65 +307,40 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     );
 
     // Reorder the day's tokens by slot time, then read back this booking's token
-    // so the confirmation/WhatsApp message shows the correct number.
-    await renumberDailyTokens(data.tenantId, dateVal);
-    const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
-      id,
-    ]);
-    if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
+    // so the confirmation/WhatsApp message shows the correct number. Token
+    // ordering is a nicety — never let it break the booking or its notification.
+    try {
+      const { renumberDailyTokens } = await import("./token.server");
+      await renumberDailyTokens(data.tenantId, dateVal);
+      const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
+        id,
+      ]);
+      if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
+    } catch (tokErr: any) {
+      console.error("[Tokens] Daily renumber failed (booking still succeeds):", tokErr?.message);
+    }
 
-    // Queue WhatsApp notification if WA microservice is connected
+    // Queue the "appointment booked" WhatsApp notification. Gated ONLY on a
+    // live (CONNECTED) session — the same rule the dashboard booking path uses.
+    // We intentionally do NOT require WhatsAppConfig.isEnabled here: that column
+    // defaults to 0 and connecting the session never sets it, which previously
+    // caused public bookings to silently skip WhatsApp even when connected.
     if (typeof window === "undefined") {
-      try {
-        const waConfig = await queryOne<any>(
-          "SELECT isEnabled FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1",
-          [data.tenantId],
-        );
-        if (waConfig && waConfig.isEnabled) {
-          const waStatus = await getWAStatus(data.tenantId);
-          if (waStatus.state === "CONNECTED") {
-            const clinic = await queryOne<any>(
-              "SELECT clinicName FROM User WHERE tenantId = ? LIMIT 1",
-              [data.tenantId],
-            );
-            const clinicName = clinic ? clinic.clinicName : "Clinic";
-
-            let docName = "";
-            if (docId) {
-              const doc = await queryOne<any>("SELECT name FROM Doctor WHERE id = ? LIMIT 1", [
-                docId,
-              ]);
-              if (doc) docName = doc.name;
-            }
-
-            let locName = "";
-            if (locId) {
-              try {
-                const loc = await queryOne<any>("SELECT name FROM Location WHERE id = ? LIMIT 1", [
-                  locId,
-                ]);
-                if (loc) locName = loc.name;
-              } catch {}
-            }
-
-            const dateStr = dateVal.toLocaleDateString("en-US", {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            });
-            const timeStr =
-              tSlot || dateVal.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-            const docText = docName ? ` with *${docName}*` : "";
-            const locText = locName ? `\n📍 *Location:* ${locName}` : "";
-
-            const waMessage = `Hello *${data.name}*,\n\nYour appointment at *${clinicName}*${docText} is confirmed for *${dateStr}* at *${timeStr}*.${locText}\n\n🎫 *Your Token No: #${tokenNo}*\n\nThank you for choosing HealthSync AI!\n\n_This is an automated notification message._`;
-            if (data.phone) await enqueueWA(data.tenantId, data.phone, waMessage);
-          }
-        }
-      } catch (waErr: any) {
-        console.error("[WhatsApp] Failed to send booking message:", waErr.message);
-      }
+      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } = await import(
+        "./appointment-notify"
+      );
+      const [clinicName, doctorName] = await Promise.all([
+        resolveClinicName(data.tenantId),
+        resolveDoctorName(docId),
+      ]);
+      await sendAppointmentNotification(data.tenantId, data.whatsapp || data.phone, "booked", {
+        name: data.name,
+        clinicName,
+        doctorName,
+        dateTime: dateVal,
+        timeSlot: tSlot,
+        tokenNo,
+      });
     }
 
     // Create the video room + patient join link when booked as a video visit.

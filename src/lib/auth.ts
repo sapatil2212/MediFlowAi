@@ -8,7 +8,7 @@ import {
   TENANT_PREFIX_RESTAURANT,
   DEFAULT_SETTINGS,
 } from "./restaurant-availability";
-import { renumberDailyTokens } from "./booking";
+import { renumberDailyTokens } from "./token.server";
 import { sendOtpEmail, sendBillingNotificationEmail } from "./email";
 
 // WhatsApp HTTP client — pure ESM, safe to import (no Puppeteer/CJS globals)
@@ -931,11 +931,16 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
 
     // Tokens follow slot time, not booking order: reorder the day then read back
     // this appointment's final token for the confirmation / WhatsApp message.
-    await renumberDailyTokens(data.tenantId, dateVal);
-    const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
-      id,
-    ]);
-    if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
+    // Never let a token-ordering hiccup break the booking or its notification.
+    try {
+      await renumberDailyTokens(data.tenantId, dateVal);
+      const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
+        id,
+      ]);
+      if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
+    } catch (tokErr: any) {
+      console.error("[Tokens] Daily renumber failed (booking still succeeds):", tokErr?.message);
+    }
 
     // Queue the "appointment booked" WhatsApp notification (server-side only).
     if (typeof window === "undefined") {
@@ -1180,11 +1185,16 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
 
     // Tokens follow slot time, not booking order: reorder the day then read back
     // this booking's final token for the WhatsApp message and return value.
-    await renumberDailyTokens(user.tenantId, dateVal);
-    const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
-      id,
-    ]);
-    if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
+    // Never let a token-ordering hiccup break the booking or its notification.
+    try {
+      await renumberDailyTokens(user.tenantId, dateVal);
+      const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
+        id,
+      ]);
+      if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
+    } catch (tokErr: any) {
+      console.error("[Tokens] Daily renumber failed (booking still succeeds):", tokErr?.message);
+    }
 
     // Queue the "appointment booked" WhatsApp notification.
     if (typeof window === "undefined" && data.phone) {
@@ -1304,11 +1314,15 @@ export const updateSubLocationBookingServerFn = createServerFn({ method: "POST" 
     // If the slot moved, renumber the affected day(s) so tokens stay ordered by
     // time (the new day, plus the old day it may have left).
     if (data.dateTime !== undefined) {
-      await renumberDailyTokens(user.tenantId, new Date(data.dateTime));
-      if (existing.dateTime) {
-        const oldDay = new Date(existing.dateTime).toISOString().slice(0, 10);
-        const newDay = new Date(data.dateTime).toISOString().slice(0, 10);
-        if (oldDay !== newDay) await renumberDailyTokens(user.tenantId, existing.dateTime);
+      try {
+        await renumberDailyTokens(user.tenantId, new Date(data.dateTime));
+        if (existing.dateTime) {
+          const oldDay = new Date(existing.dateTime).toISOString().slice(0, 10);
+          const newDay = new Date(data.dateTime).toISOString().slice(0, 10);
+          if (oldDay !== newDay) await renumberDailyTokens(user.tenantId, existing.dateTime);
+        }
+      } catch (tokErr: any) {
+        console.error("[Tokens] Daily renumber failed (update still succeeds):", tokErr?.message);
       }
     }
     return { success: true };
@@ -1339,7 +1353,11 @@ export const deleteSubLocationBookingServerFn = createServerFn({ method: "POST" 
 
     // Close the gap so remaining tokens stay sequential by slot time.
     if (apt.dateTime) {
-      await renumberDailyTokens(user.tenantId, apt.dateTime);
+      try {
+        await renumberDailyTokens(user.tenantId, apt.dateTime);
+      } catch (tokErr: any) {
+        console.error("[Tokens] Daily renumber failed (delete still succeeds):", tokErr?.message);
+      }
     }
     return { success: true };
   });
@@ -1443,14 +1461,19 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
     // Reorder tokens by slot time for the affected day(s). A time-only change
     // still reshuffles the current day; a date move also re-tightens the day it
     // left. Then read back this appointment's final token for the notification.
-    await renumberDailyTokens(user.tenantId, dateVal);
-    if (oldDateStr !== newDateStr) {
-      await renumberDailyTokens(user.tenantId, oldDate);
+    // Never let a token-ordering hiccup break the update or its notification.
+    try {
+      await renumberDailyTokens(user.tenantId, dateVal);
+      if (oldDateStr !== newDateStr) {
+        await renumberDailyTokens(user.tenantId, oldDate);
+      }
+      const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
+        data.id,
+      ]);
+      if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
+    } catch (tokErr: any) {
+      console.error("[Tokens] Daily renumber failed (update still succeeds):", tokErr?.message);
     }
-    const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
-      data.id,
-    ]);
-    if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
 
     // Queue WhatsApp notification for status change (confirmed / cancelled / completed).
     if (typeof window === "undefined") {
@@ -1522,7 +1545,11 @@ export const deleteAppointmentServerFn = createServerFn({ method: "POST" })
 
     // Close the gap left behind so remaining tokens stay sequential by slot time.
     if (apt.dateTime) {
-      await renumberDailyTokens(user.tenantId, apt.dateTime);
+      try {
+        await renumberDailyTokens(user.tenantId, apt.dateTime);
+      } catch (tokErr: any) {
+        console.error("[Tokens] Daily renumber failed (delete still succeeds):", tokErr?.message);
+      }
     }
 
     return { success: true };
