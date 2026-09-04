@@ -150,6 +150,7 @@ import { WhatsAppAlertsSettings } from "../../components/restaurant/WhatsAppAler
 import ManagePlansPanel from "../../components/settings/ManagePlansPanel";
 import { RestaurantBranchSettings } from "../../components/restaurant/RestaurantBranchSettings";
 import WhatsAppHub from "../../components/WhatsAppHub";
+import { HelpSupportCard } from "../../components/HelpSupportCard";
 import { cn } from "../../lib/utils";
 
 export const Route = createFileRoute("/dashboards/restaurant")({
@@ -4388,30 +4389,6 @@ function RestaurantDashboardPage() {
         .toUpperCase()
     : "BM";
 
-  /** The sidebar footer account card — opens the Settings profile sub-tab. */
-  const accountCard = (onOpen: () => void) => (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="w-full rounded-2xl bg-zinc-50 border border-zinc-200/60 p-3 flex items-center gap-3 hover:bg-brand/5 hover:border-brand/20 transition-colors cursor-pointer text-left group"
-    >
-      <div className="h-9 w-9 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-bold text-xs shrink-0 group-hover:bg-brand/20 transition-colors overflow-hidden">
-        {user.profilePhoto ? (
-          <img src={user.profilePhoto} alt={user.name} className="h-full w-full object-cover" />
-        ) : (
-          initials
-        )}
-      </div>
-      <div className="overflow-hidden text-left flex-1 min-w-0">
-        <h4 className="text-xs font-bold text-zinc-850 truncate leading-tight">
-          {user.name || "Restaurant"}
-        </h4>
-        <span className="text-[9px] font-medium text-zinc-400 truncate block">{roleLabel}</span>
-      </div>
-      <ChevronRight className="h-3.5 w-3.5 text-zinc-300 group-hover:text-brand shrink-0 transition-colors" />
-    </button>
-  );
-
   const signOutButton = (onBefore?: () => void) => (
     <button
       type="button"
@@ -4508,10 +4485,7 @@ function RestaurantDashboardPage() {
 
               {/* Sidebar Footer */}
               <div className="space-y-3">
-                {accountCard(() => {
-                  setActiveTab("Settings");
-                  setIsMobileMenuOpen(false);
-                })}
+                <HelpSupportCard />
                 {signOutButton(() => setIsMobileMenuOpen(false))}
               </div>
             </motion.aside>
@@ -4549,7 +4523,7 @@ function RestaurantDashboardPage() {
 
         {/* Sidebar Footer */}
         <div className="space-y-3">
-          {accountCard(() => setActiveTab("Settings"))}
+          <HelpSupportCard />
           {signOutButton()}
         </div>
       </aside>

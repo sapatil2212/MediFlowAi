@@ -147,6 +147,7 @@ import {
   uploadProfilePhotoServerFn,
 } from "../../lib/auth";
 import WhatsAppHub from "../../components/WhatsAppHub";
+import { HelpSupportCard } from "../../components/HelpSupportCard";
 import WelcomeTrialModal from "../../components/WelcomeTrialModal";
 import MultiLocationSettings from "../../components/settings/MultiLocationSettings";
 import { resolveFeatureAccess, type FeatureId } from "../../lib/feature-access";
@@ -4920,44 +4921,8 @@ function MedicalDashboardPage() {
               </div>
               {/* Sidebar Footer */}
               <div className="space-y-3">
-                {/* Clinician Card — clickable opens profile modal */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab("settings");
-                    setSettingsSubTab("profile");
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className="w-full rounded-2xl bg-zinc-50 border border-zinc-200/60 p-3 flex items-center gap-3 hover:bg-brand/5 hover:border-brand/20 transition-colors cursor-pointer text-left group"
-                >
-                  <div className="h-9 w-9 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-bold text-xs shrink-0 group-hover:bg-brand/20 transition-colors overflow-hidden">
-                    {user?.profilePhoto ? (
-                      <img
-                        src={user.profilePhoto}
-                        alt={user.name}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : user?.name ? (
-                      user.name
-                        .split(" ")
-                        .map((n: string) => n[0])
-                        .slice(0, 2)
-                        .join("")
-                        .toUpperCase()
-                    ) : (
-                      "SC"
-                    )}
-                  </div>
-                  <div className="overflow-hidden text-left flex-1 min-w-0">
-                    <h4 className="text-xs font-bold text-zinc-850 truncate leading-tight">
-                      {user?.name || "Staff Coach"}
-                    </h4>
-                    <span className="text-[9px] font-medium text-zinc-400 truncate block">
-                      {user?.role === "admin" ? "Gym Admin" : "Coach/Trainer"}
-                    </span>
-                  </div>
-                  <ChevronRight className="h-3.5 w-3.5 text-zinc-300 group-hover:text-brand shrink-0 transition-colors" />
-                </button>
+                {/* Help & Support */}
+                <HelpSupportCard />
 
                 <button
                   type="button"
@@ -5029,43 +4994,8 @@ function MedicalDashboardPage() {
 
         {/* Sidebar Footer */}
         <div className="space-y-3">
-          {/* Clinician Card — clickable opens profile modal */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("settings");
-              setSettingsSubTab("profile");
-            }}
-            className="w-full rounded-2xl bg-zinc-50 border border-zinc-200/60 p-3 flex items-center gap-3 hover:bg-brand/5 hover:border-brand/20 transition-colors cursor-pointer text-left group"
-          >
-            <div className="h-9 w-9 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-bold text-xs shrink-0 group-hover:bg-brand/20 transition-colors overflow-hidden">
-              {user?.profilePhoto ? (
-                <img
-                  src={user.profilePhoto}
-                  alt={user.name}
-                  className="h-full w-full object-cover"
-                />
-              ) : user?.name ? (
-                user.name
-                  .split(" ")
-                  .map((n: string) => n[0])
-                  .slice(0, 2)
-                  .join("")
-                  .toUpperCase()
-              ) : (
-                "SC"
-              )}
-            </div>
-            <div className="overflow-hidden text-left flex-1 min-w-0">
-              <h4 className="text-xs font-bold text-zinc-850 truncate leading-tight">
-                {user?.name || "Staff Coach"}
-              </h4>
-              <span className="text-[9px] font-medium text-zinc-400 truncate block">
-                {user?.role === "admin" ? "Gym Admin" : "Coach/Trainer"}
-              </span>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 text-zinc-300 group-hover:text-brand shrink-0 transition-colors" />
-          </button>
+          {/* Help & Support */}
+          <HelpSupportCard />
 
           <button
             onClick={handleLogout}

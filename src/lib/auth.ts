@@ -8,6 +8,7 @@ import {
   TENANT_PREFIX_RESTAURANT,
   DEFAULT_SETTINGS,
 } from "./restaurant-availability";
+import { renumberDailyTokens } from "./booking";
 import { sendOtpEmail, sendBillingNotificationEmail } from "./email";
 
 // WhatsApp HTTP client — pure ESM, safe to import (no Puppeteer/CJS globals)
@@ -899,12 +900,13 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
       }
     }
 
-    // Auto-assign sequential token number per tenant + date
+    // Provisional token (MAX + 1) keeps the row valid on insert; the final,
+    // time-ordered value is assigned by renumberDailyTokens just below.
     const tokenRow = await queryOne<any>(
       "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?)",
       [data.tenantId, dateVal],
     );
-    const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
+    let tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
 
     await execute(
       `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, patientId, tokenNo, consultationMode, createdAt)
@@ -926,6 +928,14 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
         consultationMode,
       ],
     );
+
+    // Tokens follow slot time, not booking order: reorder the day then read back
+    // this appointment's final token for the confirmation / WhatsApp message.
+    await renumberDailyTokens(data.tenantId, dateVal);
+    const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
+      id,
+    ]);
+    if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
 
     // Queue the "appointment booked" WhatsApp notification (server-side only).
     if (typeof window === "undefined") {
@@ -1138,11 +1148,13 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
 
     const id = crypto.randomUUID();
     const dateVal = new Date(data.dateTime);
+    // Provisional token (MAX + 1); the final, time-ordered value is assigned by
+    // renumberDailyTokens just below.
     const tokenRow = await queryOne<any>(
       "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?)",
       [user.tenantId, dateVal],
     );
-    const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
+    let tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
     const status = data.status || "Pending";
 
     await execute(
@@ -1165,6 +1177,14 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
         locationId,
       ],
     );
+
+    // Tokens follow slot time, not booking order: reorder the day then read back
+    // this booking's final token for the WhatsApp message and return value.
+    await renumberDailyTokens(user.tenantId, dateVal);
+    const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
+      id,
+    ]);
+    if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
 
     // Queue the "appointment booked" WhatsApp notification.
     if (typeof window === "undefined" && data.phone) {
@@ -1212,8 +1232,9 @@ export const updateSubLocationBookingServerFn = createServerFn({ method: "POST" 
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     if (user.role !== "admin" && user.role !== "location") throw new Error("Unauthorized");
 
-    // Ensure the booking belongs to this tenant (and to the location, for location users)
-    let checkSql = "SELECT id, locationId FROM Appointment WHERE id = ? AND tenantId = ?";
+    // Ensure the booking belongs to this tenant (and to the location, for location
+    // users). Keep its current date so we can renumber the day it leaves.
+    let checkSql = "SELECT id, locationId, dateTime FROM Appointment WHERE id = ? AND tenantId = ?";
     const checkParams: any[] = [data.id, user.tenantId];
     if (user.role === "location" && user.locationId) {
       checkSql += " AND locationId = ?";
@@ -1279,6 +1300,17 @@ export const updateSubLocationBookingServerFn = createServerFn({ method: "POST" 
       `UPDATE Appointment SET ${fields.join(", ")} WHERE id = ? AND tenantId = ?`,
       params,
     );
+
+    // If the slot moved, renumber the affected day(s) so tokens stay ordered by
+    // time (the new day, plus the old day it may have left).
+    if (data.dateTime !== undefined) {
+      await renumberDailyTokens(user.tenantId, new Date(data.dateTime));
+      if (existing.dateTime) {
+        const oldDay = new Date(existing.dateTime).toISOString().slice(0, 10);
+        const newDay = new Date(data.dateTime).toISOString().slice(0, 10);
+        if (oldDay !== newDay) await renumberDailyTokens(user.tenantId, existing.dateTime);
+      }
+    }
     return { success: true };
   });
 
@@ -1293,7 +1325,7 @@ export const deleteSubLocationBookingServerFn = createServerFn({ method: "POST" 
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     if (user.role !== "admin" && user.role !== "location") throw new Error("Unauthorized");
 
-    let sql = "SELECT id FROM Appointment WHERE id = ? AND tenantId = ?";
+    let sql = "SELECT id, dateTime FROM Appointment WHERE id = ? AND tenantId = ?";
     const params: any[] = [id, user.tenantId];
     if (user.role === "location" && user.locationId) {
       sql += " AND locationId = ?";
@@ -1304,6 +1336,11 @@ export const deleteSubLocationBookingServerFn = createServerFn({ method: "POST" 
     if (!apt) throw new Error("Booking not found or unauthorized");
 
     await execute("DELETE FROM Appointment WHERE id = ?", [id]);
+
+    // Close the gap so remaining tokens stay sequential by slot time.
+    if (apt.dateTime) {
+      await renumberDailyTokens(user.tenantId, apt.dateTime);
+    }
     return { success: true };
   });
 
@@ -1365,7 +1402,10 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
     // Cancelling the appointment also cancels a video room.
     const effectiveMode = data.status === "Cancelled" ? "in_person" : consultationMode;
 
-    // Recalculate token number if the appointment date changed
+    // Token bookkeeping. Tokens follow slot time, so any change to the date OR
+    // the time within a day can reshuffle the sequence. We keep a provisional
+    // value for the UPDATE below (a fresh MAX+1 when the date moved, otherwise
+    // the existing token) and then renumber both affected days afterwards.
     const oldDate =
       existingApt.dateTime instanceof Date ? existingApt.dateTime : new Date(existingApt.dateTime);
     const oldDateStr = oldDate.toISOString().slice(0, 10);
@@ -1399,6 +1439,18 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
         data.id,
       ],
     );
+
+    // Reorder tokens by slot time for the affected day(s). A time-only change
+    // still reshuffles the current day; a date move also re-tightens the day it
+    // left. Then read back this appointment's final token for the notification.
+    await renumberDailyTokens(user.tenantId, dateVal);
+    if (oldDateStr !== newDateStr) {
+      await renumberDailyTokens(user.tenantId, oldDate);
+    }
+    const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
+      data.id,
+    ]);
+    if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
 
     // Queue WhatsApp notification for status change (confirmed / cancelled / completed).
     if (typeof window === "undefined") {
@@ -1458,14 +1510,20 @@ export const deleteAppointmentServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
-    // Verify appointment belongs to the same tenantId
+    // Verify appointment belongs to the same tenantId (keep its date so we can
+    // re-tighten that day's token sequence after removal).
     const apt = await queryOne<any>(
-      "SELECT id FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1",
+      "SELECT id, dateTime FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1",
       [id, user.tenantId],
     );
     if (!apt) throw new Error("Appointment not found or unauthorized");
 
     await execute("DELETE FROM Appointment WHERE id = ?", [id]);
+
+    // Close the gap left behind so remaining tokens stay sequential by slot time.
+    if (apt.dateTime) {
+      await renumberDailyTokens(user.tenantId, apt.dateTime);
+    }
 
     return { success: true };
   });

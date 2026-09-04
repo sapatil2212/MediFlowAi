@@ -154,6 +154,7 @@ import {
   uploadProfilePhotoServerFn,
 } from "../../lib/auth";
 import WhatsAppHub from "../../components/WhatsAppHub";
+import { HelpSupportCard } from "../../components/HelpSupportCard";
 import WelcomeTrialModal, { getTrialExpiryMs } from "../../components/WelcomeTrialModal";
 import MultiLocationSettings from "../../components/settings/MultiLocationSettings";
 import { DoctorVideoConsultPanel } from "../../components/video/DoctorVideoConsultPanel";
@@ -1655,6 +1656,7 @@ function MedicalDashboardPage() {
   const [savingHours, setSavingHours] = useState(false);
   const [hoursSuccess, setHoursSuccess] = useState("");
   const [hoursError, setHoursError] = useState("");
+  const [applyHoursToAll, setApplyHoursToAll] = useState(false);
 
   // Departments States
   const [departments, setDepartments] = useState<any[]>([]);
@@ -2889,7 +2891,26 @@ function MedicalDashboardPage() {
 
   const handleUpdateHourField = (dayIndex: number, field: string, value: any) => {
     setClinicHours((prev) =>
-      prev.map((h) => (h.dayOfWeek === dayIndex ? { ...h, [field]: value } : h)),
+      prev.map((h) => {
+        // When "apply to all days" is active, propagate time changes to every day
+        if (applyHoursToAll && (field === "openTime" || field === "closeTime")) {
+          return { ...h, [field]: value };
+        }
+        return h.dayOfWeek === dayIndex ? { ...h, [field]: value } : h;
+      }),
+    );
+  };
+
+  // Apply one day's timing (open/close) to every day of the week
+  const handleApplyHoursToAllDays = () => {
+    const reference = clinicHours.find((h) => h.dayOfWeek === 1) || clinicHours[0];
+    if (!reference) return;
+    setClinicHours((prev) =>
+      prev.map((h) => ({
+        ...h,
+        openTime: reference.openTime,
+        closeTime: reference.closeTime,
+      })),
     );
   };
 
@@ -5221,44 +5242,8 @@ function MedicalDashboardPage() {
               </div>
               {/* Sidebar Footer */}
               <div className="space-y-3">
-                {/* Clinician Card — clickable opens profile modal */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab("settings");
-                    setSettingsSubTab("profile");
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className="w-full rounded-2xl bg-zinc-50 border border-zinc-200/60 p-3 flex items-center gap-3 hover:bg-brand/5 hover:border-brand/20 transition-colors cursor-pointer text-left group"
-                >
-                  <div className="h-9 w-9 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-bold text-xs shrink-0 group-hover:bg-brand/20 transition-colors overflow-hidden">
-                    {user?.profilePhoto ? (
-                      <img
-                        src={user.profilePhoto}
-                        alt={user.name}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : user?.name ? (
-                      user.name
-                        .split(" ")
-                        .map((n: string) => n[0])
-                        .slice(0, 2)
-                        .join("")
-                        .toUpperCase()
-                    ) : (
-                      "Dr"
-                    )}
-                  </div>
-                  <div className="overflow-hidden text-left flex-1 min-w-0">
-                    <h4 className="text-xs font-bold text-zinc-850 truncate leading-tight">
-                      {user?.name || "Dr. Clinician"}
-                    </h4>
-                    <span className="text-[9px] font-medium text-zinc-400 truncate block">
-                      {user?.clinicName || "Medical Group"}
-                    </span>
-                  </div>
-                  <ChevronRight className="h-3.5 w-3.5 text-zinc-300 group-hover:text-brand shrink-0 transition-colors" />
-                </button>
+                {/* Help & Support */}
+                <HelpSupportCard />
 
                 <button
                   type="button"
@@ -5338,43 +5323,8 @@ function MedicalDashboardPage() {
 
         {/* Sidebar Footer */}
         <div className="space-y-3">
-          {/* Clinician Card — clickable opens profile modal */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("settings");
-              setSettingsSubTab("profile");
-            }}
-            className="w-full rounded-2xl bg-zinc-50 border border-zinc-200/60 p-3 flex items-center gap-3 hover:bg-brand/5 hover:border-brand/20 transition-colors cursor-pointer text-left group"
-          >
-            <div className="h-9 w-9 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-bold text-xs shrink-0 group-hover:bg-brand/20 transition-colors overflow-hidden">
-              {user?.profilePhoto ? (
-                <img
-                  src={user.profilePhoto}
-                  alt={user.name}
-                  className="h-full w-full object-cover"
-                />
-              ) : user?.name ? (
-                user.name
-                  .split(" ")
-                  .map((n: string) => n[0])
-                  .slice(0, 2)
-                  .join("")
-                  .toUpperCase()
-              ) : (
-                "Dr"
-              )}
-            </div>
-            <div className="overflow-hidden text-left flex-1 min-w-0">
-              <h4 className="text-xs font-bold text-zinc-850 truncate leading-tight">
-                {user?.name || "Dr. Clinician"}
-              </h4>
-              <span className="text-[9px] font-medium text-zinc-400 truncate block">
-                {user?.clinicName || "Medical Group"}
-              </span>
-            </div>
-            <ChevronRight className="h-3.5 w-3.5 text-zinc-300 group-hover:text-brand shrink-0 transition-colors" />
-          </button>
+          {/* Help & Support */}
+          <HelpSupportCard />
 
           <button
             onClick={handleLogout}
@@ -8093,7 +8043,7 @@ function MedicalDashboardPage() {
                                 type="text"
                                 value={newPatientName}
                                 onChange={(e) => setNewPatientName(e.target.value)}
-                                placeholder="John Doe"
+                                placeholder="Aarav Sharma"
                                 className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand"
                                 required
                               />
@@ -8145,7 +8095,7 @@ function MedicalDashboardPage() {
                                 type="email"
                                 value={newPatientEmail}
                                 onChange={(e) => setNewPatientEmail(e.target.value)}
-                                placeholder="patient@example.com"
+                                placeholder="aarav.sharma@example.com"
                                 className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand"
                               />
                             </div>
@@ -8157,7 +8107,7 @@ function MedicalDashboardPage() {
                                 type="text"
                                 value={newPatientAddress}
                                 onChange={(e) => setNewPatientAddress(e.target.value)}
-                                placeholder="123 Main St, Apartment 4B"
+                                placeholder="12, MG Road, Andheri West, Mumbai"
                                 className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand"
                               />
                             </div>
@@ -9160,7 +9110,7 @@ function MedicalDashboardPage() {
                                     <input
                                       type="email"
                                       value={subLocForm.email}
-                                      placeholder="patient@email.com"
+                                      placeholder="andheri.branch@example.com"
                                       onChange={(e) =>
                                         setSubLocForm((f) => ({ ...f, email: e.target.value }))
                                       }
@@ -10489,7 +10439,7 @@ function MedicalDashboardPage() {
                                   type="text"
                                   value={profilePhone}
                                   onChange={(e) => setProfilePhone(e.target.value)}
-                                  placeholder="(555) 000-0000"
+                                  placeholder="+91 98765 43210"
                                   required
                                   className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
                                 />
@@ -10588,7 +10538,7 @@ function MedicalDashboardPage() {
                                   </span>
                                   <input
                                     type="email"
-                                    placeholder="newemail@example.com"
+                                    placeholder="priya.nair@example.com"
                                     value={newEmail}
                                     onChange={(e) => setNewEmail(e.target.value)}
                                     disabled={emailOtpSent || sendingEmailOtp}
@@ -10779,11 +10729,29 @@ function MedicalDashboardPage() {
                     ────────────────────────────────────────────── */}
                     {settingsSubTab === "hours" && (
                       <div className="space-y-6 animate-in fade-in duration-300">
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 text-brand" />
-                          <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                            Weekly Timetable & Hours
-                          </h4>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4 text-brand" />
+                            <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                              Weekly Timetable & Hours
+                            </h4>
+                          </div>
+
+                          {clinicHours.length > 0 && (
+                            <label className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-600 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={applyHoursToAll}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setApplyHoursToAll(checked);
+                                  if (checked) handleApplyHoursToAllDays();
+                                }}
+                                className="rounded border-zinc-300 text-brand focus:ring-brand"
+                              />
+                              Apply same timing to all days
+                            </label>
+                          )}
                         </div>
 
                         {clinicHours.length === 0 ? (
@@ -11417,7 +11385,7 @@ function MedicalDashboardPage() {
                                   type="text"
                                   value={docName}
                                   onChange={(e) => setDocName(e.target.value)}
-                                  placeholder="Dr. John Watson"
+                                  placeholder="Dr. Vikram Rao"
                                   required
                                   className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
                                 />
@@ -11451,7 +11419,7 @@ function MedicalDashboardPage() {
                                   type="email"
                                   value={docEmail}
                                   onChange={(e) => setDocEmail(e.target.value)}
-                                  placeholder="watson@bookmytime.com"
+                                  placeholder="vikram.rao@bookmytime.com"
                                   required
                                   className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
                                 />
@@ -11464,7 +11432,7 @@ function MedicalDashboardPage() {
                                   type="text"
                                   value={docPhone}
                                   onChange={(e) => setDocPhone(e.target.value)}
-                                  placeholder="(555) 123-4567"
+                                  placeholder="+91 98765 43210"
                                   required
                                   className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
                                 />
@@ -12163,32 +12131,34 @@ function MedicalDashboardPage() {
                                   </select>
                                 </label>
                               )}
-                              <label className="block relative">
+                              <label className="block">
                                 <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
                                   {editingSubUser
                                     ? "New Password (leave blank to keep)"
                                     : "Password *"}
                                 </span>
-                                <input
-                                  type={showSubUserPwd ? "text" : "password"}
-                                  value={subUserForm.password}
-                                  placeholder={
-                                    editingSubUser
-                                      ? "Leave blank to keep current"
-                                      : "Min 8 characters"
-                                  }
-                                  onChange={(e) =>
-                                    setSubUserForm((f) => ({ ...f, password: e.target.value }))
-                                  }
-                                  className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 pr-10 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => setShowSubUserPwd((v) => !v)}
-                                  className="absolute right-3 top-7 text-zinc-400 hover:text-zinc-600 cursor-pointer"
-                                >
-                                  <Lock className="h-3.5 w-3.5" />
-                                </button>
+                                <div className="relative mt-1">
+                                  <input
+                                    type={showSubUserPwd ? "text" : "password"}
+                                    value={subUserForm.password}
+                                    placeholder={
+                                      editingSubUser
+                                        ? "Leave blank to keep current"
+                                        : "Min 8 characters"
+                                    }
+                                    onChange={(e) =>
+                                      setSubUserForm((f) => ({ ...f, password: e.target.value }))
+                                    }
+                                    className="w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 pr-10 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowSubUserPwd((v) => !v)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                                  >
+                                    <Lock className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
                               </label>
                               <label className="block">
                                 <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
@@ -12744,26 +12714,28 @@ function MedicalDashboardPage() {
                                 <option value="doctor">Doctor</option>
                               </select>
                             </label>
-                            <label className="block relative">
+                            <label className="block">
                               <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
                                 New Password (leave blank to keep)
                               </span>
-                              <input
-                                type={showSubUserPwd ? "text" : "password"}
-                                value={subUserForm.password}
-                                placeholder="Leave blank to keep current"
-                                onChange={(e) =>
-                                  setSubUserForm((f) => ({ ...f, password: e.target.value }))
-                                }
-                                className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 pr-10 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowSubUserPwd((v) => !v)}
-                                className="absolute right-3 top-7 text-zinc-400 hover:text-zinc-600 cursor-pointer"
-                              >
-                                <Lock className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="relative mt-1">
+                                <input
+                                  type={showSubUserPwd ? "text" : "password"}
+                                  value={subUserForm.password}
+                                  placeholder="Leave blank to keep current"
+                                  onChange={(e) =>
+                                    setSubUserForm((f) => ({ ...f, password: e.target.value }))
+                                  }
+                                  className="w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 pr-10 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSubUserPwd((v) => !v)}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                                >
+                                  <Lock className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </label>
                             <label className="block">
                               <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
@@ -14017,7 +13989,7 @@ function MedicalDashboardPage() {
                             <Mail className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
                             <input
                               type="email"
-                              placeholder="jane@example.com (optional)"
+                              placeholder="priya.nair@example.com (optional)"
                               value={aptEmail}
                               onChange={(e) => {
                                 setAptEmail(e.target.value);

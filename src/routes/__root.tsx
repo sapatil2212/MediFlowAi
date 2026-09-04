@@ -18,6 +18,14 @@ import faviconUrl from "../assets/favicon.png";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
+  useEffect(() => {
+    const prevTitle = document.title;
+    document.title = "Page Not Found | BookMyTime";
+    return () => {
+      document.title = prevTitle;
+    };
+  }, []);
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
@@ -82,14 +90,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "BookMyTime" },
+      {
+        name: "description",
+        content: "BookMyTime — smart scheduling and practice management for clinics.",
+      },
+      { name: "author", content: "BookMyTime" },
+      { property: "og:title", content: "BookMyTime" },
+      {
+        property: "og:description",
+        content: "BookMyTime — smart scheduling and practice management for clinics.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:site", content: "@BookMyTime" },
     ],
     links: [
       {

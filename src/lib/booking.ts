@@ -2,6 +2,52 @@ import { createServerFn } from "@tanstack/react-start";
 import crypto from "crypto";
 import { query, queryOne, execute } from "./db";
 import { enqueueWA, getWAStatus } from "./whatsapp";
+import { isRestaurantProfession } from "./restaurant-availability";
+
+// ──────────────────────────────────────────────
+// Daily token numbering (shared by every clinic booking path)
+// ──────────────────────────────────────────────
+/**
+ * Recomputes the daily token numbers for a tenant so tokens follow the
+ * appointment *time* order — the earliest slot of the day gets #1, the next #2,
+ * and so on — regardless of the order in which the bookings were actually made.
+ * Appointments that share the exact same slot time fall back to creation order
+ * (then id) so the result is stable.
+ *
+ * This is what makes a 6:00 PM booking that arrives *after* a 6:08 PM booking
+ * still take the lower token. Because earlier-slot arrivals shift the later
+ * ones, every create/update/delete on a clinic day calls this to keep the
+ * sequence correct.
+ *
+ * Restaurant tenants are intentionally skipped: their tokens are a
+ * first-come-first-served queue assigned by a dedicated counter and must never
+ * be reordered by slot time.
+ */
+export async function renumberDailyTokens(tenantId: string, date: Date | string): Promise<void> {
+  const dateVal = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(dateVal.getTime())) return;
+
+  // Never reorder restaurant queues (they use booking-order tokens by design).
+  const prof = await queryOne<any>("SELECT profession FROM User WHERE tenantId = ? LIMIT 1", [
+    tenantId,
+  ]);
+  if (isRestaurantProfession(prof?.profession)) return;
+
+  // Rank the day's appointments by slot time and write the rank back as the
+  // token. The derived table is materialised, so updating the same table it
+  // reads from is safe in MariaDB/MySQL.
+  await execute(
+    `UPDATE Appointment a
+       JOIN (
+         SELECT id,
+                ROW_NUMBER() OVER (ORDER BY dateTime ASC, createdAt ASC, id ASC) AS rn
+           FROM Appointment
+          WHERE tenantId = ? AND DATE(dateTime) = DATE(?)
+       ) ranked ON ranked.id = a.id
+        SET a.tokenNo = ranked.rn`,
+    [tenantId, dateVal],
+  );
+}
 
 // ──────────────────────────────────────────────
 // Public: Get Clinic Info + Dynamic Available Slots
@@ -278,12 +324,13 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
       }
     }
 
-    // Auto-assign sequential token number per tenant + date
+    // Provisional token (MAX + 1) keeps the row valid and unique on insert; the
+    // final, time-ordered value is assigned by renumberDailyTokens just below.
     const tokenRow = await queryOne<any>(
       "SELECT COALESCE(MAX(tokenNo), 0) AS maxToken FROM Appointment WHERE tenantId = ? AND DATE(dateTime) = DATE(?)",
       [data.tenantId, dateVal],
     );
-    const tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
+    let tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
 
     await execute(
       `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, locationId, consultationMode, createdAt)
@@ -305,6 +352,14 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
         consultationMode,
       ],
     );
+
+    // Reorder the day's tokens by slot time, then read back this booking's token
+    // so the confirmation/WhatsApp message shows the correct number.
+    await renumberDailyTokens(data.tenantId, dateVal);
+    const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
+      id,
+    ]);
+    if (finalTok?.tokenNo != null) tokenNo = Number(finalTok.tokenNo);
 
     // Queue WhatsApp notification if WA microservice is connected
     if (typeof window === "undefined") {
