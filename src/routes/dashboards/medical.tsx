@@ -135,6 +135,7 @@ import {
   checkPatientDuplicateServerFn,
   saveSoapNoteServerFn,
   deleteAppointmentServerFn,
+  deleteAppointmentsBulkServerFn,
   getAppointmentsPagedServerFn,
   getSubLocationBookingsServerFn,
   getLocationsServerFn,
@@ -1173,6 +1174,9 @@ function MedicalDashboardPage() {
   const [recordingField, setRecordingField] = useState<string | null>(null);
   const [isAIAssisting, setIsAIAssisting] = useState(false);
   const [isEmailingPrescription, setIsEmailingPrescription] = useState(false);
+  // Which stored prescription is currently being emailed, so only that card in
+  // the patient chart shows a spinner rather than all of them.
+  const [emailingRxId, setEmailingRxId] = useState<string | null>(null);
 
   // Voice Rx popup modal states
   const [isVoiceRxModalOpen, setIsVoiceRxModalOpen] = useState(false);
@@ -1232,6 +1236,12 @@ function MedicalDashboardPage() {
   const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [activeStatusDropdownId, setActiveStatusDropdownId] = useState<string | null>(null);
   const [aptToDelete, setAptToDelete] = useState<any | null>(null);
+  // Multi-select on the Appointments tab table. Kept separate from
+  // `selectedAptIds` (which drives the Consultations tab export) so a selection
+  // in one tab never leaks into a destructive action in the other.
+  const [bulkAptIds, setBulkAptIds] = useState<string[]>([]);
+  const [confirmBulkAptDelete, setConfirmBulkAptDelete] = useState(false);
+  const [bulkDeletingApts, setBulkDeletingApts] = useState(false);
 
   // Navigation and Detail Drawers
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
@@ -1578,6 +1588,30 @@ function MedicalDashboardPage() {
   const [isSchedulingApt, setIsSchedulingApt] = useState(false);
   const [editingApt, setEditingApt] = useState<any | null>(null);
   const [selectedAptDetails, setSelectedAptDetails] = useState<any | null>(null);
+
+  // The Appointments tab list, shared by the desktop table, the mobile cards and
+  // the multi-select bar so all three always agree on which rows are visible.
+  const filteredAppointments = useMemo(() => {
+    const q = searchAptQuery.toLowerCase();
+    return appointments.filter((apt) => {
+      const matchQuery =
+        (apt.name || "").toLowerCase().includes(q) ||
+        (apt.email || "").toLowerCase().includes(q) ||
+        (apt.phone || "").includes(searchAptQuery) ||
+        (apt.reason || "").toLowerCase().includes(q);
+      const matchStatus = filterAptStatus === "All" || apt.status === filterAptStatus;
+      return matchQuery && matchStatus;
+    });
+  }, [appointments, searchAptQuery, filterAptStatus]);
+
+  // Deliberately act only on rows the user can currently see selected. A row
+  // that was selected and then filtered out of view keeps its tick for when the
+  // filter is cleared, but is never counted here nor deleted — so the button can
+  // never remove something off-screen.
+  const visibleSelectedAptIds = useMemo(() => {
+    const visibleIds = new Set(filteredAppointments.map((apt) => apt.id));
+    return bulkAptIds.filter((id) => visibleIds.has(id));
+  }, [bulkAptIds, filteredAppointments]);
 
   // Create/Edit form values
   const [aptName, setAptName] = useState("");
@@ -2003,10 +2037,34 @@ function MedicalDashboardPage() {
     try {
       const res = await deleteAppointmentServerFn({ data: id });
       if (res.success) {
+        // Drop it from any pending multi-selection so the count stays truthful.
+        setBulkAptIds((prev) => prev.filter((selectedId) => selectedId !== id));
         await fetchAppointments();
       }
     } catch (err: any) {
       console.error("Failed to delete appointment:", err);
+    }
+  };
+
+  const handleBulkDeleteAppointments = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBulkDeletingApts(true);
+    try {
+      const res = await deleteAppointmentsBulkServerFn({ data: { ids } });
+      if (res.success) {
+        setBulkAptIds([]);
+        setConfirmBulkAptDelete(false);
+        await fetchAppointments();
+        showToast(
+          "success",
+          `Deleted ${res.deleted} appointment${res.deleted === 1 ? "" : "s"} successfully`,
+        );
+      }
+    } catch (err: any) {
+      console.error("Failed to delete appointments:", err);
+      showToast("error", err?.message || "Failed to delete the selected appointments");
+    } finally {
+      setBulkDeletingApts(false);
     }
   };
 
@@ -4041,8 +4099,32 @@ function MedicalDashboardPage() {
     }
   };
 
-  const handleDownloadPrescriptionPDF = () => {
+  /**
+   * A prescription already saved to a patient's chart. The export helpers below
+   * accept one of these so the patient chart can re-export past prescriptions
+   * using exactly the same clinic letterhead as a live consultation.
+   */
+  type StoredRxExport = {
+    /** Prescription row id — used to scope the per-card emailing spinner. */
+    rxId?: string;
+    medications: any[];
+    notes?: string | null;
+    createdAt?: string | Date | null;
+    patient?: { name?: string; patientNo?: string; phone?: string; email?: string } | null;
+  };
+
+  /**
+   * Exports the prescription as a PDF. Called with no argument it renders the
+   * prescription currently open in the consultation form; passed a stored record
+   * it renders that one instead. A stored record only holds its medications and
+   * advice, so the live-only clinical sections (vitals, complaint, diagnosis,
+   * labs, follow-up) are omitted rather than printed with stale form values.
+   */
+  const handleDownloadPrescriptionPDF = (override?: StoredRxExport) => {
     try {
+      const isStored = !!override;
+      const meds = override ? override.medications || [] : prescriptionMedications;
+      const adviceText = override ? override.notes || "" : consultationAdvice;
       const doc = new jsPDF();
       const clinicName = user?.clinicName || "BookMyTime Medical Center";
       const doctorName = user?.name || "Dr. Staff Clinician";
@@ -4079,30 +4161,40 @@ function MedicalDashboardPage() {
       doc.setLineWidth(1.5);
       doc.line(14, 29, 196, 29);
 
-      // Patient Details
+      // Patient Details. For a stored prescription the record carries its own
+      // patient and issue date — the live consultation state may be empty or
+      // belong to a different encounter entirely.
       const targetPatient =
+        override?.patient ||
         patientsList.find((p) => p.id === (selectedPatient?.id || scribePatientId)) ||
         selectedPatient;
       const patientName = targetPatient?.name || selectedAptForConsultation?.name || "N/A";
       const patientID =
         targetPatient?.patientNo || selectedAptForConsultation?.patientId || "PT-TEMP";
       const patientPhone = targetPatient?.phone || selectedAptForConsultation?.phone || "N/A";
-      const aptDate = selectedAptForConsultation?.dateTime
-        ? new Date(selectedAptForConsultation.dateTime).toLocaleDateString("en-US", {
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-          })
-        : new Date().toLocaleDateString("en-US", {
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-          });
-      const aptTime = selectedAptForConsultation?.timeSlot || "N/A";
-      const aptToken = selectedAptForConsultation?.tokenNo
-        ? `#${selectedAptForConsultation.tokenNo}`
-        : "N/A";
-      const aptType = selectedAptForConsultation?.appointmentType || "OPD";
+      const issuedOn = isStored
+        ? override?.createdAt
+          ? new Date(override.createdAt)
+          : new Date()
+        : selectedAptForConsultation?.dateTime
+          ? new Date(selectedAptForConsultation.dateTime)
+          : new Date();
+      const aptDate = issuedOn.toLocaleDateString("en-US", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+      const aptTime = isStored
+        ? issuedOn.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+        : selectedAptForConsultation?.timeSlot || "N/A";
+      const aptToken = isStored
+        ? "N/A"
+        : selectedAptForConsultation?.tokenNo
+          ? `#${selectedAptForConsultation.tokenNo}`
+          : "N/A";
+      const aptType = isStored
+        ? "Chart Record"
+        : selectedAptForConsultation?.appointmentType || "OPD";
 
       doc.setFillColor(248, 250, 252); // Light slate background
       doc.rect(14, 34, 182, 28, "F");
@@ -4124,31 +4216,33 @@ function MedicalDashboardPage() {
 
       let currentY = 70;
 
-      // Vitals Section
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      doc.text("PATIENT VITALS", 14, currentY);
+      // Vitals Section — live consultation only (not stored on a prescription).
+      if (!isStored) {
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.text("PATIENT VITALS", 14, currentY);
 
-      doc.setDrawColor(226, 232, 240);
-      doc.line(14, currentY + 2, 196, currentY + 2);
+        doc.setDrawColor(226, 232, 240);
+        doc.line(14, currentY + 2, 196, currentY + 2);
 
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-      doc.text(`Blood Pressure: ${vitalBP || "N/A"} mmHg`, 14, currentY + 8);
-      doc.text(`Pulse: ${vitalPulse || "N/A"} bpm`, 70, currentY + 8);
-      doc.text(`Temp: ${vitalTemp || "N/A"}°F`, 120, currentY + 8);
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+        doc.text(`Blood Pressure: ${vitalBP || "N/A"} mmHg`, 14, currentY + 8);
+        doc.text(`Pulse: ${vitalPulse || "N/A"} bpm`, 70, currentY + 8);
+        doc.text(`Temp: ${vitalTemp || "N/A"}°F`, 120, currentY + 8);
 
-      doc.text(`Weight: ${vitalWeight || "N/A"} kg`, 14, currentY + 14);
-      doc.text(`Height: ${vitalHeight || "N/A"} cm`, 70, currentY + 14);
-      doc.text(`SpO2: ${vitalSpO2 || "N/A"}%`, 120, currentY + 14);
-      doc.text(`Resp Rate: ${vitalRespRate || "N/A"}/min`, 160, currentY + 14);
+        doc.text(`Weight: ${vitalWeight || "N/A"} kg`, 14, currentY + 14);
+        doc.text(`Height: ${vitalHeight || "N/A"} cm`, 70, currentY + 14);
+        doc.text(`SpO2: ${vitalSpO2 || "N/A"}%`, 120, currentY + 14);
+        doc.text(`Resp Rate: ${vitalRespRate || "N/A"}/min`, 160, currentY + 14);
 
-      currentY += 22;
+        currentY += 22;
+      }
 
       // Chief Complaint & Diagnosis
-      if (consultationChiefComplaint) {
+      if (!isStored && consultationChiefComplaint) {
         doc.setFont("Helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
@@ -4163,7 +4257,7 @@ function MedicalDashboardPage() {
         currentY += ccLines.length * 5 + 10;
       }
 
-      if (consultationDiagnosis) {
+      if (!isStored && consultationDiagnosis) {
         doc.setFont("Helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
@@ -4179,7 +4273,7 @@ function MedicalDashboardPage() {
       }
 
       // Rx Medications Table
-      if (prescriptionMedications.length > 0) {
+      if (meds.length > 0) {
         doc.setFont("Helvetica", "bold");
         doc.setFontSize(12);
         doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
@@ -4189,7 +4283,7 @@ function MedicalDashboardPage() {
         const tableHeaders = [
           ["Drug Name", "Dosage", "Frequency", "Route", "Duration", "Instructions"],
         ];
-        const tableRows = prescriptionMedications.map((m) => [
+        const tableRows = meds.map((m: any) => [
           m.name || "",
           m.dosage || "",
           m.frequency || "",
@@ -4212,7 +4306,7 @@ function MedicalDashboardPage() {
       }
 
       // Lab Tests
-      if (consultationLabTests.length > 0) {
+      if (!isStored && consultationLabTests.length > 0) {
         doc.setFont("Helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
@@ -4233,7 +4327,7 @@ function MedicalDashboardPage() {
       }
 
       // Advice & Instructions
-      if (consultationAdvice) {
+      if (adviceText) {
         doc.setFont("Helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
@@ -4243,13 +4337,13 @@ function MedicalDashboardPage() {
         doc.setFont("Helvetica", "normal");
         doc.setFontSize(9.5);
         doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-        const adviceLines = doc.splitTextToSize(consultationAdvice, 182);
+        const adviceLines = doc.splitTextToSize(adviceText, 182);
         doc.text(adviceLines, 14, currentY + 7);
         currentY += adviceLines.length * 5 + 12;
       }
 
       // Follow-up
-      if (consultationFollowUpDate) {
+      if (!isStored && consultationFollowUpDate) {
         doc.setFont("Helvetica", "bold");
         doc.setFontSize(11);
         doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
@@ -4298,7 +4392,7 @@ function MedicalDashboardPage() {
       );
 
       doc.save(
-        `Prescription_${patientName.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.pdf`,
+        `Prescription_${patientName.replace(/\s+/g, "_")}_${issuedOn.toISOString().split("T")[0]}.pdf`,
       );
       showToast("success", "Prescription downloaded successfully!");
     } catch (pdfErr: any) {
@@ -4307,25 +4401,34 @@ function MedicalDashboardPage() {
     }
   };
 
-  const handleEmailPrescription = async () => {
-    const targetEmail = selectedAptForConsultation?.email || selectedPatient?.email;
+  /** Emails the prescription. Pass a stored record to re-send a past one. */
+  const handleEmailPrescription = async (override?: StoredRxExport) => {
+    const isStored = !!override;
+    const targetEmail = isStored
+      ? override?.patient?.email || selectedPatient?.email
+      : selectedAptForConsultation?.email || selectedPatient?.email;
     if (!targetEmail || !targetEmail.includes("@")) {
-      showToast("error", "No valid patient email address found for this consultation.");
+      showToast("error", "No valid patient email address found for this prescription.");
       return;
     }
 
-    setIsEmailingPrescription(true);
+    if (isStored) setEmailingRxId(override?.rxId || targetEmail);
+    else setIsEmailingPrescription(true);
     try {
       const res = await sendPrescriptionEmailServerFn({
         data: {
           patientEmail: targetEmail,
-          patientName: selectedAptForConsultation?.name || selectedPatient?.name || "Patient",
+          patientName: isStored
+            ? override?.patient?.name || selectedPatient?.name || "Patient"
+            : selectedAptForConsultation?.name || selectedPatient?.name || "Patient",
           doctorName: user?.name || "Dr. Staff Clinician",
           clinicName: user?.clinicName || "BookMyTime Medical Center",
-          chiefComplaint: consultationChiefComplaint,
-          diagnosis: consultationDiagnosis,
-          medications: prescriptionMedications,
-          advice: consultationAdvice,
+          // A stored prescription holds only its medications and advice, so the
+          // live form's complaint/diagnosis must not leak into a past record.
+          chiefComplaint: isStored ? "" : consultationChiefComplaint,
+          diagnosis: isStored ? "" : consultationDiagnosis,
+          medications: isStored ? override?.medications || [] : prescriptionMedications,
+          advice: isStored ? override?.notes || "" : consultationAdvice,
         },
       });
       if (res.success) {
@@ -4335,18 +4438,22 @@ function MedicalDashboardPage() {
       console.error("[Email Prescription Error]:", emailErr);
       showToast("error", emailErr.message || "Failed to email prescription.");
     } finally {
-      setIsEmailingPrescription(false);
+      if (isStored) setEmailingRxId(null);
+      else setIsEmailingPrescription(false);
     }
   };
 
-  const handlePrintPrescription = () => {
+  /** Opens the print view. Pass a stored record to print a past prescription. */
+  const handlePrintPrescription = (override?: StoredRxExport) => {
     const targetPatient =
+      override?.patient ||
       patientsList.find((p) => p.id === (selectedPatient?.id || scribePatientId)) ||
       selectedPatient;
     if (!targetPatient) {
       showToast("error", "Please select or search a patient before printing.");
       return;
     }
+    const printMeds = override ? override.medications || [] : prescriptionMedications;
 
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
@@ -4358,9 +4465,9 @@ function MedicalDashboardPage() {
     const doctorName = user?.name || "Dr. Staff Clinician";
     const doctorQualifications = (user as any)?.qualifications || "M.D., General Medicine";
 
-    const medsHtml = prescriptionMedications
+    const medsHtml = printMeds
       .map(
-        (m) => `
+        (m: any) => `
       <tr>
         <td style="padding: 10px; border-bottom: 1px solid #eee; font-weight: bold;">${m.name}</td>
         <td style="padding: 10px; border-bottom: 1px solid #eee;">${m.dosage}</td>
@@ -5768,9 +5875,64 @@ function MedicalDashboardPage() {
                                         minute: "2-digit",
                                       })}
                                     </span>
-                                    <span className="font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-2.5 py-0.5 text-[9px] uppercase tracking-wide">
-                                      Signed Prescription
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-2.5 py-0.5 text-[9px] uppercase tracking-wide">
+                                        Signed Prescription
+                                      </span>
+
+                                      {/* Export actions — same letterhead as a live consultation */}
+                                      {(() => {
+                                        const rxExport = {
+                                          rxId: rx.id,
+                                          medications: rx.medications || [],
+                                          notes: rx.notes,
+                                          createdAt: rx.createdAt,
+                                          patient: {
+                                            name: patientChartData?.patient?.name,
+                                            patientNo: patientChartData?.patient?.patientNo,
+                                            phone: patientChartData?.patient?.phone,
+                                            email: patientChartData?.patient?.email,
+                                          },
+                                        };
+                                        const isEmailing = emailingRxId === rx.id;
+                                        return (
+                                          <div className="flex items-center gap-1">
+                                            <button
+                                              type="button"
+                                              title="Download as PDF"
+                                              onClick={() => handleDownloadPrescriptionPDF(rxExport)}
+                                              className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[9px] font-bold text-zinc-600 hover:bg-zinc-50 transition-all cursor-pointer active:scale-95"
+                                            >
+                                              <FileDown className="h-3 w-3 text-zinc-500" />
+                                              PDF
+                                            </button>
+                                            <button
+                                              type="button"
+                                              title="Print prescription"
+                                              onClick={() => handlePrintPrescription(rxExport)}
+                                              className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[9px] font-bold text-zinc-600 hover:bg-zinc-50 transition-all cursor-pointer active:scale-95"
+                                            >
+                                              <Printer className="h-3 w-3 text-zinc-500" />
+                                              Print
+                                            </button>
+                                            <button
+                                              type="button"
+                                              title="Email to patient"
+                                              disabled={isEmailing}
+                                              onClick={() => handleEmailPrescription(rxExport)}
+                                              className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[9px] font-bold text-zinc-600 hover:bg-zinc-50 transition-all cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                              {isEmailing ? (
+                                                <Loader2 className="h-3 w-3 animate-spin text-zinc-500" />
+                                              ) : (
+                                                <Mail className="h-3 w-3 text-zinc-500" />
+                                              )}
+                                              {isEmailing ? "Sending" : "Email"}
+                                            </button>
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
                                   </div>
 
                                   <div className="space-y-3">
@@ -6516,7 +6678,7 @@ function MedicalDashboardPage() {
 
                             <button
                               type="button"
-                              onClick={handleDownloadPrescriptionPDF}
+                              onClick={() => handleDownloadPrescriptionPDF()}
                               className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-extrabold rounded-full transition-all cursor-pointer active:scale-95 shadow-none"
                             >
                               <FileDown className="h-3.5 w-3.5 text-zinc-500" />
@@ -6525,7 +6687,7 @@ function MedicalDashboardPage() {
 
                             <button
                               type="button"
-                              onClick={handleEmailPrescription}
+                              onClick={() => handleEmailPrescription()}
                               disabled={isEmailingPrescription}
                               className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-xs font-extrabold rounded-full transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-none"
                             >
@@ -9484,6 +9646,33 @@ function MedicalDashboardPage() {
                       </button>
                     </div>
 
+                    {/* 2b. Bulk selection action bar — only while rows are ticked */}
+                    {visibleSelectedAptIds.length > 0 && (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-brand/20 bg-brand/[0.04] px-4 py-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                        <p className="text-xs font-bold text-zinc-700">
+                          {visibleSelectedAptIds.length} appointment
+                          {visibleSelectedAptIds.length === 1 ? "" : "s"} selected
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setBulkAptIds([])}
+                            className="inline-flex items-center justify-center gap-1.5 px-4 py-1.5 text-xs font-bold border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-600 rounded-full cursor-pointer transition-all"
+                          >
+                            Clear selection
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmBulkAptDelete(true)}
+                            className="inline-flex items-center justify-center gap-1.5 px-4 py-1.5 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 rounded-full cursor-pointer transition-all active:scale-[0.98]"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete selected
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* 3. Responsive Table & Card View */}
                     {loadingAppointments ? (
                       <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-center">
@@ -9493,16 +9682,23 @@ function MedicalDashboardPage() {
                     ) : (
                       <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden">
                         {(() => {
-                          const list = appointments.filter((apt) => {
-                            const matchQuery =
-                              apt.name.toLowerCase().includes(searchAptQuery.toLowerCase()) ||
-                              apt.email.toLowerCase().includes(searchAptQuery.toLowerCase()) ||
-                              apt.phone.includes(searchAptQuery) ||
-                              apt.reason.toLowerCase().includes(searchAptQuery.toLowerCase());
-                            const matchStatus =
-                              filterAptStatus === "All" || apt.status === filterAptStatus;
-                            return matchQuery && matchStatus;
-                          });
+                          const list = filteredAppointments;
+                          const allSelected =
+                            list.length > 0 && list.every((apt) => bulkAptIds.includes(apt.id));
+                          const toggleSelectAll = () => {
+                            const listIds = list.map((apt) => apt.id);
+                            setBulkAptIds((prev) =>
+                              allSelected
+                                ? prev.filter((id) => !listIds.includes(id))
+                                : Array.from(new Set([...prev, ...listIds])),
+                            );
+                          };
+                          const toggleOne = (id: string) =>
+                            setBulkAptIds((prev) =>
+                              prev.includes(id)
+                                ? prev.filter((existing) => existing !== id)
+                                : [...prev, id],
+                            );
 
                           if (list.length === 0) {
                             return (
@@ -9519,6 +9715,19 @@ function MedicalDashboardPage() {
                                 <table className="min-w-full divide-y divide-zinc-200 text-left">
                                   <thead className="bg-zinc-50 text-[10px] font-bold text-zinc-400 uppercase">
                                     <tr>
+                                      <th className="px-5 py-3 w-10">
+                                        <input
+                                          type="checkbox"
+                                          checked={allSelected}
+                                          onChange={toggleSelectAll}
+                                          aria-label={
+                                            allSelected
+                                              ? "Deselect all appointments"
+                                              : "Select all appointments"
+                                          }
+                                          className="rounded border-zinc-300 text-brand focus:ring-brand cursor-pointer align-middle"
+                                        />
+                                      </th>
                                       <th className="px-5 py-3">Patient Info</th>
                                       <th className="px-5 py-3">Date & Time</th>
                                       <th className="px-5 py-3">Chief Complaint</th>
@@ -9530,8 +9739,23 @@ function MedicalDashboardPage() {
                                     {list.map((apt) => (
                                       <tr
                                         key={apt.id}
-                                        className="hover:bg-zinc-50/40 transition-colors"
+                                        className={`transition-colors ${
+                                          bulkAptIds.includes(apt.id)
+                                            ? "bg-brand/[0.04]"
+                                            : "hover:bg-zinc-50/40"
+                                        }`}
                                       >
+                                        {/* Row selection */}
+                                        <td className="px-5 py-3.5">
+                                          <input
+                                            type="checkbox"
+                                            checked={bulkAptIds.includes(apt.id)}
+                                            onChange={() => toggleOne(apt.id)}
+                                            aria-label={`Select appointment for ${apt.name}`}
+                                            className="rounded border-zinc-300 text-brand focus:ring-brand cursor-pointer align-middle"
+                                          />
+                                        </td>
+
                                         {/* Patient Info */}
                                         <td className="px-5 py-3.5">
                                           <div className="flex flex-col">
@@ -9725,10 +9949,35 @@ function MedicalDashboardPage() {
 
                               {/* Mobile Card list view */}
                               <div className="md:hidden divide-y divide-zinc-150">
+                                {/* Select-all for the card list, mirroring the table header */}
+                                <label className="flex items-center gap-2 px-4 py-2.5 bg-zinc-50 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={allSelected}
+                                    onChange={toggleSelectAll}
+                                    className="rounded border-zinc-300 text-brand focus:ring-brand"
+                                  />
+                                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                                    {allSelected ? "Deselect all" : "Select all"}
+                                  </span>
+                                </label>
                                 {list.map((apt) => (
-                                  <div key={apt.id} className="p-4 space-y-3">
+                                  <div
+                                    key={apt.id}
+                                    className={`p-4 space-y-3 ${
+                                      bulkAptIds.includes(apt.id) ? "bg-brand/[0.04]" : ""
+                                    }`}
+                                  >
                                     <div className="flex justify-between items-start">
-                                      <div>
+                                      <div className="flex items-start gap-2.5">
+                                        <input
+                                          type="checkbox"
+                                          checked={bulkAptIds.includes(apt.id)}
+                                          onChange={() => toggleOne(apt.id)}
+                                          aria-label={`Select appointment for ${apt.name}`}
+                                          className="mt-1 rounded border-zinc-300 text-brand focus:ring-brand shrink-0 cursor-pointer"
+                                        />
+                                        <div>
                                         <h4 className="text-sm font-bold text-zinc-800 flex items-center gap-1.5">
                                           {apt.tokenNo && (
                                             <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-md bg-brand/10 border border-brand/20 text-brand text-[9px] font-black">
@@ -9745,6 +9994,7 @@ function MedicalDashboardPage() {
                                         <div className="flex flex-col text-[10px] text-zinc-400 gap-0.5 mt-0.5">
                                           <span>Phone: {apt.phone}</span>
                                           {apt.whatsapp && <span>WA: {apt.whatsapp}</span>}
+                                        </div>
                                         </div>
                                       </div>
                                       <span
@@ -15465,6 +15715,74 @@ function MedicalDashboardPage() {
                   className="w-full rounded-full bg-red-600 hover:bg-red-700 py-2.5 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none"
                 >
                   Confirm Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Bulk delete confirmation for the multi-selected appointments */}
+      <AnimatePresence>
+        {confirmBulkAptDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-white rounded-[1.75rem] border border-zinc-150 p-6 max-w-sm w-full mx-4 shadow-none text-center space-y-4"
+            >
+              <button
+                type="button"
+                onClick={() => setConfirmBulkAptDelete(false)}
+                disabled={bulkDeletingApts}
+                className="absolute top-4 right-4 rounded-full p-1 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 border border-red-100 mx-auto text-red-650">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-sm font-bold text-zinc-900 leading-none">
+                  Delete {visibleSelectedAptIds.length} Appointment
+                  {visibleSelectedAptIds.length === 1 ? "" : "s"}
+                </h3>
+                <p className="text-[11px] text-zinc-400 leading-relaxed font-medium">
+                  This will permanently delete the{" "}
+                  <span className="font-semibold text-zinc-650">
+                    {visibleSelectedAptIds.length} selected appointment
+                    {visibleSelectedAptIds.length === 1 ? "" : "s"}
+                  </span>
+                  . This action cannot be undone.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmBulkAptDelete(false)}
+                  disabled={bulkDeletingApts}
+                  className="w-full rounded-full border border-zinc-200 py-2.5 text-xs font-bold text-zinc-600 hover:bg-zinc-50 transition-all active:scale-95 cursor-pointer shadow-none disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkDeleteAppointments(visibleSelectedAptIds)}
+                  disabled={bulkDeletingApts}
+                  className="w-full rounded-full bg-red-600 hover:bg-red-700 py-2.5 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none disabled:bg-zinc-300"
+                >
+                  {bulkDeletingApts ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    "Confirm Delete"
+                  )}
                 </button>
               </div>
             </motion.div>

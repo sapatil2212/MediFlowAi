@@ -1565,6 +1565,62 @@ export const deleteAppointmentServerFn = createServerFn({ method: "POST" })
     return { success: true };
   });
 
+/**
+ * Deletes several appointments in one request (multi-select in the dashboard).
+ *
+ * Tenant scoping is enforced in SQL rather than trusted from the client: ids
+ * belonging to another tenant simply do not match and are reported back as not
+ * deleted. Each calendar day touched by the deletion is renumbered once (not
+ * once per row) so the remaining tokens stay sequential by slot time.
+ */
+export const deleteAppointmentsBulkServerFn = createServerFn({ method: "POST" })
+  .validator((data: { ids: string[] }) => {
+    if (!data || !Array.isArray(data.ids) || data.ids.length === 0) {
+      throw new Error("At least one appointment must be selected");
+    }
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+
+    // De-duplicate so a repeated id cannot inflate the reported count.
+    const requestedIds = Array.from(new Set(data.ids.map((id) => String(id))));
+    const placeholders = requestedIds.map(() => "?").join(", ");
+
+    // Read the owned rows first so we know which days need renumbering after
+    // the delete, and so foreign/unknown ids are excluded up front.
+    const owned = await query<any>(
+      `SELECT id, dateTime FROM Appointment WHERE tenantId = ? AND id IN (${placeholders})`,
+      [user.tenantId, ...requestedIds],
+    );
+    if (owned.length === 0) return { success: true, deleted: 0 };
+
+    const ownedIds = owned.map((row: any) => String(row.id));
+    const ownedPlaceholders = ownedIds.map(() => "?").join(", ");
+    await execute(`DELETE FROM Appointment WHERE tenantId = ? AND id IN (${ownedPlaceholders})`, [
+      user.tenantId,
+      ...ownedIds,
+    ]);
+
+    // Collapse the affected dates so a multi-row delete on one day renumbers once.
+    const affectedDays = new Set<string>();
+    for (const row of owned) {
+      if (!row.dateTime) continue;
+      const d = new Date(row.dateTime);
+      if (!Number.isNaN(d.getTime())) affectedDays.add(d.toISOString().slice(0, 10));
+    }
+    for (const day of affectedDays) {
+      try {
+        await renumberDailyTokens(user.tenantId, day);
+      } catch (tokErr: any) {
+        console.error("[Tokens] Daily renumber failed (delete still succeeds):", tokErr?.message);
+      }
+    }
+
+    return { success: true, deleted: ownedIds.length };
+  });
+
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Clinic Timetable Settings Server Functions
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2727,10 +2783,12 @@ export const getPatientChartServerFn = createServerFn({ method: "GET" })
       [data.patientId, user.tenantId],
     );
 
-    // Fetch prescriptions for this patient
+    // Fetch prescriptions for this patient. Scoped by tenantId (like the SoapNote
+    // read above): without it, a patientId belonging to another clinic would
+    // return that clinic's prescriptions.
     const prescriptionsRaw = await query<any>(
-      "SELECT * FROM Prescription WHERE patientId = ? ORDER BY createdAt DESC LIMIT 20",
-      [data.patientId],
+      "SELECT * FROM Prescription WHERE patientId = ? AND tenantId = ? ORDER BY createdAt DESC LIMIT 20",
+      [data.patientId, user.tenantId],
     );
     const prescriptions = prescriptionsRaw.map((r: any) => ({
       id: r.id,
