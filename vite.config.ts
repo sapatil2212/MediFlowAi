@@ -26,5 +26,17 @@ export default defineConfig({
       external: ["whatsapp-web.js", "puppeteer", "qrcode", "bcryptjs", "nodemailer", "mariadb"],
       noExternal: [],
     },
+    server: {
+      // The dashboard routes are very large single-file modules (several thousand
+      // lines each, pulling in recharts/jspdf/xlsx). Transforming one on first
+      // request can take long enough to exceed Vite's 60s module-runner RPC
+      // timeout on a busy machine, which surfaces as a confusing
+      // "transport invoke timed out" SSR error rather than a slow page.
+      // Warming them at startup moves that work off the first request, so the
+      // SSR fetch is served from an already-populated module graph.
+      warmup: {
+        ssrFiles: ["./src/routes/dashboards/*.tsx", "./src/routes/book.$tenantId.tsx"],
+      },
+    },
   },
 });

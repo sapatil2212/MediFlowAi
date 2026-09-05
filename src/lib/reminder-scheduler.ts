@@ -51,12 +51,90 @@ function isSameLocalDay(a: number, b: number): boolean {
   );
 }
 
+/**
+ * Sends corrected token numbers to patients whose token shifted after they were
+ * already notified (see renumberDailyTokens). Running this on the scheduler's
+ * cycle is what debounces a burst of bookings: however many times a patient's
+ * token moved in the last few minutes, they receive ONE message carrying the
+ * current value. The flag is cleared only after a successful enqueue so a
+ * transient WhatsApp outage retries on the next cycle.
+ */
+async function runTokenCorrections(): Promise<void> {
+  const rows = await query<any>(
+    `SELECT a.id, a.tenantId, a.name, a.phone, a.whatsapp, a.dateTime, a.timeSlot, a.tokenNo,
+            u.clinicName, d.name AS doctorName
+       FROM Appointment a
+       LEFT JOIN User u ON u.tenantId = a.tenantId
+       LEFT JOIN Doctor d ON d.id = a.doctorId
+      WHERE a.tokenNotifyPending = 1
+        AND a.dateTime >= NOW()
+        AND a.status NOT IN ('Cancelled', 'Completed')`,
+  );
+
+  if (!rows || rows.length === 0) {
+    // Clear stale flags on rows we will never message (past or closed) so they
+    // do not accumulate.
+    await execute(
+      `UPDATE Appointment SET tokenNotifyPending = 0
+        WHERE tokenNotifyPending = 1
+          AND (dateTime < NOW() OR status IN ('Cancelled', 'Completed'))`,
+    );
+    return;
+  }
+
+  const readiness = new Map<string, boolean>();
+  const canSend = async (tenantId: string): Promise<boolean> => {
+    if (readiness.has(tenantId)) return readiness.get(tenantId)!;
+    const ok = await isWhatsAppReady(tenantId);
+    readiness.set(tenantId, ok);
+    return ok;
+  };
+
+  for (const apt of rows) {
+    try {
+      const phone = apt.whatsapp || apt.phone;
+      if (!phone) {
+        // Nothing we can do for this row — clear it so it stops being scanned.
+        await execute("UPDATE Appointment SET tokenNotifyPending = 0 WHERE id = ?", [apt.id]);
+        continue;
+      }
+      if (!(await canSend(apt.tenantId))) continue; // retry next cycle
+
+      const body = buildAppointmentMessage("tokenUpdated", {
+        name: apt.name,
+        clinicName: apt.clinicName,
+        doctorName: apt.doctorName,
+        dateTime: new Date(apt.dateTime),
+        timeSlot: apt.timeSlot,
+        tokenNo: apt.tokenNo,
+      });
+      if (!body) continue;
+
+      await enqueueWA(apt.tenantId, phone, body);
+      await execute("UPDATE Appointment SET tokenNotifyPending = 0 WHERE id = ?", [apt.id]);
+      console.log(
+        `[Reminder Scheduler] Sent corrected token #${apt.tokenNo} for appointment ${apt.id} (${apt.tenantId})`,
+      );
+    } catch (rowErr: any) {
+      console.error("[Reminder Scheduler] token correction error:", rowErr?.message);
+    }
+  }
+}
+
 async function runReminderCycle(): Promise<void> {
   // Prevent overlapping runs (a slow cycle shouldn't stack).
   if (globalForScheduler.reminderSchedulerRunning) return;
   globalForScheduler.reminderSchedulerRunning = true;
 
   try {
+    // Correct any tokens that shifted since the patient was last told, before
+    // the reminders below go out carrying token numbers.
+    try {
+      await runTokenCorrections();
+    } catch (tokErr: any) {
+      console.error("[Reminder Scheduler] token correction pass error:", tokErr?.message);
+    }
+
     // Pull appointments in the next ~26h that are still upcoming.
     // Expire video rooms whose join window has closed, and prune stale signal
     // rows. Runs once per cycle on the existing timer — no new infrastructure.

@@ -447,6 +447,16 @@ if (typeof window === "undefined") {
             await conn.query("ALTER TABLE Appointment ADD COLUMN rem1h TINYINT(1) DEFAULT 0");
             console.log("[DB] ✅ Added rem1h column to Appointment table");
           }
+          // Set to 1 when time-ordered renumbering changes this appointment's
+          // token AFTER the patient was already told the old number. The reminder
+          // scheduler picks these up once per cycle and sends a single corrected
+          // token message, which debounces a burst of bookings into one message.
+          if (!colNames.includes("tokenNotifyPending")) {
+            await conn.query(
+              "ALTER TABLE Appointment ADD COLUMN tokenNotifyPending TINYINT(1) DEFAULT 0",
+            );
+            console.log("[DB] ✅ Added tokenNotifyPending column to Appointment table");
+          }
           // Delivery channel of the consultation (in_person | video). This is a
           // separate axis from appointmentType, which holds the clinical category
           // ("First Time", "OPD") and is left untouched. NOT NULL DEFAULT

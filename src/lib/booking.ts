@@ -311,7 +311,9 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     // ordering is a nicety — never let it break the booking or its notification.
     try {
       const { renumberDailyTokens } = await import("./token.server");
-      await renumberDailyTokens(data.tenantId, dateVal);
+      // This booking gets its own confirmation below with the fresh token, so it
+      // must not also be flagged for a "token changed" correction.
+      await renumberDailyTokens(data.tenantId, dateVal, { skipNotifyId: id });
       const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
         id,
       ]);

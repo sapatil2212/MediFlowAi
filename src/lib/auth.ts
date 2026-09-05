@@ -933,7 +933,9 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
     // this appointment's final token for the confirmation / WhatsApp message.
     // Never let a token-ordering hiccup break the booking or its notification.
     try {
-      await renumberDailyTokens(data.tenantId, dateVal);
+      // This appointment gets its own confirmation below with the fresh token,
+      // so it must not also be flagged for a "token changed" correction.
+      await renumberDailyTokens(data.tenantId, dateVal, { skipNotifyId: id });
       const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
         id,
       ]);
@@ -1187,7 +1189,9 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
     // this booking's final token for the WhatsApp message and return value.
     // Never let a token-ordering hiccup break the booking or its notification.
     try {
-      await renumberDailyTokens(user.tenantId, dateVal);
+      // This booking gets its own confirmation below with the fresh token, so it
+      // must not also be flagged for a "token changed" correction.
+      await renumberDailyTokens(user.tenantId, dateVal, { skipNotifyId: id });
       const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
         id,
       ]);
@@ -1463,9 +1467,15 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
     // left. Then read back this appointment's final token for the notification.
     // Never let a token-ordering hiccup break the update or its notification.
     try {
-      await renumberDailyTokens(user.tenantId, dateVal);
+      // When this update also sends its own status message (below), that message
+      // already carries the fresh token — so don't queue a separate correction
+      // for it. A status-less change (e.g. time only) sends nothing, so in that
+      // case the row is left eligible for a token correction.
+      const sendsOwnStatusMessage = ["Confirmed", "Cancelled", "Completed"].includes(data.status);
+      const renumberOpts = sendsOwnStatusMessage ? { skipNotifyId: data.id } : {};
+      await renumberDailyTokens(user.tenantId, dateVal, renumberOpts);
       if (oldDateStr !== newDateStr) {
-        await renumberDailyTokens(user.tenantId, oldDate);
+        await renumberDailyTokens(user.tenantId, oldDate, renumberOpts);
       }
       const finalTok = await queryOne<any>("SELECT tokenNo FROM Appointment WHERE id = ? LIMIT 1", [
         data.id,

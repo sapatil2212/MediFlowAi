@@ -23,6 +23,7 @@ export type AptNotifyKind =
   | "reminderDayOf"
   | "reminder2h"
   | "reminder1h"
+  | "tokenUpdated"
   | "videoLinkIssued"
   | "videoLinkReissued";
 
@@ -100,6 +101,9 @@ export function buildAppointmentMessage(kind: AptNotifyKind, ctx: AptNotifyConte
 
     case "completed":
       return `Hello *${ctx.name}*,\n\nThank you for visiting *${clinic}*${docText} today. Your consultation is now *Complete* ✅.\n\nYour prescription and advice (if any) have been recorded. We wish you a speedy recovery — take care!${footer}`;
+
+    case "tokenUpdated":
+      return `Hello *${ctx.name}*,\n\nYour token number for the appointment at *${clinic}*${docText} on *${dateStr}* at *${timeStr}* has been updated.${tokenText}\n\nYour appointment date and time have *not* changed — only the token number. Please quote this new number at the reception.${footer}`;
 
     case "reminderDayBefore":
       return `Hello *${ctx.name}*,\n\n⏰ *Reminder:* You have an appointment at *${clinic}*${docText} *tomorrow*, *${dateStr}* at *${timeStr}*.${tokenText}${linkText}\n\n${ctx.joinLink ? "You can join online at your appointment time." : "Please arrive 10 minutes early."} See you soon!${footer}`;
