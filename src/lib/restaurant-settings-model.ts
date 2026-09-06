@@ -1168,11 +1168,9 @@ export const RESTAURANT_SETTINGS_TAB_ORDER = [
   "Operating Hours",
   "Dining Areas",
   "Tables",
-  "Menu",
   "Booking Rules",
   "WhatsApp Alerts",
   "Multi Location",
-  "Manage Users",
 ] as const;
 
 export type RestaurantSettingsTab = (typeof RESTAURANT_SETTINGS_TAB_ORDER)[number];
@@ -1181,7 +1179,6 @@ export const CONFIG_SETTINGS_TABS = [
   "Operating Hours",
   "Dining Areas",
   "Tables",
-  "Menu",
   "Booking Rules",
 ] as const satisfies readonly RestaurantSettingsTab[];
 
@@ -1201,7 +1198,6 @@ export interface RestaurantSettingsNavigation {
 const SETTINGS_TAB_FEATURE: Partial<Record<RestaurantSettingsTab, SettingsFeature>> = {
   "WhatsApp Alerts": "whatsapp",
   "Multi Location": "locations",
-  "Manage Users": "users",
 };
 
 /**

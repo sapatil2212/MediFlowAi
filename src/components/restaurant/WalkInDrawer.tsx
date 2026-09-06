@@ -198,7 +198,14 @@ export function WalkInDrawer({
 
   const activate = (t: DiningTable) => {
     setSelection((s) =>
-      tableSelectionReducer(s, { type: "activate", table: t, availableTableIds }),
+      tableSelectionReducer(s, {
+        type: "activate",
+        table: t,
+        availableTableIds,
+        // Stop the group growing past what the party needs.
+        partySize: Number(partySize) || 0,
+        tables,
+      }),
     );
   };
 

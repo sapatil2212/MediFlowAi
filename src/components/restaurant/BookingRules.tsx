@@ -202,28 +202,6 @@ export function BookingRules({ permission }: BookingRulesProps) {
           onChange={(v) => set({ advanceBookingWindow: v })}
         />
 
-        <NumberField
-          label={`Minimum lead time (${LIMITS.minLeadTime.min}-${LIMITS.minLeadTime.max} minutes)`}
-          value={form.minLeadTime}
-          min={LIMITS.minLeadTime.min}
-          max={LIMITS.minLeadTime.max}
-          disabled={!canWrite}
-          error={fieldErrors.minLeadTime}
-          onChange={(v) => set({ minLeadTime: v })}
-        />
-
-        <label className="block">
-          <span className={labelClass}>Timezone</span>
-          <input
-            type="text"
-            value={form.timezone}
-            disabled={!canWrite}
-            onChange={(e) => set({ timezone: e.target.value })}
-            placeholder={DEFAULT_SETTINGS.timezone}
-            className={cn(inputClass, fieldErrors.timezone && "border-red-300")}
-          />
-          {fieldErrors.timezone && <FieldMessage message={fieldErrors.timezone} />}
-        </label>
       </div>
 
       {formError && (

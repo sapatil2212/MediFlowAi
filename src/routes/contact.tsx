@@ -213,7 +213,7 @@ function ContactForm() {
                 label="Full name"
                 value={form.name}
                 onChange={(v) => setForm({ ...form, name: v })}
-                placeholder="e.g. John Doe"
+                placeholder="e.g. Aarav Sharma"
                 required
               />
               <Field

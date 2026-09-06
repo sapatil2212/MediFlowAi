@@ -369,6 +369,20 @@ export const GUEST_MESSAGES = [
   MSG_SLOT_NOT_AVAILABLE,
 ] as const;
 
+/**
+ * Guidance when a guest activates another Dining_Table while the selected
+ * Table_Group already seats the whole party. Holding more tables than the party
+ * needs takes covers the restaurant could otherwise sell, so the selection form
+ * stops at sufficiency. Deselecting a member is always allowed, which is how a
+ * guest swaps one table for another.
+ *
+ * This constrains the SELECTION FORM only. Server-side validation stays
+ * deliberately permissive (Req 5.6, 7.5) so staff paths — walk-ins, `Any
+ * available table` resolution and reassignment — keep working unchanged.
+ */
+export const MSG_TABLE_GROUP_SEATS_PARTY =
+  "The selected tables already seat your party. Deselect a table to pick a different one";
+
 // --- Supporting messages the validators and shells need. -------------------
 
 /** Req 3.16 */

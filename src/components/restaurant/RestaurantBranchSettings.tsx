@@ -686,7 +686,7 @@ export function RestaurantBranchSettings({
                 type="text"
                 value={form.name}
                 onChange={(e) => setForm((f) => (f ? { ...f, name: e.target.value } : f))}
-                placeholder="Downtown branch"
+                placeholder="Andheri Branch"
                 maxLength={100}
                 aria-label="Branch name"
                 className={cn(inputClass, fieldErrors.name && "border-red-300")}
@@ -701,7 +701,7 @@ export function RestaurantBranchSettings({
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm((f) => (f ? { ...f, email: e.target.value } : f))}
-                placeholder="branch@example.com"
+                placeholder="andheri.branch@example.com"
                 aria-label="Branch login email"
                 disabled={form.id !== null}
                 className={cn(inputClass, fieldErrors.email && "border-red-300")}
@@ -714,7 +714,7 @@ export function RestaurantBranchSettings({
                 type="tel"
                 value={form.phone}
                 onChange={(e) => setForm((f) => (f ? { ...f, phone: e.target.value } : f))}
-                placeholder="+1 555 000 1234"
+                placeholder="+91 98765 43210"
                 aria-label="Branch phone"
                 className={inputClass}
               />
@@ -725,7 +725,7 @@ export function RestaurantBranchSettings({
                 type="text"
                 value={form.managerName}
                 onChange={(e) => setForm((f) => (f ? { ...f, managerName: e.target.value } : f))}
-                placeholder="Alex Doe"
+                placeholder="Rohan Mehta"
                 aria-label="Branch manager name"
                 className={inputClass}
               />
@@ -736,7 +736,7 @@ export function RestaurantBranchSettings({
                 type="text"
                 value={form.address}
                 onChange={(e) => setForm((f) => (f ? { ...f, address: e.target.value } : f))}
-                placeholder="123 Market Street"
+                placeholder="12, MG Road, Andheri West"
                 aria-label="Branch address"
                 className={inputClass}
               />
@@ -747,7 +747,7 @@ export function RestaurantBranchSettings({
                 type="text"
                 value={form.city}
                 onChange={(e) => setForm((f) => (f ? { ...f, city: e.target.value } : f))}
-                placeholder="City"
+                placeholder="Mumbai"
                 aria-label="Branch city"
                 className={inputClass}
               />
@@ -758,7 +758,7 @@ export function RestaurantBranchSettings({
                 type="text"
                 value={form.state}
                 onChange={(e) => setForm((f) => (f ? { ...f, state: e.target.value } : f))}
-                placeholder="State"
+                placeholder="Maharashtra"
                 aria-label="Branch state"
                 className={inputClass}
               />
@@ -769,7 +769,7 @@ export function RestaurantBranchSettings({
                 type="text"
                 value={form.pincode}
                 onChange={(e) => setForm((f) => (f ? { ...f, pincode: e.target.value } : f))}
-                placeholder="000000"
+                placeholder="400058"
                 aria-label="Branch pincode"
                 className={inputClass}
               />

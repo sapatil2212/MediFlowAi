@@ -75,6 +75,7 @@ import {
   deleteBookingAtomic,
   deleteRestaurantGuest,
   deleteTable,
+  getBookingById,
   getBookingsForDate,
   getClosuresForDate,
   getHours,
@@ -86,7 +87,6 @@ import {
   hasUpcomingBlockingBookings,
   highestDisplayOrderInArea,
   insertTable,
-  isWhatsAppEnabled,
   listBlockingBookings,
   listBookings,
   listGuests,
@@ -405,6 +405,12 @@ async function queueBookingNotification(
     tableCount: number;
     tokenNo: number;
   },
+  /**
+   * `booked` confirms a newly created Table_Booking. `tableChanged` tells a
+   * guest their Table_Group moved while the date and Booking_Slot stayed put —
+   * queued by the reassign path only when the table actually differs.
+   */
+  kind: "booked" | "tableChanged" = "booked",
 ): Promise<void> {
   if (typeof window !== "undefined") return;
 
@@ -417,17 +423,18 @@ async function queueBookingNotification(
       return;
     }
 
-    // Req 8.3 — a message is queued if and only if the WhatsApp feature is
-    // available for the tenant AND the connection state is connected.
+    // Req 8.1/8.3 — a message is queued if and only if the WhatsApp feature is
+    // available for the tenant AND the connection state is connected. These are
+    // the only two conditions, matching the pure booking model.
+    //
+    // Deliberately NOT gated on WhatsAppConfig.isEnabled: that column defaults
+    // to 0 and pairing a session never sets it, so gating on it silently
+    // suppressed every booking notification even for a connected tenant. A
+    // connected session is the tenant's opt-in; to stop notifications they
+    // disconnect the session. This matches the clinic booking path.
     if (!canUseFeature(contextFromTenant(profile), "whatsapp")) {
       console.log(
         `[Restaurant] Booking ${booking.bookingId}: notification omitted — the WhatsApp feature is not available for this tenant`,
-      );
-      return;
-    }
-    if (!(await isWhatsAppEnabled(profile.tenantId))) {
-      console.log(
-        `[Restaurant] Booking ${booking.bookingId}: notification omitted — WhatsApp is switched off for this tenant`,
       );
       return;
     }
@@ -443,14 +450,24 @@ async function queueBookingNotification(
     // assigned Table_Group and the Booking_Token.
     const tableLabel = booking.tableCount > 1 ? "Tables" : "Table";
     const body =
-      `Hello *${booking.guestName}*,\n\n` +
-      `Your table at *${profile.businessName}* is booked.\n\n` +
-      `📅 *Date:* ${booking.date}\n` +
-      `🕒 *Time:* ${booking.slotLabel}\n` +
-      `👥 *Party size:* ${booking.partySize}\n` +
-      `🍽️ *${tableLabel}:* ${booking.tableName}\n` +
-      `🎫 *Your Token No: #${booking.tokenNo}*\n\n` +
-      `We look forward to seeing you!\n\n_This is an automated notification message._`;
+      kind === "tableChanged"
+        ? `Hello *${booking.guestName}*,\n\n` +
+          `Your ${tableLabel.toLowerCase()} at *${profile.businessName}* has been changed.\n\n` +
+          `📅 *Date:* ${booking.date}\n` +
+          `🕒 *Time:* ${booking.slotLabel}\n` +
+          `👥 *Party size:* ${booking.partySize}\n` +
+          `🍽️ *New ${tableLabel}:* ${booking.tableName}\n` +
+          `🎫 *Your Token No: #${booking.tokenNo}*\n\n` +
+          `Your date and time are unchanged — only the ${tableLabel.toLowerCase()}. ` +
+          `See you soon!\n\n_This is an automated notification message._`
+        : `Hello *${booking.guestName}*,\n\n` +
+          `Your table at *${profile.businessName}* is booked.\n\n` +
+          `📅 *Date:* ${booking.date}\n` +
+          `🕒 *Time:* ${booking.slotLabel}\n` +
+          `👥 *Party size:* ${booking.partySize}\n` +
+          `🍽️ *${tableLabel}:* ${booking.tableName}\n` +
+          `🎫 *Your Token No: #${booking.tokenNo}*\n\n` +
+          `We look forward to seeing you!\n\n_This is an automated notification message._`;
 
     await enqueueWA(profile.tenantId, phone, body);
   } catch (err: any) {
@@ -838,17 +855,49 @@ export const reassignRestaurantBookingServerFn = createServerFn({ method: "POST"
   .handler(async ({ data }) => {
     const { tenantId } = await requireRestaurant("restaurant_bookings", "operate");
 
+    // Read the booking first so we know which table it was on. The reassign
+    // result reports only the new table, and the guest should be told only when
+    // the table genuinely moved — re-saving the same table is not a change.
+    const before = await getBookingById(tenantId, data.bookingId);
+
     // Req 9.6 — the target's Seat_Capacity and Occupancy_Window are re-checked
     // under the same lock order the create path uses.
     const write = await reassignBookingAtomic(tenantId, data.bookingId, data.tableId);
     if (!write.ok) throw new Error(write.message);
 
-    return {
+    const result = {
       success: true as const,
       bookingId: write.bookingId,
       tableId: write.tableId,
       tableName: write.tableName,
     };
+
+    // Tell the guest their table moved. Fire and forget, exactly like the create
+    // path: the reassignment stands even if the notification cannot be queued.
+    const tableActuallyChanged = !!before && before.tableName !== write.tableName;
+    if (tableActuallyChanged) {
+      const notifyProfile = await getTenantProfile(tenantId);
+      if (notifyProfile) {
+        void queueBookingNotification(
+          notifyProfile,
+          {
+            bookingId: write.bookingId,
+            guestName: before.guestName,
+            phone: before.guestPhone,
+            date: before.date,
+            slotLabel: before.slotLabel,
+            partySize: Number(before.partySize ?? 0),
+            tableName: write.tableName,
+            // A reassignment targets a single Dining_Table (Req 9.6).
+            tableCount: 1,
+            tokenNo: Number(before.tokenNo ?? 0),
+          },
+          "tableChanged",
+        );
+      }
+    }
+
+    return result;
   });
 
 /**
@@ -921,7 +970,7 @@ export const createWalkInBookingServerFn = createServerFn({ method: "POST" })
     });
     if (!created.ok) throw new Error(created.message);
 
-    return {
+    const result = {
       success: true as const,
       bookingId: created.bookingId,
       tokenNo: created.tokenNo,
@@ -933,6 +982,26 @@ export const createWalkInBookingServerFn = createServerFn({ method: "POST" })
       partySize: created.partySize,
       status: created.status,
     };
+
+    // Req 8.1 — a walk-in is a Table_Booking too, so it carries the same
+    // confirmation (useful here mainly for the token number). A phone number is
+    // optional on walk-ins, and the notifier already omits when it is blank.
+    const notifyProfile = await getTenantProfile(tenantId);
+    if (notifyProfile) {
+      void queueBookingNotification(notifyProfile, {
+        bookingId: created.bookingId,
+        guestName: request.guestName,
+        phone: request.phone,
+        date: created.date,
+        slotLabel: created.slotLabel,
+        partySize: created.partySize,
+        tableName: created.tableName,
+        tableCount: created.tables.length,
+        tokenNo: created.tokenNo,
+      });
+    }
+
+    return result;
   });
 
 /**
@@ -1003,7 +1072,7 @@ export const createRestaurantReservationServerFn = createServerFn({ method: "POS
     });
     if (!created.ok) throw new Error(created.message);
 
-    return {
+    const result = {
       success: true as const,
       bookingId: created.bookingId,
       tokenNo: created.tokenNo,
@@ -1015,6 +1084,27 @@ export const createRestaurantReservationServerFn = createServerFn({ method: "POS
       partySize: created.partySize,
       status: created.status,
     };
+
+    // Req 8.1 — the Booking_Service notifies on every Table_Booking it creates,
+    // not only the ones made from the public form. A reservation taken over the
+    // phone by staff confirms to the guest exactly like a self-service booking.
+    // Fire and forget: it cannot reject, and the response never waits on it.
+    const notifyProfile = await getTenantProfile(tenantId);
+    if (notifyProfile) {
+      void queueBookingNotification(notifyProfile, {
+        bookingId: created.bookingId,
+        guestName: request.guestName,
+        phone: request.phone,
+        date: created.date,
+        slotLabel: created.slotLabel,
+        partySize: created.partySize,
+        tableName: created.tableName,
+        tableCount: created.tables.length,
+        tokenNo: created.tokenNo,
+      });
+    }
+
+    return result;
   });
 
 /**

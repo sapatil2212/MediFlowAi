@@ -98,11 +98,7 @@ vi.mock("../../components/restaurant/TableManager", () => ({
     <div data-testid="mock-body-Tables" data-location={String(props.locationId)} />
   ),
 }));
-vi.mock("../../components/restaurant/MenuSettings", () => ({
-  MenuSettings: (props: { requestedLocationId?: string | null }) => (
-    <div data-testid="mock-body-Menu" data-location={String(props.requestedLocationId)} />
-  ),
-}));
+
 vi.mock("../../components/restaurant/BookingRules", () => ({
   BookingRules: () => <div data-testid="mock-body-Booking Rules" />,
   default: () => <div data-testid="mock-body-Booking Rules" />,
@@ -158,7 +154,6 @@ const STUBBED_BODY_TABS: RestaurantSettingsTab[] = [
   "Operating Hours",
   "Dining Areas",
   "Tables",
-  "Menu",
   "Booking Rules",
   "Multi Location",
 ];
@@ -167,7 +162,7 @@ function perm(permission: Permission, visible = permission !== "none"): FeatureP
   return { available: visible, permission, visible };
 }
 
-/** Fully entitled: every feature visible and operable → all nine tabs. */
+/** Fully entitled: every feature visible and operable → every canonical tab. */
 function fullyEntitledAccess(): RestaurantSettingsPermissions {
   return {
     restaurant_config: perm("operate"),
@@ -257,11 +252,11 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Canonical nine-tab inventory (Req 1.1, 1.2, 1.3)
+// Canonical tab inventory (Req 1.1, 1.2, 1.3)
 // ---------------------------------------------------------------------------
 
-describe("Entitled nine-tab inventory (Req 1.1-1.3)", () => {
-  it("renders a heading, a description, and all nine tabs once in canonical order", async () => {
+describe("Entitled tab inventory (Req 1.1-1.3)", () => {
+  it("renders a heading, a description, and every tab once in canonical order", async () => {
     await mountShell(bootstrapOf(buildBootstrap({ access: fullyEntitledAccess() })));
     await screen.findByTestId("settings-active-panel");
 
@@ -275,7 +270,7 @@ describe("Entitled nine-tab inventory (Req 1.1-1.3)", () => {
     // canonical order, and matches the model's canonical constant verbatim.
     const labels = tabButtons().map((b) => (b.textContent ?? "").trim());
     expect(labels).toEqual([...ALL_TABS]);
-    expect(labels).toHaveLength(9);
+    expect(labels).toHaveLength(ALL_TABS.length);
   });
 
   it("has no duplicate tab labels in the horizontal selector or the dropdown", async () => {
@@ -375,7 +370,7 @@ describe("Invalid requested-tab fallback (Req 1.7)", () => {
   });
 
   it("falls back to the first visible tab when config is hidden but other features are visible", async () => {
-    // Config `none` hides the five config tabs; the first visible tab is still
+    // Config `none` hides the four config tabs; the first visible tab is still
     // Restaurant Profile, and WhatsApp/Users/Multi Location remain visible.
     const access: RestaurantSettingsPermissions = {
       restaurant_config: perm("none"),
@@ -383,17 +378,12 @@ describe("Invalid requested-tab fallback (Req 1.7)", () => {
       locations: perm("operate"),
       whatsapp: perm("operate"),
     };
-    await mountShell(bootstrapOf(buildBootstrap({ access, requestedTab: "Menu" })));
+    await mountShell(bootstrapOf(buildBootstrap({ access, requestedTab: "Booking Rules" })));
     const panel = await screen.findByTestId("settings-active-panel");
 
     expect(panel.getAttribute("data-active-tab")).toBe("Restaurant Profile");
     const labels = tabButtons().map((b) => (b.textContent ?? "").trim());
-    expect(labels).toEqual([
-      "Restaurant Profile",
-      "WhatsApp Alerts",
-      "Multi Location",
-      "Manage Users",
-    ]);
+    expect(labels).toEqual(["Restaurant Profile", "WhatsApp Alerts", "Multi Location"]);
   });
 });
 
@@ -440,21 +430,23 @@ describe("Selected / aria-selected semantics (Req 1.2, 1.4, 1.5)", () => {
       "Restaurant Profile",
     );
 
-    // Selecting Menu moves the sole selection and current marker, and mirrors in
-    // the compact dropdown value (Req 1.4, 1.5).
-    fireEvent.click(screen.getByTestId("settings-subtab-Menu"));
+    // Selecting Booking Rules moves the sole selection and current marker, and
+    // mirrors in the compact dropdown value (Req 1.4, 1.5).
+    fireEvent.click(screen.getByTestId("settings-subtab-Booking Rules"));
 
     const selectedAfter = tabButtons().filter((b) => b.getAttribute("aria-selected") === "true");
     expect(selectedAfter).toHaveLength(1);
-    expect((selectedAfter[0].textContent ?? "").trim()).toBe("Menu");
+    expect((selectedAfter[0].textContent ?? "").trim()).toBe("Booking Rules");
     expect(selectedAfter[0].getAttribute("aria-current")).toBe("page");
     // The rest are explicitly not selected and carry no current marker.
     for (const button of tabButtons()) {
-      const isMenu = (button.textContent ?? "").trim() === "Menu";
-      expect(button.getAttribute("aria-selected")).toBe(isMenu ? "true" : "false");
-      expect(button.getAttribute("aria-current")).toBe(isMenu ? "page" : null);
+      const isTarget = (button.textContent ?? "").trim() === "Booking Rules";
+      expect(button.getAttribute("aria-selected")).toBe(isTarget ? "true" : "false");
+      expect(button.getAttribute("aria-current")).toBe(isTarget ? "page" : null);
     }
-    expect((screen.getByTestId("settings-subtab-select") as HTMLSelectElement).value).toBe("Menu");
+    expect((screen.getByTestId("settings-subtab-select") as HTMLSelectElement).value).toBe(
+      "Booking Rules",
+    );
   });
 
   it("selects the tab chosen through the compact dropdown", async () => {
@@ -532,7 +524,7 @@ describe("Responsive selector modes (Req 1.4, 1.5)", () => {
     // At 768 px the horizontal bar is shown (`md:flex`)...
     const tablist = document.querySelector('[role="tablist"]') as HTMLElement;
     expect(tablist.classList.contains("md:flex")).toBe(true);
-    expect(tabButtons().length).toBe(9);
+    expect(tabButtons().length).toBe(ALL_TABS.length);
 
     // ...and the compact dropdown wrapper is hidden from that breakpoint up.
     const dropdown = screen.getByTestId("settings-subtab-select");
@@ -554,7 +546,7 @@ describe("Keyboard and focus behavior (Req 1.4, 1.5)", () => {
     await mountShell(bootstrapOf(buildBootstrap({ access: fullyEntitledAccess() })));
     await screen.findByTestId("settings-active-panel");
 
-    const menuTab = screen.getByTestId("settings-subtab-Menu") as HTMLButtonElement;
+    const menuTab = screen.getByTestId("settings-subtab-Booking Rules") as HTMLButtonElement;
     // Real <button role="tab"> elements are keyboard-focusable and Enter/Space
     // activatable natively; none are disabled.
     expect(menuTab.tagName).toBe("BUTTON");
@@ -567,10 +559,12 @@ describe("Keyboard and focus behavior (Req 1.4, 1.5)", () => {
     // a click, which fireEvent.click represents).
     fireEvent.click(menuTab);
     expect(screen.getByTestId("settings-active-panel").getAttribute("data-active-tab")).toBe(
-      "Menu",
+      "Booking Rules",
     );
     // The tab bar itself is not keyed, so its buttons persist across the switch.
-    expect(screen.getByTestId("settings-subtab-Menu").getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByTestId("settings-subtab-Booking Rules").getAttribute("aria-selected")).toBe(
+      "true",
+    );
   });
 
   it("gives the compact dropdown an accessible name and keyboard focus", async () => {

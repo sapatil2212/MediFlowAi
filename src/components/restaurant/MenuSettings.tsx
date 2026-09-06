@@ -568,7 +568,7 @@ export function MenuSettings({
                 type="text"
                 value={categoryForm.name}
                 onChange={(e) => setCategoryForm((f) => (f ? { ...f, name: e.target.value } : f))}
-                placeholder="Starters"
+                placeholder="Tandoori Starters"
                 maxLength={LIMITS.menuCategoryName.max}
                 aria-label="Menu category name"
                 className={cn(inputClass, categoryErrors.name && "border-red-300")}
@@ -627,7 +627,7 @@ export function MenuSettings({
                 type="text"
                 value={itemForm.name}
                 onChange={(e) => setItemForm((f) => (f ? { ...f, name: e.target.value } : f))}
-                placeholder="Margherita pizza"
+                placeholder="Paneer Tikka"
                 maxLength={LIMITS.menuItemName.max}
                 aria-label="Menu item name"
                 className={cn(inputClass, itemErrors.name && "border-red-300")}
@@ -656,7 +656,7 @@ export function MenuSettings({
                 onChange={(e) =>
                   setItemForm((f) => (f ? { ...f, description: e.target.value } : f))
                 }
-                placeholder="Fresh tomato, mozzarella, and basil"
+                placeholder="Cottage cheese with capsicum and onion in tandoori spices"
                 maxLength={LIMITS.menuItemDescription.max}
                 aria-label="Menu item description"
                 rows={2}

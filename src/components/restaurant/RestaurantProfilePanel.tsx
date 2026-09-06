@@ -864,7 +864,7 @@ function EmailChangeForm({
             type="email"
             value={emailInput}
             onChange={(e) => setEmailInput(e.target.value)}
-            placeholder="new.address@example.com"
+            placeholder="priya.nair@example.com"
             className={inputClass}
           />
         </label>

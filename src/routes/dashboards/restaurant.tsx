@@ -140,10 +140,8 @@ import {
 import { MSG_NO_RESTAURANT_SETTINGS } from "../../lib/restaurant-settings-model";
 import { BookingRules } from "../../components/restaurant/BookingRules";
 import { DiningAreasSettings } from "../../components/restaurant/DiningAreasSettings";
-import { MenuSettings } from "../../components/restaurant/MenuSettings";
 import { OperatingHours } from "../../components/restaurant/OperatingHours";
 import { RestaurantProfilePanel } from "../../components/restaurant/RestaurantProfilePanel";
-import { RestaurantUsersSettings } from "../../components/restaurant/RestaurantUsersSettings";
 import { TableManager } from "../../components/restaurant/TableManager";
 import { WalkInDrawer } from "../../components/restaurant/WalkInDrawer";
 import { WhatsAppAlertsSettings } from "../../components/restaurant/WhatsAppAlertsSettings";
@@ -324,11 +322,9 @@ const SETTINGS_SUB_TAB_ENTRIES: ReadonlyArray<{ id: string; label: string; icon:
   { id: "Operating Hours", label: "Operating Hours", icon: Clock },
   { id: "Dining Areas", label: "Dining Areas", icon: LayoutDashboard },
   { id: "Tables", label: "Tables", icon: Utensils },
-  { id: "Menu", label: "Menu", icon: ClipboardList },
   { id: "Booking Rules", label: "Booking Rules", icon: SlidersHorizontal },
   { id: "WhatsApp Alerts", label: "WhatsApp Alerts", icon: Smartphone },
   { id: "Multi Location", label: "Multi Location", icon: MapPin },
-  { id: "Manage Users", label: "Manage Users", icon: Users },
 ];
 
 /** The four entries of the mobile bottom bar, all of them core (never gated). */
@@ -3909,8 +3905,8 @@ export function SettingsPanel({
         Workspace & Restaurant Management
       </h3>
       <p className="text-[10px] text-zinc-400 mt-1.5 leading-relaxed">
-        Configure your restaurant profile, operating hours, dining areas, tables, menu, booking
-        rules, WhatsApp alerts, branches, and users.
+        Configure your restaurant profile, operating hours, dining areas, tables, booking rules,
+        WhatsApp alerts, and branches.
       </p>
     </div>
   );
@@ -3946,7 +3942,6 @@ export function SettingsPanel({
   const visibleTabs = navigation.visibleTabs;
   const configPermission = (permissions?.restaurant_config.permission ??
     "none") as RestaurantPermission;
-  const canOperateUsers = permissions?.users.permission === "operate";
   const showBranchSelector = permissions?.locations.visible === true;
 
   // First visible tab is the default and the fallback for an invalid selection.
@@ -3983,10 +3978,6 @@ export function SettingsPanel({
         );
       case "Tables":
         return <TableManager permission={configPermission} locationId={selectedBranchId} />;
-      case "Menu":
-        return (
-          <MenuSettings permission={configPermission} requestedLocationId={selectedBranchId} />
-        );
       case "Booking Rules":
         return <BookingRules permission={configPermission} />;
       case "WhatsApp Alerts":
@@ -3997,14 +3988,6 @@ export function SettingsPanel({
         return (
           <RestaurantBranchSettings
             permission={(permissions?.locations.permission ?? "none") as RestaurantPermission}
-            requestedLocationId={selectedBranchId}
-            onUpgrade={onGoToPlans}
-          />
-        );
-      case "Manage Users":
-        return (
-          <RestaurantUsersSettings
-            permission={(permissions?.users.permission ?? "none") as RestaurantPermission}
             requestedLocationId={selectedBranchId}
             onUpgrade={onGoToPlans}
           />

@@ -1881,6 +1881,9 @@ export function restaurantFormReducer(
           type: "activate",
           table: action.table,
           availableTableIds: availableTableIdsForSlot(state),
+          // Stop the group growing past what the party needs.
+          partySize: state.partySize,
+          tables: layoutTablesFor(state),
         }),
       };
     }

@@ -6200,7 +6200,7 @@ function BeautyDashboardPage() {
                                 type="text"
                                 value={newPatientName}
                                 onChange={(e) => setNewPatientName(e.target.value)}
-                                placeholder="John Doe"
+                                placeholder="Aarav Sharma"
                                 className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand font-semibold"
                                 required
                               />
@@ -6252,7 +6252,7 @@ function BeautyDashboardPage() {
                                 type="email"
                                 value={newPatientEmail}
                                 onChange={(e) => setNewPatientEmail(e.target.value)}
-                                placeholder="client@example.com"
+                                placeholder="aarav.sharma@example.com"
                                 className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand font-semibold"
                               />
                             </div>
@@ -6264,7 +6264,7 @@ function BeautyDashboardPage() {
                                 type="text"
                                 value={newPatientAddress}
                                 onChange={(e) => setNewPatientAddress(e.target.value)}
-                                placeholder="123 Main St, Apartment 4B"
+                                placeholder="12, MG Road, Andheri West, Mumbai"
                                 className="w-full rounded-full border border-zinc-200 bg-white px-3.5 py-1.5 text-xs focus:outline-none focus:border-brand font-semibold"
                               />
                             </div>
@@ -7749,7 +7749,7 @@ function BeautyDashboardPage() {
                                   type="text"
                                   value={profilePhone}
                                   onChange={(e) => setProfilePhone(e.target.value)}
-                                  placeholder="(555) 000-0000"
+                                  placeholder="+91 98765 43210"
                                   required
                                   className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
                                 />
@@ -7848,7 +7848,7 @@ function BeautyDashboardPage() {
                                   </span>
                                   <input
                                     type="email"
-                                    placeholder="newemail@example.com"
+                                    placeholder="priya.nair@example.com"
                                     value={newEmail}
                                     onChange={(e) => setNewEmail(e.target.value)}
                                     disabled={emailOtpSent || sendingEmailOtp}
@@ -8677,7 +8677,7 @@ function BeautyDashboardPage() {
                                   type="text"
                                   value={docName}
                                   onChange={(e) => setDocName(e.target.value)}
-                                  placeholder="Dr. John Watson"
+                                  placeholder="Ananya Iyer"
                                   required
                                   className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
                                 />
@@ -8711,7 +8711,7 @@ function BeautyDashboardPage() {
                                   type="email"
                                   value={docEmail}
                                   onChange={(e) => setDocEmail(e.target.value)}
-                                  placeholder="watson@bookmytime.com"
+                                  placeholder="ananya.iyer@bookmytime.com"
                                   required
                                   className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
                                 />
@@ -8724,7 +8724,7 @@ function BeautyDashboardPage() {
                                   type="text"
                                   value={docPhone}
                                   onChange={(e) => setDocPhone(e.target.value)}
-                                  placeholder="(555) 123-4567"
+                                  placeholder="+91 98765 43210"
                                   required
                                   className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
                                 />
@@ -11279,7 +11279,7 @@ function BeautyDashboardPage() {
                             <Mail className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
                             <input
                               type="email"
-                              placeholder="jane@example.com"
+                              placeholder="priya.nair@example.com"
                               value={aptEmail}
                               onChange={(e) => {
                                 setAptEmail(e.target.value);

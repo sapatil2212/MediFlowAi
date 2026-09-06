@@ -645,7 +645,7 @@ export function RestaurantUsersSettings({
                 type="text"
                 value={form.name}
                 onChange={(e) => setForm((f) => (f ? { ...f, name: e.target.value } : f))}
-                placeholder="Alex Doe"
+                placeholder="Rohan Mehta"
                 maxLength={100}
                 aria-label="Team member name"
                 className={cn(inputClass, fieldErrors.name && "border-red-300")}
@@ -658,7 +658,7 @@ export function RestaurantUsersSettings({
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm((f) => (f ? { ...f, email: e.target.value } : f))}
-                placeholder="alex@example.com"
+                placeholder="rohan.mehta@example.com"
                 aria-label="Team member email"
                 className={cn(inputClass, fieldErrors.email && "border-red-300")}
               />
@@ -670,7 +670,7 @@ export function RestaurantUsersSettings({
                 type="tel"
                 value={form.phone}
                 onChange={(e) => setForm((f) => (f ? { ...f, phone: e.target.value } : f))}
-                placeholder="+1 555 000 1234"
+                placeholder="+91 98765 43210"
                 aria-label="Team member phone"
                 className={inputClass}
               />

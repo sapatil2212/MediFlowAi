@@ -1784,7 +1784,7 @@ const TemplateBuilder = ({
               type="text"
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder="e.g. Appointment reminder for Dr. Smith with confirm and reschedule buttons"
+              placeholder="e.g. Appointment reminder for Dr. Vikram Rao with confirm and reschedule buttons"
               className="flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -2461,7 +2461,7 @@ const CampaignWizard = ({
                 </label>
                 <textarea
                   rows={6}
-                  placeholder={`+919876543210, John Doe\n+919800012345, Jane Smith`}
+                  placeholder={`+919876543210, Aarav Sharma\n+919800012345, Priya Nair`}
                   value={manualNumbers}
                   onChange={(e) => setManualNumbers(e.target.value)}
                   className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand font-mono"

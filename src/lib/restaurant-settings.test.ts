@@ -436,11 +436,9 @@ describe("guarded restaurant settings bootstrap", () => {
       "Operating Hours",
       "Dining Areas",
       "Tables",
-      "Menu",
       "Booking Rules",
       "WhatsApp Alerts",
       "Multi Location",
-      "Manage Users",
     ]);
     expect(result.identity).toMatchObject({
       accountId: "owner-a",
@@ -480,11 +478,9 @@ describe("guarded restaurant settings bootstrap", () => {
       "Operating Hours",
       "Dining Areas",
       "Tables",
-      "Menu",
       "Booking Rules",
       "WhatsApp Alerts",
     ]);
-    expect(result.navigation.visibleTabs).not.toContain("Manage Users");
     expect(result.navigation.visibleTabs).not.toContain("Multi Location");
     expect(result.profileCapability.canEditProfile).toBe(false);
     expect(result.profileCapability.viewOnlyMessage).not.toBeNull();
@@ -499,7 +495,7 @@ describe("guarded restaurant settings bootstrap", () => {
     const context = contextFor({ access: null });
     const { deps, listBranches, getSubUserRoleCounts } = bootstrapDepsFor(context);
     const result = await createRestaurantSettingsBootstrap(deps).bootstrap({
-      requestedTab: "Manage Users",
+      requestedTab: "Multi Location",
     });
 
     expect(result.accessResolved).toBe(false);

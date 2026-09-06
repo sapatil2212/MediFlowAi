@@ -50,6 +50,7 @@ import {
   DEFAULT_TABLE_AREA,
   LIMITS,
   MSG_TABLE_ALREADY_BOOKED,
+  MSG_TABLE_GROUP_SEATS_PARTY,
   TABLE_SELECTION_ANY_LABEL,
   type AvailabilityState,
   type DiningTable,
@@ -246,7 +247,19 @@ export const INITIAL_TABLE_SELECTION: TableSelectionState = {
 
 export type TableSelectionAction =
   /** A guest activated a card — by pointer or by keyboard. */
-  | { type: "activate"; table: LayoutTable; availableTableIds: readonly string[] }
+  | {
+      type: "activate";
+      table: LayoutTable;
+      availableTableIds: readonly string[];
+      /**
+       * Party_Size and the rendered Dining_Tables. Supplied together they stop a
+       * Table_Group from growing past what the party needs; omitting them keeps
+       * the unrestricted toggle behaviour, so a caller that does not know the
+       * party size behaves exactly as before.
+       */
+      partySize?: number | null;
+      tables?: readonly LayoutTable[];
+    }
   /** Party_Size or booking date changed — the selection resets (Req 6.13). */
   | { type: "reset" };
 
@@ -269,10 +282,38 @@ export function tableSelectionReducer(
         return { selectedTableIds: [...state.selectedTableIds], message: MSG_TABLE_ALREADY_BOOKED };
       }
       const selected = state.selectedTableIds.includes(action.table.id);
+
+      // Removing a member is always permitted — deselecting is how a guest
+      // swaps one table for another once the group is already sufficient.
+      if (selected) {
+        return {
+          selectedTableIds: state.selectedTableIds.filter((id) => id !== action.table.id),
+          message: null,
+        };
+      }
+
+      // Adding: refuse once the group's summed Seat_Capacity already seats the
+      // whole party, so a party of 4 cannot hold a second 4-seat table. Only
+      // enforced when the caller supplies the Party_Size and the table list.
+      const party = Number(action.partySize ?? 0);
+      if (Number.isFinite(party) && party > 0 && action.tables && action.tables.length > 0) {
+        const capacityById = new Map(
+          action.tables.map((t) => [t.id, Number(t.seatCapacity) || 0] as const),
+        );
+        const seatsAlreadyHeld = state.selectedTableIds.reduce(
+          (sum, id) => sum + (capacityById.get(id) ?? 0),
+          0,
+        );
+        if (seatsAlreadyHeld >= party) {
+          return {
+            selectedTableIds: [...state.selectedTableIds],
+            message: MSG_TABLE_GROUP_SEATS_PARTY,
+          };
+        }
+      }
+
       return {
-        selectedTableIds: selected
-          ? state.selectedTableIds.filter((id) => id !== action.table.id)
-          : [...state.selectedTableIds, action.table.id],
+        selectedTableIds: [...state.selectedTableIds, action.table.id],
         message: null,
       };
     }

@@ -643,14 +643,16 @@ describe("restaurant settings navigation and capabilities", () => {
     };
     const navigation = settingsHelpers.deriveRestaurantSettingsNavigation({
       access,
-      requestedTab: "Menu",
+      requestedTab: "Booking Rules",
     });
 
     expect(navigation.visibleTabs).toEqual(settingsHelpers.RESTAURANT_SETTINGS_TAB_ORDER);
-    expect(new Set(navigation.visibleTabs).size).toBe(9);
+    expect(new Set(navigation.visibleTabs).size).toBe(
+      settingsHelpers.RESTAURANT_SETTINGS_TAB_ORDER.length,
+    );
     expect(navigation.visibleTabs[0]).toBe("Restaurant Profile");
-    expect(navigation.selectedTab).toBe("Menu");
-    expect(navigation.activePanel).toBe("Menu");
+    expect(navigation.selectedTab).toBe("Booking Rules");
+    expect(navigation.activePanel).toBe("Booking Rules");
   });
 
   it("keeps Profile first, gates other tabs, and falls back to Profile", () => {
@@ -673,7 +675,7 @@ describe("restaurant settings navigation and capabilities", () => {
     expect(
       settingsHelpers.deriveRestaurantSettingsNavigation({
         access: null,
-        requestedTab: "Manage Users",
+        requestedTab: "Multi Location",
       }),
     ).toEqual({
       accessResolved: false,
