@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as UnlockRouteImport } from './routes/unlock'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SolutionsRouteImport } from './routes/solutions'
 import { Route as SignupRouteImport } from './routes/signup'
@@ -39,6 +40,11 @@ import { Route as BookTenantIdRouteImport } from './routes/book.$tenantId'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 
+const UnlockRoute = UnlockRouteImport.update({
+  id: '/unlock',
+  path: '/unlock',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -205,6 +211,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
   '/terms': typeof TermsRoute
+  '/unlock': typeof UnlockRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
@@ -236,6 +243,7 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
   '/terms': typeof TermsRoute
+  '/unlock': typeof UnlockRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
@@ -268,6 +276,7 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/solutions': typeof SolutionsRoute
   '/terms': typeof TermsRoute
+  '/unlock': typeof UnlockRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/login': typeof AdminLoginRoute
   '/book/$tenantId': typeof BookTenantIdRoute
@@ -301,6 +310,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/solutions'
     | '/terms'
+    | '/unlock'
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
@@ -332,6 +342,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/solutions'
     | '/terms'
+    | '/unlock'
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
@@ -363,6 +374,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/solutions'
     | '/terms'
+    | '/unlock'
     | '/admin/dashboard'
     | '/admin/login'
     | '/book/$tenantId'
@@ -395,6 +407,7 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   SolutionsRoute: typeof SolutionsRoute
   TermsRoute: typeof TermsRoute
+  UnlockRoute: typeof UnlockRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminLoginRoute: typeof AdminLoginRoute
   BookTenantIdRoute: typeof BookTenantIdRoute
@@ -409,6 +422,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/unlock': {
+      id: '/unlock'
+      path: '/unlock'
+      fullPath: '/unlock'
+      preLoaderRoute: typeof UnlockRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/terms': {
       id: '/terms'
       path: '/terms'
@@ -635,6 +655,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignupRoute: SignupRoute,
   SolutionsRoute: SolutionsRoute,
   TermsRoute: TermsRoute,
+  UnlockRoute: UnlockRoute,
   AdminDashboardRoute: AdminDashboardRoute,
   AdminLoginRoute: AdminLoginRoute,
   BookTenantIdRoute: BookTenantIdRoute,

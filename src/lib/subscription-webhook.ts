@@ -494,7 +494,17 @@ export async function handleCashfreeWebhookRequest(request: Request): Promise<Re
     // Fires for renewal orders created via createCashfreeOrderServerFn. Pulls
     // the authoritative order status/amount/mode from Cashfree (never trusts the
     // payload) so the ledger flips PENDING → SUCCESS/FAILED automatically.
-    if (orderId && String(orderId).startsWith("order_")) {
+    if (orderId && String(orderId).startsWith("order_custom_")) {
+      // Custom-plan payment: reconcile the ledger AND unlock the workspace when
+      // PAID. This is the redundant backstop to the tenant's return-verify call,
+      // so access still opens if the payer closes the tab before returning.
+      try {
+        const { reconcileCustomPlanOrder } = await import("./custom-plan-payment");
+        await reconcileCustomPlanOrder(String(orderId));
+      } catch (e: any) {
+        console.warn("[Webhook] Custom plan reconcile failed for", orderId, ":", e.message);
+      }
+    } else if (orderId && String(orderId).startsWith("order_")) {
       try {
         const { reconcileOrderPaymentHistory } = await import("./payment-reconcile.server");
         await reconcileOrderPaymentHistory(String(orderId));

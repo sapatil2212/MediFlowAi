@@ -3,11 +3,8 @@ import { verifySession } from "./auth.server";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { query, queryOne, execute, withTransaction } from "./db";
-import {
-  PROFESSION_RESTAURANT,
-  TENANT_PREFIX_RESTAURANT,
-  DEFAULT_SETTINGS,
-} from "./restaurant-availability";
+import { PROFESSION_RESTAURANT, DEFAULT_SETTINGS } from "./restaurant-availability";
+import { DEFAULT_PROFESSION, generateTenantId } from "./tenant-provisioning";
 import { renumberDailyTokens } from "./token.server";
 import { sendOtpEmail, sendBillingNotificationEmail } from "./email";
 
@@ -229,20 +226,11 @@ export const signupServerFn = createServerFn({ method: "POST" })
     const rawPassword = data.password || "BookMyTime123";
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
     const userId = generateId();
-    const profession = data.profession || "Healthcare and medical";
-    let tenantPrefix = "clinic-";
-    if (profession === "Fitness Gym etc") {
-      tenantPrefix = "gym-";
-    } else if (profession === "Beauty and wellness") {
-      tenantPrefix = "beauty-";
-    } else if (profession === "Professional services like law, consultant, real estate, CA") {
-      tenantPrefix = "advisory-";
-    } else if (profession === "Education institutions") {
-      tenantPrefix = "edu-";
-    } else if (profession === PROFESSION_RESTAURANT) {
-      tenantPrefix = TENANT_PREFIX_RESTAURANT;
-    }
-    const tenantId = tenantPrefix + Math.floor(100000 + Math.random() * 900000).toString();
+    const profession = data.profession || DEFAULT_PROFESSION;
+    // The profession -> tenantId prefix mapping lives in tenant-provisioning so
+    // that this path and custom-plan activation cannot assign different prefixes
+    // to the same profession.
+    const tenantId = generateTenantId(profession);
     const selectedPlan = data.plan || "Basic";
 
     const ownerInsertSql = `INSERT INTO User (id, tenantId, name, email, phone, clinicName, practiceSize, password, subscriptionStatus, subscriptionPlan, subscriptionExpiresAt, createdAt, updatedAt, profession)
@@ -347,10 +335,14 @@ export const loginServerFn = createServerFn({ method: "POST" })
         path: "/",
         maxAge: data.rememberMe ? 30 * 24 * 60 * 60 : undefined,
       });
+      // A custom-plan workspace that is provisioned but not yet paid signs in
+      // normally but lands on the paywall instead of the dashboard.
+      const paymentLocked = user.subscriptionStatus === "PaymentPending";
       return {
         success: true,
         role: "admin",
-        redirectTo: "/dashboard",
+        redirectTo: paymentLocked ? "/unlock" : "/dashboard",
+        paymentLocked,
         user: { id: user.id, name: user.name, email: user.email, clinicName: user.clinicName },
       };
     }
@@ -373,6 +365,11 @@ export const loginServerFn = createServerFn({ method: "POST" })
       // Check parent clinic subscription
       if (subUser.subscriptionStatus === "Cancelled") {
         throw new Error("Your clinic account is deactivated. Please contact your clinic admin.");
+      }
+      if (subUser.subscriptionStatus === "PaymentPending") {
+        throw new Error(
+          "Your workspace isn't active yet. Please ask the account owner to complete the plan payment.",
+        );
       }
       if (subUser.subscriptionExpiresAt) {
         const expiry = new Date(subUser.subscriptionExpiresAt);
@@ -428,6 +425,11 @@ export const loginServerFn = createServerFn({ method: "POST" })
       if (location.subscriptionStatus === "Cancelled") {
         throw new Error(
           "Your workspace account is deactivated. Please contact your workspace admin.",
+        );
+      }
+      if (location.subscriptionStatus === "PaymentPending") {
+        throw new Error(
+          "Your workspace isn't active yet. Please ask the account owner to complete the plan payment.",
         );
       }
       if (location.subscriptionExpiresAt) {

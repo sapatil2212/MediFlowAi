@@ -335,3 +335,220 @@ export async function sendBillingNotificationEmail(params: {
     `,
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Custom plan (negotiated / Enterprise pricing) notifications
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The internal mailbox that receives sales notifications. Falls back through the
+ * same chain the demo pipeline uses so a deployment that already configures one
+ * of these needs no new environment variable.
+ */
+function internalSalesRecipient(): string {
+  const recipient =
+    process.env.CUSTOM_PLAN_ADMIN_EMAIL ||
+    process.env.DEMO_ADMIN_EMAIL ||
+    process.env.SUPER_ADMIN_EMAIL ||
+    process.env.EMAIL_BCC ||
+    process.env.EMAIL_USERNAME;
+
+  if (!recipient) {
+    throw new Error("No admin email configured for custom plan notifications");
+  }
+  return recipient;
+}
+
+/** Escapes text that is interpolated into email HTML. */
+function escapeHtml(value: string): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Renders a label/value table used by both custom plan templates. */
+function detailTable(rows: Array<{ label: string; value: string }>): string {
+  const body = rows
+    .filter((row) => row.value)
+    .map(
+      (row) => `
+        <tr>
+          <td style="padding: 9px 0; border-bottom: 1px solid #f4f4f5; color: #71717a; font-size: 12px; width: 42%;">${escapeHtml(row.label)}</td>
+          <td style="padding: 9px 0; border-bottom: 1px solid #f4f4f5; color: #18181b; font-size: 12px; font-weight: 600;">${escapeHtml(row.value)}</td>
+        </tr>`,
+    )
+    .join("");
+
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; border-collapse: collapse;">${body}</table>`;
+}
+
+export type CustomPlanMailData = {
+  referenceId: string;
+  name: string;
+  email: string;
+  phone: string;
+  businessName: string;
+  profession: string;
+  practiceSize: string;
+  requirements?: string | null;
+};
+
+/**
+ * Acknowledges a custom plan enquiry to the requester. Deliberately makes no
+ * commitment about price or timing beyond "a specialist will contact you", since
+ * the terms do not exist until a super admin sets them.
+ */
+export async function sendCustomPlanRequestConfirmationEmail(
+  data: CustomPlanMailData,
+): Promise<void> {
+  await transporter.sendMail({
+    from: `"BookMyTime" <${process.env.EMAIL_USERNAME}>`,
+    to: data.email,
+    bcc: process.env.EMAIL_BCC || undefined,
+    subject: `Custom plan request received • ${data.referenceId}`,
+    html: `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; padding: 24px 16px;">
+        <div style="background: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e4e4e7;">
+          ${emailHeader()}
+          <div style="padding: 32px 28px; color: #18181b;">
+            <div style="height: 4px; width: 44px; background: #0059C6; border-radius: 4px; margin: 0 0 20px;"></div>
+            <h2 style="font-size: 21px; margin: 0 0 10px; font-weight: 700;">We have your custom plan request</h2>
+            <p style="font-size: 14px; line-height: 1.7; color: #52525b; margin: 0 0 22px;">
+              Hi ${escapeHtml(data.name)}, thanks for telling us about ${escapeHtml(data.businessName)}.
+              A BookMyTime specialist is reviewing your requirement and will come back to you with a
+              tailored plan and pricing. Quote your reference below in any reply.
+            </p>
+
+            <div style="border: 1px solid #e4e4e7; border-radius: 14px; padding: 18px 20px; background: #fafafa; margin-bottom: 20px;">
+              <p style="margin: 0 0 12px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #71717a; font-weight: 700;">Your request</p>
+              ${detailTable([
+                { label: "Reference", value: data.referenceId },
+                { label: "Business", value: data.businessName },
+                { label: "Industry", value: data.profession },
+                { label: "Team size", value: data.practiceSize },
+                { label: "Contact", value: `${data.email} • ${data.phone}` },
+              ])}
+            </div>
+
+            <p style="font-size: 13px; line-height: 1.7; color: #71717a; margin: 0 0 6px;">
+              Your workspace is <strong>not active yet</strong>. We will email you the moment your plan is
+              switched on, and the password you chose during this request is the one you will sign in with.
+            </p>
+            <p style="font-size: 13px; line-height: 1.7; color: #71717a; margin: 0;">
+              Need to change something? Reply to this email or call us on +91 9168 08 1355.
+            </p>
+
+            ${emailFooter()}
+          </div>
+        </div>
+      </div>
+    `,
+    text: `Hi ${data.name}, we have received your BookMyTime custom plan request (${data.referenceId}).\n\nBusiness: ${data.businessName}\nIndustry: ${data.profession}\nTeam size: ${data.practiceSize}\n\nA specialist will contact you with tailored pricing. Your workspace is not active yet — we will email you once your plan is switched on.`,
+  });
+}
+
+/** Alerts the internal sales mailbox that a new custom plan deal has landed. */
+export async function sendCustomPlanRequestAdminNotificationEmail(
+  data: CustomPlanMailData,
+): Promise<void> {
+  await transporter.sendMail({
+    from: `"BookMyTime Alerts" <${process.env.EMAIL_USERNAME}>`,
+    to: internalSalesRecipient(),
+    subject: `New custom plan request • ${data.businessName} • ${data.referenceId}`,
+    html: `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e4e4e7;">
+        ${emailHeader()}
+        <div style="padding: 32px 28px; color: #18181b;">
+          <h2 style="font-size: 21px; margin: 0 0 10px; font-weight: 700;">New custom plan request</h2>
+          <p style="font-size: 13px; color: #52525b; margin: 0 0 20px;">
+            Captured from the public pricing page. Review it under
+            <strong>Custom Plans</strong> in the super admin console to set terms and activate.
+          </p>
+          ${detailTable([
+            { label: "Reference", value: data.referenceId },
+            { label: "Contact", value: data.name },
+            { label: "Email", value: data.email },
+            { label: "Phone", value: data.phone },
+            { label: "Business", value: data.businessName },
+            { label: "Industry", value: data.profession },
+            { label: "Team size", value: data.practiceSize },
+            { label: "Requirement", value: data.requirements || "Not specified" },
+          ])}
+          ${emailFooter()}
+        </div>
+      </div>
+    `,
+    text: `New custom plan request ${data.referenceId}\nContact: ${data.name}\nEmail: ${data.email}\nPhone: ${data.phone}\nBusiness: ${data.businessName}\nIndustry: ${data.profession}\nTeam size: ${data.practiceSize}\nRequirement: ${data.requirements || "Not specified"}`,
+  });
+}
+
+/**
+ * One template for every custom plan lifecycle decision (approved, activated,
+ * revised, suspended, resumed, rejected). A single template keeps the branding
+ * and the detail table consistent across all six notices, and means new
+ * lifecycle events do not need new HTML.
+ */
+export async function sendCustomPlanStatusEmail(params: {
+  email: string;
+  subject: string;
+  title: string;
+  message: string;
+  tone?: BillingEventTone;
+  details?: Array<{ label: string; value: string }>;
+  cta?: { label: string; url: string };
+  footnote?: string;
+}): Promise<void> {
+  const accent = TONE_COLORS[params.tone || "info"];
+
+  await transporter.sendMail({
+    from: `"BookMyTime" <${process.env.EMAIL_USERNAME}>`,
+    to: params.email,
+    bcc: process.env.EMAIL_BCC || undefined,
+    subject: params.subject,
+    html: `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; padding: 24px 16px;">
+        <div style="background: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e4e4e7;">
+          ${emailHeader()}
+          <div style="padding: 32px 28px; color: #18181b;">
+            <div style="height: 4px; width: 44px; background: ${accent}; border-radius: 4px; margin: 0 0 20px;"></div>
+            <h2 style="font-size: 21px; margin: 0 0 10px; font-weight: 700;">${escapeHtml(params.title)}</h2>
+            <p style="font-size: 14px; line-height: 1.7; color: #52525b; margin: 0 0 22px;">${escapeHtml(params.message)}</p>
+
+            ${
+              params.details && params.details.length > 0
+                ? `<div style="border: 1px solid #e4e4e7; border-radius: 14px; padding: 18px 20px; background: #fafafa; margin-bottom: 22px;">
+                     <p style="margin: 0 0 12px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #71717a; font-weight: 700;">Plan details</p>
+                     ${detailTable(params.details)}
+                   </div>`
+                : ""
+            }
+
+            ${
+              params.cta
+                ? `<div style="text-align: center; margin: 0 0 22px;">
+                     <a href="${params.cta.url}" style="display: inline-block; background: ${accent}; color: #ffffff; font-size: 13px; font-weight: 700; text-decoration: none; padding: 12px 26px; border-radius: 10px;">${escapeHtml(params.cta.label)}</a>
+                   </div>`
+                : ""
+            }
+
+            ${
+              params.footnote
+                ? `<p style="font-size: 12px; line-height: 1.7; color: #a1a1aa; margin: 0;">${escapeHtml(params.footnote)}</p>`
+                : ""
+            }
+
+            ${emailFooter()}
+          </div>
+        </div>
+      </div>
+    `,
+    text: `${params.title}\n\n${params.message}\n\n${(params.details || [])
+      .map((detail) => `${detail.label}: ${detail.value}`)
+      .join("\n")}${params.cta ? `\n\n${params.cta.label}: ${params.cta.url}` : ""}${
+      params.footnote ? `\n\n${params.footnote}` : ""
+    }`,
+  });
+}

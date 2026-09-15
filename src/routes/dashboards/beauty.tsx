@@ -150,6 +150,7 @@ import { HelpSupportCard } from "../../components/HelpSupportCard";
 import WelcomeTrialModal from "../../components/WelcomeTrialModal";
 import MultiLocationSettings from "../../components/settings/MultiLocationSettings";
 import { resolveFeatureAccess, type FeatureId } from "../../lib/feature-access";
+import { isWorkspacePaymentLocked } from "../../lib/workspace-access";
 
 export const Route = createFileRoute("/dashboards/beauty")({
   head: () => ({
@@ -2354,6 +2355,8 @@ function BeautyDashboardPage() {
         if (!res) {
           // Redirect to login if not authenticated
           navigate({ to: "/login" });
+        } else if (isWorkspacePaymentLocked(res.subscriptionStatus)) {
+          navigate({ to: "/unlock" });
         } else {
           if (res.profession !== "Beauty and wellness") {
             navigate({ to: "/dashboard" });

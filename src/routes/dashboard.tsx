@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { getCurrentUserServerFn } from "../lib/auth";
 import { Loader2 } from "lucide-react";
 import { PROFESSION_RESTAURANT } from "../lib/restaurant-availability";
+import { isWorkspacePaymentLocked } from "../lib/workspace-access";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -27,6 +28,13 @@ function DashboardRouterGateway() {
         const u = await getCurrentUserServerFn();
         if (!u) {
           navigate({ to: "/login" });
+          return;
+        }
+
+        // A provisioned-but-unpaid custom plan workspace is sent to the paywall
+        // before any dashboard loads.
+        if (isWorkspacePaymentLocked(u.subscriptionStatus)) {
+          navigate({ to: "/unlock" });
           return;
         }
 

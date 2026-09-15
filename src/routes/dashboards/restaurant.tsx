@@ -133,6 +133,7 @@ import {
   type RestaurantPermission,
 } from "../../lib/restaurant-availability";
 import { resolveFeatureAccess } from "../../lib/feature-access";
+import { isWorkspacePaymentLocked } from "../../lib/workspace-access";
 import {
   getRestaurantSettingsBootstrapServerFn,
   type RestaurantSettingsBootstrap,
@@ -4191,6 +4192,12 @@ function RestaurantDashboardPage() {
     getCurrentUserServerFn()
       .then((res) => {
         const account = (res ?? null) as SessionUser | null;
+        // A provisioned-but-unpaid custom plan workspace is sent to the paywall
+        // before the restaurant guard runs.
+        if (account && isWorkspacePaymentLocked(account.subscriptionStatus)) {
+          navigate({ to: "/unlock" });
+          return;
+        }
         const decision = restaurantGuardDecision({
           hasAccount: Boolean(account),
           profession: account?.profession ?? null,

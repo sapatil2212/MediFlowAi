@@ -160,6 +160,7 @@ import WelcomeTrialModal, { getTrialExpiryMs } from "../../components/WelcomeTri
 import MultiLocationSettings from "../../components/settings/MultiLocationSettings";
 import { DoctorVideoConsultPanel } from "../../components/video/DoctorVideoConsultPanel";
 import { resolveFeatureAccess, type FeatureId } from "@/lib/feature-access";
+import { isWorkspacePaymentLocked } from "@/lib/workspace-access";
 
 export const Route = createFileRoute("/dashboards/medical")({
   head: () => ({
@@ -2680,6 +2681,8 @@ function MedicalDashboardPage() {
         if (!res) {
           // Redirect to login if not authenticated
           navigate({ to: "/login" });
+        } else if (isWorkspacePaymentLocked(res.subscriptionStatus)) {
+          navigate({ to: "/unlock" });
         } else {
           if (res.profession !== "Healthcare and medical") {
             navigate({ to: "/dashboard" });

@@ -46,6 +46,7 @@ import {
   CreditCard,
   XCircle,
   Ban,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -95,6 +96,7 @@ import {
   type DemoAppointmentStatus,
 } from "../lib/demo";
 import { PLAN_BILLING, normalizePlan, type PlanTier } from "../lib/feature-access";
+import { CustomPlansPanel } from "../components/admin/CustomPlansPanel";
 
 export const Route = createFileRoute("/admin/dashboard")({
   head: () => ({
@@ -290,7 +292,7 @@ function AdminDashboardPage() {
 
   // Active Dashboard Tab View — persisted across refreshes via localStorage.
   const [activeTab, setActiveTab] = useState<
-    "overview" | "registry" | "payments" | "subscriptions" | "demo"
+    "overview" | "registry" | "payments" | "subscriptions" | "custom-plans" | "demo"
   >(() => {
     if (typeof window !== "undefined") {
       const saved = window.localStorage.getItem("bmt_admin_active_tab");
@@ -299,6 +301,7 @@ function AdminDashboardPage() {
         saved === "registry" ||
         saved === "payments" ||
         saved === "subscriptions" ||
+        saved === "custom-plans" ||
         saved === "demo"
       ) {
         return saved;
@@ -1788,6 +1791,7 @@ function AdminDashboardPage() {
               { id: "registry", label: "Tenants", icon: Building },
               { id: "payments", label: "Payments", icon: CreditCard },
               { id: "subscriptions", label: "Subscriptions", icon: RefreshCw },
+              { id: "custom-plans", label: "Custom Plans", icon: Sparkles },
               { id: "demo", label: "Demo Requests", icon: Calendar },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -1853,6 +1857,7 @@ function AdminDashboardPage() {
               {activeTab === "registry" && <Building className="h-5 w-5 text-[#0059C6]" />}
               {activeTab === "payments" && <CreditCard className="h-5 w-5 text-[#0059C6]" />}
               {activeTab === "subscriptions" && <RefreshCw className="h-5 w-5 text-[#0059C6]" />}
+              {activeTab === "custom-plans" && <Sparkles className="h-5 w-5 text-[#0059C6]" />}
               {activeTab === "demo" && <Calendar className="h-5 w-5 text-[#0059C6]" />}
 
               <span className="text-sm font-bold text-zinc-900">
@@ -1860,6 +1865,7 @@ function AdminDashboardPage() {
                 {activeTab === "registry" && "Tenants Directory"}
                 {activeTab === "payments" && "Payment History"}
                 {activeTab === "subscriptions" && "Recurring Subscriptions"}
+                {activeTab === "custom-plans" && "Custom Plans"}
                 {activeTab === "demo" && "Demo Pipeline"}
               </span>
             </div>
@@ -1889,6 +1895,7 @@ function AdminDashboardPage() {
                   {activeTab === "registry" && "Tenants Directory"}
                   {activeTab === "payments" && "Payment History"}
                   {activeTab === "subscriptions" && "Recurring Subscriptions"}
+                  {activeTab === "custom-plans" && "Custom Plans"}
                   {activeTab === "demo" && "Demo Pipeline"}
                 </h1>
                 <p className="text-sm text-zinc-500 mt-1">
@@ -1900,6 +1907,8 @@ function AdminDashboardPage() {
                     "Complete payment history from Cashfree — successful, failed, and pending transactions"}
                   {activeTab === "subscriptions" &&
                     "AutoPay subscription management — active mandates, renewals, and billing cycles"}
+                  {activeTab === "custom-plans" &&
+                    "Negotiated plans — price a deal, grant workspace access, and upgrade or downgrade a tenant"}
                   {activeTab === "demo" &&
                     "Track demo requests, follow-ups, and conversion pipeline"}
                 </p>
@@ -4165,6 +4174,11 @@ function AdminDashboardPage() {
                   </div>
                 );
               })()}
+
+            {/* VIEW: CUSTOM PLANS */}
+            {activeTab === "custom-plans" && (
+              <CustomPlansPanel onTenantsChanged={fetchDashboardData} />
+            )}
 
             {/* VIEW: DEMO APPOINTMENTS */}
             {activeTab === "demo" && (

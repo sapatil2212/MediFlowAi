@@ -167,6 +167,95 @@ if (typeof window === "undefined") {
           console.warn("[DB] Could not verify/create DemoAppointment table:", err.message);
         }
 
+        // ---------------------------------------------------------------
+        // Custom plan requests (Enterprise / negotiated pricing pipeline).
+        //
+        // A row is the FULL record of one custom-plan deal: the signup-shaped
+        // details captured from the public pricing page, the lifecycle status,
+        // the terms the super admin granted, and — once activated — the link to
+        // the tenant that was provisioned from it (tenantId / userId).
+        //
+        // `passwordHash` holds the bcrypt hash of the password the requester
+        // chose at request time. The plaintext is never stored or emailed; on
+        // activation this hash is copied straight into the User row so the
+        // requester's own password works on first login.
+        // ---------------------------------------------------------------
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS CustomPlanRequest (
+              id               VARCHAR(255) PRIMARY KEY,
+              referenceId      VARCHAR(100) NOT NULL,
+              name             VARCHAR(255) NOT NULL,
+              email            VARCHAR(255) NOT NULL,
+              phone            VARCHAR(50)  NOT NULL,
+              businessName     VARCHAR(255) NOT NULL,
+              profession       VARCHAR(120) NOT NULL,
+              practiceSize     VARCHAR(120) NOT NULL,
+              passwordHash     VARCHAR(255) NOT NULL,
+              requirements     TEXT NULL,
+              status           VARCHAR(32)  NOT NULL DEFAULT 'Pending',
+              grantedPlan      VARCHAR(50)  NULL,
+              grantedAmount    DECIMAL(10,2) NULL,
+              billingInterval  VARCHAR(20)  NOT NULL DEFAULT 'monthly',
+              termMonths       INT NULL,
+              adminNotes       TEXT NULL,
+              tenantId         VARCHAR(255) NULL,
+              userId           VARCHAR(255) NULL,
+              reviewedBy       VARCHAR(255) NULL,
+              reviewedAt       DATETIME(3) NULL,
+              activatedAt      DATETIME(3) NULL,
+              source           VARCHAR(100) NOT NULL DEFAULT 'pricing-page',
+              createdAt        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_cpr_reference (referenceId),
+              KEY idx_cpr_status_created (status, createdAt),
+              KEY idx_cpr_email (email),
+              KEY idx_cpr_tenant (tenantId)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create CustomPlanRequest table:", err.message);
+        }
+
+        // Payment-collection columns for CustomPlanRequest. Added idempotently so
+        // an existing table (created before payment gating) gains them on the
+        // next boot. `paymentToken` secures the emailed pay-link, `collectionMode`
+        // records online-vs-manual, `paidAt`/`paymentOrderId` track settlement.
+        try {
+          const cprCols: any[] = await conn.query("SHOW COLUMNS FROM CustomPlanRequest");
+          const cprColNames = cprCols.map((c: any) => c.Field || c.field || "");
+          if (!cprColNames.includes("paymentToken")) {
+            await conn.query(
+              "ALTER TABLE CustomPlanRequest ADD COLUMN paymentToken VARCHAR(64) NULL",
+            );
+          }
+          if (!cprColNames.includes("collectionMode")) {
+            await conn.query(
+              "ALTER TABLE CustomPlanRequest ADD COLUMN collectionMode VARCHAR(16) NULL",
+            );
+          }
+          if (!cprColNames.includes("paidAt")) {
+            await conn.query("ALTER TABLE CustomPlanRequest ADD COLUMN paidAt DATETIME(3) NULL");
+          }
+          if (!cprColNames.includes("paymentOrderId")) {
+            await conn.query(
+              "ALTER TABLE CustomPlanRequest ADD COLUMN paymentOrderId VARCHAR(255) NULL",
+            );
+          }
+          try {
+            await conn.query(
+              "ALTER TABLE CustomPlanRequest ADD UNIQUE KEY uq_cpr_payment_token (paymentToken)",
+            );
+          } catch (_) {
+            /* key already exists */
+          }
+        } catch (err: any) {
+          console.warn(
+            "[DB] ⚠️ Could not verify/alter CustomPlanRequest payment columns:",
+            err.message,
+          );
+        }
+
         // Collation normalization will be run at the end of initialization after all tables are created
 
         try {
@@ -1959,6 +2048,9 @@ if (typeof window === "undefined") {
           "OtpCode",
           "Appointment",
           "DemoAppointment",
+          // Custom plan requests join to User (by email on activation, then by
+          // tenantId/userId) so the collation has to match the User table.
+          "CustomPlanRequest",
           "ClinicHours",
           "Department",
           "Doctor",

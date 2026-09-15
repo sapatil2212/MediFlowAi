@@ -91,6 +91,7 @@ import doc1 from "@/assets/doctor-1.jpg";
 import doc2 from "@/assets/doctor-2.jpg";
 import doc3 from "@/assets/doctor-3.jpg";
 import team from "@/assets/team.jpg";
+import { CustomPlanRequestModal } from "@/components/site/CustomPlanRequestModal";
 
 /* =========================================================
  * Shared primitives
@@ -1997,6 +1998,10 @@ export function Testimonials() {
  * PRICING + ROI Calculator
  * ======================================================= */
 export function Pricing() {
+  // The custom-plan tier has no self-serve checkout, so its CTA opens the
+  // enquiry dialog instead of routing to /signup.
+  const [isCustomPlanOpen, setIsCustomPlanOpen] = useState(false);
+
   const tiers: {
     name: string;
     price: string;
@@ -2006,6 +2011,8 @@ export function Pricing() {
     cta: string;
     popular?: boolean;
     variant?: "default" | "dark";
+    /** True for the negotiated-pricing tier: opens the request dialog. */
+    customPlan?: boolean;
   }[] = [
     {
       name: "Basic",
@@ -2099,8 +2106,9 @@ export function Pricing() {
           ],
         },
       ],
-      cta: "Contact sales",
+      cta: "Request custom plan",
       variant: "dark",
+      customPlan: true,
     },
   ];
 
@@ -2190,10 +2198,11 @@ export function Pricing() {
                   </ul>
                 </div>
               ))}
-              {t.price === "Custom" ? (
-                <Link
-                  to="/contact"
-                  className={`mt-8 w-full rounded-lg py-2.5 text-center text-sm font-semibold transition-all ${
+              {t.customPlan ? (
+                <button
+                  type="button"
+                  onClick={() => setIsCustomPlanOpen(true)}
+                  className={`mt-8 w-full cursor-pointer rounded-lg py-2.5 text-center text-sm font-semibold transition-all ${
                     t.popular
                       ? "bg-white text-zinc-900 hover:bg-zinc-100"
                       : t.variant === "dark"
@@ -2202,7 +2211,7 @@ export function Pricing() {
                   }`}
                 >
                   {t.cta}
-                </Link>
+                </button>
               ) : (
                 <Link
                   to="/signup"
@@ -2227,6 +2236,12 @@ export function Pricing() {
           to Restaurant &amp; Dining workspaces on every plan.
         </p>
       </div>
+
+      <CustomPlanRequestModal
+        open={isCustomPlanOpen}
+        onClose={() => setIsCustomPlanOpen(false)}
+        planName="Enterprise"
+      />
     </section>
   );
 }
