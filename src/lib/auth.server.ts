@@ -139,3 +139,21 @@ export async function verifySession() {
 
   return null;
 }
+
+/**
+ * Resolves the origin the request actually came from (so the post-mandate
+ * redirect returns to the same host/port — localhost:8080 in dev,
+ * https://bookmytime.tech in prod) rather than a hardcoded config value.
+ */
+export async function resolveRequestOrigin(fallback: string): Promise<string> {
+  try {
+    const { getRequestHeaders } = await import("@tanstack/react-start/server");
+    const headers = getRequestHeaders();
+    const referer = headers.get("referer");
+    const originHeader = headers.get("origin") || (referer ? new URL(referer).origin : null);
+    if (originHeader) return originHeader;
+  } catch {
+    /* no request context */
+  }
+  return fallback;
+}

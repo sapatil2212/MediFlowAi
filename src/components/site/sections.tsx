@@ -71,6 +71,7 @@ import {
   Send,
   X,
   UtensilsCrossed,
+  ChevronDown,
 } from "lucide-react";
 import {
   AreaChart,
@@ -235,7 +236,6 @@ export function Hero() {
     }, 3500);
     return () => clearInterval(interval);
   }, []);
-
 
   return (
     <section
@@ -436,11 +436,16 @@ export function Hero() {
 
                   {/* Bottom clinician card */}
                   <div className="rounded-xl bg-zinc-50 border border-zinc-200/60 p-2 flex items-center gap-2">
-                    <div className="h-7 w-7 rounded-full text-white text-[8px] font-black flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, #14b8a6 0%, #6366f1 100%)" }}>
+                    <div
+                      className="h-7 w-7 rounded-full text-white text-[8px] font-black flex items-center justify-center shrink-0"
+                      style={{ background: "linear-gradient(135deg, #14b8a6 0%, #6366f1 100%)" }}
+                    >
                       DR
                     </div>
                     <div className="overflow-hidden min-w-0">
-                      <p className="text-[9px] font-bold text-zinc-800 truncate leading-tight">Dr. Clinician</p>
+                      <p className="text-[9px] font-bold text-zinc-800 truncate leading-tight">
+                        Dr. Clinician
+                      </p>
                       <p className="text-[7px] text-zinc-400 truncate">Medical Group</p>
                     </div>
                   </div>
@@ -450,7 +455,9 @@ export function Hero() {
                 <div className="flex-1 flex flex-col min-w-0">
                   {/* Top Bar */}
                   <div className="h-10 sm:h-12 bg-white border-b border-zinc-200/80 flex items-center justify-between px-3 sm:px-4 shrink-0">
-                    <span className="text-[11px] font-bold text-zinc-800 hidden sm:inline">Clinician Dashboard</span>
+                    <span className="text-[11px] font-bold text-zinc-800 hidden sm:inline">
+                      Clinician Dashboard
+                    </span>
                     <div className="flex items-center gap-1.5 sm:hidden">
                       <div className="w-5 h-5 rounded-lg border border-zinc-200 flex items-center justify-center">
                         <HeartPulse className="w-3 h-3 text-zinc-500" />
@@ -462,7 +469,10 @@ export function Hero() {
                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         <span className="text-[7px] font-bold text-emerald-700">Live</span>
                       </div>
-                      <div className="w-6 h-6 rounded-lg text-white text-[8px] font-black flex items-center justify-center" style={{ background: "linear-gradient(135deg, #14b8a6 0%, #6366f1 100%)" }}>
+                      <div
+                        className="w-6 h-6 rounded-lg text-white text-[8px] font-black flex items-center justify-center"
+                        style={{ background: "linear-gradient(135deg, #14b8a6 0%, #6366f1 100%)" }}
+                      >
                         DR
                       </div>
                     </div>
@@ -536,7 +546,9 @@ export function Hero() {
                               <span className="text-[7px] sm:text-[8px] font-bold tracking-tight text-zinc-400 uppercase leading-none">
                                 {s.label}
                               </span>
-                              <div className={`p-1 rounded-md border ${colorParts.slice(0, 3).join(" ")}`}>
+                              <div
+                                className={`p-1 rounded-md border ${colorParts.slice(0, 3).join(" ")}`}
+                              >
                                 <Icon className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                               </div>
                             </div>
@@ -583,8 +595,19 @@ export function Hero() {
                                 <stop offset="100%" stopColor="#0059C6" stopOpacity={0} />
                               </linearGradient>
                             </defs>
-                            <XAxis dataKey="d" tick={{ fontSize: 7, fill: "#a1a1aa" }} axisLine={false} tickLine={false} />
-                            <Area type="monotone" dataKey="v" stroke="#0059C6" strokeWidth={1.5} fill="url(#heroChartGrad)" />
+                            <XAxis
+                              dataKey="d"
+                              tick={{ fontSize: 7, fill: "#a1a1aa" }}
+                              axisLine={false}
+                              tickLine={false}
+                            />
+                            <Area
+                              type="monotone"
+                              dataKey="v"
+                              stroke="#0059C6"
+                              strokeWidth={1.5}
+                              fill="url(#heroChartGrad)"
+                            />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
@@ -597,23 +620,48 @@ export function Hero() {
                       </p>
                       <div className="space-y-1.5">
                         {[
-                          { name: "Rajesh Kumar", time: "10:00 AM", reason: "Follow-up", status: "Confirmed" },
-                          { name: "Priya Sharma", time: "10:30 AM", reason: "Consultation", status: "Pending" },
-                          { name: "Amit Verma", time: "11:00 AM", reason: "Lab Review", status: "Confirmed" },
+                          {
+                            name: "Rajesh Kumar",
+                            time: "10:00 AM",
+                            reason: "Follow-up",
+                            status: "Confirmed",
+                          },
+                          {
+                            name: "Priya Sharma",
+                            time: "10:30 AM",
+                            reason: "Consultation",
+                            status: "Pending",
+                          },
+                          {
+                            name: "Amit Verma",
+                            time: "11:00 AM",
+                            reason: "Lab Review",
+                            status: "Confirmed",
+                          },
                         ].map((apt, i) => (
-                          <div key={i} className="flex items-center justify-between py-1 border-b border-zinc-100 last:border-0">
+                          <div
+                            key={i}
+                            className="flex items-center justify-between py-1 border-b border-zinc-100 last:border-0"
+                          >
                             <div className="flex items-center gap-2">
                               <div className="w-5 h-5 rounded-full bg-zinc-100 flex items-center justify-center text-[7px] font-bold text-zinc-500">
-                                {apt.name.split(" ").map(n => n[0]).join("")}
+                                {apt.name
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")}
                               </div>
                               <div>
-                                <p className="text-[8px] font-bold text-zinc-800 leading-tight">{apt.name}</p>
+                                <p className="text-[8px] font-bold text-zinc-800 leading-tight">
+                                  {apt.name}
+                                </p>
                                 <p className="text-[7px] text-zinc-400">{apt.reason}</p>
                               </div>
                             </div>
                             <div className="text-right">
                               <p className="text-[8px] font-bold text-zinc-700">{apt.time}</p>
-                              <p className={`text-[6px] font-bold ${apt.status === "Confirmed" ? "text-emerald-600" : "text-amber-500"}`}>
+                              <p
+                                className={`text-[6px] font-bold ${apt.status === "Confirmed" ? "text-emerald-600" : "text-amber-500"}`}
+                              >
                                 {apt.status}
                               </p>
                             </div>
@@ -1998,33 +2046,39 @@ export function Testimonials() {
  * PRICING + ROI Calculator
  * ======================================================= */
 export function Pricing() {
-  // The custom-plan tier has no self-serve checkout, so its CTA opens the
-  // enquiry dialog instead of routing to /signup.
+  const [billingInterval, setBillingInterval] = useState<"monthly" | "yearly">("monthly");
+  const [showComparison, setShowComparison] = useState(false);
   const [isCustomPlanOpen, setIsCustomPlanOpen] = useState(false);
+
+  const isYearly = billingInterval === "yearly";
 
   const tiers: {
     name: string;
-    price: string;
+    monthlyPrice: string;
+    yearlyPrice: string;
+    billedYearlyTotal: string;
     blurb: string;
     features: string[];
     addons?: { label: string; icon: typeof Stethoscope; items: string[] }[];
     cta: string;
     popular?: boolean;
     variant?: "default" | "dark";
-    /** True for the negotiated-pricing tier: opens the request dialog. */
     customPlan?: boolean;
   }[] = [
     {
       name: "Basic",
-      price: "₹999",
-      blurb: "Best for independent professionals.",
+      monthlyPrice: "₹999",
+      yearlyPrice: "₹799",
+      billedYearlyTotal: "₹9,588/year",
+      blurb: "Ideal for independent practitioners, solo clinics, and boutique restaurants.",
       features: [
-        "1 dashboard",
+        "1 unified dashboard",
         "500 Bookings / Month",
         "Up to 500 Customer Records",
-        "QR Code Booking",
+        "QR Code booking & public link",
+        "Automated WhatsApp & Email alerts",
         "Standard AI assistant",
-        "Standard Support",
+        "Standard support (Email & Chat)",
       ],
       addons: [
         {
@@ -2037,72 +2091,74 @@ export function Pricing() {
           ],
         },
       ],
-      cta: "Start free trial",
+      cta: "Start 7-day free trial",
       variant: "default",
     },
     {
       name: "Premium",
-      price: "₹1,499",
-      blurb: "For growing businesses.",
+      monthlyPrice: "₹1,499",
+      yearlyPrice: "₹1,199",
+      billedYearlyTotal: "₹14,388/year",
+      blurb: "For growing multi-doctor clinics, busy dining venues, and active teams.",
       features: [
-        "1 dashboard",
-        "1 sub location",
-        "2,000 appointments / mo",
-        "Up to 5,000 client records",
-        "WhatsApp alerts included",
-        "Advanced AI assistant",
-        "Priority Support",
+        "1 Primary + 1 Sub-location included",
+        "2,000 appointments / month",
+        "Up to 5,000 customer records",
+        "Priority WhatsApp & SMS notifications",
+        "Advanced AI Ambient Assistant",
+        "Multi-user roles (Doctor, Reception, Admin)",
+        "Priority 24/7 technical support",
       ],
       addons: [
         {
-          label: "For Doctors",
+          label: "For Doctors & Healthcare",
           icon: Stethoscope,
           items: [
-            "Consultation tracking",
-            "AI-based Voice Rx",
-            "Video consultation — patients join from a browser link, no app or login",
+            "In-browser Video Consultation (no app download needed)",
+            "AI-based Voice Rx Scribe",
             "Doctor-controlled waiting room & in-call controls",
-            "Multi-user dashboards (Reception & Doctors)",
+            "Multi-staff role dashboards (Doctors & Reception)",
           ],
         },
         {
-          label: "For Restaurants",
+          label: "For Restaurants & Dining",
           icon: UtensilsCrossed,
           items: [
             "Tables & dining areas registry",
             "Visual table-layout booking",
             "Combine tables for large parties",
-            "Turn time, party limits & closure days",
-            "WhatsApp booking confirmations",
+            "Turn time, party limits & closure rules",
+            "Automated WhatsApp confirmations",
           ],
         },
       ],
-      cta: "Start free trial",
+      cta: "Start 7-day free trial",
       popular: true,
     },
     {
       name: "Enterprise",
-      price: "Custom",
-      blurb: "For large-scale operations.",
+      monthlyPrice: "Custom",
+      yearlyPrice: "Custom",
+      billedYearlyTotal: "Tailored commercial terms",
+      blurb: "For hospital networks, multi-branch restaurant chains, and large wellness groups.",
       features: [
-        "Unlimited dashboards & locations",
-        "Unlimited sub locations",
-        "Unlimited appointments / mo",
-        "Unlimited client records",
-        "Multi QR Code Booking",
-        "Meta Verified WhatsApp integration",
-        "Custom API & integrations",
-        "Dedicated AI fine-tuning",
-        "Priority Support & Dedicated CSM",
+        "Unlimited locations & dashboards",
+        "Unlimited sub-locations & staff accounts",
+        "Unlimited appointments / month",
+        "Unlimited patient & customer records",
+        "Multi-branch QR code & booking hub",
+        "Dedicated Meta-verified WhatsApp gateway",
+        "Custom API & EMR integrations",
+        "Dedicated Account Manager & 99.9% SLA",
       ],
       addons: [
         {
-          label: "All Industry Modules",
+          label: "All Industry Modules Included",
           icon: Building2,
           items: [
-            "Every doctor module, video consultation included",
-            "Every restaurant module, across every outlet",
-            "Multi-location tables, guests & reporting",
+            "Every doctor module & unlimited video consultations",
+            "Every restaurant module across all branch outlets",
+            "Multi-location central reporting & guest analytics",
           ],
         },
       ],
@@ -2112,129 +2168,389 @@ export function Pricing() {
     },
   ];
 
+  const comparisonRows = [
+    {
+      category: "Limits & Capacity",
+      features: [
+        { name: "Dashboards", basic: "1", premium: "1", enterprise: "Unlimited" },
+        {
+          name: "Locations Included",
+          basic: "1",
+          premium: "2 (1 + 1 sub)",
+          enterprise: "Unlimited",
+        },
+        {
+          name: "Monthly Bookings",
+          basic: "500 / mo",
+          premium: "2,000 / mo",
+          enterprise: "Unlimited",
+        },
+        { name: "Customer Records", basic: "500", premium: "5,000", enterprise: "Unlimited" },
+        {
+          name: "Staff / Provider Accounts",
+          basic: "1",
+          premium: "Up to 5",
+          enterprise: "Unlimited",
+        },
+      ],
+    },
+    {
+      category: "Channels & Automation",
+      features: [
+        { name: "Public Booking Web Link", basic: "Yes", premium: "Yes", enterprise: "Yes" },
+        {
+          name: "QR Code Counter & Table Booking",
+          basic: "Yes",
+          premium: "Yes",
+          enterprise: "Multi-branch QR",
+        },
+        {
+          name: "WhatsApp Booking Confirmations",
+          basic: "Standard",
+          premium: "Priority",
+          enterprise: "Dedicated Meta API",
+        },
+        {
+          name: "Automated Reminders & Rescheduling",
+          basic: "Yes",
+          premium: "Yes",
+          enterprise: "Yes",
+        },
+        {
+          name: "AI Smart Assistant",
+          basic: "Standard",
+          premium: "Advanced",
+          enterprise: "Fine-Tuned",
+        },
+      ],
+    },
+    {
+      category: "Specialized Industry Modules",
+      features: [
+        {
+          name: "Video Consultation (In-browser, no app)",
+          basic: "No",
+          premium: "Yes",
+          enterprise: "Yes",
+        },
+        { name: "AI Voice Rx & Clinical Scribe", basic: "No", premium: "Yes", enterprise: "Yes" },
+        {
+          name: "Doctor Waiting Room & Live Controls",
+          basic: "No",
+          premium: "Yes",
+          enterprise: "Yes",
+        },
+        { name: "Restaurant Visual Table Layout", basic: "Yes", premium: "Yes", enterprise: "Yes" },
+        {
+          name: "Combine Tables for Large Parties",
+          basic: "No",
+          premium: "Yes",
+          enterprise: "Yes",
+        },
+        { name: "Turn Times & Party Size Rules", basic: "No", premium: "Yes", enterprise: "Yes" },
+      ],
+    },
+    {
+      category: "Security, Integrations & Support",
+      features: [
+        {
+          name: "Role-Based Access Control",
+          basic: "No",
+          premium: "Yes",
+          enterprise: "Custom Roles",
+        },
+        { name: "Data Export (CSV & PDF)", basic: "Yes", premium: "Yes", enterprise: "Yes" },
+        { name: "Custom API & Webhooks", basic: "No", premium: "No", enterprise: "Yes" },
+        {
+          name: "Technical Support",
+          basic: "Email & Chat",
+          premium: "Priority 24/7",
+          enterprise: "Dedicated CSM & Phone",
+        },
+        { name: "Uptime SLA Guarantee", basic: "Standard", premium: "99.5%", enterprise: "99.9%" },
+      ],
+    },
+  ];
+
   return (
-    <section id="pricing" className="relative bg-gradient-to-b from-zinc-50 to-white py-24">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-96 bg-grid bg-radial-fade opacity-40" />
-      <div className="relative mx-auto max-w-7xl px-6">
-        <div className="mb-16 text-center">
-          <SectionEyebrow>SIMPLE PRICING</SectionEyebrow>
-          <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
-            Predictable as your <span className="text-gradient-brand">network grows</span>
+    <section
+      id="pricing"
+      className="relative bg-gradient-to-b from-zinc-50 via-white to-zinc-50/50 py-16 sm:py-24"
+    >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-96 bg-grid bg-radial-fade opacity-30" />
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="mb-10 text-center">
+          <SectionEyebrow>SIMPLE &amp; TRANSPARENT PRICING</SectionEyebrow>
+          <h2 className="mt-3 text-balance text-3xl font-bold tracking-tight text-zinc-900 sm:text-4xl md:text-5xl">
+            Predictable as your <span className="text-gradient-brand">business grows</span>
           </h2>
-          <p className="mt-4 text-zinc-600">No hidden fees. 7-day free trial. Cancel anytime.</p>
-        </div>
-        <div className="grid gap-6 lg:grid-cols-3">
-          {tiers.map((t, i) => (
-            <motion.div
-              key={t.name}
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
-              className={`relative flex flex-col rounded-2xl p-8 transition-all ${
-                t.popular
-                  ? "bg-zinc-900 text-white ring-1 ring-brand/40 lg:scale-105"
-                  : "bg-white text-zinc-900 ring-1 ring-zinc-950/5 hover:border-brand/20"
+          <p className="mx-auto mt-3 max-w-xl text-xs sm:text-sm text-zinc-600">
+            No surprise overages. 7-day free trial on all plans. Switch or cancel anytime with one
+            click.
+          </p>
+
+          {/* Billing Cadence Toggle */}
+          <div className="mt-7 inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-100/80 p-1 shadow-inner">
+            <button
+              type="button"
+              onClick={() => setBillingInterval("monthly")}
+              className={`cursor-pointer rounded-full px-4 py-1.5 text-xs font-semibold transition-all ${
+                !isYearly ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-600 hover:text-zinc-900"
               }`}
             >
-              {t.popular && (
-                <>
-                  <div className="absolute -inset-px -z-10 rounded-2xl bg-gradient-to-br from-brand via-brand-light to-cyan-400 opacity-40 blur" />
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-brand to-brand-light px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
-                    Most Popular
-                  </span>
-                </>
-              )}
-              <p
-                className={`text-xs font-semibold uppercase tracking-wider ${
-                  t.popular ? "text-brand-light" : "text-brand"
+              Monthly Billing
+            </button>
+            <button
+              type="button"
+              onClick={() => setBillingInterval("yearly")}
+              className={`cursor-pointer flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition-all ${
+                isYearly ? "bg-zinc-900 text-white shadow-sm" : "text-zinc-600 hover:text-zinc-900"
+              }`}
+            >
+              <span>Annual Billing</span>
+              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                Save 20%
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Pricing Cards Grid */}
+        <div className="grid gap-6 lg:grid-cols-3 lg:items-stretch">
+          {tiers.map((t, i) => {
+            const displayPrice = isYearly ? t.yearlyPrice : t.monthlyPrice;
+            return (
+              <motion.div
+                key={t.name}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.08, duration: 0.2 }}
+                className={`relative flex flex-col rounded-2xl p-6 sm:p-7 transition-all ${
+                  t.popular
+                    ? "border-2 border-brand bg-zinc-950 text-white shadow-xl shadow-brand/10 lg:-translate-y-2"
+                    : "border border-zinc-200/90 bg-white text-zinc-900 shadow-sm hover:border-brand/30 hover:shadow-md"
                 }`}
               >
-                {t.name}
-              </p>
-              <p className="mt-4 flex items-baseline gap-1">
-                <span className="text-4xl font-semibold tracking-tight md:text-5xl">{t.price}</span>
-                {t.price !== "Custom" && (
-                  <span className={`text-sm ${t.popular ? "text-zinc-400" : "text-zinc-500"}`}>
-                    /mo
-                  </span>
+                {t.popular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-brand to-brand-light px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm">
+                    Most Popular
+                  </div>
                 )}
-              </p>
-              <p className={`mt-3 text-sm ${t.popular ? "text-zinc-300" : "text-zinc-600"}`}>
-                {t.blurb}
-              </p>
-              <ul className="mt-6 flex-1 space-y-3">
-                {t.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2 text-sm">
-                    <Check
-                      className={`mt-0.5 size-4 shrink-0 ${
-                        t.popular ? "text-brand-light" : "text-brand"
-                      }`}
-                    />
-                    <span className={t.popular ? "text-zinc-200" : "text-zinc-700"}>{f}</span>
-                  </li>
-                ))}
-              </ul>
-              {t.addons?.map((addon) => (
-                <div
-                  key={addon.label}
-                  className="mt-5 p-3.5 rounded-xl border border-[#0D83FF]/30 bg-[#0D83FF]/10 text-xs text-left"
-                >
-                  <p className="font-bold text-[#0D83FF] flex items-center gap-1.5 mb-2.5 uppercase tracking-wider text-[10px]">
-                    <addon.icon className="size-3.5" /> {addon.label}
-                  </p>
-                  <ul className="space-y-2">
-                    {addon.items.map((item) => (
-                      <li
-                        key={item}
-                        className={`flex items-start gap-2 font-medium leading-tight ${
-                          t.popular ? "text-zinc-300" : "text-zinc-700"
-                        }`}
-                      >
-                        <Check className="size-3.5 text-[#0D83FF] shrink-0 mt-0.5" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
+
+                <div className="flex items-center justify-between">
+                  <span
+                    className={`text-xs font-bold uppercase tracking-wider ${
+                      t.popular ? "text-brand-light" : "text-brand"
+                    }`}
+                  >
+                    {t.name}
+                  </span>
+                  {t.popular && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-light">
+                      <Sparkles className="size-3" /> Recommended
+                    </span>
+                  )}
                 </div>
-              ))}
-              {t.customPlan ? (
-                <button
-                  type="button"
-                  onClick={() => setIsCustomPlanOpen(true)}
-                  className={`mt-8 w-full cursor-pointer rounded-lg py-2.5 text-center text-sm font-semibold transition-all ${
-                    t.popular
-                      ? "bg-white text-zinc-900 hover:bg-zinc-100"
-                      : t.variant === "dark"
-                        ? "bg-zinc-900 text-white hover:bg-zinc-800"
-                        : "bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
-                  }`}
+
+                <div className="mt-3 flex items-baseline gap-1.5">
+                  <span className="text-3xl font-extrabold tracking-tight sm:text-4xl">
+                    {displayPrice}
+                  </span>
+                  {displayPrice !== "Custom" && (
+                    <span className={`text-xs ${t.popular ? "text-zinc-400" : "text-zinc-500"}`}>
+                      / month
+                    </span>
+                  )}
+                </div>
+
+                {isYearly && t.billedYearlyTotal && (
+                  <p
+                    className={`mt-0.5 text-[11px] font-medium ${t.popular ? "text-emerald-400" : "text-emerald-600"}`}
+                  >
+                    {t.billedYearlyTotal}
+                  </p>
+                )}
+
+                <p
+                  className={`mt-2 text-xs leading-relaxed ${t.popular ? "text-zinc-300" : "text-zinc-600"}`}
                 >
-                  {t.cta}
-                </button>
-              ) : (
-                <Link
-                  to="/signup"
-                  search={{ plan: t.name }}
-                  className={`mt-8 w-full rounded-lg py-2.5 text-center text-sm font-semibold transition-all ${
-                    t.popular
-                      ? "bg-white text-zinc-900 hover:bg-zinc-100"
-                      : t.variant === "dark"
-                        ? "bg-zinc-900 text-white hover:bg-zinc-800"
-                        : "bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
-                  }`}
-                >
-                  {t.cta}
-                </Link>
-              )}
-            </motion.div>
-          ))}
+                  {t.blurb}
+                </p>
+
+                {/* Core Features */}
+                <ul className="mt-5 flex-1 space-y-2.5 border-t border-zinc-100/15 pt-4">
+                  {t.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2 text-xs">
+                      <Check
+                        className={`mt-0.5 size-3.5 shrink-0 ${
+                          t.popular ? "text-brand-light" : "text-brand"
+                        }`}
+                      />
+                      <span className={t.popular ? "text-zinc-200" : "text-zinc-700"}>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                {/* Industry Addon Modules */}
+                {t.addons?.map((addon) => (
+                  <div
+                    key={addon.label}
+                    className={`mt-4 rounded-xl border p-3 text-xs text-left ${
+                      t.popular
+                        ? "border-brand-light/30 bg-brand-light/10 text-zinc-200"
+                        : "border-brand/20 bg-brand/[0.04] text-zinc-800"
+                    }`}
+                  >
+                    <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-brand">
+                      <addon.icon className="size-3" /> {addon.label}
+                    </p>
+                    <ul className="mt-2 space-y-1.5">
+                      {addon.items.map((item) => (
+                        <li
+                          key={item}
+                          className="flex items-start gap-1.5 text-[11px] leading-tight"
+                        >
+                          <Check className="mt-0.5 size-3 text-brand shrink-0" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+
+                {/* CTA Action */}
+                {t.customPlan ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomPlanOpen(true)}
+                    className="mt-6 w-full cursor-pointer rounded-lg bg-white py-2.5 text-center text-xs font-semibold text-zinc-900 shadow-sm transition-all hover:bg-zinc-100 active:scale-[0.99]"
+                  >
+                    {t.cta}
+                  </button>
+                ) : (
+                  <Link
+                    to="/signup"
+                    search={{ plan: t.name }}
+                    className={`mt-6 w-full rounded-lg py-2.5 text-center text-xs font-semibold transition-all active:scale-[0.99] ${
+                      t.popular
+                        ? "bg-gradient-to-r from-brand to-brand-light text-white shadow-md hover:opacity-95"
+                        : "bg-zinc-900 text-white hover:bg-zinc-800"
+                    }`}
+                  >
+                    {t.cta}
+                  </Link>
+                )}
+              </motion.div>
+            );
+          })}
         </div>
-        <p className="mt-8 text-center text-xs text-zinc-500">
-          Industry modules switch on automatically for your business type. Video consultation is
-          available to healthcare workspaces on Premium and Enterprise; table booking is available
-          to Restaurant &amp; Dining workspaces on every plan.
-        </p>
+
+        {/* Industry Automatic Switch Note */}
+        <div className="mt-8 rounded-xl border border-zinc-200/70 bg-white p-4 text-center text-xs text-zinc-500 shadow-xs">
+          <p>
+            <span className="font-semibold text-zinc-800">Automatic Industry Adapters:</span>{" "}
+            Industry-specific modules switch on automatically when you select your business
+            profession during sign-up. Video consultations are available for Healthcare practices on
+            Premium and Enterprise; Table bookings are available for Restaurant &amp; Dining
+            workspaces on all plans.
+          </p>
+        </div>
+
+        {/* Feature Comparison Matrix Toggle */}
+        <div className="mt-12 text-center">
+          <button
+            type="button"
+            onClick={() => setShowComparison((prev) => !prev)}
+            className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-5 py-2.5 text-xs font-semibold text-zinc-800 shadow-xs hover:border-zinc-300 hover:bg-zinc-50 transition-all cursor-pointer"
+          >
+            <span>
+              {showComparison
+                ? "Hide Detailed Feature Comparison"
+                : "Compare All Features & Limits Side-by-Side"}
+            </span>
+            <ChevronDown
+              className={`size-3.5 text-zinc-500 transition-transform duration-200 ${showComparison ? "rotate-180" : ""}`}
+            />
+          </button>
+        </div>
+
+        {/* Side-by-Side Comparison Table */}
+        <AnimatePresence>
+          {showComparison && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25 }}
+              className="overflow-hidden mt-6"
+            >
+              <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-zinc-200 bg-zinc-50/80">
+                      <th className="py-3.5 px-4 font-bold text-zinc-700 w-1/3">Feature</th>
+                      <th className="py-3.5 px-4 font-bold text-zinc-900 text-center">
+                        Basic (₹999/mo)
+                      </th>
+                      <th className="py-3.5 px-4 font-bold text-brand text-center bg-brand/[0.03]">
+                        Premium (₹1,499/mo)
+                      </th>
+                      <th className="py-3.5 px-4 font-bold text-zinc-900 text-center">
+                        Enterprise (Custom)
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {comparisonRows.map((section) => (
+                      <>
+                        <tr key={section.category} className="bg-zinc-50/50">
+                          <td
+                            colSpan={4}
+                            className="py-2.5 px-4 font-bold text-[11px] uppercase tracking-wider text-zinc-400"
+                          >
+                            {section.category}
+                          </td>
+                        </tr>
+                        {section.features.map((row) => (
+                          <tr key={row.name} className="hover:bg-zinc-50/40 transition-colors">
+                            <td className="py-2.5 px-4 font-medium text-zinc-800">{row.name}</td>
+                            <td className="py-2.5 px-4 text-center text-zinc-600">
+                              {row.basic === "Yes" ? (
+                                <Check className="size-4 text-emerald-600 mx-auto" />
+                              ) : row.basic === "No" ? (
+                                <X className="size-4 text-zinc-300 mx-auto" />
+                              ) : (
+                                row.basic
+                              )}
+                            </td>
+                            <td className="py-2.5 px-4 text-center font-medium text-zinc-800 bg-brand/[0.02]">
+                              {row.premium === "Yes" ? (
+                                <Check className="size-4 text-brand mx-auto" />
+                              ) : row.premium === "No" ? (
+                                <X className="size-4 text-zinc-300 mx-auto" />
+                              ) : (
+                                row.premium
+                              )}
+                            </td>
+                            <td className="py-2.5 px-4 text-center font-semibold text-zinc-900">
+                              {row.enterprise === "Yes" ? (
+                                <Check className="size-4 text-emerald-600 mx-auto" />
+                              ) : (
+                                row.enterprise
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <CustomPlanRequestModal

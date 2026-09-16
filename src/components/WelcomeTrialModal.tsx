@@ -70,6 +70,21 @@ export function getTrialExpiryMs(user: any): number {
   return Date.now() + 7 * 24 * 60 * 60 * 1000;
 }
 
+/**
+ * A custom-plan customer has a negotiated (Enterprise/unlimited) plan rather
+ * than a self-serve trial, so the trial banner and the Basic/Premium upsell
+ * cards are meaningless to them. Detected by the Enterprise tier or a
+ * "Custom Plan" payment method (set when a custom plan is activated).
+ */
+function isCustomPlanUser(user: {
+  subscriptionPlan?: string | null;
+  paymentMethod?: string | null;
+}): boolean {
+  const plan = String(user?.subscriptionPlan || "").toLowerCase();
+  const method = String(user?.paymentMethod || "").toLowerCase();
+  return plan.includes("enterprise") || plan.includes("hospital") || method.includes("custom plan");
+}
+
 export default function WelcomeTrialModal({
   open,
   onClose,
@@ -79,6 +94,46 @@ export default function WelcomeTrialModal({
   onAutoPay,
 }: WelcomeTrialModalProps) {
   if (!open) return null;
+
+  // Custom-plan customers get a plain welcome — no trial countdown, no upsell.
+  if (isCustomPlanUser(user)) {
+    return (
+      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+        <div className="relative w-full max-w-md overflow-hidden rounded-[1.75rem] border border-zinc-200/70 bg-white shadow-2xl">
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-4 top-4 z-10 cursor-pointer rounded-full p-1.5 text-zinc-400 transition-all hover:bg-zinc-100 hover:text-zinc-600"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <div className="bg-gradient-to-br from-brand/10 via-white to-white px-7 pt-9 pb-6 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand/10">
+              <Sparkles className="h-6 w-6 text-brand" />
+            </div>
+            <h2 className="text-xl font-black tracking-tight text-zinc-900">
+              Welcome to BookMyTime
+              {user?.name ? `, ${String(user.name).split(" ")[0]}` : ""}!
+            </h2>
+            <p className="mx-auto mt-2 max-w-sm text-xs font-medium leading-relaxed text-zinc-500">
+              Your workspace is ready on your custom plan with unlimited access to every feature.
+              Everything is set up — jump in and start exploring.
+            </p>
+          </div>
+          <div className="px-7 pb-7">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full cursor-pointer rounded-lg bg-brand py-2.5 text-xs font-bold text-white shadow-sm shadow-brand/25 transition-all hover:bg-brand/90"
+            >
+              Get started
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const rawPlan = (user?.subscriptionPlan || "").toLowerCase();
   const currentTier: Tier =

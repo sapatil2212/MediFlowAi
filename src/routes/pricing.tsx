@@ -1,21 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Nav } from "@/components/site/Nav";
 import { SiteShell } from "@/components/site/Footer";
-import { Pricing, FAQ, CTA } from "@/components/site/sections";
+import { Pricing, ROICalculator, FAQ, CTA } from "@/components/site/sections";
 
 export const Route = createFileRoute("/pricing")({
   head: () => ({
     meta: [
-      { title: "Pricing — BookMyTime" },
+      { title: "Pricing & Plans — BookMyTime" },
       {
         name: "description",
         content:
           "Transparent pricing for solo practices, multi-location clinics, restaurants, and enterprise networks. Video consultation on Premium, table booking on every plan. 7-day free trial, no credit card.",
       },
-      { property: "og:title", content: "BookMyTime — Pricing" },
+      { property: "og:title", content: "BookMyTime — Pricing & Plans" },
       {
         property: "og:description",
-        content: "Predictable as your network grows",
+        content: "Predictable pricing as your business grows",
       },
     ],
   }),
@@ -27,6 +27,7 @@ function PricingPage() {
     <SiteShell>
       <Nav />
       <Pricing />
+      <ROICalculator />
       <FAQ />
       <CTA />
     </SiteShell>

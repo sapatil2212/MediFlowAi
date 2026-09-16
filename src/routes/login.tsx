@@ -23,6 +23,7 @@ import {
   verifyAndProcessPaymentServerFn,
 } from "../lib/auth";
 import bmtLogo from "../assets/bmt-logo.png";
+import { CustomPlanRequestModal } from "../components/site/CustomPlanRequestModal";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -90,6 +91,9 @@ function LoginPage() {
   // independently while a checkout is in flight.
   const [renewAutoPayLoading, setRenewAutoPayLoading] = useState(false);
   const [isVerifyingRenewalSubscription, setIsVerifyingRenewalSubscription] = useState(false);
+
+  // Custom / Enterprise plan enquiry opened from the renewal modal.
+  const [isCustomPlanOpen, setIsCustomPlanOpen] = useState(false);
 
   // Handle click on Renew button
   const handleRenewClick = async () => {
@@ -1052,10 +1056,30 @@ function LoginPage() {
                   complete the transaction.
                 </p>
               </div>
+
+              {/* Custom / Enterprise plan enquiry */}
+              <div className="mt-4 flex items-center justify-center gap-1.5 border-t border-zinc-100 pt-4 text-[11px] text-zinc-500">
+                <span>Want a custom plan?</span>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomPlanOpen(true)}
+                  disabled={renewLoading || renewAutoPayLoading}
+                  className="inline-flex cursor-pointer items-center gap-0.5 font-bold text-brand transition-colors hover:text-brand/80 disabled:opacity-60"
+                >
+                  Tell us what you need →
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* Custom / Enterprise plan request form (opened from the renewal modal) */}
+      <CustomPlanRequestModal
+        open={isCustomPlanOpen}
+        onClose={() => setIsCustomPlanOpen(false)}
+        planName="Enterprise"
+      />
 
       {/* AutoPay Mandate Verification Processing Overlay */}
       {isVerifyingRenewalSubscription && (

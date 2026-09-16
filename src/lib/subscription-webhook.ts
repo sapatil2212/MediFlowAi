@@ -141,6 +141,19 @@ export async function reconcileSubscriptionFromCashfree(
       [tier, toMysqlDateTime(base), local.amount, "Cashfree AutoPay", local.userId],
     );
 
+    // If this mandate belongs to a custom plan whose workspace was awaiting
+    // payment, mark that request settled so the super-admin console reflects it.
+    // Best-effort — a missing/renamed column must not break subscription access.
+    try {
+      await execute(
+        `UPDATE CustomPlanRequest SET status = 'Active', paidAt = COALESCE(paidAt, NOW()), activatedAt = COALESCE(activatedAt, NOW()), updatedAt = NOW()
+         WHERE userId = ? AND status = 'PaymentPending'`,
+        [local.userId],
+      );
+    } catch {
+      /* CustomPlanRequest table not present or unrelated subscription — ignore */
+    }
+
     if (activated) {
       await execute(
         `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)

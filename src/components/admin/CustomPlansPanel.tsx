@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   AlertCircle,
@@ -12,7 +12,9 @@ import {
   Loader2,
   Mail,
   Phone,
+  Receipt,
   RefreshCw,
+  Save,
   Search,
   Sparkles,
   Trash2,
@@ -22,9 +24,14 @@ import {
 import { toast } from "sonner";
 import {
   deleteCustomPlanRequestServerFn,
+  deleteCustomPlanTenantServerFn,
+  getCustomPlanPaymentsServerFn,
   getCustomPlanRequestsServerFn,
+  recordManualPaymentServerFn,
   reviewCustomPlanRequestServerFn,
+  updateCustomPlanDetailsServerFn,
 } from "@/lib/custom-plan-requests";
+import { PRACTICE_SIZE_OPTIONS, PROFESSION_OPTIONS } from "@/lib/tenant-provisioning";
 import {
   ACTION_HINT,
   ACTION_LABEL,
@@ -37,17 +44,20 @@ import {
   formatTermLabel,
   formatTermsLabel,
   listPriceFor,
+  MANUAL_PAYMENT_METHODS,
   monthlyEquivalent,
   normalizeBillingInterval,
   normalizeGrantedPlan,
   normalizeStatus,
   PAYMENT_COLLECTION_MODES,
+  referenceHintForMethod,
   STATUS_LABEL,
   STATUS_TONE,
   TERM_MONTHS_LIMITS,
   type BillingInterval,
   type CustomPlanAction,
   type CustomPlanStatus,
+  type ManualPaymentMethod,
   type PaymentCollectionMode,
 } from "@/lib/custom-plan";
 import { PLAN_TIERS, type PlanTier } from "@/lib/feature-access";
@@ -163,27 +173,119 @@ function draftFromRow(row: CustomPlanRequestRow): TermsDraft {
   };
 }
 
+/** The editable requester/tenant identity fields. */
+interface DetailsDraft {
+  name: string;
+  email: string;
+  phone: string;
+  businessName: string;
+  profession: string;
+  practiceSize: string;
+}
+
+function detailsFromRow(row: CustomPlanRequestRow): DetailsDraft {
+  return {
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    businessName: row.businessName,
+    profession: row.profession,
+    practiceSize: row.practiceSize,
+  };
+}
+
+/** The collect-payment form held by the manage dialog. */
+interface CollectDraft {
+  amount: string;
+  method: ManualPaymentMethod;
+  reference: string;
+  note: string;
+}
+
+function collectDraftFromRow(row: CustomPlanRequestRow): CollectDraft {
+  const plan = normalizeGrantedPlan(row.grantedPlan);
+  return {
+    // Prefill with the agreed amount so the common case (collecting the negotiated
+    // sum) is one click; the super admin can still change it for a top-up.
+    amount: String(row.grantedAmount ?? listPriceFor(plan)),
+    method: "UPI",
+    reference: "",
+    note: "",
+  };
+}
+
+/** A ledger row rendered in the manage dialog's recent-payments list. */
+interface CustomPlanPaymentItem {
+  id: string;
+  orderId: string;
+  cfPaymentId: string | null;
+  amount: number;
+  status: string;
+  orderStatus: string | null;
+  paymentMode: string | null;
+  gateway: string | null;
+  createdAt: string;
+}
+
+/** Border+text tone for a payment status chip. */
+function paymentStatusTone(status: string): string {
+  const s = (status || "").toUpperCase();
+  if (s === "SUCCESS") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (s === "PENDING") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-red-200 bg-red-50 text-red-600";
+}
+
 /**
- * Super admin console for negotiated (custom) plans.
+ * Super Admin panel for managing enterprise custom plan requests.
  *
- * Owns the whole lifecycle of a deal: review the enquiry, set price + term, then
- * approve — which provisions the workspace with unlimited (Enterprise) access
- * and either emails the tenant a payment link (online) or unlocks immediately
- * against an offline payment (manual). From there it can mark payment received,
- * resend the link, upgrade/downgrade, suspend, or resume. Which buttons appear
- * is derived from the shared state machine, so the UI can never offer an action
+ * Capabilities:
+ * - List requests by status with live search
+ * - Approve with negotiated tier/price (provisions tenant and emails pay link or unlocks directly)
+ * - Record offline payment (switches Awaiting Payment -> Active)
+ * - Collect a payment any number of times against a provisioned workspace, with
+ *   method (UPI/card/cash/transfer/cheque) + reference id — each logged and
+ *   extending paid access — plus a recent-payments ledger
+ * - Resend payment link (Awaiting Payment)
+ * - Revise plan & price on an active tenant (immediate upgrade/downgrade)
+ * - Suspend / resume active tenant
+ * - Reject pending requests
+ *
+ * Every mutation goes through the shared `reviewCustomPlanRequestServerFn` so
+ * the server can enforce status transitions, recalculate MRR, provision the
+ * tenant, sync subscription rows, and dispatch transactional emails.
+ *
+ * Non-admin callers never see this panel; if rendered outside super admin role,
  * the server will reject.
  */
 export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () => void }) {
   const [rows, setRows] = useState<CustomPlanRequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | CustomPlanStatus>("all");
+
+  const toggleSearch = () => {
+    if (!isSearchOpen) {
+      setIsSearchOpen(true);
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    } else if (!searchQuery) {
+      setIsSearchOpen(false);
+    }
+  };
 
   const [selected, setSelected] = useState<CustomPlanRequestRow | null>(null);
   const [draft, setDraft] = useState<TermsDraft | null>(null);
+  const [details, setDetails] = useState<DetailsDraft | null>(null);
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [confirmingPurge, setConfirmingPurge] = useState(false);
+  const [purging, setPurging] = useState(false);
   const [pendingAction, setPendingAction] = useState<CustomPlanAction | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [collect, setCollect] = useState<CollectDraft | null>(null);
+  const [collecting, setCollecting] = useState(false);
+  const [payments, setPayments] = useState<CustomPlanPaymentItem[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
 
   const fetchRows = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -201,15 +303,100 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
     void fetchRows();
   }, [fetchRows]);
 
+  const fetchPayments = useCallback(async (id: string) => {
+    setPaymentsLoading(true);
+    try {
+      const result = await getCustomPlanPaymentsServerFn({ data: { id } });
+      setPayments((result.payments as CustomPlanPaymentItem[]) || []);
+    } catch {
+      // A ledger read failing must not break the dialog — show an empty list.
+      setPayments([]);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }, []);
+
   const openReview = (row: CustomPlanRequestRow) => {
     setSelected(row);
     setDraft(draftFromRow(row));
+    setDetails(detailsFromRow(row));
+    setCollect(collectDraftFromRow(row));
+    setPayments([]);
+    setConfirmingPurge(false);
+    // Only provisioned workspaces have a ledger to show / collect against.
+    if (row.userId) void fetchPayments(row.id);
   };
 
   const closeReview = () => {
     setSelected(null);
     setDraft(null);
+    setDetails(null);
+    setCollect(null);
+    setPayments([]);
+    setConfirmingPurge(false);
     setPendingAction(null);
+  };
+
+  const handleCollectPayment = async () => {
+    if (!selected || !collect) return;
+    setCollecting(true);
+    try {
+      const result = await recordManualPaymentServerFn({
+        data: {
+          id: selected.id,
+          amount: Number(collect.amount),
+          method: collect.method,
+          reference: collect.reference,
+          note: collect.note,
+        },
+      });
+      toast.success(
+        `Recorded ${formatInr(result.amount)} via ${result.method}. Active through ${formatDate(
+          result.expiresAt,
+        )}.`,
+      );
+      // Keep the amount/method for a possible follow-up, but clear the one-off fields.
+      setCollect((previous) => (previous ? { ...previous, reference: "", note: "" } : previous));
+      await fetchPayments(selected.id);
+      await fetchRows(true);
+      onTenantsChanged?.();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not record the payment."));
+    } finally {
+      setCollecting(false);
+    }
+  };
+
+  const handleSaveDetails = async () => {
+    if (!selected || !details) return;
+    setSavingDetails(true);
+    try {
+      await updateCustomPlanDetailsServerFn({ data: { id: selected.id, ...details } });
+      toast.success("Customer details updated.");
+      await fetchRows(true);
+      onTenantsChanged?.();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not save the details."));
+    } finally {
+      setSavingDetails(false);
+    }
+  };
+
+  const handlePurge = async () => {
+    if (!selected) return;
+    setPurging(true);
+    try {
+      await deleteCustomPlanTenantServerFn({ data: { id: selected.id } });
+      toast.success(`Deleted ${selected.businessName} and its workspace.`);
+      closeReview();
+      await fetchRows(true);
+      onTenantsChanged?.();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not delete this account."));
+    } finally {
+      setPurging(false);
+      setConfirmingPurge(false);
+    }
   };
 
   const summary = useMemo(() => {
@@ -393,36 +580,82 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
       </div>
 
       {/* Table */}
-      <div className="space-y-6 rounded-3xl border border-zinc-200/80 bg-white p-6">
-        <div className="flex flex-col gap-4 border-b border-zinc-150 pb-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-sm font-extrabold text-zinc-900">Custom Plan Requests</h2>
-            <p className="mt-0.5 text-[10px] text-zinc-400">
+      <div className="space-y-5 rounded-2xl border border-zinc-200/80 bg-white p-5 sm:p-6 shadow-xs">
+        <div className="flex flex-col gap-3 border-b border-zinc-150 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 pr-2">
+            <h2 className="text-sm font-bold text-zinc-900">Custom Plan Requests</h2>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-500 max-w-xl">
               Approve to provision the workspace with unlimited access, then collect payment online
               or mark it paid. Revising a live plan upgrades or downgrades that tenant immediately.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
-              <input
-                type="text"
-                placeholder="Search by business, contact, ref, or workspace..."
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                className="w-full rounded-xl border border-zinc-200 bg-zinc-50/50 py-2 pl-9 pr-4 text-xs font-semibold text-zinc-800 shadow-inner transition-all placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none"
-              />
+          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+            {/* Expandable Search with animation */}
+            <div className="relative flex items-center">
+              <AnimatePresence initial={false}>
+                {isSearchOpen || searchQuery ? (
+                  <motion.div
+                    key="search-input"
+                    initial={{ width: 34, opacity: 0 }}
+                    animate={{ width: 260, opacity: 1 }}
+                    exit={{ width: 34, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className="relative flex items-center"
+                  >
+                    <Search className="pointer-events-none absolute left-2.5 size-3.5 text-zinc-400" />
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      placeholder="Search business, contact, ref..."
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          if (searchQuery) setSearchQuery("");
+                          else setIsSearchOpen(false);
+                        }
+                      }}
+                      className="h-8.5 w-full rounded-xl border border-zinc-200 bg-zinc-50/70 pl-8 pr-7 text-xs font-medium text-zinc-800 transition-colors placeholder:text-zinc-400 focus:border-[#0059C6] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (searchQuery) setSearchQuery("");
+                        else setIsSearchOpen(false);
+                      }}
+                      className="absolute right-1.5 flex size-5 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-200/70 hover:text-zinc-700"
+                      title={searchQuery ? "Clear search" : "Close search"}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </motion.div>
+                ) : (
+                  <motion.button
+                    key="search-btn"
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.9, opacity: 0 }}
+                    type="button"
+                    onClick={toggleSearch}
+                    title="Search by business, contact, ref, or workspace..."
+                    className="flex size-8.5 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 shadow-2xs transition-all hover:border-[#0059C6] hover:text-[#0059C6] active:scale-95"
+                  >
+                    <Search className="size-3.5" />
+                  </motion.button>
+                )}
+              </AnimatePresence>
             </div>
 
-            <div className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2">
-              <ArrowUpDown className="size-3.5 text-zinc-400" />
+            {/* Status Filter */}
+            <div className="flex h-8.5 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-2.5 shadow-2xs transition-colors hover:border-zinc-300">
+              <ArrowUpDown className="size-3.5 shrink-0 text-zinc-400" />
               <select
                 value={statusFilter}
                 onChange={(event) =>
                   setStatusFilter(event.target.value as "all" | CustomPlanStatus)
                 }
-                className="border-none bg-transparent pr-1 text-xs font-extrabold text-zinc-700 focus:outline-none"
+                className="cursor-pointer border-none bg-transparent pr-1 text-xs font-semibold text-zinc-700 focus:outline-none"
               >
                 <option value="all">All statuses</option>
                 {CUSTOM_PLAN_STATUSES.map((status) => (
@@ -433,14 +666,15 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
               </select>
             </div>
 
+            {/* Refresh */}
             <button
               type="button"
               onClick={() => void fetchRows()}
               disabled={loading}
-              title="Refresh"
-              className="flex size-9 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 transition-all hover:border-[#0059C6] hover:text-[#0059C6] active:scale-95"
+              title="Refresh requests"
+              className="flex size-8.5 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 shadow-2xs transition-all hover:border-[#0059C6] hover:text-[#0059C6] active:scale-95 disabled:opacity-50"
             >
-              <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
             </button>
           </div>
         </div>
@@ -634,101 +868,211 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
       {/* Review / manage dialog */}
       <AnimatePresence>
         {selected && draft && (
-          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-zinc-950/40 p-4 backdrop-blur-sm sm:items-center">
+          <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-zinc-950/60 p-3 sm:p-5 backdrop-blur-md">
             <motion.div
-              initial={{ opacity: 0, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.97 }}
+              initial={{ opacity: 0, scale: 0.98, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 8 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
               role="dialog"
               aria-modal="true"
               aria-labelledby="cpp-title"
-              className="my-auto w-full max-w-2xl overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl"
+              className="my-auto flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-2xl"
             >
-              <div className="flex items-start justify-between gap-4 border-b border-zinc-100 px-6 py-5">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#0059C6]/10 text-[#0059C6]">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-zinc-100 bg-white px-5 py-3.5 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#0059C6]/10 text-[#0059C6]">
                     <Building className="size-4" />
-                  </span>
+                  </div>
                   <div>
-                    <h3 id="cpp-title" className="text-sm font-extrabold text-zinc-900">
-                      {selected.businessName}
-                    </h3>
-                    <p className="mt-0.5 text-[11px] text-zinc-500">
-                      <span className="font-mono font-bold">{selected.referenceId}</span> ·{" "}
+                    <div className="flex items-center gap-2">
+                      <h3 id="cpp-title" className="text-sm font-bold text-zinc-900">
+                        {selected.businessName}
+                      </h3>
+                      <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-zinc-600">
+                        {selected.referenceId}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-500">
                       {selected.name} · {selected.email}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <StatusBadge status={selectedStatus} />
                   <button
                     type="button"
                     onClick={closeReview}
                     aria-label="Close"
-                    className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
+                    className="flex size-7 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
                   >
                     <X className="size-4" />
                   </button>
                 </div>
               </div>
 
-              <div className="max-h-[65vh] space-y-5 overflow-y-auto px-6 py-5">
-                {/* Requester snapshot */}
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {[
-                    { label: "Industry", value: selected.profession },
-                    { label: "Team size", value: selected.practiceSize },
-                    { label: "Phone", value: selected.phone },
-                  ].map((item) => (
-                    <div
-                      key={item.label}
-                      className="rounded-xl border border-zinc-150 bg-zinc-50/60 px-3.5 py-3"
-                    >
-                      <span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400">
-                        {item.label}
-                      </span>
-                      <span className="mt-1 block text-[11px] font-bold text-zinc-800">
-                        {item.value}
-                      </span>
+              {/* Body */}
+              <div className="flex-1 space-y-3.5 overflow-y-auto px-5 py-4 text-xs">
+                {/* Editable customer details */}
+                {details && (
+                  <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/40 p-3.5">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                        Customer details
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveDetails()}
+                        disabled={savingDetails}
+                        className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs transition-all hover:bg-zinc-800 disabled:opacity-50"
+                      >
+                        {savingDetails ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <Save className="size-3" />
+                        )}
+                        Save details
+                      </button>
                     </div>
-                  ))}
-                </div>
 
+                    <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
+                          Full name
+                        </span>
+                        <input
+                          value={details.name}
+                          onChange={(e) =>
+                            setDetails((p) => (p ? { ...p, name: e.target.value } : p))
+                          }
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
+                          Phone
+                        </span>
+                        <input
+                          value={details.phone}
+                          onChange={(e) =>
+                            setDetails((p) => (p ? { ...p, phone: e.target.value } : p))
+                          }
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
+                          Email
+                        </span>
+                        <input
+                          type="email"
+                          value={details.email}
+                          onChange={(e) =>
+                            setDetails((p) => (p ? { ...p, email: e.target.value } : p))
+                          }
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
+                          Business name
+                        </span>
+                        <input
+                          value={details.businessName}
+                          onChange={(e) =>
+                            setDetails((p) => (p ? { ...p, businessName: e.target.value } : p))
+                          }
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
+                          Business type
+                        </span>
+                        <select
+                          value={details.profession}
+                          onChange={(e) =>
+                            setDetails((p) => (p ? { ...p, profession: e.target.value } : p))
+                          }
+                          className="w-full cursor-pointer rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                        >
+                          {PROFESSION_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
+                          Team size
+                        </span>
+                        <select
+                          value={details.practiceSize}
+                          onChange={(e) =>
+                            setDetails((p) => (p ? { ...p, practiceSize: e.target.value } : p))
+                          }
+                          className="w-full cursor-pointer rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                        >
+                          {PRACTICE_SIZE_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Stated requirements */}
                 {selected.requirements && (
-                  <div className="rounded-xl border border-zinc-150 bg-white px-4 py-3.5">
-                    <span className="block text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+                  <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3">
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-blue-700">
                       Stated requirement
                     </span>
-                    <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-600">
+                    <p className="mt-1 text-xs leading-relaxed text-zinc-700">
                       {selected.requirements}
                     </p>
                   </div>
                 )}
 
-                {/* Terms */}
-                <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-                  <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-zinc-500">
-                    Negotiated terms
-                  </h4>
-                  <p className="mt-1 text-[10px] text-zinc-400">
-                    The granted tier decides which features the workspace unlocks. The price is
-                    yours to set — it feeds MRR and the tenant&apos;s billing record.
-                  </p>
+                {/* Negotiated Terms */}
+                <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/40 p-3.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                        Negotiated terms
+                      </h4>
+                      <p className="text-[10px] text-zinc-400">
+                        The granted tier unlocks features. Price feeds MRR and billing records.
+                      </p>
+                    </div>
+                  </div>
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
                     <label className="block">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                      <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
                         Granted plan
                       </span>
                       <select
                         value={draft.grantedPlan}
                         onChange={(event) => {
                           const plan = event.target.value as PlanTier;
+                          const listed = listPriceFor(plan);
                           setDraft((previous) =>
-                            previous ? { ...previous, grantedPlan: plan } : previous,
+                            previous
+                              ? {
+                                  ...previous,
+                                  grantedPlan: plan,
+                                  grantedAmount:
+                                    listed > 0 ? String(listed) : previous.grantedAmount,
+                                }
+                              : previous,
                           );
                         }}
-                        className="w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-xs font-bold text-zinc-800 focus:border-[#0059C6] focus:outline-none"
+                        className="w-full cursor-pointer rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
                       >
                         {PLAN_TIERS.map((tier) => (
                           <option key={tier} value={tier}>
@@ -739,7 +1083,7 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
                     </label>
 
                     <label className="block">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                      <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
                         Billing interval
                       </span>
                       <select
@@ -756,7 +1100,7 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
                               : previous,
                           );
                         }}
-                        className="w-full cursor-pointer rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-xs font-bold text-zinc-800 focus:border-[#0059C6] focus:outline-none"
+                        className="w-full cursor-pointer rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
                       >
                         {BILLING_INTERVALS.map((interval) => (
                           <option key={interval} value={interval}>
@@ -767,7 +1111,7 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
                     </label>
 
                     <label className="block">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                      <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
                         Amount per cycle (INR)
                       </span>
                       <input
@@ -783,12 +1127,12 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
                               : previous,
                           )
                         }
-                        className="w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-xs font-bold text-zinc-800 focus:border-[#0059C6] focus:outline-none"
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
                       />
                     </label>
 
                     <label className="block">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                      <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
                         Committed term (months)
                       </span>
                       <input
@@ -802,31 +1146,37 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
                             previous ? { ...previous, termMonths: event.target.value } : previous,
                           )
                         }
-                        className="w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-xs font-bold text-zinc-800 focus:border-[#0059C6] focus:outline-none"
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
                       />
                     </label>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-zinc-50 px-4 py-3">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                      Preview
-                    </span>
-                    <span className="text-[11px] font-bold text-zinc-800">
-                      {formatTermsLabel(draftAmount, draft.billingInterval)}
-                    </span>
-                    <span className="text-[11px] font-semibold text-zinc-500">
-                      MRR contribution{" "}
-                      {formatInr(monthlyEquivalent(draftAmount, draft.billingInterval))}
-                    </span>
+                  {/* Financial Preview Card */}
+                  <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-200/90 bg-white px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                        Preview
+                      </span>
+                      <span className="text-xs font-bold text-zinc-900">
+                        {formatTermsLabel(draftAmount, draft.billingInterval)}
+                      </span>
+                      <span className="text-xs text-zinc-400">·</span>
+                      <span className="text-[11px] font-medium text-zinc-500">
+                        MRR:{" "}
+                        <strong className="text-zinc-700 font-semibold">
+                          {formatInr(monthlyEquivalent(draftAmount, draft.billingInterval))}
+                        </strong>
+                      </span>
+                    </div>
                     {previewExpiry && (
-                      <span className="text-[11px] font-semibold text-zinc-500">
+                      <span className="text-[10px] font-medium text-zinc-500">
                         Renews {formatDate(previewExpiry.toISOString())}
                       </span>
                     )}
                   </div>
 
-                  <label className="mt-4 block">
-                    <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                  <label className="mt-2.5 block">
+                    <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
                       Internal notes
                     </span>
                     <textarea
@@ -837,28 +1187,25 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
                           previous ? { ...previous, adminNotes: event.target.value } : previous,
                         )
                       }
-                      placeholder="Agreed discount, contract reference, who signed off..."
-                      className="w-full resize-none rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-xs text-zinc-800 focus:border-[#0059C6] focus:outline-none"
+                      placeholder="Agreed discount, contract reference, sign-off notes..."
+                      className="w-full resize-none rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
                     />
                   </label>
                 </div>
 
-                {/* Payment collection — how the first payment is taken. The
-                    choice only applies when approving a pending request; once a
-                    workspace is awaiting payment the section shows live status. */}
+                {/* Payment collection */}
                 {(selectedStatus === "Pending" || selectedStatus === "PaymentPending") && (
-                  <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-                    <h4 className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-zinc-500">
-                      <CreditCard className="size-3.5" /> Payment collection
+                  <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/40 p-3.5">
+                    <h4 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                      <CreditCard className="size-3" /> Payment collection
                     </h4>
 
                     {selectedStatus === "Pending" ? (
                       <>
-                        <p className="mt-1 text-[10px] text-zinc-400">
-                          Approving provisions the workspace now. Choose how the first payment is
-                          collected — access unlocks only once it is confirmed.
+                        <p className="mt-0.5 text-[10px] text-zinc-400">
+                          Approving provisions the workspace. Select how payment is collected:
                         </p>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
                           {PAYMENT_COLLECTION_MODES.map((mode) => {
                             const active = draft.collectionMode === mode;
                             return (
@@ -870,29 +1217,29 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
                                     previous ? { ...previous, collectionMode: mode } : previous,
                                   )
                                 }
-                                className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-left transition-all ${
+                                className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all ${
                                   active
-                                    ? "border-[#0059C6] bg-[#0059C6]/[0.04] ring-1 ring-[#0059C6]/20"
-                                    : "border-zinc-200 hover:border-zinc-300"
+                                    ? "border-[#0059C6] bg-white ring-1 ring-[#0059C6]/20 shadow-xs"
+                                    : "border-zinc-200 bg-white hover:border-zinc-300"
                                 }`}
                               >
                                 <span
-                                  className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg ${active ? "bg-[#0059C6] text-white" : "bg-zinc-100 text-zinc-500"}`}
+                                  className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md ${active ? "bg-[#0059C6] text-white" : "bg-zinc-100 text-zinc-500"}`}
                                 >
                                   {mode === "online" ? (
-                                    <Wallet className="size-3.5" />
+                                    <Wallet className="size-3" />
                                   ) : (
-                                    <CheckCircle2 className="size-3.5" />
+                                    <CheckCircle2 className="size-3" />
                                   )}
                                 </span>
                                 <span>
-                                  <span className="block text-[11px] font-bold text-zinc-800">
+                                  <span className="block text-xs font-bold text-zinc-800">
                                     {mode === "online" ? "Tenant pays online" : "Mark as paid"}
                                   </span>
                                   <span className="mt-0.5 block text-[10px] leading-relaxed text-zinc-500">
                                     {mode === "online"
-                                      ? "Email a secure payment link. Unlocks on payment."
-                                      : "Payment collected offline. Unlocks immediately."}
+                                      ? "Email secure payment link. Unlocks on payment."
+                                      : "Collected offline. Unlocks workspace immediately."}
                                   </span>
                                 </span>
                               </button>
@@ -901,22 +1248,24 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
                         </div>
                       </>
                     ) : (
-                      <div className="mt-3 space-y-3">
-                        <div className="flex items-center justify-between rounded-xl bg-violet-50/70 px-3.5 py-2.5">
-                          <span className="text-[11px] font-bold text-violet-800">
+                      <div className="mt-2.5 space-y-2">
+                        <div className="flex items-center justify-between rounded-lg bg-violet-50/80 px-3 py-2 border border-violet-100">
+                          <span className="text-xs font-semibold text-violet-900">
                             Awaiting payment of{" "}
-                            {formatTermsLabel(draftAmount, draft.billingInterval)}
+                            <strong>{formatTermsLabel(draftAmount, draft.billingInterval)}</strong>
                           </span>
-                          <span className="text-[10px] font-semibold text-violet-500">
-                            {selected.collectionMode === "manual" ? "Offline" : "Online link"}
+                          <span className="rounded bg-violet-100/80 px-1.5 py-0.5 text-[9px] font-bold text-violet-700">
+                            {selected.collectionMode === "manual"
+                              ? "Offline collection"
+                              : "Online link"}
                           </span>
                         </div>
                         {selected.paymentToken && (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
                             <input
                               readOnly
                               value={paymentLinkFor(selected.paymentToken) || ""}
-                              className="w-full truncate rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-[10px] text-zinc-600"
+                              className="w-full truncate rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 font-mono text-[10px] text-zinc-600"
                             />
                             <button
                               type="button"
@@ -930,47 +1279,213 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
                                       : toast.error("Could not copy"),
                                   );
                               }}
-                              className="shrink-0 rounded-lg border border-zinc-200 p-2 text-zinc-600 transition-all hover:bg-zinc-50"
+                              className="shrink-0 rounded-lg border border-zinc-200 bg-white p-1.5 text-zinc-600 transition-all hover:bg-zinc-50"
                             >
                               <Copy className="size-3.5" />
                             </button>
                           </div>
                         )}
                         <p className="text-[10px] leading-relaxed text-zinc-400">
-                          Use <strong>Mark as paid</strong> if you collected payment offline, or{" "}
-                          <strong>Resend payment link</strong> to email a fresh link.
+                          Use <strong>Mark as paid</strong> if payment was collected offline, or{" "}
+                          <strong>Resend payment link</strong> to dispatch an email.
                         </p>
                       </div>
                     )}
                   </div>
                 )}
 
+                {/* Provisioned workspace status */}
                 {selected.tenantId && (
-                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 px-4 py-3.5">
+                  <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/40 p-3">
                     <span className="block text-[9px] font-bold uppercase tracking-wider text-emerald-700">
                       Provisioned workspace
                     </span>
-                    <p className="mt-1.5 text-[11px] font-semibold text-emerald-900">
-                      <span className="font-mono">{selected.tenantId}</span> · live plan{" "}
-                      {selected.tenantSubscriptionPlan || "—"} ·{" "}
-                      {selected.tenantSubscriptionStatus || "—"} · renews{" "}
-                      {formatDate(selected.tenantSubscriptionExpiresAt)}
+                    <p className="mt-1 text-xs font-medium text-emerald-950">
+                      <span className="font-mono font-bold">{selected.tenantId}</span> · live plan{" "}
+                      <span className="font-semibold">
+                        {selected.tenantSubscriptionPlan || "—"}
+                      </span>{" "}
+                      ·{" "}
+                      <span className="font-semibold">
+                        {selected.tenantSubscriptionStatus || "—"}
+                      </span>{" "}
+                      · renews {formatDate(selected.tenantSubscriptionExpiresAt)}
                     </p>
+                  </div>
+                )}
+
+                {/* Collect a payment — repeatable, offline settlement for a provisioned workspace */}
+                {selected.userId && collect && (
+                  <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/40 p-3.5">
+                    <h4 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                      <Wallet className="size-3" /> Collect a payment
+                    </h4>
+                    <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+                      Record a payment collected offline (UPI, card machine, cash, transfer…). Each
+                      entry is logged to the ledger and extends the workspace&apos;s paid access by
+                      one term. Collect as many times as you need — earlier collections are kept.
+                    </p>
+
+                    <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
+                          Amount received (INR)
+                        </span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={AMOUNT_LIMITS.max}
+                          step="1"
+                          value={collect.amount}
+                          onChange={(event) =>
+                            setCollect((previous) =>
+                              previous ? { ...previous, amount: event.target.value } : previous,
+                            )
+                          }
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                        />
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
+                          Payment method
+                        </span>
+                        <select
+                          value={collect.method}
+                          onChange={(event) =>
+                            setCollect((previous) =>
+                              previous
+                                ? { ...previous, method: event.target.value as ManualPaymentMethod }
+                                : previous,
+                            )
+                          }
+                          className="w-full cursor-pointer rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                        >
+                          {MANUAL_PAYMENT_METHODS.map((method) => (
+                            <option key={method} value={method}>
+                              {method}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block sm:col-span-2">
+                        <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
+                          Reference / transaction ID
+                          {collect.method !== "Cash" && collect.method !== "Other" && (
+                            <span className="text-red-500"> *</span>
+                          )}
+                        </span>
+                        <input
+                          value={collect.reference}
+                          onChange={(event) =>
+                            setCollect((previous) =>
+                              previous ? { ...previous, reference: event.target.value } : previous,
+                            )
+                          }
+                          placeholder={referenceHintForMethod(collect.method)}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                        />
+                      </label>
+
+                      <label className="block sm:col-span-2">
+                        <span className="mb-1 block text-[10px] font-semibold text-zinc-500">
+                          Note (optional)
+                        </span>
+                        <input
+                          value={collect.note}
+                          onChange={(event) =>
+                            setCollect((previous) =>
+                              previous ? { ...previous, note: event.target.value } : previous,
+                            )
+                          }
+                          placeholder="e.g. collected at reception, partial advance…"
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-800 transition-colors focus:border-[#0059C6] focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[10px] leading-relaxed text-zinc-400">
+                        Records an offline payment — this never charges a card.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleCollectPayment()}
+                        disabled={collecting}
+                        className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-[#0059C6] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs transition-all hover:bg-[#0047A0] disabled:opacity-60"
+                      >
+                        {collecting ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="size-3" />
+                        )}
+                        Record payment
+                      </button>
+                    </div>
+
+                    {/* Recent payments ledger for this workspace */}
+                    <div className="mt-3 border-t border-zinc-200/70 pt-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                          <Receipt className="size-3" /> Recent payments
+                        </span>
+                        {paymentsLoading && (
+                          <Loader2 className="size-3 animate-spin text-zinc-400" />
+                        )}
+                      </div>
+                      {payments.length === 0 ? (
+                        <p className="mt-1.5 text-[10px] text-zinc-400">
+                          {paymentsLoading ? "Loading…" : "No payments recorded yet."}
+                        </p>
+                      ) : (
+                        <ul className="mt-1.5 space-y-1">
+                          {payments.map((payment) => (
+                            <li
+                              key={payment.id}
+                              className="flex items-center justify-between gap-2 rounded-lg border border-zinc-200/70 bg-white px-2.5 py-1.5"
+                            >
+                              <div className="min-w-0">
+                                <span className="block text-xs font-bold text-zinc-800">
+                                  {formatInr(payment.amount)}
+                                  <span className="ml-1.5 font-medium text-zinc-500">
+                                    · {payment.paymentMode || payment.gateway || "—"}
+                                  </span>
+                                </span>
+                                <span className="block truncate text-[10px] text-zinc-400">
+                                  {payment.cfPaymentId ? `Ref ${payment.cfPaymentId} · ` : ""}
+                                  {payment.gateway === "Manual" ? "Offline · " : ""}
+                                  {formatDate(payment.createdAt, true)}
+                                </span>
+                              </div>
+                              <span
+                                className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold ${paymentStatusTone(
+                                  payment.status,
+                                )}`}
+                              >
+                                {payment.status}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
 
-              {/* Action bar — driven entirely by the shared state machine. */}
-              <div className="space-y-3 border-t border-zinc-100 bg-zinc-50/60 px-6 py-5">
+              {/* Action bar */}
+              <div className="space-y-2.5 border-t border-zinc-100 bg-zinc-50/80 px-5 py-3.5 shrink-0">
                 {actions.length === 0 ? (
-                  <p className="text-[11px] font-semibold text-zinc-500">
+                  <p className="text-xs font-medium text-zinc-500">
                     This request is closed. No further actions are available.
                   </p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {actions.map((action) => {
                       const destructive = action === "reject" || action === "suspend";
-                      const primary = action === "approve" || action === "recordPayment";
+                      const primary =
+                        action === "approve" || action === "recordPayment" || action === "revise";
                       const label =
                         action === "approve" && draft.collectionMode === "manual"
                           ? "Approve & mark paid"
@@ -982,12 +1497,12 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
                           onClick={() => void handleAction(action)}
                           disabled={pendingAction !== null}
                           title={ACTION_HINT[action]}
-                          className={`flex cursor-pointer items-center gap-1.5 rounded-xl px-4 py-2.5 text-[11px] font-extrabold transition-all disabled:opacity-60 ${
+                          className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all disabled:opacity-60 ${
                             primary
-                              ? "bg-[#0059C6] text-white hover:bg-[#0047A0]"
+                              ? "bg-[#0059C6] text-white shadow-xs hover:bg-[#0047A0]"
                               : destructive
                                 ? "border border-red-200 bg-white text-red-600 hover:bg-red-50"
-                                : "border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                                : "border border-zinc-200 bg-white text-zinc-700 shadow-xs hover:bg-zinc-100"
                           }`}
                         >
                           {pendingAction === action && <Loader2 className="size-3 animate-spin" />}
@@ -1003,6 +1518,47 @@ export function CustomPlansPanel({ onTenantsChanged }: { onTenantsChanged?: () =
                     : "Rejected requests are kept for the record."}{" "}
                   Every decision emails the requester automatically.
                 </p>
+
+                {/* Permanent deletion */}
+                <div className="border-t border-zinc-200/80 pt-2">
+                  {confirmingPurge ? (
+                    <div className="flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 p-2.5 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-[11px] font-medium leading-relaxed text-red-800">
+                        Permanently delete <strong>{selected.businessName}</strong>
+                        {selected.tenantId ? ` and workspace ${selected.tenantId}` : ""}? This
+                        cannot be undone.
+                      </p>
+                      <div className="flex shrink-0 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingPurge(false)}
+                          disabled={purging}
+                          className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-[10px] font-bold text-zinc-600 hover:bg-zinc-50 disabled:opacity-60"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handlePurge()}
+                          disabled={purging}
+                          className="flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-red-700 disabled:opacity-60"
+                        >
+                          {purging && <Loader2 className="size-3 animate-spin" />}
+                          Delete permanently
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingPurge(true)}
+                      className="flex items-center gap-1 text-[10px] font-semibold text-red-500 transition-colors hover:text-red-700"
+                    >
+                      <Trash2 className="size-3" />
+                      Delete this customer &amp; workspace permanently
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           </div>

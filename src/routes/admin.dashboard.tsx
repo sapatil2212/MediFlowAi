@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import bmtLogo from "../assets/bmt-logo.png";
 import {
@@ -429,12 +429,23 @@ function AdminDashboardPage() {
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState("");
+  const [isTenantSearchOpen, setIsTenantSearchOpen] = useState(false);
+  const tenantSearchInputRef = useRef<HTMLInputElement>(null);
+
+  const [isPaymentSearchOpen, setIsPaymentSearchOpen] = useState(false);
+  const paymentSearchInputRef = useRef<HTMLInputElement>(null);
+
+  const [isSubSearchOpen, setIsSubSearchOpen] = useState(false);
+  const subSearchInputRef = useRef<HTMLInputElement>(null);
+
   const [planFilter, setPlanFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   // Robust tenant filtering: expiry window and sort order.
   const [expiryFilter, setExpiryFilter] = useState("all"); // all | expiring | expired | active
   const [tenantSort, setTenantSort] = useState("newest"); // newest | oldest | name_asc | name_desc | expiring | plan
   const [demoSearchQuery, setDemoSearchQuery] = useState("");
+  const [isDemoSearchOpen, setIsDemoSearchOpen] = useState(false);
+  const demoSearchInputRef = useRef<HTMLInputElement>(null);
   const [demoStatusFilter, setDemoStatusFilter] = useState("all");
 
   // Edit Drawer States
@@ -2301,23 +2312,63 @@ function AdminDashboardPage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
-                      <div className="relative w-full sm:w-60">
-                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
-                        <input
-                          type="text"
-                          placeholder="Search name, email, phone, or ID..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full pl-9 pr-8 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-[#0059C6] focus:bg-white focus:outline-none transition-all font-semibold"
-                        />
-                        {searchQuery && (
-                          <button
-                            onClick={() => setSearchQuery("")}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 cursor-pointer"
-                          >
-                            <X className="size-3.5" />
-                          </button>
-                        )}
+                      {/* Expandable Search with animation */}
+                      <div className="relative flex items-center">
+                        <AnimatePresence initial={false}>
+                          {isTenantSearchOpen || searchQuery ? (
+                            <motion.div
+                              key="tenant-search-input"
+                              initial={{ width: 34, opacity: 0 }}
+                              animate={{ width: 240, opacity: 1 }}
+                              exit={{ width: 34, opacity: 0 }}
+                              transition={{ duration: 0.2, ease: "easeOut" }}
+                              className="relative flex items-center"
+                            >
+                              <Search className="pointer-events-none absolute left-2.5 size-3.5 text-zinc-400" />
+                              <input
+                                ref={tenantSearchInputRef}
+                                type="text"
+                                placeholder="Search name, email, phone, ID..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape") {
+                                    if (searchQuery) setSearchQuery("");
+                                    else setIsTenantSearchOpen(false);
+                                  }
+                                }}
+                                className="h-8.5 w-full rounded-xl border border-zinc-200 bg-zinc-50/70 pl-8 pr-7 text-xs font-semibold text-zinc-800 transition-colors placeholder:text-zinc-400 focus:border-[#0059C6] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (searchQuery) setSearchQuery("");
+                                  else setIsTenantSearchOpen(false);
+                                }}
+                                className="absolute right-1.5 flex size-5 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-200/70 hover:text-zinc-700"
+                                title={searchQuery ? "Clear search" : "Close search"}
+                              >
+                                <X className="size-3" />
+                              </button>
+                            </motion.div>
+                          ) : (
+                            <motion.button
+                              key="tenant-search-btn"
+                              initial={{ scale: 0.9, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              exit={{ scale: 0.9, opacity: 0 }}
+                              type="button"
+                              onClick={() => {
+                                setIsTenantSearchOpen(true);
+                                setTimeout(() => tenantSearchInputRef.current?.focus(), 50);
+                              }}
+                              title="Search tenants"
+                              className="flex size-8.5 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 shadow-2xs transition-all hover:border-[#0059C6] hover:text-[#0059C6] active:scale-95"
+                            >
+                              <Search className="size-3.5" />
+                            </motion.button>
+                          )}
+                        </AnimatePresence>
                       </div>
                       <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
                         <Filter className="size-3.5 text-zinc-400" />
@@ -3390,18 +3441,64 @@ function AdminDashboardPage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
-                      <div className="relative w-full sm:w-64">
-                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
-                        <input
-                          type="text"
-                          placeholder="Search order ID, email, phone, or name..."
-                          value={paymentSearchQuery}
-                          onChange={(e) => setPaymentSearchQuery(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") fetchPaymentHistory();
-                          }}
-                          className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all font-semibold"
-                        />
+                      {/* Expandable Search with animation */}
+                      <div className="relative flex items-center">
+                        <AnimatePresence initial={false}>
+                          {isPaymentSearchOpen || paymentSearchQuery ? (
+                            <motion.div
+                              key="payment-search-input"
+                              initial={{ width: 34, opacity: 0 }}
+                              animate={{ width: 240, opacity: 1 }}
+                              exit={{ width: 34, opacity: 0 }}
+                              transition={{ duration: 0.2, ease: "easeOut" }}
+                              className="relative flex items-center"
+                            >
+                              <Search className="pointer-events-none absolute left-2.5 size-3.5 text-zinc-400" />
+                              <input
+                                ref={paymentSearchInputRef}
+                                type="text"
+                                placeholder="Search order ID, email, phone, name..."
+                                value={paymentSearchQuery}
+                                onChange={(e) => setPaymentSearchQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") fetchPaymentHistory();
+                                  if (e.key === "Escape") {
+                                    if (paymentSearchQuery) setPaymentSearchQuery("");
+                                    else setIsPaymentSearchOpen(false);
+                                  }
+                                }}
+                                className="h-8.5 w-full rounded-xl border border-zinc-200 bg-zinc-50/70 pl-8 pr-7 text-xs font-semibold text-zinc-800 transition-colors placeholder:text-zinc-400 focus:border-[#0059C6] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (paymentSearchQuery) setPaymentSearchQuery("");
+                                  else setIsPaymentSearchOpen(false);
+                                }}
+                                className="absolute right-1.5 flex size-5 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-200/70 hover:text-zinc-700"
+                                title={paymentSearchQuery ? "Clear search" : "Close search"}
+                              >
+                                <X className="size-3" />
+                              </button>
+                            </motion.div>
+                          ) : (
+                            <motion.button
+                              key="payment-search-btn"
+                              initial={{ scale: 0.9, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              exit={{ scale: 0.9, opacity: 0 }}
+                              type="button"
+                              onClick={() => {
+                                setIsPaymentSearchOpen(true);
+                                setTimeout(() => paymentSearchInputRef.current?.focus(), 50);
+                              }}
+                              title="Search payments"
+                              className="flex size-8.5 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 shadow-2xs transition-all hover:border-[#0059C6] hover:text-[#0059C6] active:scale-95"
+                            >
+                              <Search className="size-3.5" />
+                            </motion.button>
+                          )}
+                        </AnimatePresence>
                       </div>
                       <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
                         <Filter className="size-3.5 text-zinc-400" />
@@ -3878,19 +3975,65 @@ function AdminDashboardPage() {
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2 w-full lg:w-auto items-center justify-end">
-                          <div className="relative w-full sm:w-64">
-                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-400" />
-                            <input
-                              type="text"
-                              placeholder="Search tenant, email, or subscription ID..."
-                              value={subAdminSearch}
-                              onChange={(e) => setSubAdminSearch(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") fetchAdminSubscriptions();
+                      {/* Expandable Search with animation */}
+                      <div className="relative flex items-center">
+                        <AnimatePresence initial={false}>
+                          {isSubSearchOpen || subAdminSearch ? (
+                            <motion.div
+                              key="sub-search-input"
+                              initial={{ width: 34, opacity: 0 }}
+                              animate={{ width: 240, opacity: 1 }}
+                              exit={{ width: 34, opacity: 0 }}
+                              transition={{ duration: 0.2, ease: "easeOut" }}
+                              className="relative flex items-center"
+                            >
+                              <Search className="pointer-events-none absolute left-2.5 size-3.5 text-zinc-400" />
+                              <input
+                                ref={subSearchInputRef}
+                                type="text"
+                                placeholder="Search tenant, email, sub ID..."
+                                value={subAdminSearch}
+                                onChange={(e) => setSubAdminSearch(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") fetchAdminSubscriptions();
+                                  if (e.key === "Escape") {
+                                    if (subAdminSearch) setSubAdminSearch("");
+                                    else setIsSubSearchOpen(false);
+                                  }
+                                }}
+                                className="h-8.5 w-full rounded-xl border border-zinc-200 bg-zinc-50/70 pl-8 pr-7 text-xs font-semibold text-zinc-800 transition-colors placeholder:text-zinc-400 focus:border-[#0059C6] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (subAdminSearch) setSubAdminSearch("");
+                                  else setIsSubSearchOpen(false);
+                                }}
+                                className="absolute right-1.5 flex size-5 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-200/70 hover:text-zinc-700"
+                                title={subAdminSearch ? "Clear search" : "Close search"}
+                              >
+                                <X className="size-3" />
+                              </button>
+                            </motion.div>
+                          ) : (
+                            <motion.button
+                              key="sub-search-btn"
+                              initial={{ scale: 0.9, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              exit={{ scale: 0.9, opacity: 0 }}
+                              type="button"
+                              onClick={() => {
+                                setIsSubSearchOpen(true);
+                                setTimeout(() => subSearchInputRef.current?.focus(), 50);
                               }}
-                              className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all font-semibold"
-                            />
-                          </div>
+                              title="Search subscriptions"
+                              className="flex size-8.5 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 shadow-2xs transition-all hover:border-[#0059C6] hover:text-[#0059C6] active:scale-95"
+                            >
+                              <Search className="size-3.5" />
+                            </motion.button>
+                          )}
+                        </AnimatePresence>
+                      </div>
                           <div className="flex items-center gap-1.5 border border-zinc-200 bg-white rounded-xl px-3 py-2">
                             <Filter className="size-3.5 text-zinc-400" />
                             <select
@@ -4253,16 +4396,64 @@ function AdminDashboardPage() {
                       </p>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <div className="relative w-full sm:w-72">
-                        <Search className="absolute left-3.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
-                        <input
-                          type="text"
-                          placeholder="Search by name, tenant, phone, or ref..."
-                          value={demoSearchQuery}
-                          onChange={(e) => setDemoSearchQuery(e.target.value)}
-                          className="w-full rounded-xl border border-zinc-200 bg-zinc-50/50 py-2 pl-9 pr-4 text-xs font-semibold text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:outline-none transition-all shadow-inner"
-                        />
+                    <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                      {/* Expandable Search with animation */}
+                      <div className="relative flex items-center">
+                        <AnimatePresence initial={false}>
+                          {isDemoSearchOpen || demoSearchQuery ? (
+                            <motion.div
+                              key="demo-search-input"
+                              initial={{ width: 34, opacity: 0 }}
+                              animate={{ width: 240, opacity: 1 }}
+                              exit={{ width: 34, opacity: 0 }}
+                              transition={{ duration: 0.2, ease: "easeOut" }}
+                              className="relative flex items-center"
+                            >
+                              <Search className="pointer-events-none absolute left-2.5 size-3.5 text-zinc-400" />
+                              <input
+                                ref={demoSearchInputRef}
+                                type="text"
+                                placeholder="Search name, tenant, phone, ref..."
+                                value={demoSearchQuery}
+                                onChange={(e) => setDemoSearchQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape") {
+                                    if (demoSearchQuery) setDemoSearchQuery("");
+                                    else setIsDemoSearchOpen(false);
+                                  }
+                                }}
+                                className="h-8.5 w-full rounded-xl border border-zinc-200 bg-zinc-50/70 pl-8 pr-7 text-xs font-semibold text-zinc-800 transition-colors placeholder:text-zinc-400 focus:border-[#0059C6] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0059C6]/10"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (demoSearchQuery) setDemoSearchQuery("");
+                                  else setIsDemoSearchOpen(false);
+                                }}
+                                className="absolute right-1.5 flex size-5 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-200/70 hover:text-zinc-700"
+                                title={demoSearchQuery ? "Clear search" : "Close search"}
+                              >
+                                <X className="size-3" />
+                              </button>
+                            </motion.div>
+                          ) : (
+                            <motion.button
+                              key="demo-search-btn"
+                              initial={{ scale: 0.9, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              exit={{ scale: 0.9, opacity: 0 }}
+                              type="button"
+                              onClick={() => {
+                                setIsDemoSearchOpen(true);
+                                setTimeout(() => demoSearchInputRef.current?.focus(), 50);
+                              }}
+                              title="Search demo requests"
+                              className="flex size-8.5 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 shadow-2xs transition-all hover:border-[#0059C6] hover:text-[#0059C6] active:scale-95"
+                            >
+                              <Search className="size-3.5" />
+                            </motion.button>
+                          )}
+                        </AnimatePresence>
                       </div>
 
                       <div className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3 py-2">

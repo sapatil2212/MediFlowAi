@@ -256,6 +256,22 @@ if (typeof window === "undefined") {
           );
         }
 
+        // Self-service account deletion (5-day grace). `deletionRequestedAt` marks
+        // when the owner asked to delete; `deletionScheduledAt` is when the sweep
+        // permanently purges the workspace. Both NULL = no pending deletion.
+        try {
+          const userCols: any[] = await conn.query("SHOW COLUMNS FROM User");
+          const userColNames = userCols.map((c: any) => c.Field || c.field || "");
+          if (!userColNames.includes("deletionRequestedAt")) {
+            await conn.query("ALTER TABLE User ADD COLUMN deletionRequestedAt DATETIME(3) NULL");
+          }
+          if (!userColNames.includes("deletionScheduledAt")) {
+            await conn.query("ALTER TABLE User ADD COLUMN deletionScheduledAt DATETIME(3) NULL");
+          }
+        } catch (err: any) {
+          console.warn("[DB] ⚠️ Could not verify/alter User deletion columns:", err.message);
+        }
+
         // Collation normalization will be run at the end of initialization after all tables are created
 
         try {

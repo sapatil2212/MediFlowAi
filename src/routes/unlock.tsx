@@ -7,21 +7,27 @@ import {
   Loader2,
   Lock,
   LogOut,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import bmtLogo from "../assets/bmt-logo.png";
 import { logoutServerFn } from "../lib/auth";
 import {
+  createCustomPlanAutoPayServerFn,
   createCustomPlanCheckoutServerFn,
   getWorkspaceUnlockContextServerFn,
+  verifyCustomPlanAutoPayServerFn,
   verifyCustomPlanCheckoutServerFn,
 } from "../lib/custom-plan-requests";
 
 export const Route = createFileRoute("/unlock")({
-  validateSearch: (search: Record<string, unknown>): { ref?: string; order_id?: string } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { ref?: string; order_id?: string; sub_id?: string } => ({
     ref: typeof search.ref === "string" ? search.ref : undefined,
     order_id: typeof search.order_id === "string" ? search.order_id : undefined,
+    sub_id: typeof search.sub_id === "string" ? search.sub_id : undefined,
   }),
   head: () => ({
     meta: [
@@ -34,14 +40,31 @@ export const Route = createFileRoute("/unlock")({
 
 type UnlockContext = Awaited<ReturnType<typeof getWorkspaceUnlockContextServerFn>>;
 
+// The Cashfree v3 SDK, loaded globally by routes/__root.tsx.
+type CashfreeInstance = {
+  checkout: (opts: { paymentSessionId: string; redirectTarget?: string }) => Promise<unknown>;
+  subscriptionsCheckout?: (opts: {
+    subsSessionId: string;
+    redirectTarget?: string;
+  }) => Promise<{ error?: { message?: string } } | undefined>;
+};
+function cashfreeSdk(): ((opts: { mode: string }) => CashfreeInstance) | null {
+  if (typeof window === "undefined") return null;
+  const factory = (window as unknown as { Cashfree?: unknown }).Cashfree;
+  return typeof factory === "function"
+    ? (factory as (opts: { mode: string }) => CashfreeInstance)
+    : null;
+}
+
 function UnlockPage() {
-  const { ref, order_id } = Route.useSearch();
+  const { ref, order_id, sub_id } = Route.useSearch();
   const navigate = useNavigate();
 
   const [ctx, setCtx] = useState<UnlockContext | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [paying, setPaying] = useState(false);
+  const [settingAutoPay, setSettingAutoPay] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [activated, setActivated] = useState(false);
 
@@ -59,7 +82,8 @@ function UnlockPage() {
     }
   }, [ref]);
 
-  // Confirm a returned payment first (if any), then load the current state.
+  // Confirm a returned payment first (one-time order OR AutoPay mandate), then
+  // load the current state.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -67,11 +91,19 @@ function UnlockPage() {
         setVerifying(true);
         try {
           const res = await verifyCustomPlanCheckoutServerFn({ data: { orderId: order_id } });
-          if (!cancelled && res.paid && res.activated) {
-            setActivated(true);
-          }
+          if (!cancelled && res.paid && res.activated) setActivated(true);
         } catch {
           /* fall through to context load, which shows the still-locked state */
+        } finally {
+          if (!cancelled) setVerifying(false);
+        }
+      } else if (sub_id) {
+        setVerifying(true);
+        try {
+          const res = await verifyCustomPlanAutoPayServerFn({ data: { subscriptionRef: sub_id } });
+          if (!cancelled && res.active) setActivated(true);
+        } catch {
+          /* fall through to context load */
         } finally {
           if (!cancelled) setVerifying(false);
         }
@@ -81,7 +113,7 @@ function UnlockPage() {
     return () => {
       cancelled = true;
     };
-  }, [order_id, loadContext]);
+  }, [order_id, sub_id, loadContext]);
 
   const handlePay = async () => {
     setPaying(true);
@@ -91,17 +123,8 @@ function UnlockPage() {
       if (!res.success || !res.payment_session_id) {
         throw new Error("Could not start the payment. Please try again.");
       }
-      type CashfreeCheckout = {
-        checkout: (opts: { paymentSessionId: string; redirectTarget?: string }) => Promise<unknown>;
-      };
-      const cf = (
-        window as unknown as {
-          Cashfree?: (opts: { mode: string }) => CashfreeCheckout;
-        }
-      ).Cashfree;
-      if (typeof cf !== "function") {
-        throw new Error("Payment gateway failed to load. Please refresh and try again.");
-      }
+      const cf = cashfreeSdk();
+      if (!cf) throw new Error("Payment gateway failed to load. Please refresh and try again.");
       const cashfree = cf({ mode: res.environment === "production" ? "production" : "sandbox" });
       await cashfree.checkout({
         paymentSessionId: res.payment_session_id,
@@ -112,6 +135,33 @@ function UnlockPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment could not be started.");
       setPaying(false);
+    }
+  };
+
+  const handleAutoPay = async () => {
+    setSettingAutoPay(true);
+    setError("");
+    try {
+      const res = await createCustomPlanAutoPayServerFn({ data: { token: ref } });
+      if (!res.success || !res.subscription_session_id) {
+        throw new Error("Could not start AutoPay. Please try again.");
+      }
+      const cf = cashfreeSdk();
+      if (!cf) throw new Error("Payment gateway failed to load. Please refresh and try again.");
+      const cashfree = cf({ mode: res.mode === "production" ? "production" : "sandbox" });
+      if (typeof cashfree.subscriptionsCheckout !== "function") {
+        throw new Error("This gateway build doesn't support AutoPay. Please use Pay once instead.");
+      }
+      const result = await cashfree.subscriptionsCheckout({
+        subsSessionId: res.subscription_session_id,
+        redirectTarget: "_self",
+      });
+      if (result && result.error) {
+        throw new Error(result.error.message || "AutoPay checkout could not be opened.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AutoPay could not be started.");
+      setSettingAutoPay(false);
     }
   };
 
@@ -232,22 +282,44 @@ function UnlockPage() {
                 pay to unlock access for everyone.
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={handlePay}
-                disabled={paying}
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 py-3.5 text-sm font-bold text-white transition-all hover:bg-zinc-800 active:scale-[0.99] disabled:opacity-60"
-              >
-                {paying ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" /> Opening secure checkout...
-                  </>
-                ) : (
-                  <>
-                    <Lock className="size-4" /> Pay {ctx.amountLabel} securely
-                  </>
-                )}
-              </button>
+              <div className="mt-5 space-y-2.5">
+                {/* AutoPay is the recommended path — collects now AND renews monthly. */}
+                <button
+                  type="button"
+                  onClick={handleAutoPay}
+                  disabled={settingAutoPay || paying}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 py-3.5 text-sm font-bold text-white transition-all hover:bg-zinc-800 active:scale-[0.99] disabled:opacity-60"
+                >
+                  {settingAutoPay ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" /> Opening secure checkout...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="size-4" /> Set up AutoPay · {ctx.amountLabel}
+                    </>
+                  )}
+                </button>
+                <p className="text-center text-[10px] font-medium text-zinc-400">
+                  Renews automatically each month · Cancel anytime
+                </p>
+                <button
+                  type="button"
+                  onClick={handlePay}
+                  disabled={paying || settingAutoPay}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white py-3 text-xs font-bold text-zinc-700 transition-all hover:border-zinc-300 hover:bg-zinc-50 active:scale-[0.99] disabled:opacity-60"
+                >
+                  {paying ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" /> Opening secure checkout...
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="size-3.5" /> Pay once ({ctx.amountLabel.split(" / ")[0]})
+                    </>
+                  )}
+                </button>
+              </div>
             )}
 
             {error && (

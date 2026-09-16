@@ -4,6 +4,7 @@ import bmtLogo from "../../assets/bmt-logo.png";
 import React, { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
+import { AnimatedSearch } from "@/components/ui/AnimatedSearch";
 import {
   HeartPulse,
   LayoutDashboard,
@@ -158,6 +159,7 @@ import WhatsAppHub from "../../components/WhatsAppHub";
 import { HelpSupportCard } from "../../components/HelpSupportCard";
 import WelcomeTrialModal, { getTrialExpiryMs } from "../../components/WelcomeTrialModal";
 import MultiLocationSettings from "../../components/settings/MultiLocationSettings";
+import AccountDangerZone from "../../components/settings/AccountDangerZone";
 import { DoctorVideoConsultPanel } from "../../components/video/DoctorVideoConsultPanel";
 import { resolveFeatureAccess, type FeatureId } from "@/lib/feature-access";
 import { isWorkspacePaymentLocked } from "@/lib/workspace-access";
@@ -7684,16 +7686,12 @@ function MedicalDashboardPage() {
                           <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
                             <div className="flex flex-1 flex-col sm:flex-row gap-3 items-stretch sm:items-center">
                               {/* Search */}
-                              <div className="relative flex-1 max-w-md">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
-                                <input
-                                  type="text"
-                                  placeholder="Search patient, doctor..."
-                                  value={consultationSearchQuery}
-                                  onChange={(e) => setConsultationSearchQuery(e.target.value)}
-                                  className="w-full pl-9 pr-4 py-1.5 text-xs rounded-lg border border-zinc-200 bg-zinc-50/30 placeholder-zinc-400 focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand font-semibold text-zinc-700"
-                                />
-                              </div>
+                              <AnimatedSearch
+                                value={consultationSearchQuery}
+                                onChange={setConsultationSearchQuery}
+                                placeholder="Search patient, doctor..."
+                                expandedWidth={240}
+                              />
 
                               {/* Date picker */}
                               <div className="relative">
@@ -8162,16 +8160,13 @@ function MedicalDashboardPage() {
                   >
                     <div className="flex items-center justify-between gap-4 flex-wrap">
                       {/* Search Bar */}
-                      <div className="relative flex-1 min-w-[240px]">
-                        <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-zinc-400" />
-                        <input
-                          type="text"
-                          placeholder="Search patient registry by name, ID, or symptoms..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full rounded-full border border-zinc-200 bg-white pl-10 pr-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
-                        />
-                      </div>
+                      <AnimatedSearch
+                        value={searchQuery}
+                        onChange={setSearchQuery}
+                        placeholder="Search patient registry by name, ID, or symptoms..."
+                        roundedFull
+                        expandedWidth={280}
+                      />
 
                       {/* Add Patient trigger */}
                       <button
@@ -9007,16 +9002,13 @@ function MedicalDashboardPage() {
 
                         {/* Search + status filter */}
                         <div className="flex flex-col sm:flex-row gap-3">
-                          <div className="relative flex-1">
-                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
-                            <input
-                              type="text"
-                              placeholder="Search by patient, phone, doctor, location..."
-                              value={subLocSearch}
-                              onChange={(e) => setSubLocSearch(e.target.value)}
-                              className="w-full rounded-full border border-zinc-200 bg-white pl-10 pr-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:border-brand focus:outline-none transition-all"
-                            />
-                          </div>
+                          <AnimatedSearch
+                            value={subLocSearch}
+                            onChange={setSubLocSearch}
+                            placeholder="Search by patient, phone, doctor, location..."
+                            roundedFull
+                            expandedWidth={280}
+                          />
                           <select
                             value={subLocStatusFilter}
                             onChange={(e) => setSubLocStatusFilter(e.target.value)}
@@ -9614,16 +9606,13 @@ function MedicalDashboardPage() {
                     {/* 2. Control & Filters Bar */}
                     <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
                       <div className="flex flex-1 flex-col sm:flex-row gap-3 items-stretch sm:items-center max-w-2xl">
-                        <div className="relative flex-1">
-                          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-                          <input
-                            type="text"
-                            placeholder="Search appointments by name, email, phone, or complaint..."
-                            value={searchAptQuery}
-                            onChange={(e) => setSearchAptQuery(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 text-xs rounded-full border border-zinc-200 bg-white placeholder-zinc-400 focus:outline-none focus:border-zinc-450 focus:border-zinc-300 font-semibold"
-                          />
-                        </div>
+                        <AnimatedSearch
+                          value={searchAptQuery}
+                          onChange={setSearchAptQuery}
+                          placeholder="Search appointments by name, email, phone, or complaint..."
+                          roundedFull
+                          expandedWidth={280}
+                        />
                         <select
                           value={filterAptStatus}
                           onChange={(e) => setFilterAptStatus(e.target.value)}
@@ -13810,6 +13799,19 @@ function MedicalDashboardPage() {
                             ))}
                           </div>
                         </div>
+
+                        <AccountDangerZone
+                          user={user}
+                          showToast={showToast}
+                          onChanged={async () => {
+                            try {
+                              const fresh = await getCurrentUserServerFn();
+                              if (fresh) setUser(fresh);
+                            } catch {
+                              /* non-fatal */
+                            }
+                          }}
+                        />
                       </motion.div>
                     );
                   })()}

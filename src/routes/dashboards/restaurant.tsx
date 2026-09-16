@@ -21,6 +21,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { AnimatedSearch } from "@/components/ui/AnimatedSearch";
 import {
   Activity,
   AlertCircle,
@@ -2659,25 +2660,12 @@ function GuestsPanel({
 
       {/* ── Search & Filter Bar ── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, phone, email, notes, or guest ID..."
-            className={cn(inputClass, "pl-10 text-xs")}
-          />
-        </div>
-        {search ? (
-          <button
-            type="button"
-            onClick={() => setSearch("")}
-            className="text-xs font-semibold text-zinc-500 hover:text-zinc-800 cursor-pointer"
-          >
-            Clear Search
-          </button>
-        ) : null}
+        <AnimatedSearch
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by name, phone, email, notes, or guest ID..."
+          expandedWidth={320}
+        />
       </div>
 
       {/* ── Error, Loading, and Table ── */}

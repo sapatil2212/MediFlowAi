@@ -145,6 +145,24 @@ async function runReminderCycle(): Promise<void> {
       console.error("[Reminder Scheduler] video sweep error:", sweepErr?.message);
     }
 
+    // Permanently delete accounts whose deletion grace window has elapsed.
+    // Piggy-backs on this cycle — no separate timer.
+    try {
+      const { sweepPendingAccountDeletions } = await import("./account-lifecycle");
+      await sweepPendingAccountDeletions();
+    } catch (delErr: any) {
+      console.error("[Reminder Scheduler] account deletion sweep error:", delErr?.message);
+    }
+
+    // Re-lock custom-plan workspaces whose fixed term lapsed without AutoPay,
+    // and email them a fresh payment link.
+    try {
+      const { sweepExpiredCustomPlans } = await import("./custom-plan-payment");
+      await sweepExpiredCustomPlans();
+    } catch (cpErr: any) {
+      console.error("[Reminder Scheduler] custom plan expiry sweep error:", cpErr?.message);
+    }
+
     const rows = await query<any>(
       `SELECT a.id, a.tenantId, a.name, a.phone, a.whatsapp, a.dateTime, a.timeSlot, a.tokenNo,
               a.doctorId, a.status, a.consultationMode,

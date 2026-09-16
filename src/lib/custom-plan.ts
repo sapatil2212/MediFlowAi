@@ -567,3 +567,110 @@ export const ACTION_HINT: Record<CustomPlanAction, string> = {
  * a parallel entitlement system.
  */
 export const UNLIMITED_PLAN: PlanTier = "Enterprise";
+
+// ---------------------------------------------------------------------------
+// Manual (offline) payment collection
+// ---------------------------------------------------------------------------
+
+/**
+ * The offline payment methods a super admin can record. These are settlement
+ * channels used OUTSIDE the gateway (the customer paid by UPI, card machine,
+ * cash, etc.) — logged for the ledger so every rupee is traceable.
+ */
+export const MANUAL_PAYMENT_METHODS = [
+  "UPI",
+  "Credit Card",
+  "Debit Card",
+  "Cash",
+  "Bank Transfer",
+  "Cheque",
+  "Card (POS)",
+  "Other",
+] as const;
+
+export type ManualPaymentMethod = (typeof MANUAL_PAYMENT_METHODS)[number];
+
+/** Parses an arbitrary value into a known method, defaulting to "Other". */
+export function normalizeManualMethod(method?: string | null): ManualPaymentMethod {
+  const raw = (method ?? "").trim();
+  return (MANUAL_PAYMENT_METHODS.find((m) => m === raw) as ManualPaymentMethod) ?? "Other";
+}
+
+/** A context-appropriate placeholder for the reference field, per method. */
+export function referenceHintForMethod(method: ManualPaymentMethod): string {
+  switch (method) {
+    case "UPI":
+      return "UPI transaction ID (e.g. 4471xxxxxxxx)";
+    case "Credit Card":
+    case "Debit Card":
+    case "Card (POS)":
+      return "Card / auth reference number";
+    case "Cash":
+      return "Receipt number (optional)";
+    case "Bank Transfer":
+      return "UTR / bank reference";
+    case "Cheque":
+      return "Cheque number";
+    default:
+      return "Reference / transaction ID (optional)";
+  }
+}
+
+/** What the collect-payment form submits. */
+export interface ManualPaymentInput {
+  amount: number | string | null;
+  method?: string | null;
+  reference?: string | null;
+  note?: string | null;
+}
+
+/** Normalised, storage-ready manual payment. */
+export interface ManualPayment {
+  amount: number;
+  method: ManualPaymentMethod;
+  reference: string | null;
+  note: string | null;
+}
+
+export const MSG_MANUAL_AMOUNT_INVALID = `Amount must be a number between 1 and ${AMOUNT_LIMITS.max}`;
+export const MSG_MANUAL_REFERENCE_REQUIRED =
+  "A transaction / reference ID is required for this payment method";
+
+/**
+ * Validates a manual payment. A positive amount is required (a zero-rupee
+ * "payment" is meaningless here — use the plan's free-pilot terms instead). A
+ * reference is required for every electronic method (UPI, cards, transfer,
+ * cheque); cash and "Other" may omit it.
+ */
+export function validateManualPayment(
+  input: ManualPaymentInput,
+): { ok: true; value: ManualPayment } | { ok: false; errors: FieldError[] } {
+  const errors: FieldError[] = [];
+
+  const rawAmount = typeof input?.amount === "string" ? Number(input.amount) : input?.amount;
+  const amount = typeof rawAmount === "number" && Number.isFinite(rawAmount) ? rawAmount : NaN;
+  if (!Number.isFinite(amount) || amount <= 0 || amount > AMOUNT_LIMITS.max) {
+    errors.push({ field: "amount", message: MSG_MANUAL_AMOUNT_INVALID });
+  }
+
+  const method = normalizeManualMethod(input?.method);
+  const reference = (input?.reference ?? "").trim();
+  const referenceRequired = method !== "Cash" && method !== "Other";
+  if (referenceRequired && reference.length === 0) {
+    errors.push({ field: "reference", message: MSG_MANUAL_REFERENCE_REQUIRED });
+  }
+
+  const note = (input?.note ?? "").trim();
+
+  if (errors.length > 0) return { ok: false, errors };
+
+  return {
+    ok: true,
+    value: {
+      amount: Math.round(amount * 100) / 100,
+      method,
+      reference: reference || null,
+      note: note || null,
+    },
+  };
+}

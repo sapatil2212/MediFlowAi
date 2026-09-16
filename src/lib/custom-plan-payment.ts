@@ -18,7 +18,7 @@
  */
 
 import crypto from "crypto";
-import { execute, queryOne, withTransaction } from "./db";
+import { execute, query, queryOne, withTransaction } from "./db";
 import { DEFAULT_SETTINGS, PROFESSION_RESTAURANT } from "./restaurant-availability";
 import { generateTenantId } from "./tenant-provisioning";
 import {
@@ -27,8 +27,15 @@ import {
   formatTermsLabel,
   normalizeBillingInterval,
   type CustomPlanTerms,
+  type ManualPayment,
 } from "./custom-plan";
+import { type PlanTier } from "./feature-access";
 import { sendCustomPlanStatusEmail } from "./email";
+import {
+  createCashfreeSubscription,
+  ensureCashfreePeriodicPlan,
+  getCashfreeConfig,
+} from "./cashfree";
 
 /** Payment method label written to `User.paymentMethod` for custom plans. */
 export const CUSTOM_PLAN_PAID_METHOD = "Custom Plan";
@@ -473,6 +480,158 @@ export async function activateCustomPlanTenant(
 }
 
 // ---------------------------------------------------------------------------
+// Repeatable manual (offline) payment collection
+// ---------------------------------------------------------------------------
+
+/** The outcome of recording one manual payment. */
+export interface ManualPaymentResult {
+  amount: number;
+  method: string;
+  reference: string | null;
+  /** ISO date the subscription now runs through after this collection. */
+  expiresAt: string;
+  /** The unique ledger order id written for this collection. */
+  orderId: string;
+}
+
+/**
+ * Records ONE manual (offline) payment against a provisioned custom-plan
+ * workspace and can be called any number of times.
+ *
+ * Unlike {@link activateCustomPlanTenant} (which is idempotent and no-ops once
+ * the tenant is Active), this always writes a fresh, uniquely-keyed ledger
+ * entry and always extends paid access. Each collection pushes the expiry one
+ * term further from the LATER of "now" and the current expiry, so paying twice
+ * in a row stacks the coverage instead of overwriting it, and paying after a
+ * lapse restarts from today. The tenant is (re)set Active either way.
+ *
+ * The negotiated method and reference id (UPI txn id, card auth ref, UTR,
+ * cheque no.) are stored on the ledger row — method in `paymentMode`, reference
+ * in `cfPaymentId` — with `gateway = 'Manual'` so offline settlements are never
+ * confused with gateway payments. Never charges anything; it only records money
+ * the super admin already collected out of band.
+ */
+export async function recordManualCustomPlanPayment(
+  row: CustomPlanRow,
+  payment: ManualPayment,
+): Promise<ManualPaymentResult> {
+  if (!row.userId) {
+    throw new Error("This request has no provisioned workspace to collect against.");
+  }
+
+  const current = await queryOne<{
+    subscriptionStatus: string | null;
+    subscriptionPlan: string | null;
+    subscriptionExpiresAt: string | Date | null;
+  }>(
+    "SELECT subscriptionStatus, subscriptionPlan, subscriptionExpiresAt FROM User WHERE id = ? LIMIT 1",
+    [row.userId],
+  );
+  if (!current) {
+    throw new Error("The workspace linked to this request no longer exists.");
+  }
+
+  const terms = termsFromRow(row);
+  const now = new Date();
+  const currentExpiry = current.subscriptionExpiresAt
+    ? new Date(current.subscriptionExpiresAt)
+    : null;
+  // Stack coverage: extend from the current expiry when it is still in the
+  // future, otherwise restart the term from today.
+  const base = currentExpiry && currentExpiry.getTime() > now.getTime() ? currentExpiry : now;
+  const expiresAt = computeExpiry(base, terms.termMonths);
+
+  const methodLabel = `${CUSTOM_PLAN_PAID_METHOD} · ${payment.method}`;
+
+  await execute(
+    `UPDATE User SET
+       subscriptionStatus = 'Active',
+       subscriptionPlan = ?,
+       subscriptionExpiresAt = ?,
+       paymentMethod = ?,
+       paymentAmount = ?,
+       billingInterval = ?,
+       updatedAt = NOW()
+     WHERE id = ?`,
+    [terms.grantedPlan, expiresAt, methodLabel, payment.amount, terms.billingInterval, row.userId],
+  );
+
+  await execute(
+    `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
+     VALUES (?, ?, ?, 'Active', ?, ?, ?, ?, NOW(), 'SuperAdmin')`,
+    [
+      generateId(),
+      row.userId,
+      current.subscriptionStatus || "PaymentPending",
+      current.subscriptionPlan || terms.grantedPlan,
+      terms.grantedPlan,
+      payment.amount,
+      terms.billingInterval,
+    ],
+  );
+
+  const orderId = `manual_custom_${row.id}_${Date.now()}`;
+  await upsertPaymentHistory({
+    userId: row.userId,
+    tenantId: row.tenantId,
+    orderId,
+    cfPaymentId: payment.reference,
+    plan: terms.grantedPlan,
+    amount: payment.amount,
+    status: "SUCCESS",
+    orderStatus: "PAID",
+    paymentMode: payment.method,
+    gateway: "Manual",
+    customerName: row.name,
+    customerEmail: row.email,
+    customerPhone: row.phone,
+  });
+
+  await execute(
+    `UPDATE CustomPlanRequest SET status = 'Active', paidAt = NOW(), activatedAt = COALESCE(activatedAt, NOW()), updatedAt = NOW() WHERE id = ?`,
+    [row.id],
+  );
+
+  // Best-effort receipt — a mail failure must never undo a recorded payment.
+  try {
+    await sendCustomPlanStatusEmail({
+      email: row.email,
+      subject: `Payment received • ${row.referenceId}`,
+      title: "We've recorded your payment",
+      message: `Hi ${row.name}, we've recorded a payment for ${row.businessName} and your BookMyTime workspace is active. A summary of this payment is below.`,
+      tone: "success",
+      details: [
+        { label: "Reference", value: row.referenceId },
+        ...(row.tenantId ? [{ label: "Workspace ID", value: row.tenantId }] : []),
+        { label: "Plan", value: `${terms.grantedPlan} (custom · unlimited)` },
+        {
+          label: "Amount received",
+          value: formatTermsLabel(payment.amount, terms.billingInterval),
+        },
+        { label: "Method", value: payment.method },
+        ...(payment.reference ? [{ label: "Reference / txn ID", value: payment.reference }] : []),
+        { label: "Active through", value: expiresAt.toISOString().slice(0, 10) },
+      ],
+      cta: { label: "Sign in to your workspace", url: `${publicOrigin()}/login` },
+      footnote: "Keep this email as your receipt.",
+    });
+  } catch (err) {
+    console.error(
+      `[CustomPlan] Failed to send manual payment receipt for ${row.referenceId}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  return {
+    amount: payment.amount,
+    method: payment.method,
+    reference: payment.reference,
+    expiresAt: expiresAt.toISOString(),
+    orderId,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Cashfree custom order
 // ---------------------------------------------------------------------------
 
@@ -685,4 +844,231 @@ export async function reconcileCustomPlanOrder(
 /** True when an order id belongs to the custom-plan payment flow. */
 export function isCustomPlanOrder(orderId: string | null | undefined): boolean {
   return typeof orderId === "string" && orderId.startsWith(CUSTOM_ORDER_PREFIX);
+}
+
+// ---------------------------------------------------------------------------
+// Recurring AutoPay for a negotiated (custom) amount
+// ---------------------------------------------------------------------------
+
+/** Deterministic Cashfree plan id for a negotiated (custom) monthly amount. */
+function customPlanIdFor(amount: number): string {
+  return `bmt_custom_monthly_${amount}`;
+}
+
+/**
+ * Starts a recurring monthly AutoPay mandate for an ARBITRARY (negotiated)
+ * amount — the custom-plan equivalent of createSubscriptionServerFn, which is
+ * locked to the PLAN_BILLING list prices.
+ *
+ * The mandate authorises the full custom amount up front (so the first month is
+ * collected immediately) and schedules the next charge one interval out. The
+ * local Subscription row stores the granted tier label so every downstream
+ * consumer's `normalizePlan(planTier)` keeps working.
+ *
+ * Lives here (a server-only module never statically imported by a client
+ * component) rather than in subscription.ts — an EXPORTED server function in a
+ * client-imported module cannot be stripped from the browser bundle and would
+ * drag `db`/`dotenv` into the client.
+ */
+export async function startCustomAmountSubscription(params: {
+  userId: string;
+  tenantId: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  /** The stored plan tier label (kept normalizable — use "Enterprise"). */
+  tier: PlanTier;
+  /** The negotiated monthly amount in INR. */
+  amount: number;
+  /** Same-origin return path; `sub_id=<ref>` is appended for the return verify. */
+  returnPath: string;
+}): Promise<{
+  success: true;
+  subscriptionRef: string;
+  subscription_session_id: string | null;
+  mode: "production" | "sandbox";
+  amount: number;
+}> {
+  if (!(params.amount > 0)) {
+    throw new Error("A custom AutoPay amount must be greater than zero.");
+  }
+
+  // One active/pending mandate per account.
+  const existingActive = await queryOne<{ subscriptionRef: string }>(
+    "SELECT subscriptionRef FROM Subscription WHERE userId = ? AND status IN ('ACTIVE','BANK_APPROVAL_PENDING') LIMIT 1",
+    [params.userId],
+  );
+  if (existingActive) {
+    throw new Error(
+      "This workspace already has an active AutoPay mandate. Cancel it before starting a new one.",
+    );
+  }
+
+  const cfg = getCashfreeConfig();
+  const planId = customPlanIdFor(params.amount);
+
+  await ensureCashfreePeriodicPlan({
+    planId,
+    planName: `BookMyTime Custom Monthly`,
+    recurringAmount: params.amount,
+    maxAmount: params.amount,
+    maxCycles: 120,
+    intervalType: "MONTH",
+    intervals: 1,
+    currency: "INR",
+    note: `Custom monthly plan Rs ${params.amount}`,
+  });
+
+  const year = new Date().getFullYear();
+  const uniqueId = Date.now().toString(36).toUpperCase().padStart(8, "0").slice(-8);
+  const subscriptionRef = `BMT-SUB-${year}-${uniqueId}`;
+
+  const safePath =
+    params.returnPath.startsWith("/") && !params.returnPath.startsWith("//")
+      ? params.returnPath
+      : "/unlock";
+  const origin = publicOrigin();
+  const returnUrl = `${origin}${safePath}${safePath.includes("?") ? "&" : "?"}sub_id=${subscriptionRef}`;
+
+  const expiry = new Date();
+  expiry.setFullYear(expiry.getFullYear() + 5);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const cfSub = await createCashfreeSubscription({
+    subscriptionId: subscriptionRef,
+    planId,
+    planName: `BookMyTime Custom Monthly`,
+    customer: { name: params.name, email: params.email, phone: params.phone || "9999999999" },
+    returnUrl,
+    expiryTimeIso: expiry.toISOString(),
+    authorizationAmount: params.amount,
+    note: `Custom AutoPay`,
+    firstChargeTimeIso: tomorrow.toISOString(),
+  });
+
+  await execute(
+    `INSERT INTO Subscription
+       (id, userId, tenantId, subscriptionRef, cfSubscriptionId, cfPlanId, planTier, amount, currency, intervalType, intervals,
+        status, sessionId, customerName, customerEmail, customerPhone, gateway, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'INR', 'MONTH', 1, ?, ?, ?, ?, ?, 'Cashfree', NOW(), NOW())`,
+    [
+      generateId(),
+      params.userId,
+      params.tenantId,
+      subscriptionRef,
+      cfSub?.cf_subscription_id ? String(cfSub.cf_subscription_id) : null,
+      planId,
+      params.tier,
+      params.amount,
+      String(cfSub?.subscription_status || "INITIALIZED").toUpperCase(),
+      cfSub?.subscription_session_id || null,
+      params.name,
+      params.email,
+      params.phone || null,
+    ],
+  );
+
+  return {
+    success: true,
+    subscriptionRef,
+    subscription_session_id: cfSub?.subscription_session_id || null,
+    mode: cfg.mode,
+    amount: params.amount,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Expiry sweep — re-lock custom plans that lapsed without AutoPay
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-locks active custom-plan workspaces whose term has lapsed and that are NOT
+ * on an AutoPay mandate. Those tenants paid once (or offline) for a fixed term;
+ * when it ends with no recurring mandate to renew it, the workspace is put back
+ * into `PaymentPending` (access withheld, no expiry so the owner can still sign
+ * in and reach the paywall) and a fresh payment link is emailed.
+ *
+ * Tenants WITH an active/pending/on-hold mandate are skipped — AutoPay (and its
+ * grace period) governs their renewal. Invoked from the reminder cycle.
+ */
+export async function sweepExpiredCustomPlans(): Promise<number> {
+  const rows = await query<CustomPlanRow>(
+    `SELECT cpr.* FROM CustomPlanRequest cpr
+       JOIN User u ON u.id COLLATE utf8mb4_unicode_ci = cpr.userId COLLATE utf8mb4_unicode_ci
+      WHERE cpr.status = 'Active'
+        AND u.subscriptionStatus = 'Active'
+        AND u.subscriptionExpiresAt IS NOT NULL
+        AND u.subscriptionExpiresAt < NOW()
+        AND NOT EXISTS (
+          SELECT 1 FROM Subscription s
+           WHERE s.userId COLLATE utf8mb4_unicode_ci = cpr.userId COLLATE utf8mb4_unicode_ci
+             AND s.status IN ('ACTIVE','BANK_APPROVAL_PENDING','ON_HOLD')
+        )`,
+  );
+  if (!rows || rows.length === 0) return 0;
+
+  let locked = 0;
+  for (const row of rows) {
+    if (!row.userId) continue;
+    const terms = termsFromRow(row);
+    const token = row.paymentToken || generatePaymentToken();
+    try {
+      await execute(
+        `UPDATE User SET subscriptionStatus = 'PaymentPending', subscriptionExpiresAt = NULL,
+           paymentMethod = ?, updatedAt = NOW() WHERE id = ?`,
+        [CUSTOM_PLAN_PENDING_METHOD, row.userId],
+      );
+      await execute(
+        `UPDATE CustomPlanRequest SET status = 'PaymentPending', paymentToken = ?, paidAt = NULL, updatedAt = NOW() WHERE id = ?`,
+        [token, row.id],
+      );
+      await execute(
+        `INSERT INTO SubscriptionHistory (id, userId, previousStatus, newStatus, previousPlan, newPlan, amount, billingInterval, changedAt, changedBy)
+         VALUES (?, ?, 'Active', 'PaymentPending', ?, ?, ?, ?, NOW(), 'System')`,
+        [
+          generateId(),
+          row.userId,
+          terms.grantedPlan,
+          terms.grantedPlan,
+          terms.grantedAmount,
+          terms.billingInterval,
+        ],
+      );
+      locked += 1;
+
+      try {
+        await sendCustomPlanStatusEmail({
+          email: row.email,
+          subject: `Renew your BookMyTime workspace • ${row.referenceId}`,
+          title: "Your custom plan term has ended",
+          message: `Hi ${row.name}, the term for ${row.businessName} has ended and there's no AutoPay set up to renew it. Access is paused until payment is complete — use the secure link below to renew.`,
+          tone: "warning",
+          details: [
+            { label: "Reference", value: row.referenceId },
+            {
+              label: "Amount due",
+              value: formatTermsLabel(terms.grantedAmount, terms.billingInterval),
+            },
+          ],
+          cta: {
+            label: `Renew ${formatTermsLabel(terms.grantedAmount, terms.billingInterval)}`,
+            url: buildPaymentLink(token),
+          },
+          footnote: "Set up AutoPay during checkout to renew automatically next time.",
+        });
+      } catch (err) {
+        console.error(
+          `[CustomPlan] Failed to email renewal link for ${row.referenceId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[CustomPlan] Failed to re-lock expired custom plan ${row.referenceId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return locked;
 }

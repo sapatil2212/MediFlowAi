@@ -37,10 +37,12 @@ import {
   statusAfter,
   validateCustomPlanRequest,
   validateCustomPlanTerms,
+  validateManualPayment,
   type CustomPlanAction,
   type CustomPlanRequestInput,
   type CustomPlanStatus,
   type CustomPlanTerms,
+  type ManualPaymentInput,
 } from "./custom-plan";
 import {
   activateCustomPlanTenant,
@@ -51,9 +53,19 @@ import {
   generatePaymentToken,
   provisionCustomPlanWorkspace,
   reconcileCustomPlanOrder,
+  recordManualCustomPlanPayment,
   termsFromRow,
   type CustomPlanRow,
 } from "./custom-plan-payment";
+import { getCashfreeSubscription } from "./cashfree";
+import {
+  reconcileSubscriptionFromCashfree,
+  syncSubscriptionPaymentsFromCashfree,
+} from "./subscription-webhook";
+import { purgeTenantCompletely } from "./account-lifecycle";
+import { isKnownProfession, PRACTICE_SIZE_OPTIONS } from "./tenant-provisioning";
+import { isValidEmailShape, normalizePhone } from "./custom-plan";
+import { validateBusinessName } from "./restaurant-availability";
 
 /**
  * A `CustomPlanRequest` row as the driver returns it (same shape the payment
@@ -268,7 +280,8 @@ export const getCustomPlanRequestsServerFn = createServerFn({ method: "GET" }).h
             u.subscriptionExpiresAt AS tenantSubscriptionExpiresAt,
             u.paymentAmount      AS tenantPaymentAmount
        FROM CustomPlanRequest cpr
-       LEFT JOIN User u ON u.id = cpr.userId
+       LEFT JOIN User u
+              ON u.id COLLATE utf8mb4_unicode_ci = cpr.userId COLLATE utf8mb4_unicode_ci
       ORDER BY cpr.createdAt DESC`,
   );
 
@@ -715,6 +728,111 @@ export const deleteCustomPlanRequestServerFn = createServerFn({ method: "POST" }
   });
 
 // ---------------------------------------------------------------------------
+// Super admin — manual (offline) payment collection
+// ---------------------------------------------------------------------------
+
+/**
+ * Records ONE offline payment the super admin collected out of band (UPI, card
+ * machine, cash, bank transfer, cheque, ...) against a provisioned workspace.
+ *
+ * Repeatable by design: unlike the `recordPayment` lifecycle action — which
+ * only unlocks a still-pending workspace once — this can be called any number
+ * of times, ignoring whether money was collected before. Every call writes a
+ * fresh ledger entry and extends paid access by one term, so a super admin can
+ * take a renewal, a top-up, or a correction whenever the customer pays offline.
+ * Requires a provisioned tenant (approve first); it never charges a card.
+ */
+export const recordManualPaymentServerFn = createServerFn({ method: "POST" })
+  .validator((data: { id: string } & ManualPaymentInput) => {
+    if (!data?.id) throw new Error("Custom plan request id is required");
+    const result = validateManualPayment(data);
+    if (!result.ok) throw new Error(result.errors[0].message);
+    return { id: data.id, payment: result.value };
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const row = await queryOne<CustomPlanRequestRecord>(
+      "SELECT * FROM CustomPlanRequest WHERE id = ? LIMIT 1",
+      [data.id],
+    );
+    if (!row) throw new Error("Custom plan request not found");
+    if (!row.userId) {
+      throw new Error(
+        "Approve and provision this workspace before collecting a payment against it.",
+      );
+    }
+
+    const result = await recordManualCustomPlanPayment(row, data.payment);
+    return {
+      success: true as const,
+      amount: result.amount,
+      method: result.method,
+      reference: result.reference,
+      expiresAt: result.expiresAt,
+      orderId: result.orderId,
+    };
+  });
+
+/** A single ledger row the console shows under the collect-payment form. */
+interface CustomPlanPaymentRow {
+  id: string;
+  orderId: string;
+  cfPaymentId: string | null;
+  amount: number | string | null;
+  status: string;
+  orderStatus: string | null;
+  paymentMode: string | null;
+  gateway: string | null;
+  createdAt: string;
+}
+
+/**
+ * The recent payment ledger for a request's workspace (newest first, capped).
+ *
+ * Scoped to this tenant so the Manage dialog can show what has already been
+ * collected — gateway payments and manual collections alike — right beside the
+ * form that records the next one. Read-only; never exposes another tenant's
+ * ledger because it resolves the tenant from the request id under an admin
+ * session.
+ */
+export const getCustomPlanPaymentsServerFn = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => {
+    if (!data?.id) throw new Error("Custom plan request id is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const row = await queryOne<{ tenantId: string | null; userId: string | null }>(
+      "SELECT tenantId, userId FROM CustomPlanRequest WHERE id = ? LIMIT 1",
+      [data.id],
+    );
+    if (!row) throw new Error("Custom plan request not found");
+    if (!row.tenantId && !row.userId) {
+      return { payments: [] as Array<Omit<CustomPlanPaymentRow, "amount"> & { amount: number }> };
+    }
+
+    const rows = await query<CustomPlanPaymentRow>(
+      `SELECT id, orderId, cfPaymentId, amount, status, orderStatus, paymentMode, gateway, createdAt
+         FROM PaymentHistory
+        WHERE tenantId = ? OR userId = ?
+        ORDER BY createdAt DESC
+        LIMIT 20`,
+      [row.tenantId, row.userId],
+    );
+
+    return {
+      payments: rows.map((r) => ({
+        ...r,
+        amount: r.amount === null ? 0 : Number(r.amount),
+      })),
+    };
+  });
+
+// ---------------------------------------------------------------------------
 // Payment (tenant-facing) — unlock context, checkout, verify
 // ---------------------------------------------------------------------------
 
@@ -836,4 +954,201 @@ export const verifyCustomPlanCheckoutServerFn = createServerFn({ method: "POST" 
       activated: result.activated || result.alreadyActive,
       status: result.status,
     };
+  });
+
+/**
+ * Starts a recurring monthly AutoPay mandate for the negotiated amount. The
+ * mandate authorises (and collects) the first month immediately and renews
+ * automatically each cycle; the tenant can cancel anytime from their dashboard.
+ * Requires a valid pay-link token or a signed-in owner.
+ */
+export const createCustomPlanAutoPayServerFn = createServerFn({ method: "POST" })
+  .validator((data: { token?: string }) => data || {})
+  .handler(async ({ data }) => {
+    const { row, role } = await resolveUnlockRequest(data.token);
+    if (!row) throw new Error("We couldn't find a pending payment for this workspace.");
+    if (!data.token && role && role !== "admin") {
+      throw new Error(
+        "Only the workspace owner can set up AutoPay. Please ask them to sign in and continue.",
+      );
+    }
+    if (normalizeStatus(row.status) !== "PaymentPending") {
+      throw new Error("This workspace is not awaiting payment.");
+    }
+    if (!row.userId || !row.tenantId) {
+      throw new Error("This workspace is not fully provisioned yet. Please try again shortly.");
+    }
+
+    const terms = termsFromRow(row);
+    if (!(terms.grantedAmount > 0)) {
+      throw new Error("This custom plan has no recurring amount to charge.");
+    }
+
+    const returnRef = data.token || row.paymentToken || "";
+    const returnPath = returnRef ? `/unlock?ref=${encodeURIComponent(returnRef)}` : "/unlock";
+
+    const { startCustomAmountSubscription } = await import("./custom-plan-payment");
+    const sub = await startCustomAmountSubscription({
+      userId: row.userId,
+      tenantId: row.tenantId,
+      name: row.name,
+      email: row.email,
+      phone: row.phone,
+      tier: terms.grantedPlan,
+      amount: terms.grantedAmount,
+      returnPath,
+    });
+
+    return {
+      success: true as const,
+      subscription_session_id: sub.subscription_session_id,
+      subscription_id: sub.subscriptionRef,
+      mode: sub.mode,
+      amount: sub.amount,
+    };
+  });
+
+/**
+ * Confirms an AutoPay mandate on return from checkout. Reconciling an ACTIVE
+ * mandate sets the tenant Active (and flips the request to Active via the
+ * reconcile helper), which unlocks the workspace. Safe to call unauthenticated —
+ * it only reveals active/pending for an opaque subscription ref.
+ */
+export const verifyCustomPlanAutoPayServerFn = createServerFn({ method: "POST" })
+  .validator((data: { subscriptionRef: string }) => {
+    if (!data?.subscriptionRef) throw new Error("Subscription reference is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const cfSub = await getCashfreeSubscription(data.subscriptionRef);
+    if (!cfSub) {
+      return { active: false as const, status: "NOT_FOUND", pending: false };
+    }
+    await reconcileSubscriptionFromCashfree(data.subscriptionRef, cfSub);
+    await syncSubscriptionPaymentsFromCashfree(data.subscriptionRef);
+
+    const status = String(cfSub.subscription_status || "").toUpperCase();
+    const authStatus = String(
+      cfSub?.authorization_details?.authorization_status || "",
+    ).toUpperCase();
+    const active = status === "ACTIVE" || authStatus === "ACTIVE";
+    return {
+      active,
+      status,
+      pending: status === "BANK_APPROVAL_PENDING",
+    };
+  });
+
+// ---------------------------------------------------------------------------
+// Super admin — edit requester/tenant details, purge tenant
+// ---------------------------------------------------------------------------
+
+type DetailsPayload = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  businessName: string;
+  profession: string;
+  practiceSize: string;
+};
+
+/**
+ * Edits the requester's details on the request AND, when a workspace has been
+ * provisioned, the linked tenant's `User` row — so the super admin can correct
+ * any field of a custom plan customer from one place. Email/phone uniqueness is
+ * enforced against every OTHER account so login routing stays unambiguous.
+ */
+export const updateCustomPlanDetailsServerFn = createServerFn({ method: "POST" })
+  .validator((data: DetailsPayload) => {
+    if (!data?.id) throw new Error("Custom plan request id is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const row = await queryOne<CustomPlanRequestRecord>(
+      "SELECT * FROM CustomPlanRequest WHERE id = ? LIMIT 1",
+      [data.id],
+    );
+    if (!row) throw new Error("Custom plan request not found");
+
+    const name = (data.name || "").trim();
+    if (name.length < 2) throw new Error("Please enter the customer's full name.");
+
+    const email = (data.email || "").trim().toLowerCase();
+    if (!isValidEmailShape(email)) throw new Error("Please enter a valid email address.");
+
+    const phone = normalizePhone(data.phone || "");
+    if (phone.replace(/\D/g, "").length < 8) throw new Error("Please enter a valid phone number.");
+
+    const profession = (data.profession || "").trim();
+    if (!isKnownProfession(profession)) throw new Error("Please select a valid business type.");
+
+    const businessNameResult = validateBusinessName(data.businessName, profession);
+    if (!businessNameResult.ok) throw new Error(businessNameResult.errors[0].message);
+    const businessName = businessNameResult.value;
+
+    const practiceSize = (data.practiceSize || "").trim();
+    if (!PRACTICE_SIZE_OPTIONS.includes(practiceSize)) {
+      throw new Error("Please select a valid team size.");
+    }
+
+    // Email/phone must not collide with any OTHER account (exclude this tenant).
+    const emailClash = await queryOne<{ id: string }>(
+      "SELECT id FROM User WHERE email = ? AND id <> ? LIMIT 1",
+      [email, row.userId || ""],
+    );
+    if (emailClash) throw new Error("That email is already used by another workspace.");
+    const phoneClash = await queryOne<{ id: string }>(
+      "SELECT id FROM User WHERE phone = ? AND id <> ? LIMIT 1",
+      [phone, row.userId || ""],
+    );
+    if (phoneClash) throw new Error("That phone number is already used by another workspace.");
+
+    await execute(
+      `UPDATE CustomPlanRequest SET name = ?, email = ?, phone = ?, businessName = ?, profession = ?, practiceSize = ?, updatedAt = NOW() WHERE id = ?`,
+      [name, email, phone, businessName, profession, practiceSize, data.id],
+    );
+
+    if (row.userId) {
+      await execute(
+        `UPDATE User SET name = ?, email = ?, phone = ?, clinicName = ?, practiceSize = ?, profession = ?, updatedAt = NOW() WHERE id = ?`,
+        [name, email, phone, businessName, practiceSize, profession, row.userId],
+      );
+    }
+
+    return { success: true as const };
+  });
+
+/**
+ * Permanently deletes a custom plan customer: purges the provisioned workspace
+ * and every row scoped to it, then removes the request record. Destructive and
+ * irreversible — the console guards it behind an explicit confirmation.
+ */
+export const deleteCustomPlanTenantServerFn = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => {
+    if (!data?.id) throw new Error("Custom plan request id is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+
+    const row = await queryOne<{ userId: string | null; tenantId: string | null }>(
+      "SELECT userId, tenantId FROM CustomPlanRequest WHERE id = ? LIMIT 1",
+      [data.id],
+    );
+    if (!row) throw new Error("Custom plan request not found");
+
+    if (row.userId) {
+      // Reuses the same fault-tolerant purge the deletion sweep runs.
+      await purgeTenantCompletely(row.userId, row.tenantId);
+    }
+    // Purge deletes CustomPlanRequest by userId; remove by id too in case the
+    // row was never linked to a provisioned workspace.
+    await execute("DELETE FROM CustomPlanRequest WHERE id = ?", [data.id]);
+
+    return { success: true as const };
   });

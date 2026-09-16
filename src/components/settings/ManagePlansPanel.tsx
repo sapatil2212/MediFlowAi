@@ -47,6 +47,7 @@ import {
   normalizePlan,
   type PlanTier,
 } from "../../lib/feature-access";
+import AccountDangerZone from "./AccountDangerZone";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props & view types
@@ -1344,6 +1345,9 @@ export default function ManagePlansPanel({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Danger zone — deactivate plan / delete account */}
+      <AccountDangerZone user={account} showToast={showToast} onChanged={refreshAccount} />
     </motion.div>
   );
 }

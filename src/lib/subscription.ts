@@ -8,11 +8,24 @@
 // All amounts/intervals are read from PLAN_BILLING — never hardcoded per call.
 // Every mutating action validates ownership server-side.
 // ─────────────────────────────────────────────────────────────────────────────
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import crypto from "crypto";
-import { verifySession } from "./auth.server";
-import { verifyAdminSession } from "./admin.server";
 import { query, queryOne, execute } from "./db";
+
+const resolveSession = createServerOnlyFn(async () => {
+  const { verifySession } = await import("./auth.server");
+  return verifySession();
+});
+
+const resolveAdminSession = createServerOnlyFn(async () => {
+  const { verifyAdminSession } = await import("./admin.server");
+  return verifyAdminSession();
+});
+
+const resolveRequestOrigin = createServerOnlyFn(async (fallback: string) => {
+  const { resolveRequestOrigin } = await import("./auth.server");
+  return resolveRequestOrigin(fallback);
+});
 import { sendBillingNotificationEmail } from "./email";
 import { normalizePlan, PLAN_BILLING, type PlanTier } from "./feature-access";
 import {
@@ -38,23 +51,11 @@ function planIdFor(tier: PlanTier, amount: number): string {
   return `bmt_${tier.toLowerCase()}_monthly_${amount}`;
 }
 
-/**
- * Resolves the origin the request actually came from (so the post-mandate
- * redirect returns to the same host/port — localhost:8080 in dev,
- * https://bookmytime.tech in prod) rather than a hardcoded config value.
- */
-async function resolveRequestOrigin(fallback: string): Promise<string> {
-  try {
-    const { getRequestHeaders } = await import("@tanstack/react-start/server");
-    const headers = getRequestHeaders();
-    const referer = headers.get("referer");
-    const originHeader = headers.get("origin") || (referer ? new URL(referer).origin : null);
-    if (originHeader) return originHeader;
-  } catch {
-    /* no request context */
-  }
-  return fallback;
-}
+// Custom-amount AutoPay (startCustomAmountSubscription) lives in
+// custom-plan-payment.ts — a server-only module never statically imported by a
+// client component — so its server dependencies never leak into the browser
+// bundle. This file (subscription.ts) IS imported directly by the super-admin
+// dashboard, so it must expose only createServerFn / createServerOnlyFn values.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Create subscription (mandate) — returns a subscription_session_id for checkout
@@ -62,7 +63,7 @@ async function resolveRequestOrigin(fallback: string): Promise<string> {
 export const createSubscriptionServerFn = createServerFn({ method: "POST" })
   .validator((data: { planTier: "Basic" | "Premium"; returnPath?: string }) => data)
   .handler(async ({ data }) => {
-    const user = await verifySession();
+    const user = await resolveSession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     // Only the parent (admin) account manages billing.
     if (user.role && user.role !== "admin") {
@@ -386,7 +387,7 @@ export const verifyRenewalSubscriptionServerFn = createServerFn({ method: "POST"
 export const verifySubscriptionServerFn = createServerFn({ method: "POST" })
   .validator((data: { subscriptionRef: string }) => data)
   .handler(async ({ data }) => {
-    const user = await verifySession();
+    const user = await resolveSession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
 
     const local = await getLocalSubscriptionByRef(data.subscriptionRef);
@@ -454,7 +455,7 @@ export const verifySubscriptionServerFn = createServerFn({ method: "POST" })
 // Get the current user's subscription + billing history (billing UI)
 // ─────────────────────────────────────────────────────────────────────────────
 export const getMySubscriptionServerFn = createServerFn({ method: "GET" }).handler(async () => {
-  const user = await verifySession();
+  const user = await resolveSession();
   if (!user || !user.tenantId) throw new Error("Unauthorized");
 
   const subscription = await queryOne<any>(
@@ -490,7 +491,7 @@ export const getMySubscriptionServerFn = createServerFn({ method: "GET" }).handl
 export const syncSubscriptionPaymentsServerFn = createServerFn({ method: "POST" })
   .validator((data: { subscriptionRef: string }) => data)
   .handler(async ({ data }) => {
-    const user = await verifySession();
+    const user = await resolveSession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     const local = await getLocalSubscriptionByRef(data.subscriptionRef);
     if (!local) throw new Error("Subscription not found.");
@@ -506,7 +507,7 @@ export const syncSubscriptionPaymentsServerFn = createServerFn({ method: "POST" 
 export const cancelSubscriptionServerFn = createServerFn({ method: "POST" })
   .validator((data: { subscriptionRef: string }) => data)
   .handler(async ({ data }) => {
-    const user = await verifySession();
+    const user = await resolveSession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     if (user.role && user.role !== "admin")
       throw new Error("Only the workspace owner can cancel the subscription.");
@@ -548,7 +549,7 @@ export const cancelSubscriptionServerFn = createServerFn({ method: "POST" })
 export const resumeSubscriptionServerFn = createServerFn({ method: "POST" })
   .validator((data: { subscriptionRef: string }) => data)
   .handler(async ({ data }) => {
-    const user = await verifySession();
+    const user = await resolveSession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     if (user.role && user.role !== "admin")
       throw new Error("Only the workspace owner can resume the subscription.");
@@ -574,7 +575,7 @@ export const resumeSubscriptionServerFn = createServerFn({ method: "POST" })
 export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
   .validator((data?: { status?: string; search?: string; limit?: number }) => data || {})
   .handler(async ({ data }) => {
-    const admin = await verifyAdminSession();
+    const admin = await resolveAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
     const conditions: string[] = [];
@@ -652,7 +653,7 @@ export const getAdminSubscriptionsServerFn = createServerFn({ method: "GET" })
 // the webhook is not yet configured. Never throws per-row — best effort.
 export const syncAllSubscriptionsFromCashfreeServerFn = createServerFn({ method: "POST" }).handler(
   async () => {
-    const admin = await verifyAdminSession();
+    const admin = await resolveAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
     const subs = await query<any>(
@@ -708,7 +709,7 @@ export const syncAllSubscriptionsFromCashfreeServerFn = createServerFn({ method:
 export const chargeSubscriptionNowServerFn = createServerFn({ method: "POST" })
   .validator((data: { subscriptionRef: string }) => data)
   .handler(async ({ data }) => {
-    const admin = await verifyAdminSession();
+    const admin = await resolveAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
     const local = await getLocalSubscriptionByRef(data.subscriptionRef);
@@ -774,7 +775,7 @@ export const chargeSubscriptionNowServerFn = createServerFn({ method: "POST" })
 export const getAdminSubscriptionPaymentsServerFn = createServerFn({ method: "GET" })
   .validator((data: { subscriptionRef: string }) => data)
   .handler(async ({ data }) => {
-    const admin = await verifyAdminSession();
+    const admin = await resolveAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
     const subscription = await queryOne<any>(
@@ -829,7 +830,7 @@ export const createAdminSubscriptionServerFn = createServerFn({ method: "POST" }
     },
   )
   .handler(async ({ data }) => {
-    const admin = await verifyAdminSession();
+    const admin = await resolveAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
     // Look up User matching tenantId
@@ -931,7 +932,7 @@ export const updateAdminSubscriptionServerFn = createServerFn({ method: "POST" }
     },
   )
   .handler(async ({ data }) => {
-    const admin = await verifyAdminSession();
+    const admin = await resolveAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
     const prev = await queryOne<any>(
@@ -1021,7 +1022,7 @@ export const deleteAdminSubscriptionServerFn = createServerFn({ method: "POST" }
     return data;
   })
   .handler(async ({ data }) => {
-    const admin = await verifyAdminSession();
+    const admin = await resolveAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
     const sub = await queryOne<any>(
@@ -1057,7 +1058,7 @@ export const createAdminSubscriptionPaymentServerFn = createServerFn({ method: "
     },
   )
   .handler(async ({ data }) => {
-    const admin = await verifyAdminSession();
+    const admin = await resolveAdminSession();
     if (!admin) throw new Error("Unauthorized");
 
     const sub = await queryOne<any>(
