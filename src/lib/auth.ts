@@ -13,6 +13,7 @@ import {
   enqueueWA,
   getWAStatus,
   disconnectWA,
+  resetWASession,
   initializeWA,
   enqueueWABulk,
   sendWAMedia,
@@ -51,6 +52,14 @@ function generateOtp(): string {
 function generateId(): string {
   return crypto.randomUUID();
 }
+
+export const AI_FALLBACK_MODELS = [
+  "google/gemini-2.5-flash",
+  "google/gemini-2.0-flash-001",
+  "google/gemini-2.0-flash-lite-preview-02-05:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "openrouter/free",
+];
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // 1. Check Email Server Function
@@ -1986,13 +1995,24 @@ export const getDoctorLeavesServerFn = createServerFn({ method: "GET" })
       "SELECT * FROM DoctorLeave WHERE doctorId = ? ORDER BY leaveDate ASC",
       [doctorId],
     );
+
+    // Normalize date to exact YYYY-MM-DD without UTC conversion shifting local midnight
+    const normalizeDateToYMD = (val: any): string => {
+      if (!val) return "";
+      if (typeof val === "string") return val.slice(0, 10);
+      if (val instanceof Date) {
+        const y = val.getFullYear();
+        const m = String(val.getMonth() + 1).padStart(2, "0");
+        const d = String(val.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+      return String(val).slice(0, 10);
+    };
+
     return leaves.map((l) => ({
       id: l.id,
       doctorId: l.doctorId,
-      leaveDate:
-        l.leaveDate instanceof Date
-          ? l.leaveDate.toISOString().split("T")[0]
-          : new Date(l.leaveDate).toISOString().split("T")[0],
+      leaveDate: normalizeDateToYMD(l.leaveDate),
       reason: l.reason,
       isHoliday: !!l.isHoliday,
     }));
@@ -2010,7 +2030,8 @@ export const addDoctorLeaveServerFn = createServerFn({ method: "POST" })
     if (!user) throw new Error("Unauthorized");
 
     const id = crypto.randomUUID();
-    const dateVal = new Date(data.leaveDate);
+    const dateStr = typeof data.leaveDate === "string" ? data.leaveDate.slice(0, 10) : "";
+    if (!dateStr) throw new Error("Invalid leave date");
 
     await execute(
       `INSERT INTO DoctorLeave (id, doctorId, leaveDate, reason, isHoliday)
@@ -2019,14 +2040,51 @@ export const addDoctorLeaveServerFn = createServerFn({ method: "POST" })
       [
         id,
         data.doctorId,
-        dateVal,
-        data.reason,
+        dateStr,
+        data.reason || "Scheduled Leave",
         data.isHoliday ? 1 : 0,
-        data.reason,
+        data.reason || "Scheduled Leave",
         data.isHoliday ? 1 : 0,
       ],
     );
     return { success: true };
+  });
+
+export const addDoctorLeavesBulkServerFn = createServerFn({ method: "POST" })
+  .validator(
+    (data: { doctorId: string; leaveDates: string[]; reason: string; isHoliday?: boolean }) => {
+      if (!data.doctorId || !data.leaveDates || data.leaveDates.length === 0) {
+        throw new Error("Doctor ID and leave dates are required");
+      }
+      return data;
+    },
+  )
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    let count = 0;
+    for (const raw of data.leaveDates) {
+      const dateStr = typeof raw === "string" ? raw.slice(0, 10) : "";
+      if (!dateStr) continue;
+      const id = crypto.randomUUID();
+      await execute(
+        `INSERT INTO DoctorLeave (id, doctorId, leaveDate, reason, isHoliday)
+         VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE reason = ?, isHoliday = ?`,
+        [
+          id,
+          data.doctorId,
+          dateStr,
+          data.reason || "Scheduled Leave",
+          data.isHoliday ? 1 : 0,
+          data.reason || "Scheduled Leave",
+          data.isHoliday ? 1 : 0,
+        ],
+      );
+      count++;
+    }
+    return { success: true, count };
   });
 
 export const deleteDoctorLeaveServerFn = createServerFn({ method: "POST" })
@@ -2042,9 +2100,621 @@ export const deleteDoctorLeaveServerFn = createServerFn({ method: "POST" })
     return { success: true };
   });
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export const deleteDoctorLeavesBulkServerFn = createServerFn({ method: "POST" })
+  .validator((ids: string[]) => {
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      throw new Error("At least one leave ID is required");
+    }
+    return ids;
+  })
+  .handler(async ({ data: ids }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const placeholders = ids.map(() => "?").join(",");
+    await execute(`DELETE FROM DoctorLeave WHERE id IN (${placeholders})`, ids);
+    return { success: true, count: ids.length };
+  });
+
+// ──────────────────────────────────────────────
+// Doctor Smart Clinical Analysis & Monthly Audit Report
+// ──────────────────────────────────────────────
+
+export const getDoctorSmartAnalysisServerFn = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      doctorId: string;
+      period?: "day" | "week" | "month" | "year";
+      dateStr?: string;
+    }) => {
+      if (!data.doctorId) throw new Error("Doctor ID is required");
+      return data;
+    },
+  )
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+
+    const { getDoctorSmartAnalysisData } = await import("./doctor-report.server");
+    const result = await getDoctorSmartAnalysisData({
+      tenantId: user.tenantId,
+      doctorId: data.doctorId,
+      period: data.period || "month",
+      dateStr: data.dateStr,
+    });
+    return result;
+  });
+
+export const sendDoctorMonthlyReportEmailServerFn = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      doctorId: string;
+      monthDateStr?: string;
+      overrideRecipient?: string;
+    }) => {
+      if (!data.doctorId) throw new Error("Doctor ID is required");
+      return data;
+    },
+  )
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+
+    const { sendDoctorMonthlyReportEmail } = await import("./doctor-report.server");
+    const res = await sendDoctorMonthlyReportEmail({
+      tenantId: user.tenantId,
+      doctorId: data.doctorId,
+      monthDateStr: data.monthDateStr,
+      overrideRecipient: data.overrideRecipient,
+    });
+    return res;
+  });
+
+// ──────────────────────────────────────────────
+// Doctor Emergency Leave & AI Patient WhatsApp Broadcast
+// ──────────────────────────────────────────────
+
+export const getDoctorAffectedAppointmentsServerFn = createServerFn({ method: "POST" })
+  .validator((data: { doctorId: string; dates: string[] }) => {
+    if (!data.doctorId) throw new Error("Doctor ID is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    if (!data.dates || data.dates.length === 0) {
+      return { appointments: [] };
+    }
+
+    const placeholders = data.dates.map(() => "?").join(",");
+    const appts = await query<any>(
+      `SELECT id, name, phone, dateTime, timeSlot, reason, status, tokenNo
+       FROM Appointment
+       WHERE tenantId = ?
+         AND doctorId = ?
+         AND DATE(dateTime) IN (${placeholders})
+         AND (status IS NULL OR status NOT IN ('Cancelled', 'No Show', 'Completed'))
+       ORDER BY dateTime ASC`,
+      [user.tenantId, data.doctorId, ...data.dates],
+    );
+
+    return {
+      appointments: appts.map((a: any) => ({
+        id: a.id,
+        name: a.name,
+        phone: a.phone,
+        dateTime:
+          a.dateTime instanceof Date
+            ? a.dateTime.toISOString()
+            : new Date(a.dateTime).toISOString(),
+        timeSlot: a.timeSlot || "",
+        reason: a.reason || "",
+        status: a.status || "Pending",
+        tokenNo: a.tokenNo ?? null,
+      })),
+    };
+  });
+
+export const generateDoctorLeaveWaMessageServerFn = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      doctorName: string;
+      leaveDates: string[];
+      reason: string;
+      clinicName?: string;
+      tone?: "empathetic" | "urgent" | "reassuring";
+    }) => {
+      if (!data.doctorName || !data.leaveDates || data.leaveDates.length === 0) {
+        throw new Error("Doctor name and at least one leave date required.");
+      }
+      return data;
+    },
+  )
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    const formattedDates = data.leaveDates
+      .map((d) => {
+        try {
+          return new Date(d).toLocaleDateString("en-IN", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+          });
+        } catch {
+          return d;
+        }
+      })
+      .join(", ");
+
+    const systemPrompt = `You are a medical clinic communications assistant writing a WhatsApp message for patients.
+The patient has a confirmed appointment, but *Dr. ${data.doctorName}* at *${data.clinicName || "our clinic"}* is on urgent/emergency leave on ${formattedDates} due to: "${data.reason || "an unforeseen medical/personal emergency"}".
+
+Write a warm, empathetic, clear WhatsApp broadcast notification.
+Requirements:
+1. Use WhatsApp styling (*bold* for clinic & doctor name, dates, times).
+2. Use EXACT placeholders:
+   - {{patient_name}} for patient's name
+   - {{appointment_date}} for their appointment date
+   - {{appointment_time}} for their scheduled time
+3. Express genuine regret and explain the urgent unavailability respectfully.
+4. Provide immediate reassurance: explain that our care desk will prioritize rescheduling them to the next earliest slot or offer an immediate alternate doctor.
+5. Invite them to reply to this WhatsApp message to reschedule or ask questions.
+6. Tone: ${data.tone || "empathetic"}.
+7. Keep length between 70 to 120 words. Concise, respectful, highly professional.
+8. Output ONLY the message text. Do not wrap in markdown quotes or code fences.`;
+
+    if (apiKey) {
+      for (const model of AI_FALLBACK_MODELS) {
+        try {
+          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": "http://localhost:8080",
+              "X-Title": "HealthSync AI",
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: "system", content: systemPrompt }],
+              max_tokens: 350,
+              temperature: 0.6,
+            }),
+          });
+          if (response.ok) {
+            const jsonRes = await response.json();
+            const text = jsonRes.choices?.[0]?.message?.content?.trim();
+            if (text) {
+              return { success: true, message: text, source: "ai", model };
+            }
+          }
+        } catch (err: any) {
+          console.warn(`[AI Leave WA] Model ${model} error:`, err?.message);
+        }
+      }
+    }
+
+    // High quality deterministic fallback template:
+    const fallback = `Hello *{{patient_name}}*,\n\nWe regret to inform you that *Dr. ${data.doctorName}* at *${data.clinicName || "our clinic"}* has an unexpected emergency (${data.reason || "Urgent Absence"}) and will be unavailable on *{{appointment_date}}*.\n\nYour appointment scheduled at *{{appointment_time}}* is placed on priority reschedule. We sincerely apologize for this inconvenience.\n\nOur clinic team will contact you shortly with alternate priority slots, or you can reply directly to this WhatsApp message to pick a convenient time or consult with an alternate doctor.\n\nWarm regards,\n*${data.clinicName || "Clinic Care Team"}*`;
+
+    return { success: true, message: fallback, source: "template" };
+  });
+
+export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      doctorId: string;
+      leaveDates: string[];
+      reason: string;
+      customMessage?: string;
+      selectedAppointmentIds?: string[];
+    }) => {
+      if (!data.doctorId || !data.leaveDates || data.leaveDates.length === 0) {
+        throw new Error("Doctor ID and leave dates are required");
+      }
+      return data;
+    },
+  )
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    // 1. Fetch Doctor details
+    const doc = await queryOne<any>(
+      "SELECT id, name, phone, email FROM Doctor WHERE id = ? AND tenantId = ? LIMIT 1",
+      [data.doctorId, user.tenantId],
+    );
+    if (!doc) throw new Error("Doctor not found or unauthorized");
+
+    // 2. Fetch Clinic Profile details
+    const clinicProfile = await queryOne<any>(
+      "SELECT clinicName, clinicianName, phone FROM ClinicProfile WHERE tenantId = ? LIMIT 1",
+      [user.tenantId],
+    );
+    const clinicName = clinicProfile?.clinicName || user.clinicName || "HealthSync Clinic";
+
+    // 3. Insert leaves for each selected date
+    let leavesCreated = 0;
+    for (const dateStr of data.leaveDates) {
+      const id = crypto.randomUUID();
+      const ymd = typeof dateStr === "string" ? dateStr.slice(0, 10) : "";
+      if (!ymd) continue;
+      await execute(
+        `INSERT INTO DoctorLeave (id, doctorId, leaveDate, reason, isHoliday)
+         VALUES (?, ?, ?, ?, 0)
+         ON DUPLICATE KEY UPDATE reason = ?, isHoliday = 0`,
+        [
+          id,
+          data.doctorId,
+          ymd,
+          data.reason || "Emergency Leave",
+          data.reason || "Emergency Leave",
+        ],
+      );
+      leavesCreated++;
+    }
+
+    // 4. Query all affected appointments
+    const placeholders = data.leaveDates.map(() => "?").join(",");
+    const appts = await query<any>(
+      `SELECT id, name, phone, dateTime, timeSlot, reason, status, tokenNo
+       FROM Appointment
+       WHERE tenantId = ?
+         AND doctorId = ?
+         AND DATE(dateTime) IN (${placeholders})
+         AND (status IS NULL OR status NOT IN ('Cancelled', 'No Show', 'Completed'))
+       ORDER BY dateTime ASC`,
+      [user.tenantId, data.doctorId, ...data.leaveDates],
+    );
+
+    // Target appointments based on optional selection
+    const targetAppts =
+      data.selectedAppointmentIds && data.selectedAppointmentIds.length > 0
+        ? appts.filter((a: any) => data.selectedAppointmentIds!.includes(a.id))
+        : appts;
+
+    // 5. Send personalized WhatsApp messages
+    const template =
+      data.customMessage ||
+      `Hello *{{patient_name}}*,\n\nWe regret to inform you that *Dr. ${doc.name}* at *${clinicName}* has an unexpected emergency (${data.reason || "Urgent Absence"}) and will be unavailable on *{{appointment_date}}*.\n\nYour appointment scheduled at *{{appointment_time}}* has been placed on priority reschedule. We sincerely apologize for this inconvenience.\n\nOur team will reach out with priority slots, or you can reply to this message to reschedule.\n\nWarm regards,\n*${clinicName}*`;
+
+    const notifiedPatients: Array<{
+      id: string;
+      name: string;
+      phone: string;
+      date: string;
+      time: string;
+      status: "sent" | "failed" | "skipped";
+    }> = [];
+
+    for (const apt of targetAppts) {
+      const aptDate = apt.dateTime instanceof Date ? apt.dateTime : new Date(apt.dateTime);
+      const dateFormatted = aptDate.toLocaleDateString("en-IN", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+      const timeFormatted =
+        apt.timeSlot ||
+        aptDate.toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+
+      const personalizedMessage = template
+        .replace(/{{patient_name}}/g, apt.name || "Patient")
+        .replace(/{{doctor_name}}/g, doc.name)
+        .replace(/{{appointment_date}}/g, dateFormatted)
+        .replace(/{{appointment_time}}/g, timeFormatted)
+        .replace(/{{reason}}/g, data.reason || "Emergency Absence")
+        .replace(/{{clinic_name}}/g, clinicName);
+
+      let sendStatus: "sent" | "failed" | "skipped" = "skipped";
+
+      if (apt.phone) {
+        try {
+          const res = await enqueueWA(user.tenantId, apt.phone, personalizedMessage);
+          sendStatus = res.success ? "sent" : "failed";
+        } catch (err: any) {
+          console.error(`[Emergency Leave WA] Failed for ${apt.phone}:`, err?.message);
+          sendStatus = "failed";
+        }
+      }
+
+      // Mark appointment as 'Reschedule Needed'
+      try {
+        await execute(
+          `UPDATE Appointment 
+           SET status = 'Reschedule Needed',
+               reason = CONCAT(COALESCE(reason, ''), ' [Urgent Leave: ', ?, ']')
+           WHERE id = ? AND tenantId = ?`,
+          [data.reason || "Emergency Leave", apt.id, user.tenantId],
+        );
+      } catch (err: any) {
+        console.warn(`[Emergency Leave Appt Update] Failed:`, err?.message);
+      }
+
+      notifiedPatients.push({
+        id: apt.id,
+        name: apt.name,
+        phone: apt.phone,
+        date: dateFormatted,
+        time: timeFormatted,
+        status: sendStatus,
+      });
+    }
+
+    return {
+      success: true,
+      leavesCreated,
+      affectedAppointmentsCount: appts.length,
+      notifiedPatientsCount: notifiedPatients.filter((p) => p.status === "sent").length,
+      patients: notifiedPatients,
+    };
+  });
+
+export const getDoctorScheduledLeavesServerFn = createServerFn({ method: "POST" })
+  .validator((data: { doctorId: string }) => {
+    if (!data.doctorId) throw new Error("Doctor ID is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const leaves = await query<any>(
+      `SELECT dl.id, dl.doctorId, dl.leaveDate, dl.reason, dl.isHoliday,
+              (SELECT COUNT(*) FROM Appointment a 
+               WHERE a.tenantId = ? 
+                 AND a.doctorId = dl.doctorId 
+                 AND DATE(a.dateTime) = DATE(dl.leaveDate)
+                 AND (a.status = 'Reschedule Needed' OR a.status NOT IN ('Cancelled', 'No Show', 'Completed'))) as affectedCount
+       FROM DoctorLeave dl
+       WHERE dl.doctorId = ?
+       ORDER BY dl.leaveDate ASC`,
+      [user.tenantId, data.doctorId],
+    );
+
+    return leaves.map((l) => ({
+      id: l.id,
+      doctorId: l.doctorId,
+      leaveDate:
+        l.leaveDate instanceof Date
+          ? l.leaveDate.toISOString().split("T")[0]
+          : new Date(l.leaveDate).toISOString().split("T")[0],
+      reason: l.reason,
+      isHoliday: !!l.isHoliday,
+      affectedCount: Number(l.affectedCount || 0),
+    }));
+  });
+
+export const generateDoctorLeaveReinstatementWaMessageServerFn = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      doctorName: string;
+      dates: string[];
+      clinicName?: string;
+      tone?: "reassuring" | "cheerful" | "formal";
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    const formattedDates = (data.dates || [])
+      .map((d) =>
+        new Date(d).toLocaleDateString("en-IN", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+        }),
+      )
+      .join(", ");
+
+    const fallback = `Hello *{{patient_name}}*,\n\nGood news! We are pleased to inform you that *Dr. ${data.doctorName}* at *${data.clinicName || "our clinic"}* has resumed availability and will be consulting as scheduled on *{{appointment_date}}*.\n\nYour scheduled appointment at *{{appointment_time}}* has been *reinstated and confirmed*. You do not need to reschedule, and your slot is reserved for you.\n\nWe look forward to seeing you. If you have any questions, feel free to reply directly to this WhatsApp message.\n\nWarm regards,\n*${data.clinicName || "Clinic Care Team"}*`;
+
+    const apiKey = process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY;
+    if (apiKey) {
+      const prompt = `You are a medical clinic communications assistant writing a WhatsApp message for patients.
+Dr. ${data.doctorName} at ${data.clinicName || "our clinic"} was previously on leave on ${formattedDates}, but that leave has now been CANCELED and the doctor has resumed clinic consultations.
+Write a warm, reassuring WhatsApp notification letting the patient know their original scheduled appointment is REINSTATED and CONFIRMED.
+Requirements:
+1. Use WhatsApp styling (*bold* for clinic & doctor name, dates, times).
+2. Use EXACT placeholders:
+   - {{patient_name}} for patient's name
+   - {{appointment_date}} for their appointment date
+   - {{appointment_time}} for their scheduled time
+3. Express genuine delight that the doctor is back and that the patient's appointment is fully back on track.
+4. Invite them to reply to this WhatsApp message if they have any questions.
+5. Tone: ${data.tone || "reassuring"}.
+6. Keep length between 60 to 100 words. Concise, clear, professional.
+7. Output ONLY the message text.`;
+
+      for (const model of AI_FALLBACK_MODELS) {
+        try {
+          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": "http://localhost:8080",
+              "X-Title": "HealthSync AI",
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: "user", content: prompt }],
+              temperature: 0.3,
+              max_tokens: 350,
+            }),
+          });
+          if (response.ok) {
+            const jsonRes = await response.json();
+            const text = jsonRes.choices?.[0]?.message?.content?.trim();
+            if (text) {
+              return { success: true, message: text, source: "ai", model };
+            }
+          }
+        } catch (err: any) {
+          console.warn(`[AI Reinstatement WA] Model ${model} error:`, err?.message);
+        }
+      }
+    }
+
+    return { success: true, message: fallback, source: "template" };
+  });
+
+export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      doctorId: string;
+      leaveDates: string[];
+      sendWhatsAppNotice?: boolean;
+      customMessage?: string;
+      selectedAppointmentIds?: string[];
+    }) => {
+      if (!data.doctorId || !data.leaveDates || data.leaveDates.length === 0) {
+        throw new Error("Doctor ID and leave dates are required");
+      }
+      return data;
+    },
+  )
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user) throw new Error("Unauthorized");
+
+    // 1. Fetch Doctor details
+    const doc = await queryOne<any>(
+      "SELECT id, name, phone, email FROM Doctor WHERE id = ? AND tenantId = ? LIMIT 1",
+      [data.doctorId, user.tenantId],
+    );
+    if (!doc) throw new Error("Doctor not found or unauthorized");
+
+    // 2. Fetch Clinic Profile details
+    const clinicProfile = await queryOne<any>(
+      "SELECT clinicName, clinicianName, phone FROM ClinicProfile WHERE tenantId = ? LIMIT 1",
+      [user.tenantId],
+    );
+    const clinicName = clinicProfile?.clinicName || user.clinicName || "HealthSync Clinic";
+
+    // 3. Delete DoctorLeave records for the specified dates
+    const placeholders = data.leaveDates.map(() => "?").join(",");
+    await execute(
+      `DELETE FROM DoctorLeave 
+       WHERE doctorId = ? AND DATE(leaveDate) IN (${placeholders})`,
+      [data.doctorId, ...data.leaveDates],
+    );
+
+    // 4. Query affected appointments that were previously marked 'Reschedule Needed' or booked on those dates
+    const appts = await query<any>(
+      `SELECT id, name, phone, dateTime, timeSlot, reason, status, tokenNo
+       FROM Appointment
+       WHERE tenantId = ?
+         AND doctorId = ?
+         AND DATE(dateTime) IN (${placeholders})
+         AND (status = 'Reschedule Needed' OR status = 'Scheduled' OR status IS NULL)
+       ORDER BY dateTime ASC`,
+      [user.tenantId, data.doctorId, ...data.leaveDates],
+    );
+
+    const targetAppts =
+      data.selectedAppointmentIds && data.selectedAppointmentIds.length > 0
+        ? appts.filter((a: any) => data.selectedAppointmentIds!.includes(a.id))
+        : appts;
+
+    // 5. Update appointment status back to 'Confirmed'
+    for (const apt of targetAppts) {
+      try {
+        await execute(
+          `UPDATE Appointment 
+           SET status = 'Confirmed',
+               reason = REPLACE(COALESCE(reason, ''), ' [Urgent Leave:', ' [Reinstated:')
+           WHERE id = ? AND tenantId = ?`,
+          [apt.id, user.tenantId],
+        );
+      } catch (err: any) {
+        console.warn(`[Reinstate Appointment Update] Failed:`, err?.message);
+      }
+    }
+
+    // 6. Optionally dispatch WhatsApp reinstatement messages
+    const notifiedPatients: Array<{
+      id: string;
+      name: string;
+      phone: string;
+      date: string;
+      time: string;
+      status: "sent" | "failed" | "skipped";
+    }> = [];
+
+    if (data.sendWhatsAppNotice !== false && targetAppts.length > 0) {
+      const template =
+        data.customMessage ||
+        `Hello *{{patient_name}}*,\n\nGood news! We are pleased to inform you that *Dr. ${doc.name}* at *${clinicName}* has resumed availability and will be consulting on *{{appointment_date}}*.\n\nYour scheduled appointment at *{{appointment_time}}* has been *reinstated and confirmed*. You do not need to reschedule, and your slot is reserved for you.\n\nWe look forward to seeing you. If you have any questions, feel free to reply directly to this WhatsApp message.\n\nWarm regards,\n*${clinicName}*`;
+
+      for (const apt of targetAppts) {
+        const aptDate = apt.dateTime instanceof Date ? apt.dateTime : new Date(apt.dateTime);
+        const dateFormatted = aptDate.toLocaleDateString("en-IN", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
+        const timeFormatted =
+          apt.timeSlot ||
+          aptDate.toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+
+        const personalizedMessage = template
+          .replace(/{{patient_name}}/g, apt.name || "Patient")
+          .replace(/{{doctor_name}}/g, doc.name)
+          .replace(/{{appointment_date}}/g, dateFormatted)
+          .replace(/{{appointment_time}}/g, timeFormatted)
+          .replace(/{{clinic_name}}/g, clinicName);
+
+        let sendStatus: "sent" | "failed" | "skipped" = "skipped";
+
+        if (apt.phone) {
+          try {
+            const res = await enqueueWA(user.tenantId, apt.phone, personalizedMessage);
+            sendStatus = res.success ? "sent" : "failed";
+          } catch (err: any) {
+            console.error(`[Reinstatement WA] Failed for ${apt.phone}:`, err?.message);
+            sendStatus = "failed";
+          }
+        }
+
+        notifiedPatients.push({
+          id: apt.id,
+          name: apt.name,
+          phone: apt.phone,
+          date: dateFormatted,
+          time: timeFormatted,
+          status: sendStatus,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      leavesCancelledCount: data.leaveDates.length,
+      reinstatedAppointmentsCount: targetAppts.length,
+      notifiedPatientsCount: notifiedPatients.filter((p) => p.status === "sent").length,
+      patients: notifiedPatients,
+    };
+  });
+
+// ──────────────────────────────────────────────
 // WhatsApp Management Server Functions
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────
+
+const lastAutoInitMap = new Map<string, number>();
 
 export const getWhatsAppStatusServerFn = createServerFn({ method: "GET" }).handler(async () => {
   const user = await verifySession();
@@ -2054,11 +2724,16 @@ export const getWhatsAppStatusServerFn = createServerFn({ method: "GET" }).handl
   }
 
   let status = await getWAStatus(user.tenantId);
-  // If the session is fully disconnected or errored out,
-  // trigger initialization automatically so the user is immediately presented with a QR code.
-  if (status.state === "DISCONNECTED" || status.state === "ERROR") {
-    await initializeWA(user.tenantId);
-    status = await getWAStatus(user.tenantId);
+  // Auto-trigger initialization only if DISCONNECTED and not requested in the last 45s.
+  // This prevents destroying and recreating sessions on rapid 3-second frontend poll intervals.
+  if (status.state === "DISCONNECTED") {
+    const now = Date.now();
+    const lastInit = lastAutoInitMap.get(user.tenantId) || 0;
+    if (now - lastInit > 45000) {
+      lastAutoInitMap.set(user.tenantId, now);
+      initializeWA(user.tenantId).catch(() => {});
+      status = await getWAStatus(user.tenantId);
+    }
   }
 
   return status;
@@ -2078,6 +2753,22 @@ export const initializeWhatsAppServerFn = createServerFn({ method: "POST" }).han
   return { success: true };
 });
 
+export const resetWhatsAppSessionServerFn = createServerFn({ method: "POST" }).handler(async () => {
+  const user = await verifySession();
+  if (!user || !user.tenantId) throw new Error("Unauthorized");
+  const ctx = buildAccountContext(user);
+  if (!canUseFeature(ctx, "whatsapp")) {
+    throw new Error("Your plan does not include WhatsApp alerts.");
+  }
+  if (!canOperateFeature(ctx, "whatsapp")) {
+    throw new Error("You do not have permission to perform this action.");
+  }
+  // Clear auto-init cooldown so next status fetch reflects fresh state
+  lastAutoInitMap.delete(user.tenantId);
+  await resetWASession(user.tenantId);
+  return { success: true };
+});
+
 export const disconnectWhatsAppServerFn = createServerFn({ method: "POST" }).handler(async () => {
   const user = await verifySession();
   if (!user || !user.tenantId) throw new Error("Unauthorized");
@@ -2088,6 +2779,7 @@ export const disconnectWhatsAppServerFn = createServerFn({ method: "POST" }).han
   if (!canOperateFeature(ctx, "whatsapp")) {
     throw new Error("You do not have permission to perform this action.");
   }
+  lastAutoInitMap.delete(user.tenantId);
   await disconnectWA(user.tenantId);
   return { success: true };
 });
@@ -3040,13 +3732,6 @@ function cleanAndExtractJson(content: string): any {
   return JSON.parse(cleaned);
 }
 
-const AI_FALLBACK_MODELS = [
-  "google/gemini-2.5-flash",
-  "google/gemini-2.0-flash-001",
-  "google/gemini-2.0-flash-lite-preview-02-05:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "openrouter/free",
-];
 
 export const aiAssistConsultationServerFn = createServerFn({ method: "POST" })
   .validator((data: { chiefComplaint: string; vitals?: string }) => {

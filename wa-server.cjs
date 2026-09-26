@@ -636,11 +636,38 @@ RULES:
 const clients = new Map();
 
 // ──────────────────────────────────────────────
-// Helper: Auto-detect Chrome/Chromium binary on Linux VPS
+// Helper: Modern User Agent matching the Host OS
+// ──────────────────────────────────────────────
+function getModernUserAgent() {
+  if (process.platform === "win32") {
+    return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+  }
+  return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+}
+
+// ──────────────────────────────────────────────
+// Helper: Auto-detect Chrome/Chromium binary on Linux VPS or Windows
 // ──────────────────────────────────────────────
 function findChromeExecutable() {
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
     return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA || "";
+    const programFiles = process.env["ProgramFiles"] || "C:\\Program Files";
+    const programFilesX86 = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+    const candidates = [
+      path.join(programFiles, "Google\\Chrome\\Application\\chrome.exe"),
+      path.join(programFilesX86, "Google\\Chrome\\Application\\chrome.exe"),
+      path.join(localAppData, "Google\\Chrome\\Application\\chrome.exe"),
+      path.join(programFiles, "Microsoft\\Edge\\Application\\msedge.exe"),
+      path.join(programFilesX86, "Microsoft\\Edge\\Application\\msedge.exe"),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        return p;
+      }
+    }
   }
   if (process.platform === "linux") {
     const candidates = [
@@ -661,12 +688,12 @@ function findChromeExecutable() {
 }
 
 // ──────────────────────────────────────────────
-// Helper: Clean stale Chromium Singleton lock files on Linux VPS
+// Helper: Clean stale Chromium Singleton lock files on Windows / Linux
 // ──────────────────────────────────────────────
 function cleanStaleChromiumLocks(tenantId) {
   const baseDir = path.resolve(`./.wwebjs_auth/session-${tenantId}`);
   if (!fs.existsSync(baseDir)) return;
-  const lockFiles = ["SingletonLock", "SingletonCookie", "SingletonSocket"];
+  const lockFiles = ["SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"];
   for (const lock of lockFiles) {
     const rootLock = path.join(baseDir, lock);
     if (fs.existsSync(rootLock)) {
@@ -688,19 +715,34 @@ function cleanStaleChromiumLocks(tenantId) {
 // ──────────────────────────────────────────────
 // Helper: Kill any orphaned Chrome processes holding locks on this tenant's profile
 // ──────────────────────────────────────────────
-function killOrphanedTenantChrome(tenantId) {
-  if (process.platform !== "linux") return;
+function killOrphanedTenantChrome(tenantId, browserPid = null) {
   try {
     const { execSync } = require("child_process");
-    execSync(`pkill -9 -f "session-${tenantId}" || true`, { stdio: "ignore" });
-    console.log(`[WA] Cleaned any orphaned browser processes for tenant: ${tenantId}`);
+    if (browserPid) {
+      try {
+        if (process.platform === "win32") {
+          execSync(`taskkill /F /T /PID ${browserPid}`, { stdio: "ignore" });
+        } else {
+          process.kill(browserPid, "SIGKILL");
+        }
+      } catch (_) {}
+    }
+
+    if (process.platform === "linux") {
+      execSync(`pkill -9 -f "session-${tenantId}" || true`, { stdio: "ignore" });
+      console.log(`[WA] Cleaned any orphaned browser processes for tenant: ${tenantId}`);
+    } else if (process.platform === "win32") {
+      const psCmd = `Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*${tenantId}*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+      execSync(`powershell -NoProfile -Command "${psCmd}"`, { stdio: "ignore" });
+      console.log(`[WA] Cleaned any orphaned browser processes on Windows for tenant: ${tenantId}`);
+    }
   } catch (_) {}
 }
 
 // ──────────────────────────────────────────────
 // Initialize WhatsApp Client per Tenant
 // ──────────────────────────────────────────────
-async function initClient(tenantId, force = false) {
+async function initClient(tenantId, force = false, isReset = false) {
   let session = clients.get(tenantId);
   if (!session) {
     session = {
@@ -713,14 +755,35 @@ async function initClient(tenantId, force = false) {
       isProcessingQueue: false,
       isInitializing: false,
       retryTimer: null,
+      retryCount: 0,
+      lastInitAttempt: 0,
       lastActive: Date.now(),
     };
     clients.set(tenantId, session);
   }
 
-  if (!force && session.isInitializing) return;
-  if (!force && session.state === "CONNECTED") return;
-  if (!force && (session.state === "QR_READY" || session.state === "CONNECTING")) return;
+  // If already connected, do not re-initialize
+  if (session.state === "CONNECTED") return;
+
+  // If currently initializing in background, do not start another parallel launch
+  if (session.isInitializing) {
+    console.log(`[WA] [${tenantId}] Initialization already in progress. Preserving current launch.`);
+    return;
+  }
+
+  // If already QR_READY or CONNECTING, do NOT destroy unless an explicit reset is requested
+  if (!isReset && (session.state === "QR_READY" || session.state === "CONNECTING")) {
+    console.log(`[WA] [${tenantId}] Session is already ${session.state}. Preserving QR code and connection.`);
+    return;
+  }
+
+  // Rate-limit initializations: don't restart more than once every 10 seconds unless it is an explicit reset
+  const now = Date.now();
+  if (!isReset && now - (session.lastInitAttempt || 0) < 10000) {
+    console.log(`[WA] [${tenantId}] Throttling rapid initialization request.`);
+    return;
+  }
+  session.lastInitAttempt = now;
 
   // Clear any existing retry timer to prevent overlapping loops
   if (session.retryTimer) {
@@ -730,9 +793,12 @@ async function initClient(tenantId, force = false) {
 
   session.isInitializing = true;
   session.state = "CONNECTING";
-  session.qrDataUrl = "";
+  if (isReset) {
+    session.qrDataUrl = "";
+    session.connectedNumber = "";
+  }
   session.lastActive = Date.now();
-  console.log(`[WA] [${tenantId}] 🚀 Initializing WhatsApp Web Client...`);
+  console.log(`[WA] [${tenantId}] 🚀 Initializing WhatsApp Web Client (isReset: ${isReset})...`);
 
   try {
     const sessionDir = path.resolve("./.wwebjs_auth");
@@ -776,33 +842,42 @@ async function initClient(tenantId, force = false) {
       }
     }, 120000);
 
+    const modernUA = getModernUserAgent();
+
     session.client = new Client({
       authStrategy: new LocalAuth({
         clientId: tenantId,
         dataPath: path.resolve("./.wwebjs_auth"),
       }),
       authTimeoutMs: 120000,
-      qrMaxRetries: 10,
-      // Use "none" to directly load https://web.whatsapp.com without relying on
-      // external raw.githubusercontent.com which frequently hangs/times out on VPS
+      qrMaxRetries: 0, // 0 = unlimited retries, keeps QR alive without killing the browser
+      userAgent: modernUA, // Crucial: overrides whatsapp-web.js default 2022 Mac OS X Chrome 101 UA
       webVersionCache: {
         type: "none",
+      },
+      evalOnNewDoc: () => {
+        // Strip automation indicators that WhatsApp Web checks during QR handshake
+        try {
+          Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+        } catch (_) {}
       },
       puppeteer: {
         headless: true,
         executablePath: detectedExecutable || undefined,
-        // NOTE: do NOT use --single-process or --no-zygote here. On Linux servers
-        // those flags break WhatsApp Web's linking handshake and cause the phone
-        // to show "Couldn't link device, try again later" when scanning the QR.
+        ignoreDefaultArgs: ["--enable-automation"], // Removes the automation flag so navigator.webdriver is not forced to true!
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
           "--disable-dev-shm-usage",
           "--disable-accelerated-2d-canvas",
           "--no-first-run",
+          "--no-default-browser-check",
           "--disable-gpu",
           "--disable-extensions",
-          "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+          "--disable-infobars",
+          "--disable-blink-features=AutomationControlled",
+          `--user-agent=${modernUA}`,
+          "--window-size=1280,800",
         ],
       },
     });
@@ -830,6 +905,7 @@ async function initClient(tenantId, force = false) {
       session.qrDataUrl = "";
       session.connectedNumber = session.client.info?.wid?.user || "Connected";
       session.isInitializing = false;
+      session.retryCount = 0;
       session.lastActive = Date.now();
       console.log(`[WA] [${tenantId}] ✅ Connected as +` + session.connectedNumber);
       processQueue(tenantId);
@@ -847,27 +923,29 @@ async function initClient(tenantId, force = false) {
       console.error(`[WA] [${tenantId}] ❌ Auth failure:`, msg);
       console.log(`[WA] [${tenantId}] ♻️ Clearing session and retrying in 5 seconds...`);
       setTimeout(() => {
-        const sessionDir = path.resolve(`./.wwebjs_auth/session-${tenantId}`);
-        if (fs.existsSync(sessionDir)) {
-          try {
-            fs.rmSync(sessionDir, { recursive: true, force: true });
-          } catch (_) {}
-        }
-        initClient(tenantId, true).catch(console.error);
+        disconnect(tenantId).then(() => {
+          initClient(tenantId, true, true).catch(console.error);
+        });
       }, 5000);
     });
 
     session.client.on("disconnected", (reason) => {
       clearTimeout(initWatchdog);
+      const wasConnected = session.state === "CONNECTED" || Boolean(session.connectedNumber);
       session.state = "DISCONNECTED";
       session.connectedNumber = "";
       session.qrDataUrl = "";
       session.isInitializing = false;
-      console.log(`[WA] [${tenantId}] 🔌 Disconnected:`, reason);
-      console.log(`[WA] [${tenantId}] ♻️ Attempting to auto-reconnect in 5 seconds...`);
-      setTimeout(() => {
-        initClient(tenantId, true).catch(console.error);
-      }, 5000);
+      console.log(`[WA] [${tenantId}] 🔌 Disconnected (${reason}).`);
+
+      if (wasConnected) {
+        console.log(`[WA] [${tenantId}] ♻️ Linked session disconnected. Reconnecting in 5 seconds...`);
+        setTimeout(() => {
+          initClient(tenantId, false, false).catch(console.error);
+        }, 5000);
+      } else {
+        console.log(`[WA] [${tenantId}] Unauthenticated session disconnected. Waiting for user action.`);
+      }
     });
 
     // Message handler: AI-powered with keyword fallback
@@ -951,14 +1029,19 @@ async function initClient(tenantId, force = false) {
       console.error(`     3. If memory is constrained (<1GB RAM), add swap:`);
       console.error(`        sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`);
     }
-    if (session.retryTimer) {
-      clearTimeout(session.retryTimer);
+    session.retryCount = (session.retryCount || 0) + 1;
+    if (session.retryCount <= 3) {
+      if (session.retryTimer) {
+        clearTimeout(session.retryTimer);
+      }
+      console.log(`[WA] [${tenantId}] ♻️ Retrying initialization (${session.retryCount}/3) in 15 seconds...`);
+      session.retryTimer = setTimeout(() => {
+        session.retryTimer = null;
+        initClient(tenantId, false, false).catch(console.error);
+      }, 15000);
+    } else {
+      console.error(`[WA] [${tenantId}] 🛑 Max initialization retries reached. Use Reset Session to retry.`);
     }
-    console.log(`[WA] [${tenantId}] ♻️ Retrying initialization in 10 seconds...`);
-    session.retryTimer = setTimeout(() => {
-      session.retryTimer = null;
-      initClient(tenantId, true).catch(console.error);
-    }, 10000);
   }
 }
 
@@ -968,6 +1051,7 @@ async function initClient(tenantId, force = false) {
 async function disconnect(tenantId) {
   console.log(`[WA] [${tenantId}] 🔌 Disconnecting...`);
   const session = clients.get(tenantId);
+  let browserPid = null;
   if (session) {
     if (session.retryTimer) {
       clearTimeout(session.retryTimer);
@@ -976,8 +1060,9 @@ async function disconnect(tenantId) {
     // Prevent auto-reconnect from firing while we tear down
     session.isInitializing = true;
     if (session.client) {
-      // Remove all listeners first to prevent 'disconnected' handler from
-      // firing and triggering auto-reconnect during teardown
+      try {
+        browserPid = session.client.pupBrowser?.process()?.pid;
+      } catch (_) {}
       try {
         session.client.removeAllListeners("disconnected");
       } catch (_) {}
@@ -995,21 +1080,27 @@ async function disconnect(tenantId) {
     session.isInitializing = false;
   }
 
-  // Force-terminate any remaining Chrome processes for this tenant
-  killOrphanedTenantChrome(tenantId);
+  // Force-terminate browser process tree and any remaining Chrome processes for this tenant
+  killOrphanedTenantChrome(tenantId, browserPid);
 
-  // Give Puppeteer/Chrome a moment to fully exit before clearing files
-  await new Promise((r) => setTimeout(r, 1500));
+  // Give Puppeteer/Chrome a moment to fully release file locks before clearing files
+  await new Promise((r) => setTimeout(r, 2000));
 
-  // Clear session directories
+  // Clear session directories with retry loop
   const sessionDir = path.resolve(`./.wwebjs_auth/session-${tenantId}`);
-  if (fs.existsSync(sessionDir)) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (!fs.existsSync(sessionDir)) break;
     try {
-      fs.rmSync(sessionDir, { recursive: true, force: true });
+      fs.rmSync(sessionDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 });
+      console.log(`[WA] [${tenantId}] Session folder cleared`);
+      break;
     } catch (e) {
-      console.warn(`[WA] [${tenantId}] Could not fully clear session folder:`, e.message);
+      if (attempt === 2) {
+        console.warn(`[WA] [${tenantId}] Could not fully clear session folder:`, e.message);
+      } else {
+        await new Promise((r) => setTimeout(r, 800));
+      }
     }
-    console.log(`[WA] [${tenantId}] Session folder cleared`);
   }
 
   clients.delete(tenantId);
@@ -1370,8 +1461,18 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && pathname === "/initialize") {
     const body = await readBody(req);
     const tenantId = body.tenantId || "global";
-    initClient(tenantId, true).catch(console.error);
-    return json(res, { success: true, message: `Initialization started for tenant: ${tenantId}` });
+    initClient(tenantId, false, false).catch(console.error);
+    return json(res, { success: true, message: `Initialization requested for tenant: ${tenantId}` });
+  }
+
+  // POST /reset-session { tenantId }
+  if (req.method === "POST" && pathname === "/reset-session") {
+    const body = await readBody(req);
+    const tenantId = body.tenantId || "global";
+    console.log(`[WA] [${tenantId}] ♻️ Resetting session requested by user...`);
+    await disconnect(tenantId);
+    initClient(tenantId, true, true).catch(console.error);
+    return json(res, { success: true, message: `Session reset and fresh initialization started for: ${tenantId}` });
   }
 
   json(res, { error: "Not found" }, 404);
@@ -1386,22 +1487,15 @@ async function autoRestoreSessions() {
 
   try {
     const files = fs.readdirSync(authDir);
-    for (const file of files) {
-      if (file.startsWith("session-")) {
-        const tenantId = file.replace("session-", "");
-        // Do not restore the legacy name
-        if (tenantId && tenantId !== "bookmytime-session") {
-          console.log(`[WA Startup] 🔄 Restoring active session for tenant: ${tenantId}`);
-          initClient(tenantId).catch((err) => {
-            console.error(`[WA Startup] Failed to restore session for ${tenantId}:`, err.message);
-          });
-          // Stagger restorations by 3 seconds to avoid CPU and Chromium launch spikes
-          await new Promise((r) => setTimeout(r, 3000));
-        }
-      }
-    }
+    const sessionTenants = files
+      .filter((file) => file.startsWith("session-") && file !== "session-bookmytime-session")
+      .map((file) => file.replace("session-", ""));
+
+    console.log(
+      `[WA Startup] 📦 Discovered ${sessionTenants.length} saved session profile(s). Sessions will load on-demand when accessed.`,
+    );
   } catch (err) {
-    console.error("[WA Startup] Failed to scan auth directory for restoration:", err.message);
+    console.error("[WA Startup] Failed to scan auth directory:", err.message);
   }
 }
 
@@ -1460,6 +1554,10 @@ setInterval(async () => {
 const PORT = parseInt(process.env.WA_PORT || "3001");
 
 server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.warn(`[WA Server] Port ${PORT} is already in use by an active WhatsApp microservice instance. Exiting cleanly.`);
+    process.exit(0);
+  }
   console.error("[WA Server Error] Server crash:", err.message);
   process.exit(1);
 });

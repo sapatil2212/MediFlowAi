@@ -91,6 +91,11 @@ export async function disconnectWA(tenantId = "global"): Promise<{ success: bool
   return waFetch("/disconnect", "POST", { tenantId });
 }
 
+/** Reset a WhatsApp session: purges corrupted auth folder and starts fresh pairing */
+export async function resetWASession(tenantId = "global"): Promise<{ success: boolean; message?: string }> {
+  return waFetch("/reset-session", "POST", { tenantId });
+}
+
 /** Trigger (re-)initialization of the WhatsApp client for a tenant */
 export async function initializeWA(tenantId = "global"): Promise<{ success: boolean }> {
   return waFetch("/initialize", "POST", { tenantId });

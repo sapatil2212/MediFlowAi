@@ -34,16 +34,25 @@ export const Route = createFileRoute("/signup")({
 
 const carouselImages = [
   {
-    url: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&q=80&w=1000",
-    alt: "Modern medical professional consulting room",
+    url: "/images/signup-doctor.jpg",
+    alt: "Indian healthcare doctor consultation and clinic management",
+    tag: "Healthcare & Clinics",
+    title: "Smart Clinic & Practice Management",
+    description: "In-browser video consults, AI voice clinical scribe & automated WhatsApp alerts",
   },
   {
-    url: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&q=80&w=1000",
-    alt: "Person practicing yoga for health and wellness",
+    url: "/images/signup-restaurant.jpg",
+    alt: "Indian modern restaurant table booking and hospitality management",
+    tag: "Restaurants & Dining",
+    title: "Visual Table Booking & Layouts",
+    description: "Real-time table allocation, walk-ins, party rules & WhatsApp confirmations",
   },
   {
-    url: "https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&q=80&w=1000",
-    alt: "Healthy nutritious food plate",
+    url: "/images/signup-salon.jpg",
+    alt: "Indian luxury beauty salon and wellness spa booking",
+    tag: "Beauty, Spa & Wellness",
+    title: "Seamless Appointment Scheduling",
+    description: "Multi-staff calendars, service catalog & automated client reminder workflows",
   },
 ];
 
@@ -617,31 +626,56 @@ function SignupPage() {
         </div>
 
         {/* Right Side: Image Showcase */}
-        <div className="relative hidden h-full min-h-[400px] overflow-hidden rounded-[1.5rem] bg-zinc-900 lg:block">
+        <div className="relative hidden h-full min-h-[440px] overflow-hidden rounded-[1.5rem] bg-zinc-950 lg:block shadow-inner">
           <AnimatePresence mode="wait">
-            <motion.img
+            <motion.div
               key={currentSlide}
-              src={carouselImages[currentSlide].url}
-              alt={carouselImages[currentSlide].alt}
-              initial={{ opacity: 0, scale: 1.05 }}
-              animate={{ opacity: 0.85, scale: 1 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.8 }}
-              className="absolute inset-0 h-full w-full object-cover"
-            />
+              transition={{ duration: 0.6 }}
+              className="absolute inset-0"
+            >
+              <motion.img
+                src={carouselImages[currentSlide].url}
+                alt={carouselImages[currentSlide].alt}
+                initial={{ scale: 1.04 }}
+                animate={{ scale: 1 }}
+                transition={{ duration: 6, ease: "easeOut" }}
+                className="h-full w-full object-cover"
+              />
+
+              {/* Gradient Overlays */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-black/30" />
+
+              {/* Top Tag Badge */}
+              <div className="absolute top-4 left-4 z-10">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 backdrop-blur-md px-3 py-1 text-[11px] font-semibold text-white shadow-sm border border-white/20">
+                  <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  {carouselImages[currentSlide].tag}
+                </span>
+              </div>
+
+              {/* Bottom Info Banner */}
+              <div className="absolute bottom-12 inset-x-5 z-10 text-white">
+                <p className="text-sm font-bold tracking-tight text-white drop-shadow-sm">
+                  {carouselImages[currentSlide].title}
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-zinc-300 drop-shadow-xs line-clamp-2">
+                  {carouselImages[currentSlide].description}
+                </p>
+              </div>
+            </motion.div>
           </AnimatePresence>
 
-          {/* Overlay gradient */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/20" />
-
           {/* Carousel dots indicators */}
-          <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-white/20 px-2.5 py-1 backdrop-blur-md">
+          <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1 backdrop-blur-md border border-white/10">
             {carouselImages.map((_, index) => (
               <button
                 key={index}
                 onClick={() => setCurrentSlide(index)}
-                className={`h-1.5 rounded-full transition-all duration-300 ${
-                  index === currentSlide ? "w-5 bg-white" : "w-1.5 bg-white/50"
+                className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                  index === currentSlide ? "w-5 bg-white" : "w-1.5 bg-white/40 hover:bg-white/70"
                 }`}
                 aria-label={`Go to slide ${index + 1}`}
               />

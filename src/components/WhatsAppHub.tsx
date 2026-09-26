@@ -51,6 +51,7 @@ import {
   getWACampaignStatsServerFn,
   uploadWATemplateHeaderImageServerFn,
   getWhatsAppStatusServerFn,
+  resetWhatsAppSessionServerFn,
   disconnectWhatsAppServerFn,
   sendTestWaServerFn,
   getWAAIStatusServerFn,
@@ -85,6 +86,7 @@ export default function WhatsAppHub({
   const [waQueueCount, setWaQueueCount] = useState<number>(0);
   const [waSentLogs, setWaSentLogs] = useState<any[]>([]);
   const [polling, setPolling] = useState(false);
+  const [resettingWa, setResettingWa] = useState(false);
 
   // Template states
   const [templates, setTemplates] = useState<any[]>([]);
@@ -1548,8 +1550,32 @@ export default function WhatsAppHub({
                       Scan QR from WhatsApp Settings &gt; Linked Devices
                     </p>
                     <p className="text-[9px] text-zinc-400 font-semibold mt-1">
-                      Automatic refreshing every 10 seconds. Keeping this tab open helps.
+                      QR code is active. Point your camera to pair.
                     </p>
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        disabled={resettingWa || !canOperate}
+                        onClick={async () => {
+                          setResettingWa(true);
+                          try {
+                            showToast("info", "Resetting session & generating fresh QR...");
+                            await resetWhatsAppSessionServerFn();
+                            setTimeout(() => {
+                              fetchStatus();
+                              setResettingWa(false);
+                            }, 3000);
+                          } catch (e: any) {
+                            showToast("error", "Reset failed: " + e.message);
+                            setResettingWa(false);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[10px] font-bold text-zinc-700 hover:bg-zinc-50 transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw className={`h-3 w-3 ${resettingWa ? "animate-spin text-brand" : "text-zinc-500"}`} />
+                        {resettingWa ? "Regenerating..." : "Stuck or Can't Link? Reset Session & New QR"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -1561,19 +1587,43 @@ export default function WhatsAppHub({
                       Initialize to retrieve QR code and link your phone
                     </p>
                   </div>
-                  <button
-                    onClick={async () => {
-                      try {
-                        await fetchStatus();
-                        showToast("success", "Connecting...");
-                      } catch (e: any) {
-                        showToast("error", "Failed: " + e.message);
-                      }
-                    }}
-                    className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white text-[10px] font-bold px-5 py-2 cursor-pointer shadow-sm"
-                  >
-                    Start Initialization
-                  </button>
+                  <div className="flex items-center justify-center gap-2 pt-1">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await fetchStatus();
+                          showToast("success", "Connecting...");
+                        } catch (e: any) {
+                          showToast("error", "Failed: " + e.message);
+                        }
+                      }}
+                      className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white text-[10px] font-bold px-5 py-2 cursor-pointer shadow-sm"
+                    >
+                      Start Initialization
+                    </button>
+                    <button
+                      type="button"
+                      disabled={resettingWa || !canOperate}
+                      onClick={async () => {
+                        setResettingWa(true);
+                        try {
+                          showToast("info", "Purging session & generating fresh QR...");
+                          await resetWhatsAppSessionServerFn();
+                          setTimeout(() => {
+                            fetchStatus();
+                            setResettingWa(false);
+                          }, 3000);
+                        } catch (e: any) {
+                          showToast("error", "Reset failed: " + e.message);
+                          setResettingWa(false);
+                        }
+                      }}
+                      className="rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-[10px] font-bold px-4 py-2 cursor-pointer shadow-xs inline-flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${resettingWa ? "animate-spin text-brand" : "text-zinc-500"}`} />
+                      {resettingWa ? "Resetting..." : "Reset Session & New QR"}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

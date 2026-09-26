@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Nav } from "@/components/site/Nav";
 import { SiteShell } from "@/components/site/Footer";
-import { Pricing, ROICalculator, FAQ, CTA } from "@/components/site/sections";
+import { Pricing, FAQ, CTA } from "@/components/site/sections";
 
 export const Route = createFileRoute("/pricing")({
   head: () => ({
@@ -27,7 +27,6 @@ function PricingPage() {
     <SiteShell>
       <Nav />
       <Pricing />
-      <ROICalculator />
       <FAQ />
       <CTA />
     </SiteShell>

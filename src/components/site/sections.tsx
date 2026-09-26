@@ -161,7 +161,7 @@ export function PageHeader({
     <section
       className={`relative overflow-hidden ${
         dark ? "bg-zinc-950 text-white" : "bg-gradient-to-b from-white to-zinc-50"
-      } pt-20 pb-16`}
+      } pt-16 sm:pt-20 pb-12 sm:pb-16`}
     >
       <div
         className={`pointer-events-none absolute inset-0 ${
@@ -169,14 +169,14 @@ export function PageHeader({
         } bg-radial-fade opacity-60`}
       />
       <div className="pointer-events-none absolute -top-32 left-1/2 size-[600px] -translate-x-1/2 rounded-full bg-brand/20 blur-3xl" />
-      <div className="relative mx-auto max-w-4xl px-6 text-center">
+      <div className="relative mx-auto max-w-4xl px-4 sm:px-6 text-center">
         <SectionEyebrow tone={dark ? "dark" : "brand"}>{eyebrow}</SectionEyebrow>
-        <h1 className="mt-5 text-balance text-4xl font-semibold tracking-tight md:text-6xl">
+        <h1 className="mt-4 text-balance text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight">
           {title} {highlight && <span className="text-gradient-brand">{highlight}</span>}
         </h1>
         {subtitle && (
           <p
-            className={`mx-auto mt-5 max-w-2xl text-lg ${dark ? "text-zinc-400" : "text-zinc-600"}`}
+            className={`mx-auto mt-3 max-w-2xl text-xs sm:text-sm leading-relaxed ${dark ? "text-zinc-400" : "text-zinc-600"}`}
           >
             {subtitle}
           </p>
@@ -239,7 +239,7 @@ export function Hero() {
 
   return (
     <section
-      className="relative overflow-hidden pt-16 pb-20 lg:pt-20 lg:pb-28"
+      className="relative overflow-hidden pt-12 pb-16 sm:pt-16 sm:pb-20 lg:pt-20 lg:pb-24"
       style={{
         background: "linear-gradient(170deg, #EEF5FF 0%, #F5F9FF 35%, #EAF2FF 65%, #F0F6FF 100%)",
       }}
@@ -294,14 +294,14 @@ export function Hero() {
         </motion.div>
       </div>
 
-      <div className="relative z-10 mx-auto max-w-7xl px-6">
-        <div className="grid lg:grid-cols-2 gap-16 items-center">
+      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
           {/* Left */}
           <div>
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/90 border border-[#0059C6]/20 text-xs font-semibold text-[#0059C6] mb-7 shadow-[0_2px_10px_rgba(0,89,198,0.08)] backdrop-blur-md"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/90 border border-[#0059C6]/20 text-[11px] font-semibold text-[#0059C6] mb-5 shadow-[0_2px_10px_rgba(0,89,198,0.08)] backdrop-blur-md"
             >
               <Zap className="size-3 text-[#0059C6]" /> Trusted by Indian Businesses & Multi-Branch
               Groups
@@ -311,7 +311,7 @@ export function Hero() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.05 }}
-              className="text-4xl md:text-5xl lg:text-[52px] font-semibold leading-[1.12] tracking-tight text-[#0F172A] mb-5"
+              className="text-3xl sm:text-4xl lg:text-[42px] font-bold leading-[1.18] tracking-tight text-[#0F172A] mb-4"
             >
               The Multi-Tenant <span className="text-gradient-brand">Booking Platform</span> for
               Modern Businesses
@@ -321,7 +321,7 @@ export function Hero() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="text-sm md:text-base text-[#64748B] leading-relaxed max-w-[540px] mb-6 font-normal"
+              className="text-xs sm:text-sm text-[#64748B] leading-relaxed max-w-[500px] mb-6 font-normal"
             >
               Automate bookings across all locations and staff. Launch your custom-branded booking
               portal, send automatic WhatsApp reminders, and track operations in real time.
@@ -335,11 +335,11 @@ export function Hero() {
             >
               <Link
                 to="/signup"
-                className="group inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-semibold text-white transition-all hover:-translate-y-[1px]"
+                className="group inline-flex items-center gap-2 px-5 sm:px-6 py-2.5 rounded-lg text-xs sm:text-sm font-semibold text-white transition-all hover:-translate-y-[1px] shadow-sm"
                 style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
               >
                 Get Started Free{" "}
-                <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+                <ArrowRight className="size-3.5 sm:size-4 transition-transform group-hover:translate-x-1" />
               </Link>
             </motion.div>
           </div>
@@ -699,14 +699,14 @@ export function LogosMarquee() {
     { icon: Briefcase, label: "Professional Services" },
   ];
   return (
-    <section className="relative border-y border-zinc-950/5 bg-white py-10">
-      <div className="mx-auto mb-6 max-w-7xl px-6 text-center">
-        <p className="text-xs font-medium uppercase tracking-widest text-zinc-500">
+    <section className="relative border-y border-zinc-950/5 bg-white py-6 sm:py-8">
+      <div className="mx-auto mb-4 sm:mb-5 max-w-7xl px-4 sm:px-6 text-center">
+        <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
           TRUSTED BY BUSINESSES ACROSS MULTIPLE INDUSTRIES
         </p>
       </div>
       <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_15%,black_85%,transparent)]">
-        <div className="flex w-max animate-marquee gap-10 pr-10">
+        <div className="flex w-max animate-marquee gap-8 sm:gap-10 pr-10">
           {[...logos, ...logos].map((l, i) => {
             const Icon = l.icon;
             return (
@@ -714,8 +714,8 @@ export function LogosMarquee() {
                 key={i}
                 className="flex items-center gap-2 text-zinc-500 transition-colors hover:text-brand whitespace-nowrap"
               >
-                <Icon className="size-4 shrink-0" />
-                <span className="text-sm font-semibold tracking-tight">{l.label}</span>
+                <Icon className="size-3.5 sm:size-4 shrink-0" />
+                <span className="text-xs sm:text-[13px] font-semibold tracking-tight">{l.label}</span>
               </div>
             );
           })}
@@ -736,9 +736,9 @@ export function Stats() {
     { title: "Multi Industry", label: "Built For Any Business" },
   ];
   return (
-    <section className="relative bg-gradient-to-b from-white to-zinc-50 py-20">
-      <div className="mx-auto max-w-7xl px-6">
-        <div className="grid grid-cols-2 gap-y-10 md:grid-cols-4">
+    <section className="relative bg-gradient-to-b from-white to-zinc-50 py-12 sm:py-16">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-2 gap-y-8 gap-x-4 md:grid-cols-4">
           {stats.map((s, i) => (
             <motion.div
               key={s.title}
@@ -748,10 +748,10 @@ export function Stats() {
               transition={{ delay: i * 0.08 }}
               className="text-center"
             >
-              <p className="text-4xl font-semibold tracking-tight text-gradient-brand md:text-5xl whitespace-nowrap">
+              <p className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-gradient-brand whitespace-nowrap">
                 {s.title}
               </p>
-              <p className="mt-3 text-sm font-semibold text-zinc-900">{s.label}</p>
+              <p className="mt-1.5 text-xs sm:text-sm font-semibold text-zinc-700">{s.label}</p>
             </motion.div>
           ))}
         </div>
@@ -781,11 +781,11 @@ export function BenefitsSection() {
     "AI Assistant answering customer booking requests 24/7",
   ];
   return (
-    <section className="relative py-24">
-      <div className="mx-auto max-w-7xl px-6">
-        <div className="mb-14 text-center">
+    <section className="relative py-16 sm:py-20 lg:py-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-10 sm:mb-12 text-center">
           <SectionEyebrow>THE DIFFERENCE</SectionEyebrow>
-          <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
+          <h2 className="mt-3 text-balance text-2xl sm:text-3xl lg:text-[34px] font-bold tracking-tight text-zinc-900 leading-[1.25]">
             Stop managing bookings{" "}
             <span className="relative inline-block">
               <span className="text-zinc-400">manually</span>
@@ -816,13 +816,13 @@ export function BenefitsSection() {
             initial={{ opacity: 0, x: -20 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            className="rounded-2xl border border-red-200/60 bg-red-50/30 p-8"
+            className="rounded-2xl border border-red-200/60 bg-red-50/30 p-5 sm:p-7"
           >
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-red-500">
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-red-500">
               Without BookMyTime
             </p>
-            <h3 className="mb-6 text-xl font-semibold text-zinc-900">The Daily Struggle</h3>
-            <ul className="space-y-3">
+            <h3 className="mb-4 text-base sm:text-lg font-bold text-zinc-900">The Daily Struggle</h3>
+            <ul className="space-y-2.5 sm:space-y-3">
               {before.map((b, i) => (
                 <motion.li
                   key={b}
@@ -830,9 +830,9 @@ export function BenefitsSection() {
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.05 }}
-                  className="flex items-start gap-3 text-sm text-zinc-700"
+                  className="flex items-start gap-2.5 text-xs sm:text-sm text-zinc-700"
                 >
-                  <span className="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-500 text-[10px] font-bold">
+                  <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-500 text-[10px] font-bold">
                     ✕
                   </span>
                   <span>{b}</span>
@@ -845,7 +845,7 @@ export function BenefitsSection() {
             initial={{ opacity: 0, x: 20 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            className="relative overflow-hidden rounded-2xl border p-8 ring-1"
+            className="relative overflow-hidden rounded-2xl border p-5 sm:p-7 ring-1"
             style={{
               borderColor: "rgba(0,89,198,0.2)",
               background:
@@ -858,13 +858,13 @@ export function BenefitsSection() {
               style={{ background: "rgba(13,131,255,0.08)" }}
             />
             <p
-              className="mb-1 text-xs font-semibold uppercase tracking-wider"
+              className="mb-1 text-[11px] font-semibold uppercase tracking-wider"
               style={{ color: "#0059C6" }}
             >
               With BookMyTime
             </p>
-            <h3 className="mb-6 text-xl font-semibold text-zinc-900">The Smart Advantage</h3>
-            <ul className="relative space-y-3">
+            <h3 className="mb-4 text-base sm:text-lg font-bold text-zinc-900">The Smart Advantage</h3>
+            <ul className="relative space-y-2.5 sm:space-y-3">
               {after.map((a, i) => (
                 <motion.li
                   key={a}
@@ -872,7 +872,7 @@ export function BenefitsSection() {
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.05 }}
-                  className="flex items-start gap-3 text-sm text-zinc-800"
+                  className="flex items-start gap-2.5 text-xs sm:text-sm text-zinc-800"
                 >
                   <span
                     className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full text-white"
@@ -903,7 +903,7 @@ export function QRShowcase() {
   ];
 
   return (
-    <section className="relative overflow-hidden py-20 bg-zinc-950">
+    <section className="relative overflow-hidden py-16 sm:py-20 lg:py-24 bg-zinc-950">
       {/* Subtle dot grid */}
       <div
         className="pointer-events-none absolute inset-0 opacity-10"
@@ -918,15 +918,15 @@ export function QRShowcase() {
         style={{ background: "radial-gradient(ellipse, rgba(0,89,198,0.3) 0%, transparent 70%)" }}
       />
 
-      <div className="relative mx-auto max-w-6xl px-6">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
+      <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
           {/* ── Left: content ── */}
           <div>
             <motion.span
               initial={{ opacity: 0, y: 10 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold tracking-widest mb-5"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold tracking-wider uppercase mb-4"
               style={{
                 background: "rgba(167,211,255,0.1)",
                 color: "#A7D3FF",
@@ -941,7 +941,7 @@ export function QRShowcase() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.05 }}
-              className="text-3xl md:text-4xl font-bold leading-tight tracking-tight text-white mb-4"
+              className="text-2xl sm:text-3xl lg:text-[34px] font-bold leading-[1.25] tracking-tight text-white mb-3"
             >
               Turn Every{" "}
               <span className="relative inline-block">
@@ -972,14 +972,14 @@ export function QRShowcase() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.1 }}
-              className="text-sm leading-relaxed mb-8"
+              className="text-xs sm:text-sm leading-relaxed mb-6 max-w-lg"
               style={{ color: "rgba(167,211,255,0.75)" }}
             >
               One QR code. Infinite bookings. Print it, share it, pin it — and let customers
               schedule themselves while you focus on serving them.
             </motion.p>
 
-            <ul className="space-y-3 mb-8">
+            <ul className="space-y-2.5 sm:space-y-3 mb-7">
               {points.map((p, i) => {
                 const Icon = p.icon;
                 return (
@@ -992,15 +992,15 @@ export function QRShowcase() {
                     className="flex items-center gap-3"
                   >
                     <div
-                      className="flex size-7 shrink-0 items-center justify-center rounded-lg"
+                      className="flex size-6 sm:size-7 shrink-0 items-center justify-center rounded-lg"
                       style={{
                         background: "rgba(167,211,255,0.12)",
                         border: "1px solid rgba(167,211,255,0.2)",
                       }}
                     >
-                      <Icon className="size-3.5" style={{ color: "#A7D3FF" }} />
+                      <Icon className="size-3 sm:size-3.5" style={{ color: "#A7D3FF" }} />
                     </div>
-                    <span className="text-sm text-white/90">{p.text}</span>
+                    <span className="text-xs sm:text-sm text-white/90">{p.text}</span>
                   </motion.li>
                 );
               })}
@@ -1012,14 +1012,14 @@ export function QRShowcase() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.45 }}
-              className="inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition-all hover:-translate-y-[1px]"
+              className="inline-flex items-center gap-2 rounded-xl px-5 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold transition-all hover:-translate-y-[1px] shadow-sm"
               style={{
                 background: "linear-gradient(135deg, #0059C6, #0D83FF)",
                 color: "#ffffff",
                 boxShadow: "0 4px 24px rgba(0,89,198,0.4)",
               }}
             >
-              <QrCode className="size-4" /> Get Your Free QR Code
+              <QrCode className="size-3.5 sm:size-4" /> Get Your Free QR Code
             </motion.a>
           </div>
 
@@ -1030,7 +1030,7 @@ export function QRShowcase() {
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.15 }}
-              className="relative"
+              className="relative w-full max-w-xs sm:max-w-sm"
             >
               {/* Outer glow */}
               <motion.div
@@ -1042,7 +1042,7 @@ export function QRShowcase() {
 
               {/* Card */}
               <div
-                className="relative rounded-3xl p-7 shadow-2xl overflow-hidden"
+                className="relative rounded-3xl p-5 sm:p-7 shadow-2xl overflow-hidden"
                 style={{
                   background: "linear-gradient(135deg, #0a0f1e 0%, #0d1a3a 50%, #0a1628 100%)",
                   boxShadow: "0 25px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,89,198,0.3)",
@@ -1062,7 +1062,7 @@ export function QRShowcase() {
                   style={{ background: "rgba(13,131,255,0.2)" }}
                 />
                 {/* Header */}
-                <div className="relative flex items-center justify-between mb-5">
+                <div className="relative flex items-center justify-between mb-4 sm:mb-5">
                   <div>
                     <p className="text-xs font-bold text-white leading-none">BookMyTime</p>
                     <p className="text-[10px] mt-0.5" style={{ color: "rgba(167,211,255,0.7)" }}>
@@ -1070,15 +1070,15 @@ export function QRShowcase() {
                     </p>
                   </div>
                   <div
-                    className="flex size-8 items-center justify-center rounded-lg"
+                    className="flex size-7 sm:size-8 items-center justify-center rounded-lg"
                     style={{ background: "#0059C6" }}
                   >
-                    <QrCode className="size-4 text-white" />
+                    <QrCode className="size-3.5 sm:size-4 text-white" />
                   </div>
                 </div>
 
                 {/* QR pattern — proper 21x21 matrix */}
-                <div className="relative mx-auto">
+                <div className="relative mx-auto flex justify-center">
                   {(() => {
                     const M = 9,
                       Q = 6,
@@ -1127,7 +1127,7 @@ export function QRShowcase() {
                     return (
                       <svg
                         viewBox={`0 0 ${Q * 2 + 21 * M} ${Q * 2 + 21 * M}`}
-                        className="w-64 h-64"
+                        className="w-48 h-48 sm:w-56 sm:h-56"
                         xmlns="http://www.w3.org/2000/svg"
                       >
                         <rect width={Q * 2 + 21 * M} height={Q * 2 + 21 * M} fill="#0d1a3a" />
@@ -1219,11 +1219,11 @@ export function WhatsAppSection() {
   }, []);
 
   return (
-    <section className="relative py-14 bg-white overflow-hidden">
+    <section className="relative py-16 sm:py-20 lg:py-24 bg-white overflow-hidden">
       <div className="pointer-events-none absolute inset-0 bg-grid bg-radial-fade opacity-20" />
 
-      <div className="relative mx-auto max-w-7xl px-6">
-        <div className="grid gap-12 lg:gap-16 lg:grid-cols-[auto_1fr] items-center">
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="grid gap-10 lg:gap-14 lg:grid-cols-[auto_1fr] items-center">
           {/* ── Left: Phone mockup ── */}
           <motion.div
             initial={{ opacity: 0, x: -30 }}
@@ -1239,7 +1239,7 @@ export function WhatsAppSection() {
                     "radial-gradient(circle, rgba(37,211,102,0.12) 0%, rgba(0,89,198,0.08) 60%, transparent 100%)",
                 }}
               />
-              <div className="relative w-60 rounded-[2rem] border-[5px] border-zinc-900 bg-zinc-900 shadow-2xl overflow-hidden">
+              <div className="relative w-56 sm:w-60 rounded-[2rem] border-[5px] border-zinc-900 bg-zinc-900 shadow-2xl overflow-hidden">
                 {/* Status bar */}
                 <div className="bg-zinc-900 px-4 pt-2.5 pb-1 flex justify-between items-center">
                   <span className="text-[8px] text-white font-bold">9:41</span>
@@ -1266,7 +1266,7 @@ export function WhatsAppSection() {
                 </div>
                 {/* Chat area */}
                 <div
-                  className="px-2.5 py-2.5 space-y-2 min-h-[320px]"
+                  className="px-2.5 py-2.5 space-y-2 min-h-[300px] sm:min-h-[320px]"
                   style={{ background: "#E5DDD5" }}
                 >
                   <p className="text-center text-[7px] text-zinc-500 bg-white/60 rounded-full px-2 py-0.5 w-fit mx-auto">
@@ -1331,19 +1331,19 @@ export function WhatsAppSection() {
               </div>
               {/* Floating open rate */}
               <motion.div
-                className="absolute -right-4 top-12 bg-white rounded-lg shadow-lg px-2.5 py-1.5 border border-zinc-100"
+                className="absolute -right-3 top-10 bg-white rounded-lg shadow-lg px-2.5 py-1.5 border border-zinc-100"
                 animate={{ y: [0, -5, 0] }}
                 transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
               >
                 <p className="text-[8px] text-zinc-400">Open Rate</p>
-                <p className="text-base font-black leading-none" style={{ color: "#25D366" }}>
+                <p className="text-sm sm:text-base font-black leading-none" style={{ color: "#25D366" }}>
                   98%
                 </p>
                 <p className="text-[7px] text-zinc-400">vs 22% email</p>
               </motion.div>
               {/* Floating auto-sent */}
               <motion.div
-                className="absolute -left-4 bottom-16 bg-white rounded-lg shadow-lg px-2.5 py-1.5 border border-zinc-100 flex items-center gap-1.5"
+                className="absolute -left-3 bottom-14 bg-white rounded-lg shadow-lg px-2.5 py-1.5 border border-zinc-100 flex items-center gap-1.5"
                 animate={{ y: [0, -4, 0] }}
                 transition={{ repeat: Infinity, duration: 3.5, ease: "easeInOut", delay: 1 }}
               >
@@ -1362,19 +1362,19 @@ export function WhatsAppSection() {
           </motion.div>
 
           {/* ── Right: Content ── */}
-          <div className="lg:pl-10">
+          <div className="lg:pl-6">
             <motion.span
               initial={{ opacity: 0, y: 10 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold mb-3 border"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold mb-3 border tracking-wider uppercase"
               style={{
                 background: "rgba(37,211,102,0.08)",
                 color: "#128C7E",
                 borderColor: "rgba(37,211,102,0.2)",
               }}
             >
-              <MessageSquare className="size-2.5" /> WHATSAPP AUTOMATION
+              <MessageSquare className="size-3" /> WHATSAPP AUTOMATION
             </motion.span>
 
             <motion.h2
@@ -1382,7 +1382,7 @@ export function WhatsAppSection() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.05 }}
-              className="text-2xl md:text-3xl font-semibold leading-tight tracking-tight text-zinc-900 mb-2"
+              className="text-2xl sm:text-3xl lg:text-[34px] font-bold leading-[1.25] tracking-tight text-zinc-900 mb-2"
             >
               Never Let Customers{" "}
               <span className="text-gradient-brand">Forget Their Appointments</span>
@@ -1393,7 +1393,7 @@ export function WhatsAppSection() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.1 }}
-              className="text-xs text-zinc-500 leading-relaxed mb-5"
+              className="text-xs sm:text-sm text-zinc-600 leading-relaxed mb-5 max-w-xl"
             >
               BookMyTime sends automated WhatsApp messages at every stage — so you never follow up
               manually again.
@@ -1413,7 +1413,7 @@ export function WhatsAppSection() {
                     whileInView={{ opacity: 1, x: 0 }}
                     viewport={{ once: true }}
                     transition={{ delay: 0.08 + i * 0.06 }}
-                    className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left transition-all duration-200 cursor-pointer h-full"
+                    className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all duration-200 cursor-pointer h-full"
                     style={{
                       background: isActive ? "rgba(0,89,198,0.06)" : "transparent",
                       border: isActive ? "1px solid rgba(0,89,198,0.2)" : "1px solid transparent",
@@ -1429,7 +1429,7 @@ export function WhatsAppSection() {
                       <p className="text-xs font-semibold text-zinc-900 leading-tight">
                         {msg.label}
                       </p>
-                      <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">{msg.text}</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed line-clamp-2">{msg.text}</p>
                     </div>
                   </motion.button>
                 );
@@ -1462,29 +1462,29 @@ export function BeforeAfter() {
   ];
 
   return (
-    <section className="relative py-24 bg-slate-50/50 overflow-hidden">
+    <section className="relative py-16 sm:py-20 lg:py-24 bg-slate-50/50 overflow-hidden">
       <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[500px] bg-[#0059C6]/[0.03] blur-[100px] rounded-full" />
 
-      <div className="relative mx-auto max-w-6xl px-6">
+      <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-10 sm:mb-12">
           <SectionEyebrow>BEFORE VS AFTER</SectionEyebrow>
           <motion.h2
             initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: 0.05 }}
-            className="mt-5 text-balance text-3xl md:text-5xl font-semibold tracking-tight text-zinc-900"
+            className="mt-3 text-balance text-2xl sm:text-3xl lg:text-[34px] font-bold tracking-tight text-zinc-900 leading-[1.25]"
           >
             See the <span className="text-gradient-brand">difference BookMyTime makes</span>
           </motion.h2>
         </div>
 
         {/* Cards Container */}
-        <div className="relative grid md:grid-cols-2 gap-8 lg:gap-12 items-stretch">
+        <div className="relative grid md:grid-cols-2 gap-6 lg:gap-8 items-stretch">
           {/* VS Badge (Desktop) */}
-          <div className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 size-16 items-center justify-center rounded-full bg-white border border-zinc-100">
-            <span className="text-sm font-black text-zinc-400">VS</span>
+          <div className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 size-12 items-center justify-center rounded-full bg-white border border-zinc-200/80 shadow-md">
+            <span className="text-xs font-black text-zinc-400">VS</span>
           </div>
 
           {/* Before Card */}
@@ -1492,26 +1492,26 @@ export function BeforeAfter() {
             initial={{ opacity: 0, x: -30 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
-            className="relative flex flex-col rounded-3xl border border-zinc-200 bg-white p-8 md:p-10"
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            className="relative flex flex-col rounded-2xl border border-zinc-200/80 bg-white p-6 sm:p-8"
           >
-            <div className="flex items-center gap-4 mb-8">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-red-50 border border-red-100">
-                <X className="size-5 text-red-500" strokeWidth={2.5} />
+            <div className="flex items-center gap-3 mb-6">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-red-50 border border-red-100">
+                <X className="size-4.5 text-red-500" strokeWidth={2.5} />
               </div>
-              <h3 className="text-xl font-bold text-zinc-900">Before</h3>
+              <h3 className="text-base sm:text-lg font-bold text-zinc-900">Before</h3>
             </div>
-            <ul className="space-y-5 flex-1">
+            <ul className="space-y-3.5 flex-1">
               {before.map((item, i) => (
                 <motion.li
                   key={item}
                   initial={{ opacity: 0, x: -20 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: 0.2 + i * 0.1 }}
-                  className="flex items-start gap-4 text-[15px] text-zinc-500 font-medium"
+                  transition={{ delay: 0.15 + i * 0.07 }}
+                  className="flex items-start gap-3 text-xs sm:text-sm text-zinc-600 font-medium"
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-400 text-xs font-black mt-0.5">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-400 text-[10px] font-black mt-0.5">
                     ✕
                   </span>
                   <span className="leading-relaxed">{item}</span>
@@ -1525,8 +1525,8 @@ export function BeforeAfter() {
             initial={{ opacity: 0, x: 30 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
-            className="relative flex flex-col rounded-3xl p-8 md:p-10 overflow-hidden group"
+            transition={{ duration: 0.5, ease: "easeOut", delay: 0.1 }}
+            className="relative flex flex-col rounded-2xl p-6 sm:p-8 overflow-hidden group shadow-sm"
             style={{
               background: "linear-gradient(145deg, #ffffff 0%, #f4f9ff 100%)",
               border: "1px solid rgba(0,89,198,0.15)",
@@ -1535,27 +1535,27 @@ export function BeforeAfter() {
             {/* Animated Glow */}
             <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-[#0D83FF]/10 blur-3xl transition-transform duration-700 group-hover:scale-150" />
 
-            <div className="relative flex items-center gap-4 mb-8 z-10">
+            <div className="relative flex items-center gap-3 mb-6 z-10">
               <div
-                className="flex size-12 items-center justify-center rounded-2xl shadow-lg shadow-[#0059C6]/20 transition-transform duration-500 group-hover:scale-110"
+                className="flex size-10 items-center justify-center rounded-xl shadow-md shadow-[#0059C6]/20 transition-transform duration-500 group-hover:scale-105"
                 style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
               >
-                <Check className="size-5 text-white" strokeWidth={3} />
+                <Check className="size-4.5 text-white" strokeWidth={3} />
               </div>
-              <h3 className="text-xl font-bold text-zinc-900">After BookMyTime</h3>
+              <h3 className="text-base sm:text-lg font-bold text-zinc-900">After BookMyTime</h3>
             </div>
-            <ul className="relative space-y-5 flex-1 z-10">
+            <ul className="relative space-y-3.5 flex-1 z-10">
               {after.map((item, i) => (
                 <motion.li
                   key={item}
                   initial={{ opacity: 0, x: 20 }}
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: 0.3 + i * 0.1 }}
-                  className="flex items-start gap-4 text-[15px] text-zinc-800 font-semibold"
+                  transition={{ delay: 0.2 + i * 0.07 }}
+                  className="flex items-start gap-3 text-xs sm:text-sm text-zinc-800 font-semibold"
                 >
                   <span
-                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-white text-xs shadow-md mt-0.5"
+                    className="flex size-5 shrink-0 items-center justify-center rounded-full text-white text-[10px] shadow-sm mt-0.5"
                     style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
                   >
                     ✓
@@ -1572,17 +1572,17 @@ export function BeforeAfter() {
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.5, delay: 0.6 }}
-          className="mt-16 flex justify-center"
+          transition={{ duration: 0.4, delay: 0.4 }}
+          className="mt-10 sm:mt-12 flex justify-center"
         >
           <a
             href="/signup"
-            className="group relative inline-flex items-center gap-3 rounded-full px-8 py-4 text-sm font-bold text-white overflow-hidden transition-transform hover:-translate-y-1 shadow-[0_8px_24px_rgba(0,89,198,0.25)]"
+            className="group relative inline-flex items-center gap-2.5 rounded-full px-6 sm:px-7 py-3 text-xs sm:text-sm font-semibold text-white overflow-hidden transition-transform hover:-translate-y-0.5 shadow-[0_4px_16px_rgba(0,89,198,0.25)]"
             style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
           >
             <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" />
             <span className="relative z-10">Transform Your Business Today</span>
-            <ArrowRight className="relative z-10 size-4 transition-transform group-hover:translate-x-1" />
+            <ArrowRight className="relative z-10 size-3.5 sm:size-4 transition-transform group-hover:translate-x-1" />
           </a>
         </motion.div>
       </div>
@@ -1606,51 +1606,51 @@ export function AIFlowSection() {
     { icon: Bell, label: "Smart Reminders", sub: "Timely alerts prevent missed appointments" },
   ];
   return (
-    <section className="relative overflow-hidden bg-white py-24">
+    <section className="relative overflow-hidden bg-white py-16 sm:py-20 lg:py-24">
       <div className="pointer-events-none absolute inset-0 bg-grid bg-radial-fade" />
-      <div className="relative mx-auto max-w-7xl px-6">
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <SectionEyebrow>HOW IT WORKS</SectionEyebrow>
-          <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
+          <h2 className="mt-3 text-balance text-2xl sm:text-3xl lg:text-[34px] font-bold tracking-tight text-zinc-900 leading-[1.25]">
             From scan to checkout:{" "}
             <span className="text-gradient-brand">Automated booking lifecycle</span>
           </h2>
-          <p className="mt-4 text-zinc-600">
+          <p className="mt-3 text-xs sm:text-sm text-zinc-600 leading-relaxed max-w-xl mx-auto">
             The complete customer journey — automated, personalized, and synced across all your
             devices.
           </p>
         </div>
 
-        <div className="relative mt-12">
-          <div className="relative grid grid-cols-1 gap-6 md:grid-cols-5 z-10">
+        <div className="relative mt-10 sm:mt-12">
+          <div className="relative grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-5 z-10">
             {steps.map((s, i) => (
               <motion.div
                 key={s.label}
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                whileHover={{ y: -8, scale: 1.02 }}
+                whileHover={{ y: -6, scale: 1.02 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: i * 0.1 }}
-                className="relative flex flex-col items-start p-6 rounded-2xl bg-white border border-[#0059C6]/10 shadow-[0_8px_30px_rgba(0,89,198,0.06)] overflow-hidden group cursor-default"
+                transition={{ duration: 0.4, delay: i * 0.08 }}
+                className="relative flex flex-col items-start p-5 rounded-2xl bg-white border border-[#0059C6]/10 shadow-[0_4px_20px_rgba(0,89,198,0.05)] overflow-hidden group cursor-default"
               >
                 {/* Background Accent */}
                 <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-[#0059C6]/5 to-transparent rounded-bl-[4rem] -z-10 transition-all duration-500 group-hover:scale-150 group-hover:from-[#0D83FF]/10" />
 
                 {/* Large Watermark Number */}
-                <div className="text-5xl font-black text-[#0F172A]/[0.03] absolute -top-1 right-2 select-none transition-colors duration-300 group-hover:text-[#0059C6]/5">
+                <div className="text-4xl font-black text-[#0F172A]/[0.03] absolute -top-1 right-2 select-none transition-colors duration-300 group-hover:text-[#0059C6]/5">
                   0{i + 1}
                 </div>
 
                 {/* Icon Container */}
                 <div
-                  className="mb-8 w-12 h-12 rounded-xl flex items-center justify-center shadow-[0_4px_12px_rgba(0,89,198,0.2)] transition-transform duration-500 group-hover:rotate-[10deg] group-hover:scale-110"
+                  className="mb-6 w-10 h-10 rounded-xl flex items-center justify-center shadow-[0_4px_12px_rgba(0,89,198,0.2)] transition-transform duration-500 group-hover:rotate-[10deg] group-hover:scale-110"
                   style={{ background: "linear-gradient(135deg, #0059C6, #0D83FF)" }}
                 >
-                  <s.icon className="size-5 text-white" strokeWidth={2.5} />
+                  <s.icon className="size-4.5 text-white" strokeWidth={2.5} />
                 </div>
 
                 {/* Content */}
-                <h3 className="text-sm font-bold text-[#0F172A] leading-snug mb-2 transition-colors group-hover:text-[#0059C6]">
+                <h3 className="text-xs sm:text-sm font-bold text-[#0F172A] leading-snug mb-1.5 transition-colors group-hover:text-[#0059C6]">
                   {s.label}
                 </h3>
                 <p className="text-[11px] text-[#64748B] leading-relaxed font-medium">{s.sub}</p>
@@ -1679,27 +1679,27 @@ export function AnalyticsSection() {
     { name: "Diagnostics", value: 17, fill: "#67e8f9" },
   ];
   return (
-    <section className="relative bg-white py-24">
-      <div className="mx-auto max-w-7xl px-6">
-        <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
+    <section className="relative bg-white py-16 sm:py-20 lg:py-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="grid gap-10 lg:gap-14 lg:grid-cols-2 lg:items-center">
           <div>
             <SectionEyebrow>ANALYTICS COMMAND CENTER</SectionEyebrow>
-            <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
+            <h2 className="mt-3 text-balance text-2xl sm:text-3xl lg:text-[34px] font-bold tracking-tight text-zinc-900 leading-[1.25]">
               Every metric that matters, in <span className="text-gradient-brand">real time</span>
             </h2>
-            <p className="mt-4 text-zinc-600">
+            <p className="mt-3 text-xs sm:text-sm text-zinc-600 leading-relaxed max-w-lg">
               No more end-of-month spreadsheets. Watch revenue, occupancy, doctor productivity and
               patient satisfaction update live across every location.
             </p>
-            <ul className="mt-6 space-y-3">
+            <ul className="mt-5 space-y-2.5">
               {[
                 "Revenue per provider, per location, per service line",
                 "Predictive no-show scoring 7 days out",
                 "Insurance reimbursement aging & denial reasons",
                 "Patient lifetime value & retention cohorts",
               ].map((f) => (
-                <li key={f} className="flex items-center gap-3 text-sm text-zinc-700">
-                  <div className="flex size-5 items-center justify-center rounded-full bg-brand/10">
+                <li key={f} className="flex items-center gap-2.5 text-xs sm:text-sm text-zinc-700">
+                  <div className="flex size-4.5 items-center justify-center rounded-full bg-brand/10 shrink-0">
                     <Check className="size-3 text-brand" />
                   </div>
                   {f}
@@ -1713,12 +1713,12 @@ export function AnalyticsSection() {
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              className="rounded-2xl border border-zinc-950/5 bg-zinc-50 p-6"
+              className="rounded-2xl border border-zinc-950/5 bg-zinc-50 p-5 sm:p-6"
             >
               <div className="mb-4 flex items-baseline justify-between">
                 <div>
                   <p className="text-xs font-medium text-zinc-500">Patient volume</p>
-                  <p className="text-2xl font-semibold tracking-tight">
+                  <p className="text-xl sm:text-2xl font-bold tracking-tight">
                     <Counter to={12480} />
                   </p>
                 </div>
@@ -1726,7 +1726,7 @@ export function AnalyticsSection() {
                   +127% YoY
                 </span>
               </div>
-              <div className="h-48">
+              <div className="h-44 sm:h-48">
                 <ResponsiveContainer>
                   <LineChart data={visits}>
                     <XAxis
@@ -1772,10 +1772,10 @@ export function AnalyticsSection() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: 0.1 }}
-                className="rounded-2xl border border-zinc-950/5 bg-zinc-50 p-5"
+                className="rounded-2xl border border-zinc-950/5 bg-zinc-50 p-4 sm:p-5"
               >
                 <p className="mb-2 text-xs font-medium text-zinc-500">Service mix</p>
-                <div className="h-32">
+                <div className="h-28 sm:h-32">
                   <ResponsiveContainer>
                     <PieChart>
                       <Pie
@@ -1798,17 +1798,17 @@ export function AnalyticsSection() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: 0.15 }}
-                className="rounded-2xl border border-zinc-950/5 bg-zinc-50 p-5"
+                className="rounded-2xl border border-zinc-950/5 bg-zinc-50 p-4 sm:p-5"
               >
                 <p className="mb-2 text-xs font-medium text-zinc-500">Patient NPS</p>
-                <p className="text-3xl font-semibold tracking-tight">
+                <p className="text-2xl sm:text-3xl font-bold tracking-tight">
                   <Counter to={72} />
                 </p>
                 <div className="mt-3 flex gap-0.5">
                   {Array.from({ length: 14 }).map((_, i) => (
                     <div
                       key={i}
-                      className={`h-8 flex-1 rounded-sm ${i < 11 ? "bg-brand" : "bg-zinc-200"}`}
+                      className={`h-7 sm:h-8 flex-1 rounded-sm ${i < 11 ? "bg-brand" : "bg-zinc-200"}`}
                       style={{ opacity: 0.4 + (i / 14) * 0.6 }}
                     />
                   ))}
@@ -1835,30 +1835,30 @@ export function SpecialtiesSection() {
     { icon: Handshake, label: "Consultants & CA Offices", color: "from-amber-500 to-orange-400" },
   ];
   return (
-    <section className="relative bg-zinc-50 py-24">
-      <div className="mx-auto max-w-7xl px-6">
-        <div className="mx-auto mb-12 max-w-2xl text-center">
-          <h2 className="text-balance text-3xl font-semibold tracking-tight md:text-5xl">
+    <section className="relative bg-zinc-50 py-16 sm:py-20 lg:py-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto mb-10 max-w-2xl text-center">
+          <h2 className="text-balance text-2xl sm:text-3xl lg:text-[34px] font-bold tracking-tight text-zinc-900 leading-[1.25]">
             Built for <span className="text-gradient-brand">every industry</span>
           </h2>
-          <p className="mt-4 text-zinc-600">
+          <p className="mt-3 text-xs sm:text-sm text-zinc-600 leading-relaxed max-w-xl mx-auto">
             Customized tenant portals, specialized booking flows, and templates that match how your
             specific business operates.
           </p>
         </div>
         <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)]">
-          <div className="flex w-max animate-marquee-fast gap-4">
+          <div className="flex w-max animate-marquee-fast gap-3 sm:gap-4">
             {[...specs, ...specs, ...specs].map((s, i) => (
               <div
                 key={i}
-                className="flex items-center gap-3 rounded-full border border-zinc-950/5 bg-white px-5 py-3"
+                className="flex items-center gap-2.5 rounded-full border border-zinc-950/5 bg-white px-4 sm:px-5 py-2.5 sm:py-3 shadow-xs"
               >
                 <div
-                  className={`flex size-8 items-center justify-center rounded-full bg-gradient-to-br ${s.color} text-white`}
+                  className={`flex size-7 sm:size-8 items-center justify-center rounded-full bg-gradient-to-br ${s.color} text-white`}
                 >
-                  <s.icon className="size-4" />
+                  <s.icon className="size-3.5 sm:size-4" />
                 </div>
-                <span className="whitespace-nowrap text-sm font-semibold">{s.label}</span>
+                <span className="whitespace-nowrap text-xs sm:text-sm font-semibold">{s.label}</span>
               </div>
             ))}
           </div>
@@ -1931,23 +1931,23 @@ export function Testimonials() {
   const t = ts[active];
 
   return (
-    <section id="customers" className="relative bg-white py-24 overflow-hidden">
-      <div className="mx-auto max-w-7xl px-6">
+    <section id="customers" className="relative bg-white py-16 sm:py-20 lg:py-24 overflow-hidden">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Two-column grid — heading + quote left, image right, both top-aligned */}
-        <div className="grid gap-12 lg:grid-cols-2 lg:items-start">
+        <div className="grid gap-10 lg:grid-cols-2 lg:items-start">
           {/* Left column */}
           <div className="flex flex-col">
             {/* Heading — top-aligned with image */}
-            <div className="mb-10">
+            <div className="mb-8 sm:mb-10">
               <SectionEyebrow>LOVED BY BUSINESS OWNERS</SectionEyebrow>
-              <h2 className="mt-4 text-balance text-2xl font-semibold tracking-tight md:text-4xl">
+              <h2 className="mt-3 text-balance text-2xl sm:text-3xl lg:text-[34px] font-bold tracking-tight text-zinc-900 leading-[1.25]">
                 Real results from <span className="text-gradient-brand">growing businesses</span>
               </h2>
             </div>
 
             {/* Quote content */}
             <div className="relative flex-1">
-              <span className="absolute -top-2 -left-1 select-none pointer-events-none text-[60px] leading-none font-serif text-brand/20">
+              <span className="absolute -top-2 -left-1 select-none pointer-events-none text-[50px] leading-none font-serif text-brand/20">
                 "
               </span>
 
@@ -1959,9 +1959,9 @@ export function Testimonials() {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: direction * -40 }}
                   transition={{ duration: 0.4, ease: "easeInOut" }}
-                  className="relative pt-10"
+                  className="relative pt-8"
                 >
-                  <blockquote className="text-base md:text-lg font-serif italic font-medium leading-relaxed text-zinc-800 mb-8">
+                  <blockquote className="text-sm sm:text-base font-serif italic font-medium leading-relaxed text-zinc-800 mb-6">
                     "{t.quote}"
                   </blockquote>
 
@@ -1974,26 +1974,26 @@ export function Testimonials() {
                     </p>
                   </div>
 
-                  <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-brand/8 border border-brand/15 px-3 py-1">
+                  <div className="mt-3.5 inline-flex items-center gap-2 rounded-full bg-brand/8 border border-brand/15 px-3 py-1">
                     <TrendingUp className="size-3 text-brand" />
-                    <span className="text-xs font-semibold text-brand">{t.stat}</span>
+                    <span className="text-[11px] sm:text-xs font-semibold text-brand">{t.stat}</span>
                   </div>
                 </motion.div>
               </AnimatePresence>
 
               {/* Navigation */}
-              <div className="flex items-center gap-3 mt-10">
+              <div className="flex items-center gap-3 mt-8">
                 <button
                   onClick={() => go(active - 1)}
                   aria-label="Previous testimonial"
-                  className="flex size-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-500 hover:border-brand hover:text-brand transition-colors"
+                  className="flex size-8 sm:size-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-500 hover:border-brand hover:text-brand transition-colors cursor-pointer"
                 >
                   <ChevronRight className="size-4 rotate-180" />
                 </button>
                 <button
                   onClick={() => go(active + 1)}
                   aria-label="Next testimonial"
-                  className="flex size-9 items-center justify-center rounded-full bg-black text-white hover:bg-black-dark transition-colors"
+                  className="flex size-8 sm:size-9 items-center justify-center rounded-full bg-black text-white hover:bg-zinc-800 transition-colors cursor-pointer"
                 >
                   <ChevronRight className="size-4" />
                 </button>
@@ -2003,7 +2003,7 @@ export function Testimonials() {
                       key={i}
                       onClick={() => go(i)}
                       aria-label={`Testimonial ${i + 1}`}
-                      className={`rounded-full transition-all duration-300 ${
+                      className={`rounded-full transition-all duration-300 cursor-pointer ${
                         i === active ? "w-5 h-2 bg-brand" : "w-2 h-2 bg-zinc-300 hover:bg-zinc-400"
                       }`}
                     />
@@ -2021,7 +2021,7 @@ export function Testimonials() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.97 }}
               transition={{ duration: 0.5, ease: "easeInOut" }}
-              className="relative aspect-[4/3] overflow-hidden rounded-3xl"
+              className="relative aspect-[4/3] overflow-hidden rounded-2xl sm:rounded-3xl"
             >
               <img
                 src={t.img}
@@ -2046,17 +2046,12 @@ export function Testimonials() {
  * PRICING + ROI Calculator
  * ======================================================= */
 export function Pricing() {
-  const [billingInterval, setBillingInterval] = useState<"monthly" | "yearly">("monthly");
   const [showComparison, setShowComparison] = useState(false);
   const [isCustomPlanOpen, setIsCustomPlanOpen] = useState(false);
-
-  const isYearly = billingInterval === "yearly";
 
   const tiers: {
     name: string;
     monthlyPrice: string;
-    yearlyPrice: string;
-    billedYearlyTotal: string;
     blurb: string;
     features: string[];
     addons?: { label: string; icon: typeof Stethoscope; items: string[] }[];
@@ -2068,8 +2063,6 @@ export function Pricing() {
     {
       name: "Basic",
       monthlyPrice: "₹999",
-      yearlyPrice: "₹799",
-      billedYearlyTotal: "₹9,588/year",
       blurb: "Ideal for independent practitioners, solo clinics, and boutique restaurants.",
       features: [
         "1 unified dashboard",
@@ -2097,8 +2090,6 @@ export function Pricing() {
     {
       name: "Premium",
       monthlyPrice: "₹1,499",
-      yearlyPrice: "₹1,199",
-      billedYearlyTotal: "₹14,388/year",
       blurb: "For growing multi-doctor clinics, busy dining venues, and active teams.",
       features: [
         "1 Primary + 1 Sub-location included",
@@ -2138,8 +2129,6 @@ export function Pricing() {
     {
       name: "Enterprise",
       monthlyPrice: "Custom",
-      yearlyPrice: "Custom",
-      billedYearlyTotal: "Tailored commercial terms",
       blurb: "For hospital networks, multi-branch restaurant chains, and large wellness groups.",
       features: [
         "Unlimited locations & dashboards",
@@ -2289,37 +2278,12 @@ export function Pricing() {
             No surprise overages. 7-day free trial on all plans. Switch or cancel anytime with one
             click.
           </p>
-
-          {/* Billing Cadence Toggle */}
-          <div className="mt-7 inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-100/80 p-1 shadow-inner">
-            <button
-              type="button"
-              onClick={() => setBillingInterval("monthly")}
-              className={`cursor-pointer rounded-full px-4 py-1.5 text-xs font-semibold transition-all ${
-                !isYearly ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-600 hover:text-zinc-900"
-              }`}
-            >
-              Monthly Billing
-            </button>
-            <button
-              type="button"
-              onClick={() => setBillingInterval("yearly")}
-              className={`cursor-pointer flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition-all ${
-                isYearly ? "bg-zinc-900 text-white shadow-sm" : "text-zinc-600 hover:text-zinc-900"
-              }`}
-            >
-              <span>Annual Billing</span>
-              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                Save 20%
-              </span>
-            </button>
-          </div>
         </div>
 
         {/* Pricing Cards Grid */}
         <div className="grid gap-6 lg:grid-cols-3 lg:items-stretch">
           {tiers.map((t, i) => {
-            const displayPrice = isYearly ? t.yearlyPrice : t.monthlyPrice;
+            const displayPrice = t.monthlyPrice;
             return (
               <motion.div
                 key={t.name}
@@ -2364,14 +2328,6 @@ export function Pricing() {
                     </span>
                   )}
                 </div>
-
-                {isYearly && t.billedYearlyTotal && (
-                  <p
-                    className={`mt-0.5 text-[11px] font-medium ${t.popular ? "text-emerald-400" : "text-emerald-600"}`}
-                  >
-                    {t.billedYearlyTotal}
-                  </p>
-                )}
 
                 <p
                   className={`mt-2 text-xs leading-relaxed ${t.popular ? "text-zinc-300" : "text-zinc-600"}`}
@@ -2562,177 +2518,6 @@ export function Pricing() {
   );
 }
 
-export function ROICalculator() {
-  const [providers, setProviders] = useState(5);
-  const [patients, setPatients] = useState(15);
-  const [hourlyCost, setHourlyCost] = useState(800);
-
-  const hoursSaved = providers * 10;
-  const adminSavings = Math.round(hoursSaved * 52 * 250);
-  const extraVisits = providers * Math.round(patients * 0.12 * 300);
-  const extraRevenue = extraVisits * hourlyCost;
-  const totalROI = adminSavings + extraRevenue;
-
-  return (
-    <section className="relative overflow-hidden bg-zinc-950 py-24 text-white">
-      <div className="pointer-events-none absolute inset-0 bg-grid-dark bg-radial-fade opacity-40" />
-      <div className="pointer-events-none absolute -left-32 top-1/3 size-[500px] rounded-full bg-brand/30 blur-3xl" />
-      <div className="relative mx-auto max-w-6xl px-6">
-        <div className="mb-12 text-center">
-          <SectionEyebrow tone="dark">ROI CALCULATOR</SectionEyebrow>
-          <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
-            Drag the sliders. <span className="text-gradient-brand">See the business impact.</span>
-          </h2>
-        </div>
-
-        <div className="grid gap-8 rounded-3xl border border-white/10 bg-white/[0.03] p-8 backdrop-blur-sm md:grid-cols-2">
-          <div className="space-y-7">
-            <Slider
-              label="Number of staff / locations"
-              value={providers}
-              min={1}
-              max={50}
-              onChange={setProviders}
-              suffix=" staff"
-            />
-            <Slider
-              label="Avg. daily bookings per staff"
-              value={patients}
-              min={5}
-              max={60}
-              onChange={setPatients}
-              suffix=" / day"
-            />
-            <Slider
-              label="Average ticket size per booking"
-              value={hourlyCost}
-              min={100}
-              max={5000}
-              step={50}
-              onChange={setHourlyCost}
-              prefix="₹"
-            />
-          </div>
-
-          <div className="grid gap-4">
-            <ROIMetric
-              icon={Clock}
-              label="Hours saved weekly"
-              value={`${hoursSaved.toLocaleString("en-IN")} hrs`}
-              tint="from-brand to-brand-light"
-            />
-            <ROIMetric
-              icon={TrendingUp}
-              label="Extra annual bookings captured"
-              value={extraVisits.toLocaleString("en-IN")}
-              tint="from-cyan-500 to-sky-400"
-            />
-            <ROIMetric
-              icon={CreditCard}
-              label="Estimated annual ROI"
-              value={`₹${totalROI.toLocaleString("en-IN")}`}
-              tint="from-emerald-500 to-teal-400"
-              highlight
-            />
-            <Link
-              to="/contact"
-              className="mt-2 inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-br from-brand to-brand-light py-3 text-sm font-semibold text-white hover:scale-[1.01] transition-transform"
-            >
-              Lock in these savings <ArrowRight className="size-4" />
-            </Link>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Slider({
-  label,
-  value,
-  min,
-  max,
-  step = 1,
-  onChange,
-  prefix = "",
-  suffix = "",
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  onChange: (n: number) => void;
-  prefix?: string;
-  suffix?: string;
-}) {
-  const pct = ((value - min) / (max - min)) * 100;
-  return (
-    <div>
-      <div className="mb-2 flex items-baseline justify-between">
-        <label className="text-xs font-medium uppercase tracking-wider text-zinc-400">
-          {label}
-        </label>
-        <span className="text-lg font-semibold tabular-nums">
-          {prefix}
-          {value}
-          {suffix}
-        </span>
-      </div>
-      <div className="relative">
-        <div className="absolute inset-y-1/2 h-1.5 w-full -translate-y-1/2 rounded-full bg-white/10" />
-        <div
-          className="absolute inset-y-1/2 h-1.5 -translate-y-1/2 rounded-full bg-gradient-to-r from-brand to-brand-light"
-          style={{ width: `${pct}%` }}
-        />
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="relative h-6 w-full cursor-grab appearance-none bg-transparent [&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-brand"
-        />
-      </div>
-    </div>
-  );
-}
-
-function ROIMetric({
-  icon: Icon,
-  label,
-  value,
-  tint,
-  highlight = false,
-}: {
-  icon: typeof Clock;
-  label: string;
-  value: string;
-  tint: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={`relative overflow-hidden rounded-2xl border p-5 ${
-        highlight ? "border-brand/40 bg-brand/10" : "border-white/10 bg-white/[0.03]"
-      }`}
-    >
-      <div className="flex items-center gap-4">
-        <div
-          className={`flex size-11 items-center justify-center rounded-xl bg-gradient-to-br ${tint}`}
-        >
-          <Icon className="size-5 text-white" />
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-wider text-zinc-400">{label}</p>
-          <p className="text-2xl font-semibold tracking-tight">{value}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* =========================================================
  * FAQ
  * ======================================================= */
@@ -2773,10 +2558,11 @@ export function FAQ() {
     },
   ];
   return (
-    <section className="relative bg-white py-24">
-      <div className="mx-auto max-w-3xl px-6">
-        <div className="mb-12 text-center">
-          <h2 className="text-balance text-3xl font-semibold tracking-tight md:text-4xl">
+    <section className="relative bg-white py-16 sm:py-20 lg:py-24">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-10 sm:mb-12 text-center">
+          <SectionEyebrow>FAQ</SectionEyebrow>
+          <h2 className="mt-3 text-balance text-2xl sm:text-3xl lg:text-[34px] font-bold tracking-tight text-zinc-900 leading-[1.25]">
             Questions, <span className="text-gradient-brand">answered</span>
           </h2>
         </div>
@@ -2784,19 +2570,19 @@ export function FAQ() {
           {items.map((it, i) => (
             <div
               key={it.q}
-              className="overflow-hidden rounded-xl border border-zinc-950/5 bg-zinc-50 transition-all"
+              className="overflow-hidden rounded-xl border border-zinc-950/5 bg-zinc-50 transition-all hover:border-zinc-200"
             >
               <button
                 onClick={() => setOpen(open === i ? null : i)}
-                className="flex w-full items-center justify-between gap-4 p-5 text-left"
+                className="flex w-full items-center justify-between gap-4 p-4 sm:p-5 text-left"
               >
-                <span className="text-sm font-semibold">{it.q}</span>
+                <span className="text-xs sm:text-sm font-semibold text-zinc-900">{it.q}</span>
                 <span
                   className={`flex size-6 shrink-0 items-center justify-center rounded-full bg-white ring-1 ring-zinc-950/5 transition-transform ${
                     open === i ? "rotate-45" : ""
                   }`}
                 >
-                  <span className="text-brand">+</span>
+                  <span className="text-brand font-semibold text-xs">+</span>
                 </span>
               </button>
               <motion.div
@@ -2805,7 +2591,7 @@ export function FAQ() {
                 transition={{ duration: 0.25 }}
                 className="overflow-hidden"
               >
-                <p className="px-5 pb-5 text-sm leading-relaxed text-zinc-600">{it.a}</p>
+                <p className="px-4 pb-4 sm:px-5 sm:pb-5 text-xs sm:text-sm leading-relaxed text-zinc-600">{it.a}</p>
               </motion.div>
             </div>
           ))}
@@ -2820,33 +2606,33 @@ export function FAQ() {
  * ======================================================= */
 export function CTA() {
   return (
-    <section className="relative overflow-hidden bg-zinc-950 py-24 text-white">
+    <section className="relative overflow-hidden bg-zinc-950 py-16 sm:py-20 lg:py-24 text-white">
       <div className="pointer-events-none absolute inset-0 bg-grid-dark bg-radial-fade opacity-60" />
-      <div className="pointer-events-none absolute left-1/2 top-1/2 size-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/30 blur-3xl animate-pulse-soft" />
-      <div className="relative mx-auto max-w-4xl px-6 text-center">
+      <div className="pointer-events-none absolute left-1/2 top-1/2 size-[600px] sm:size-[800px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/25 blur-3xl animate-pulse-soft" />
+      <div className="relative mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 text-center">
         <motion.h2
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-balance text-4xl font-semibold tracking-tight md:text-6xl"
+          className="text-balance text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-white leading-[1.25]"
         >
           Ready to Simplify Your <span className="text-gradient-brand">Booking Process?</span>
         </motion.h2>
-        <p className="mt-6 text-lg text-zinc-300">
+        <p className="mt-4 text-xs sm:text-sm text-zinc-300 max-w-xl mx-auto leading-relaxed">
           Automate scheduling, reduce no-shows, and deliver a seamless booking experience with
           BookMyTime. Let AI handle the bookings while you focus on growing your business.
         </p>
-        <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
             to="/signup"
-            className="group relative overflow-hidden rounded-lg bg-gradient-to-br from-brand to-brand-light px-7 py-3.5 text-sm font-semibold text-white ring-1 ring-brand/40 transition-transform hover:scale-105"
+            className="w-full sm:w-auto group relative overflow-hidden rounded-xl bg-gradient-to-br from-brand to-brand-light px-6 py-3 text-xs sm:text-sm font-semibold text-white ring-1 ring-brand/40 shadow-lg shadow-brand/20 transition-transform hover:scale-105"
           >
             <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
             Start your 7-day free trial
           </Link>
           <Link
             to="/contact"
-            className="rounded-lg border border-white/15 bg-white/5 px-7 py-3.5 text-sm font-semibold backdrop-blur transition-colors hover:bg-white/10"
+            className="w-full sm:w-auto rounded-xl border border-white/15 bg-white/5 px-6 py-3 text-xs sm:text-sm font-semibold backdrop-blur transition-colors hover:bg-white/10"
           >
             Talk to sales
           </Link>
@@ -2879,19 +2665,19 @@ export function IntegrationsGrid() {
     "Notion",
   ];
   return (
-    <section className="relative bg-zinc-50 py-24">
-      <div className="mx-auto max-w-7xl px-6">
-        <div className="mx-auto mb-12 max-w-2xl text-center">
+    <section className="relative bg-zinc-50 py-16 sm:py-20 lg:py-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto mb-10 sm:mb-12 max-w-2xl text-center">
           <SectionEyebrow>WORKS WITH YOUR STACK</SectionEyebrow>
-          <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight md:text-5xl">
+          <h2 className="mt-3 text-balance text-2xl sm:text-3xl lg:text-[34px] font-bold tracking-tight text-zinc-900 leading-[1.25]">
             40+ <span className="text-gradient-brand">integrations</span>, zero rip & replace
           </h2>
-          <p className="mt-4 text-zinc-600">
+          <p className="mt-3 text-xs sm:text-sm text-zinc-600 max-w-xl mx-auto leading-relaxed">
             FHIR R4, HL7 v2, REST and webhooks. Connect what you have. Replace only when you're
             ready.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
           {items.map((name, i) => (
             <motion.div
               key={name}
@@ -2899,10 +2685,10 @@ export function IntegrationsGrid() {
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.03 }}
-              className="group flex aspect-square flex-col items-center justify-center gap-2 rounded-xl border border-zinc-950/5 bg-white p-3 transition-all hover:border-brand/30 hover:bg-brand/5"
+              className="group flex aspect-square flex-col items-center justify-center gap-2 rounded-xl border border-zinc-950/5 bg-white p-3 transition-all hover:border-brand/30 hover:bg-brand/5 hover:shadow-sm"
             >
-              <Plug className="size-5 text-zinc-400 transition-colors group-hover:text-brand" />
-              <p className="text-xs font-medium text-zinc-700">{name}</p>
+              <Plug className="size-4 sm:size-5 text-zinc-400 transition-colors group-hover:text-brand" />
+              <p className="text-[11px] sm:text-xs font-medium text-zinc-700">{name}</p>
             </motion.div>
           ))}
         </div>
@@ -2954,9 +2740,9 @@ export function SolutionsGrid() {
     },
   ];
   return (
-    <section className="relative bg-white py-24">
-      <div className="mx-auto max-w-7xl px-6">
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+    <section className="relative bg-white py-16 sm:py-20 lg:py-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="grid gap-5 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
           {sols.map((s, i) => (
             <motion.div
               key={s.title}
@@ -2964,19 +2750,19 @@ export function SolutionsGrid() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.06 }}
-              className="group relative overflow-hidden rounded-2xl border border-zinc-950/5 bg-zinc-50 p-7 transition-all hover:border-brand/30 hover:bg-white"
+              className="group relative overflow-hidden rounded-2xl border border-zinc-950/5 bg-zinc-50 p-5 sm:p-6 transition-all hover:border-brand/30 hover:bg-white hover:shadow-sm"
             >
               <div className="absolute -right-12 -top-12 size-32 rounded-full bg-brand/5 blur-2xl opacity-0 transition-opacity group-hover:opacity-100" />
               <div className="relative">
-                <div className="mb-5 flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-brand-light text-white">
+                <div className="mb-4 flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-brand-light text-white shadow-sm">
                   <s.icon className="size-5" />
                 </div>
-                <h3 className="text-lg font-semibold">{s.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-zinc-600">{s.copy}</p>
-                <ul className="mt-4 space-y-1.5">
+                <h3 className="text-sm sm:text-base font-bold text-zinc-900">{s.title}</h3>
+                <p className="mt-2 text-xs sm:text-sm leading-relaxed text-zinc-600">{s.copy}</p>
+                <ul className="mt-3.5 space-y-1.5 border-t border-zinc-950/5 pt-3">
                   {s.bullets.map((b) => (
-                    <li key={b} className="flex items-center gap-2 text-xs text-zinc-700">
-                      <Check className="size-3.5 text-brand" />
+                    <li key={b} className="flex items-center gap-2 text-xs text-zinc-600">
+                      <Check className="size-3.5 text-brand shrink-0" />
                       {b}
                     </li>
                   ))}
@@ -3038,24 +2824,24 @@ export function BuiltForSection() {
   ];
 
   return (
-    <section className="relative overflow-hidden bg-[#030712] py-24 text-white">
+    <section className="relative overflow-hidden bg-[#030712] py-16 sm:py-20 lg:py-24 text-white">
       {/* Ambient glowing background */}
       <div className="pointer-events-none absolute inset-0 bg-grid-dark bg-radial-fade opacity-40" />
       <div className="pointer-events-none absolute -top-40 left-[20%] size-[500px] rounded-full bg-[#0059C6]/20 blur-[120px]" />
       <div className="pointer-events-none absolute top-[40%] right-[10%] size-[400px] rounded-full bg-[#0D83FF]/20 blur-[100px]" />
 
-      <div className="relative mx-auto max-w-7xl px-6">
-        <div className="mb-20 text-center">
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-12 sm:mb-16 text-center">
           <SectionEyebrow tone="dark">BUILT FOR EVERY WORKFLOW</SectionEyebrow>
-          <h2 className="mt-5 text-balance text-3xl font-semibold tracking-tight md:text-5xl text-white">
+          <h2 className="mt-3 text-balance text-2xl sm:text-3xl lg:text-[34px] font-bold tracking-tight text-white leading-[1.25]">
             Modern Businesses of Every Kind
           </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-sm text-zinc-400">
+          <p className="mx-auto mt-3 max-w-xl text-xs sm:text-sm text-zinc-400 leading-relaxed">
             BookMyTime adapts to your workflow and helps you deliver a better customer experience.
           </p>
         </div>
 
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {industries.map((ind, i) => {
             const Icon = ind.icon;
             return (
@@ -3064,19 +2850,19 @@ export function BuiltForSection() {
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.08, duration: 0.5 }}
-                className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-6 backdrop-blur-xl transition-all duration-500 hover:bg-white/[0.04] hover:border-white/10 hover:-translate-y-1.5 hover:shadow-[0_8px_40px_rgba(0,89,198,0.15)]"
+                transition={{ delay: i * 0.06, duration: 0.4 }}
+                className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-5 sm:p-6 backdrop-blur-xl transition-all duration-300 hover:bg-white/[0.04] hover:border-white/10 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(0,89,198,0.15)]"
               >
                 {/* Decorative hover gradient inside card */}
-                <div className="absolute -right-20 -top-20 size-40 rounded-full bg-[#0D83FF]/10 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <div className="absolute -right-20 -top-20 size-40 rounded-full bg-[#0D83FF]/10 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
-                <div className="mb-6 flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#0059C6] to-[#0D83FF] text-white shadow-lg shadow-[#0059C6]/20 transition-transform duration-500 group-hover:scale-110 group-hover:-rotate-3">
-                  <Icon className="size-5" strokeWidth={2.5} />
+                <div className="mb-4 flex size-10 sm:size-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#0059C6] to-[#0D83FF] text-white shadow-md shadow-[#0059C6]/20 transition-transform duration-300 group-hover:scale-105">
+                  <Icon className="size-4 sm:size-5" strokeWidth={2.2} />
                 </div>
-                <h3 className="text-base font-bold text-white mb-2 tracking-wide group-hover:text-[#A7D3FF] transition-colors duration-300">
+                <h3 className="text-sm sm:text-base font-bold text-white mb-1.5 tracking-tight group-hover:text-[#A7D3FF] transition-colors duration-200">
                   {ind.title}
                 </h3>
-                <p className="text-[13px] text-zinc-400 leading-relaxed group-hover:text-zinc-300 transition-colors duration-300">
+                <p className="text-xs text-zinc-400 leading-relaxed group-hover:text-zinc-300 transition-colors duration-200">
                   {ind.copy}
                 </p>
               </motion.div>

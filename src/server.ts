@@ -1,12 +1,16 @@
 import "./lib/error-capture";
 import { startWhatsAppServer } from "./lib/wa-launcher";
 import { startReminderScheduler } from "./lib/reminder-scheduler";
+import { startMonthlyReportScheduler } from "./lib/monthly-report-scheduler";
 
 // Start WhatsApp server
 startWhatsAppServer();
 
 // Start the appointment reminder scheduler (WhatsApp reminders: 1 day / day-of / 2h / 1h before)
 startReminderScheduler();
+
+// Start the automated monthly clinical audit report scheduler (1st of each month with rate-limited email)
+startMonthlyReportScheduler();
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";

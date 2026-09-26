@@ -118,8 +118,11 @@ import {
   saveDoctorScheduleServerFn,
   getDoctorLeavesServerFn,
   addDoctorLeaveServerFn,
+  addDoctorLeavesBulkServerFn,
   deleteDoctorLeaveServerFn,
+  deleteDoctorLeavesBulkServerFn,
   getWhatsAppStatusServerFn,
+  resetWhatsAppSessionServerFn,
   disconnectWhatsAppServerFn,
   sendTestWaServerFn,
   getWhatsAppConfigServerFn,
@@ -161,6 +164,7 @@ import WelcomeTrialModal, { getTrialExpiryMs } from "../../components/WelcomeTri
 import MultiLocationSettings from "../../components/settings/MultiLocationSettings";
 import AccountDangerZone from "../../components/settings/AccountDangerZone";
 import { DoctorVideoConsultPanel } from "../../components/video/DoctorVideoConsultPanel";
+import { DoctorDirectoryPanel } from "../../components/medical/DoctorDirectoryPanel";
 import { resolveFeatureAccess, type FeatureId } from "@/lib/feature-access";
 import { isWorkspacePaymentLocked } from "@/lib/workspace-access";
 
@@ -686,43 +690,169 @@ function LeavesCalendarPanel({
   onBack: () => void;
   onDeleteLeave: (id: string) => void;
 }) {
-  const today = new Date();
+  const today = useMemo(() => new Date(), []);
+  const todayStr = useMemo(() => {
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    const d = String(today.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }, [today]);
+
   const [calMonth, setCalMonth] = useState(today.getMonth());
   const [calYear, setCalYear] = useState(today.getFullYear());
-  const [leaveReason, setLeaveReason] = useState("");
-  const [leaveIsHol, setLeaveIsHol] = useState(false);
+
+  // Date Range Quick Select
+  const [rangeFrom, setRangeFrom] = useState<string>(todayStr);
+  const [rangeTo, setRangeTo] = useState<string>(todayStr);
+  const [leaveReason, setLeaveReason] = useState<string>("Sick Leave / Bed Rest");
+  const [leaveIsHol, setLeaveIsHol] = useState<boolean>(false);
   const [pendingDate, setPendingDate] = useState<string | null>(null);
+  const [selectedBlockedLeave, setSelectedBlockedLeave] = useState<any | null>(null);
+  const [isBulkSaving, setIsBulkSaving] = useState<boolean>(false);
+  const [statusFeedback, setStatusFeedback] = useState<string>("");
+
+  // Multi-select state for bulk unblocking leaves
+  const [selectedLeaveIds, setSelectedLeaveIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState<boolean>(false);
 
   const monthNames = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
   ];
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
   const startDayOfWeek = new Date(calYear, calMonth, 1).getDay();
 
-  const blockedDates = new Set(
-    docLeaves.map((l) => {
-      const d = new Date(l.leaveDate);
-      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-    }),
+  // Helper to extract YYYY-MM-DD without timezone shifting
+  const getLeaveDateStr = (raw: any): string => {
+    if (!raw) return "";
+    if (typeof raw === "string") return raw.slice(0, 10);
+    if (raw instanceof Date) {
+      const y = raw.getFullYear();
+      const m = String(raw.getMonth() + 1).padStart(2, "0");
+      const d = String(raw.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+    return String(raw).slice(0, 10);
+  };
+
+  const getDatesBetweenDays = (startDateStr: string, endDateStr: string): string[] => {
+    if (!startDateStr || !endDateStr) return [];
+    const [start, end] =
+      startDateStr <= endDateStr ? [startDateStr, endDateStr] : [endDateStr, startDateStr];
+
+    const dates: string[] = [];
+    const [sYear, sMonth, sDay] = start.split("-").map(Number);
+    const [eYear, eMonth, eDay] = end.split("-").map(Number);
+
+    const current = new Date(sYear, sMonth - 1, sDay);
+    const targetEnd = new Date(eYear, eMonth - 1, eDay);
+
+    while (current <= targetEnd) {
+      const y = current.getFullYear();
+      const m = String(current.getMonth() + 1).padStart(2, "0");
+      const d = String(current.getDate()).padStart(2, "0");
+      dates.push(`${y}-${m}-${d}`);
+      current.setDate(current.getDate() + 1);
+    }
+    return dates;
+  };
+
+  const blockedDateMap = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const l of docLeaves) {
+      const dStr = getLeaveDateStr(l.leaveDate);
+      if (dStr) map.set(dStr, l);
+    }
+    return map;
+  }, [docLeaves]);
+
+  // Current month blocked leaves (memoized & chronologically sorted)
+  const currentMonthLeaves = useMemo(() => {
+    return docLeaves
+      .filter((l) => {
+        const dStr = getLeaveDateStr(l.leaveDate);
+        if (!dStr) return false;
+        const [y, m] = dStr.split("-").map(Number);
+        return y === calYear && m === calMonth + 1;
+      })
+      .sort(
+        (a, b) =>
+          new Date(getLeaveDateStr(a.leaveDate)).getTime() -
+          new Date(getLeaveDateStr(b.leaveDate)).getTime(),
+      );
+  }, [docLeaves, calYear, calMonth]);
+
+  const currentMonthBlockedCount = currentMonthLeaves.length;
+
+  const currentMonthLeaveIds = useMemo(
+    () => currentMonthLeaves.map((l) => String(l.id)),
+    [currentMonthLeaves],
   );
 
-  const getLeaveForDate = (dateStr: string) =>
-    docLeaves.find((l) => {
-      const d = new Date(l.leaveDate);
-      const s = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-      return s === dateStr;
+  const selectedInCurrentMonth = useMemo(() => {
+    return currentMonthLeaveIds.filter((id) => selectedLeaveIds.has(id));
+  }, [currentMonthLeaveIds, selectedLeaveIds]);
+
+  const isAllMonthSelected =
+    currentMonthLeaveIds.length > 0 &&
+    selectedInCurrentMonth.length === currentMonthLeaveIds.length;
+
+  const handleToggleSelectLeave = (id: string) => {
+    setSelectedLeaveIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
+  };
+
+  const handleToggleSelectAllMonth = () => {
+    setSelectedLeaveIds((prev) => {
+      const next = new Set(prev);
+      if (isAllMonthSelected) {
+        for (const id of currentMonthLeaveIds) {
+          next.delete(id);
+        }
+      } else {
+        for (const id of currentMonthLeaveIds) {
+          next.add(id);
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedLeaveIds(new Set());
+  };
+
+  const handleBulkDeleteSelected = async () => {
+    const idsToDelete = selectedInCurrentMonth;
+    if (idsToDelete.length === 0) return;
+
+    const confirmMsg = `Are you sure you want to cancel and unblock ${idsToDelete.length} leave date(s) in ${monthNames[calMonth]}? Patient appointments will be reopened for booking on these dates.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsBulkDeleting(true);
+    setStatusFeedback("");
+    try {
+      await deleteDoctorLeavesBulkServerFn({ data: idsToDelete });
+      const refreshed = await getDoctorLeavesServerFn({ data: doc.id });
+      setDocLeaves(refreshed);
+      setSelectedLeaveIds((prev) => {
+        const next = new Set(prev);
+        for (const id of idsToDelete) next.delete(id);
+        return next;
+      });
+      setSelectedBlockedLeave(null);
+      setStatusFeedback(`Successfully cancelled ${idsToDelete.length} leave date(s) in ${monthNames[calMonth]}.`);
+    } catch (err: any) {
+      console.error("Bulk delete failed:", err);
+      alert("Failed to cancel selected leaves: " + err.message);
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
 
   const prevMonth = () => {
     if (calMonth === 0) {
@@ -730,6 +860,7 @@ function LeavesCalendarPanel({
       setCalYear((y) => y - 1);
     } else setCalMonth((m) => m - 1);
   };
+
   const nextMonth = () => {
     if (calMonth === 11) {
       setCalMonth(0);
@@ -737,289 +868,603 @@ function LeavesCalendarPanel({
     } else setCalMonth((m) => m + 1);
   };
 
+  // Quick Preset Handlers
+  const handleApplyPreset = (preset: "today" | "tomorrow" | "3days" | "7days" | "month") => {
+    const base = new Date();
+    let start = todayStr;
+    let end = todayStr;
+
+    if (preset === "today") {
+      start = todayStr;
+      end = todayStr;
+    } else if (preset === "tomorrow") {
+      const t = new Date(base);
+      t.setDate(t.getDate() + 1);
+      start = getLeaveDateStr(t);
+      end = start;
+    } else if (preset === "3days") {
+      start = todayStr;
+      const t = new Date(base);
+      t.setDate(t.getDate() + 2);
+      end = getLeaveDateStr(t);
+    } else if (preset === "7days") {
+      start = todayStr;
+      const t = new Date(base);
+      t.setDate(t.getDate() + 6);
+      end = getLeaveDateStr(t);
+    } else if (preset === "month") {
+      start = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-01`;
+      end = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+    }
+
+    setRangeFrom(start);
+    setRangeTo(end);
+  };
+
+  // Bulk Block Range Handler
+  const handleBlockRange = async () => {
+    if (!rangeFrom || !rangeTo) return;
+    const dates = getDatesBetweenDays(rangeFrom, rangeTo);
+    if (dates.length === 0) return;
+
+    setIsBulkSaving(true);
+    setStatusFeedback("");
+    try {
+      await addDoctorLeavesBulkServerFn({
+        data: {
+          doctorId: doc.id,
+          leaveDates: dates,
+          reason: leaveReason.trim() || "Scheduled Leave",
+          isHoliday: leaveIsHol,
+        },
+      });
+
+      const refreshed = await getDoctorLeavesServerFn({ data: doc.id });
+      setDocLeaves(refreshed);
+      setStatusFeedback(`Successfully blocked ${dates.length} date(s) for Dr. ${doc.name}.`);
+      setPendingDate(null);
+      setSelectedBlockedLeave(null);
+    } catch (err: any) {
+      console.error("Failed to block range:", err);
+      alert("Failed to block leaves: " + err.message);
+    } finally {
+      setIsBulkSaving(false);
+    }
+  };
+
+  // Single Day Block Handler
+  const handleBlockSingleDay = async (dateStr: string) => {
+    if (!leaveReason.trim()) return;
+    setAddingLeave(true);
+    setStatusFeedback("");
+    try {
+      await addDoctorLeaveServerFn({
+        data: {
+          doctorId: doc.id,
+          leaveDate: dateStr,
+          reason: leaveReason.trim() || "Scheduled Leave",
+          isHoliday: leaveIsHol,
+        },
+      });
+      const refreshed = await getDoctorLeavesServerFn({ data: doc.id });
+      setDocLeaves(refreshed);
+      setPendingDate(null);
+      setStatusFeedback(`Date ${dateStr} blocked successfully.`);
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to block date: " + err.message);
+    } finally {
+      setAddingLeave(false);
+    }
+  };
+
+  const REASON_PRESETS = [
+    { label: "🤒 Sick Leave", value: "Sick Leave / Bed Rest" },
+    { label: "🏖️ Vacation", value: "Annual / Vacation Leave" },
+    { label: "👨‍👩‍👧 Family Emergency", value: "Urgent Family Emergency" },
+    { label: "🏥 Conference / CME", value: "Medical Conference / Academic CME" },
+    { label: "⚡ Personal", value: "Personal Unforeseen Leave" },
+  ];
+
   return (
-    <div className="space-y-5 border border-rose-100 bg-gradient-to-br from-rose-50/40 to-white rounded-2xl p-5 animate-in fade-in duration-300">
+    <div className="space-y-4 max-w-4xl mx-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-xs animate-in fade-in duration-200">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-        <div>
-          <h4 className="text-sm font-bold text-zinc-800 flex items-center gap-2">
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-rose-100">
-              <Calendar className="h-3.5 w-3.5 text-rose-500" />
-            </span>
-            Leaves &amp; Holidays Calendar
-          </h4>
-          <p className="text-[10px] text-zinc-400 mt-0.5 pl-8">
-            Block dates for <strong className="text-zinc-600">{doc.name}</strong> — click a date to
-            block / unblock
-          </p>
+      <div className="flex items-center justify-between border-b border-zinc-150 dark:border-zinc-800 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center border border-rose-100 dark:border-rose-900/50">
+            <Calendar className="h-4 w-4" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+              Leaves &amp; Holidays Schedule
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 font-medium">
+                Dr. {doc.name}
+              </span>
+            </h4>
+            <p className="text-[11px] text-zinc-400">
+              Block individual dates or quick date ranges to prevent patient appointment bookings.
+            </p>
+          </div>
         </div>
+
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-zinc-700 bg-zinc-100 hover:bg-zinc-200 rounded-full px-3 py-1.5 transition-colors cursor-pointer"
+          className="flex items-center gap-1 text-xs font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 rounded-lg px-3 py-1.5 transition-colors cursor-pointer"
         >
-          <ChevronLeft className="h-3 w-3" /> Back
+          <ChevronLeft className="h-3.5 w-3.5" /> Back to Directory
         </button>
       </div>
 
-      {/* Month Navigator */}
-      <div className="flex items-center justify-between bg-white border border-zinc-150 rounded-xl px-4 py-2.5">
-        <button
-          type="button"
-          onClick={prevMonth}
-          className="h-7 w-7 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center cursor-pointer transition-colors"
-        >
-          <ChevronLeft className="h-3.5 w-3.5 text-zinc-600" />
-        </button>
-        <div className="text-center">
-          <p className="text-sm font-bold text-zinc-800">
-            {monthNames[calMonth]} {calYear}
-          </p>
-          <p className="text-[9px] text-zinc-400">
-            {
-              docLeaves.filter((l) => {
-                const d = new Date(l.leaveDate);
-                return d.getUTCMonth() === calMonth && d.getUTCFullYear() === calYear;
-              }).length
-            }{" "}
-            blocked day(s) this month
-          </p>
+      {/* Feedback banner */}
+      {statusFeedback && (
+        <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
+          <span>{statusFeedback}</span>
+          <button
+            type="button"
+            onClick={() => setStatusFeedback("")}
+            className="text-[11px] underline font-medium cursor-pointer"
+          >
+            Dismiss
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={nextMonth}
-          className="h-7 w-7 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center cursor-pointer transition-colors"
-        >
-          <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
-        </button>
-      </div>
-
-      {/* Calendar Grid */}
-      <div className="bg-white border border-zinc-150 rounded-xl overflow-hidden shadow-sm">
-        <div className="grid grid-cols-7 bg-zinc-50 border-b border-zinc-100">
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-            <div
-              key={d}
-              className="text-center text-[9px] font-black text-zinc-400 uppercase py-2.5"
-            >
-              {d}
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7">
-          {Array.from({ length: startDayOfWeek }).map((_, i) => (
-            <div key={`e${i}`} className="aspect-square border-b border-r border-zinc-100/50" />
-          ))}
-          {Array.from({ length: daysInMonth }).map((_, i) => {
-            const dayNum = i + 1;
-            const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
-            const isBlocked = blockedDates.has(dateStr);
-            const leave = getLeaveForDate(dateStr);
-            const isToday =
-              dayNum === today.getDate() &&
-              calMonth === today.getMonth() &&
-              calYear === today.getFullYear();
-            const isPending = pendingDate === dateStr;
-            const isPast = new Date(dateStr) < new Date(today.toDateString());
-            return (
-              <button
-                key={dayNum}
-                type="button"
-                title={
-                  isBlocked
-                    ? `${leave?.reason || "Blocked"} — click to unblock`
-                    : "Click to block this date"
-                }
-                onClick={() => {
-                  if (isBlocked) {
-                    const lv = getLeaveForDate(dateStr);
-                    if (lv) onDeleteLeave(lv.id);
-                  } else {
-                    setPendingDate(dateStr);
-                    setLeaveReason("");
-                    setLeaveIsHol(false);
-                  }
-                }}
-                className={`aspect-square flex flex-col items-center justify-center text-[11px] font-bold border-b border-r border-zinc-100/70 transition-all cursor-pointer relative group ${
-                  isBlocked
-                    ? leave?.isHoliday
-                      ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
-                      : "bg-rose-100 text-rose-700 hover:bg-rose-200"
-                    : isPending
-                      ? "bg-amber-100 text-amber-700 ring-2 ring-inset ring-amber-300"
-                      : isToday
-                        ? "bg-brand/10 text-brand ring-1 ring-inset ring-brand/30"
-                        : isPast
-                          ? "text-zinc-300 hover:bg-zinc-50"
-                          : "hover:bg-rose-50 text-zinc-700"
-                }`}
-              >
-                <span>{dayNum}</span>
-                {isBlocked && (
-                  <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-current opacity-70" />
-                )}
-                {isToday && !isBlocked && (
-                  <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-brand opacity-70" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Legend */}
-      <div className="flex flex-wrap gap-3 text-[9px] font-bold text-zinc-500">
-        <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded bg-rose-100 border border-rose-200" /> Leave
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded bg-indigo-100 border border-indigo-200" /> Public Holiday
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded bg-brand/10 border border-brand/20" /> Today
-        </span>
-        <span className="text-zinc-350">· Click to block · Click blocked date to unblock</span>
-      </div>
-
-      {/* Inline reason form when a date is pending */}
-      {pendingDate && (
-        <form
-          className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3 animate-in slide-in-from-bottom-2 duration-200"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!leaveReason.trim()) return;
-            setAddingLeave(true);
-            try {
-              await addDoctorLeaveServerFn({
-                data: {
-                  doctorId: doc.id,
-                  leaveDate: pendingDate,
-                  reason: leaveReason.trim(),
-                  isHoliday: leaveIsHol,
-                },
-              });
-              const refreshed = await getDoctorLeavesServerFn({ data: doc.id });
-              setDocLeaves(refreshed);
-              setPendingDate(null);
-              setLeaveReason("");
-              setLeaveIsHol(false);
-            } catch (err) {
-              console.error(err);
-            } finally {
-              setAddingLeave(false);
-            }
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-lg">📅</span>
-            <p className="text-xs font-bold text-amber-800">
-              Block{" "}
-              {new Date(pendingDate + "T00:00:00").toLocaleDateString("en-IN", {
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
-            </p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              type="text"
-              placeholder="Reason (e.g. Conference, Personal leave, Surgery day)"
-              value={leaveReason}
-              onChange={(e) => setLeaveReason(e.target.value)}
-              className="flex-1 rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-amber-400"
-              required
-              autoFocus
-            />
-            <label className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-700 cursor-pointer whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={leaveIsHol}
-                onChange={(e) => setLeaveIsHol(e.target.checked)}
-                className="rounded"
-              />
-              Public Holiday
-            </label>
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => setPendingDate(null)}
-                className="rounded-full border border-amber-300 px-3 py-1.5 text-[10px] font-bold text-amber-600 hover:bg-amber-100 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={addingLeave}
-                className="rounded-full bg-rose-500 text-white px-4 py-1.5 text-[10px] font-bold cursor-pointer flex items-center gap-1 hover:bg-rose-600"
-              >
-                {addingLeave ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <X className="h-3 w-3 rotate-45" />
-                )}{" "}
-                Block Day
-              </button>
-            </div>
-          </div>
-        </form>
       )}
 
-      {/* Blocked dates summary */}
-      {docLeaves.length > 0 ? (
-        <div className="space-y-1.5">
-          <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider pl-1">
-            All Blocked Dates ({docLeaves.length})
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-            {[...docLeaves]
-              .sort((a, b) => new Date(a.leaveDate).getTime() - new Date(b.leaveDate).getTime())
-              .map((leave) => {
-                const d = new Date(leave.leaveDate);
+      {/* Quick Date Range Selection Bar (From — To) */}
+      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-850/50 p-3.5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+            Quick Block Leave Range (From — To)
+          </span>
+
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-[10px] text-zinc-400 mr-1">Presets:</span>
+            {[
+              { id: "today" as const, label: "Today" },
+              { id: "tomorrow" as const, label: "Tomorrow" },
+              { id: "3days" as const, label: "Next 3 Days" },
+              { id: "7days" as const, label: "Next 7 Days" },
+              { id: "month" as const, label: "Full Month" },
+            ].map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => handleApplyPreset(p.id)}
+                className="px-2 py-0.5 rounded text-[10px] font-medium border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-100 text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Date Inputs & Controls */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+          <div className="sm:col-span-3 space-y-1">
+            <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">
+              From Date
+            </label>
+            <input
+              type="date"
+              value={rangeFrom}
+              onChange={(e) => setRangeFrom(e.target.value)}
+              className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none focus:border-zinc-800"
+            />
+          </div>
+
+          <div className="sm:col-span-3 space-y-1">
+            <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">
+              To Date
+            </label>
+            <input
+              type="date"
+              value={rangeTo}
+              onChange={(e) => setRangeTo(e.target.value)}
+              className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none focus:border-zinc-800"
+            />
+          </div>
+
+          <div className="sm:col-span-4 space-y-1">
+            <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">
+              Reason / Remarks
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Bed rest, Surgery day, Family function"
+              value={leaveReason}
+              onChange={(e) => setLeaveReason(e.target.value)}
+              className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none focus:border-zinc-800"
+            />
+          </div>
+
+          <div className="sm:col-span-2 flex items-center justify-end">
+            <button
+              type="button"
+              onClick={handleBlockRange}
+              disabled={isBulkSaving || !rangeFrom || !rangeTo}
+              className="w-full rounded-lg bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isBulkSaving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <X className="h-3.5 w-3.5 rotate-45" />
+              )}
+              <span>Block Range</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Reason Chips & Holiday Toggle */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-zinc-400">Quick Reasons:</span>
+            {REASON_PRESETS.map((r) => (
+              <button
+                key={r.label}
+                type="button"
+                onClick={() => setLeaveReason(r.value)}
+                className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
+                  leaveReason === r.value
+                    ? "bg-zinc-800 text-white dark:bg-zinc-200 dark:text-zinc-900 border-transparent font-medium"
+                    : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+
+          <label className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-600 dark:text-zinc-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={leaveIsHol}
+              onChange={(e) => setLeaveIsHol(e.target.checked)}
+              className="rounded"
+            />
+            <span>Mark as Public Holiday</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Main Month Calendar & Sidebar Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+        {/* Calendar Section (8 cols) */}
+        <div className="md:col-span-7 space-y-2.5">
+          {/* Month Header */}
+          <div className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-850/60 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2">
+            <button
+              type="button"
+              onClick={prevMonth}
+              className="h-7 w-7 rounded-lg border border-zinc-200 dark:border-zinc-700 flex items-center justify-center hover:bg-white dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+
+            <div className="text-center">
+              <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                {monthNames[calMonth]} {calYear}
+              </p>
+              <p className="text-[10px] text-zinc-400">
+                {currentMonthBlockedCount} blocked day(s) this month
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={nextMonth}
+              className="h-7 w-7 rounded-lg border border-zinc-200 dark:border-zinc-700 flex items-center justify-center hover:bg-white dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* Compact Calendar Grid */}
+          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-2xs">
+            <div className="grid grid-cols-7 bg-zinc-50 dark:bg-zinc-850/80 border-b border-zinc-150 dark:border-zinc-800">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                <div
+                  key={d}
+                  className="text-center text-[10px] font-bold text-zinc-400 py-1.5"
+                >
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-px bg-zinc-100 dark:bg-zinc-800 p-1">
+              {/* Empty leading days */}
+              {Array.from({ length: startDayOfWeek }).map((_, i) => (
+                <div key={`empty-${i}`} className="h-9 bg-white dark:bg-zinc-900 rounded-md opacity-20" />
+              ))}
+
+              {/* Month Days */}
+              {Array.from({ length: daysInMonth }).map((_, i) => {
+                const dayNum = i + 1;
+                const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+                const blockedLeave = blockedDateMap.get(dateStr);
+                const isBlocked = !!blockedLeave;
+                const isCurrentToday = dateStr === todayStr;
+                const isPending = pendingDate === dateStr;
+                const isSelectedForBulk = isBlocked && selectedLeaveIds.has(blockedLeave.id);
+
+                return (
+                  <button
+                    key={dateStr}
+                    type="button"
+                    onClick={() => {
+                      if (isBlocked) {
+                        handleToggleSelectLeave(blockedLeave.id);
+                        setSelectedBlockedLeave(blockedLeave);
+                        setPendingDate(null);
+                      } else {
+                        setPendingDate(dateStr);
+                        setSelectedBlockedLeave(null);
+                        setRangeFrom(dateStr);
+                        setRangeTo(dateStr);
+                      }
+                    }}
+                    title={
+                      isBlocked
+                        ? `${blockedLeave.reason || "Blocked"} — Click to select / manage`
+                        : `Click to block ${dateStr}`
+                    }
+                    className={`h-9 w-full rounded-md flex flex-col items-center justify-center text-xs font-semibold transition-all relative cursor-pointer ${
+                      isBlocked
+                        ? blockedLeave.isHoliday
+                          ? isSelectedForBulk
+                            ? "bg-indigo-200 text-indigo-950 dark:bg-indigo-900 dark:text-indigo-100 font-bold ring-2 ring-indigo-500 shadow-xs"
+                            : "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-300 font-bold"
+                          : isSelectedForBulk
+                            ? "bg-rose-200 text-rose-950 dark:bg-rose-900 dark:text-rose-100 font-bold ring-2 ring-rose-500 shadow-xs"
+                            : "bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 font-bold"
+                        : isPending
+                          ? "bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 ring-2 ring-amber-400"
+                          : isCurrentToday
+                            ? "border border-zinc-400 text-zinc-900 dark:text-zinc-100 bg-white dark:bg-zinc-900"
+                            : "bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    <span>{dayNum}</span>
+                    {isBlocked && (
+                      <span
+                        className={`h-1 w-1 rounded-full absolute bottom-1 ${
+                          blockedLeave.isHoliday ? "bg-indigo-600 dark:bg-indigo-400" : "bg-rose-600 dark:bg-rose-400"
+                        }`}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Calendar Legend */}
+          <div className="flex flex-wrap items-center gap-3 text-[10px] font-medium text-zinc-500 pt-0.5">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded bg-rose-100 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-800" />
+              Doctor Leave
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded bg-indigo-100 dark:bg-indigo-950/80 border border-indigo-300 dark:border-indigo-800" />
+              Public Holiday
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded border border-zinc-400 bg-white dark:bg-zinc-900" />
+              Today
+            </span>
+            <span className="text-zinc-400">· Click any date to block or unblock</span>
+          </div>
+        </div>
+
+        {/* Selected Date Actions / Month Summary (5 cols) */}
+        <div className="md:col-span-5 space-y-3">
+          {/* Inline Single Day Form */}
+          {pendingDate && (
+            <div className="rounded-xl border border-amber-300 dark:border-amber-700/80 bg-amber-50/70 dark:bg-amber-950/40 p-3.5 space-y-2.5 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                  Block Single Date: {pendingDate}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPendingDate(null)}
+                  className="text-[10px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <input
+                type="text"
+                placeholder="Reason (e.g. Emergency Rest, Conference)"
+                value={leaveReason}
+                onChange={(e) => setLeaveReason(e.target.value)}
+                className="w-full rounded-lg border border-amber-200 dark:border-amber-700 bg-white dark:bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none"
+                autoFocus
+              />
+
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1.5 text-[10px] font-medium text-amber-800 dark:text-amber-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={leaveIsHol}
+                    onChange={(e) => setLeaveIsHol(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span>Public Holiday</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => handleBlockSingleDay(pendingDate)}
+                  disabled={addingLeave || !leaveReason.trim()}
+                  className="rounded-lg bg-rose-600 hover:bg-rose-700 text-white px-3 py-1 text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  {addingLeave && <Loader2 className="h-3 w-3 animate-spin" />}
+                  <span>Confirm Block</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Blocked Date Detail Drawer */}
+          {selectedBlockedLeave && (
+            <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-850 p-3.5 space-y-2 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                  {selectedBlockedLeave.isHoliday ? "Public Holiday" : "Doctor Leave"}
+                </span>
+                <span className="text-[10px] font-mono text-zinc-500">
+                  {getLeaveDateStr(selectedBlockedLeave.leaveDate)}
+                </span>
+              </div>
+              <p className="text-xs text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-900 p-2 rounded-lg border border-zinc-200 dark:border-zinc-700/80">
+                {selectedBlockedLeave.reason || "Scheduled absence"}
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setSelectedBlockedLeave(null)}
+                  className="text-xs text-zinc-500 px-2 py-1 cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDeleteLeave(selectedBlockedLeave.id);
+                    setSelectedBlockedLeave(null);
+                  }}
+                  className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-3 py-1 text-xs font-semibold cursor-pointer"
+                >
+                  Unblock Date
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Blocked Dates List this Month with Multi-Select & Bulk Cancel */}
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-850/30 p-3 space-y-2.5">
+            {/* Header with Select All toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+                  Blocked Dates ({monthNames[calMonth]})
+                </p>
+                <p className="text-[10px] text-zinc-400">
+                  {currentMonthBlockedCount} active · {selectedInCurrentMonth.length} selected
+                </p>
+              </div>
+
+              {currentMonthBlockedCount > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleToggleSelectAllMonth}
+                    className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-700 transition-colors cursor-pointer"
+                  >
+                    {isAllMonthSelected ? "Deselect All" : "Select All"}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Bulk Action Bar (appears when 1 or more leaves are selected) */}
+            {selectedInCurrentMonth.length > 0 && (
+              <div className="rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900/80 p-2 flex items-center justify-between animate-in fade-in duration-150">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-rose-800 dark:text-rose-300">
+                    {selectedInCurrentMonth.length} of {currentMonthBlockedCount} selected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleDeselectAll}
+                    className="text-[10px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 underline cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleBulkDeleteSelected}
+                  disabled={isBulkDeleting}
+                  className="rounded-md bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {isBulkDeleting ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3 w-3" />
+                  )}
+                  <span>Cancel {selectedInCurrentMonth.length} Selected</span>
+                </button>
+              </div>
+            )}
+
+            {/* Scrollable list of blocked dates with checkboxes */}
+            <div className="max-h-60 overflow-y-auto space-y-1.5 pr-0.5">
+              {currentMonthLeaves.map((leave) => {
+                const dStr = getLeaveDateStr(leave.leaveDate);
+                const isSelected = selectedLeaveIds.has(leave.id);
                 return (
                   <div
                     key={leave.id}
-                    className={`flex items-center justify-between rounded-xl border px-3 py-2 ${leave.isHoliday ? "bg-indigo-50 border-indigo-100" : "bg-rose-50 border-rose-100"}`}
+                    onClick={() => handleToggleSelectLeave(leave.id)}
+                    className={`flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-xs transition-colors cursor-pointer ${
+                      isSelected
+                        ? "border-rose-400 bg-rose-50/70 dark:bg-rose-950/40 dark:border-rose-800 shadow-2xs"
+                        : "border-zinc-200 dark:border-zinc-700/80 bg-white dark:bg-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-600"
+                    }`}
                   >
-                    <div>
-                      <p className="text-xs font-bold text-zinc-800">
-                        {d.toLocaleDateString("en-IN", {
-                          weekday: "short",
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                          timeZone: "UTC",
-                        })}
-                      </p>
-                      <p className="text-[9px] text-zinc-400 truncate max-w-[160px]">
-                        {leave.reason}
-                      </p>
+                    <div className="flex items-center gap-2.5 truncate pr-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {}} // Handled by parent row onClick
+                        className="h-3.5 w-3.5 rounded text-rose-600 focus:ring-rose-500 cursor-pointer accent-rose-600"
+                      />
+                      <div className="truncate">
+                        <p className="font-semibold text-zinc-800 dark:text-zinc-200">
+                          {dStr}
+                        </p>
+                        <p className="text-[10px] text-zinc-400 truncate max-w-36">
+                          {leave.reason || (leave.isHoliday ? "Holiday" : "Leave")}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
+
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                       <span
-                        className={`text-[8px] font-black rounded-full px-2 py-0.5 ${leave.isHoliday ? "bg-indigo-200 text-indigo-800" : "bg-rose-200 text-rose-800"}`}
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                          leave.isHoliday
+                            ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300"
+                            : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                        }`}
                       >
                         {leave.isHoliday ? "HOL" : "LEAVE"}
                       </span>
                       <button
                         type="button"
                         onClick={() => onDeleteLeave(leave.id)}
-                        className="h-5 w-5 rounded-full bg-white/80 hover:bg-red-50 border border-zinc-200 flex items-center justify-center cursor-pointer"
+                        className="h-6 w-6 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 text-zinc-400 hover:text-red-600 flex items-center justify-center transition-colors cursor-pointer"
+                        title="Unblock date"
                       >
-                        <X className="h-2.5 w-2.5 text-red-500" />
+                        <X className="h-3 w-3" />
                       </button>
                     </div>
                   </div>
                 );
               })}
+
+              {currentMonthBlockedCount === 0 && (
+                <div className="py-6 text-center text-zinc-400 text-xs">
+                  No leaves or holidays blocked in {monthNames[calMonth]} {calYear}.
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      ) : (
-        <div className="text-center py-5 rounded-xl border border-dashed border-zinc-200 text-zinc-350 text-xs font-semibold">
-          No dates blocked yet. Click any calendar date to mark it as leave or holiday.
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -1038,6 +1483,7 @@ function MedicalDashboardPage() {
     | "whatsapp"
     | "subLocationBookings"
     | "video"
+    | "doctors"
   >("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -1061,6 +1507,8 @@ function MedicalDashboardPage() {
         "plans",
         "whatsapp",
         "subLocationBookings",
+        "video",
+        "doctors",
       ];
       const params = new URLSearchParams(window.location.search);
       const fromUrl = params.get("tab");
@@ -2769,6 +3217,25 @@ function MedicalDashboardPage() {
   // Clinic & Doctor Management Handlers
   // ──────────────────────────────────────────────
 
+  // Fetch doctors directory & appointments
+  const fetchDoctors = async () => {
+    setLoadingDocs(true);
+    try {
+      const [deptsRes, docsRes, apptsRes] = await Promise.all([
+        getDepartmentsServerFn(),
+        getDoctorsServerFn(),
+        getAppointmentsServerFn(),
+      ]);
+      setDepartments(deptsRes);
+      setDoctors(docsRes);
+      if (apptsRes) setAppointments(apptsRes);
+    } catch (e) {
+      console.error("Failed to load doctor directory data:", e);
+    } finally {
+      setLoadingDocs(false);
+    }
+  };
+
   // Fetch WhatsApp status
   const fetchWhatsAppStatus = async () => {
     try {
@@ -2864,6 +3331,9 @@ function MedicalDashboardPage() {
           })
           .catch((e) => console.error("Failed to load WhatsApp config:", e));
       }
+    } else if (activeTab === "doctors") {
+      fetchDoctors();
+      fetchWhatsAppStatus();
     }
   }, [activeTab, settingsSubTab, user]);
 
@@ -3242,6 +3712,23 @@ function MedicalDashboardPage() {
   };
 
   // WhatsApp connection control handlers
+  const [resettingWa, setResettingWa] = useState(false);
+
+  const handleResetWhatsAppSession = async () => {
+    setResettingWa(true);
+    try {
+      showToast("info", "Purging session & generating fresh QR code...");
+      await resetWhatsAppSessionServerFn();
+      setTimeout(() => {
+        fetchWhatsAppStatus();
+        setResettingWa(false);
+      }, 3000);
+    } catch (e: any) {
+      showToast("error", e.message || "Failed to reset WhatsApp session");
+      setResettingWa(false);
+    }
+  };
+
   const handleDisconnectWhatsApp = async () => {
     try {
       await disconnectWhatsAppServerFn();
@@ -5309,6 +5796,7 @@ function MedicalDashboardPage() {
                     { id: "scribe", label: "Consultation", icon: ClipboardCheck },
                     { id: "calendar", label: "Calendar", icon: Calendar },
                     { id: "appointments", label: "Appointments List", icon: ClipboardList },
+                    { id: "doctors", label: "Doctor Directory", icon: Stethoscope },
                     { id: "video", label: "Video Consult", icon: Video },
                     { id: "subLocationBookings", label: "Sub Dep. Bookings", icon: MapPin },
                     { id: "patients", label: "Patient Records", icon: Users },
@@ -5391,6 +5879,7 @@ function MedicalDashboardPage() {
               { id: "scribe", label: "Consultation", icon: ClipboardCheck },
               { id: "calendar", label: "Calendar", icon: Calendar },
               { id: "appointments", label: "Appointments List", icon: ClipboardList },
+              { id: "doctors", label: "Doctor Directory", icon: Stethoscope },
               { id: "video", label: "Video Consult", icon: Video },
               { id: "subLocationBookings", label: "Sub Dep. Bookings", icon: MapPin },
               { id: "patients", label: "Patient Records", icon: Users },
@@ -10176,6 +10665,304 @@ function MedicalDashboardPage() {
                   </motion.div>
                 )}
 
+                {/* ──────────────────────────────────────────────
+                    TAB: DOCTOR DIRECTORY
+                    ────────────────────────────────────────────── */}
+                {activeTab === "doctors" && (
+                  <motion.div
+                    key="doctors"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="space-y-6"
+                  >
+                    {selectedDocForSchedule ? (
+                      /* Render schedule editor if a doctor is selected */
+                      <div className="space-y-5 border border-brand/20 bg-gradient-to-br from-brand/[0.02] to-indigo-50/30 rounded-2xl p-5">
+                        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+                          <div>
+                            <h4 className="text-sm font-bold text-zinc-800 flex items-center gap-2">
+                              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand/10">
+                                <Calendar className="h-3.5 w-3.5 text-brand" />
+                              </span>
+                              Weekly Availability Schedule
+                            </h4>
+                            <p className="text-[10px] text-zinc-400 mt-0.5 pl-8">
+                              Configure working hours for{" "}
+                              <strong className="text-zinc-600">
+                                {selectedDocForSchedule.name}
+                              </strong>
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDocForSchedule(null)}
+                            className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-zinc-700 bg-zinc-100 hover:bg-zinc-200 rounded-full px-3 py-1.5 transition-colors cursor-pointer"
+                          >
+                            <ChevronLeft className="h-3 w-3" /> Back to Directory
+                          </button>
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div className="bg-white rounded-xl border border-zinc-150 p-3.5 space-y-2.5">
+                          <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                            Quick Presets — Apply to all days at once
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {(
+                              [
+                                { label: "Mon – Fri", days: [1, 2, 3, 4, 5], Icon: Briefcase },
+                                { label: "Mon – Sat", days: [1, 2, 3, 4, 5, 6], Icon: Building2 },
+                                { label: "All 7 Days", days: [0, 1, 2, 3, 4, 5, 6], Icon: CalendarDays },
+                                { label: "Weekends Only", days: [0, 6], Icon: Sunrise },
+                                { label: "Clear All", days: [], Icon: RotateCcw },
+                              ] as { label: string; days: number[]; Icon: React.ElementType }[]
+                            ).map(({ label, days, Icon }) => (
+                              <button
+                                key={label}
+                                type="button"
+                                onClick={() => {
+                                  setDocSchedules((prev) =>
+                                    prev.map((s) => ({
+                                      ...s,
+                                      enabled: days.includes(s.dayOfWeek),
+                                      startTime: s.startTime || "09:00",
+                                      endTime: s.endTime || "18:00",
+                                      slotDuration: s.slotDuration || 30,
+                                    })),
+                                  );
+                                }}
+                                className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-brand/5 hover:border-brand/30 px-3 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand transition-all cursor-pointer"
+                              >
+                                <Icon className="h-3 w-3" /> {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Visual 7-day Calendar Grid */}
+                        <div className="grid grid-cols-7 gap-1.5">
+                          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+                            (dayLabel, idx) => {
+                              const sched = docSchedules.find((s) => s.dayOfWeek === idx) || {
+                                dayOfWeek: idx,
+                                startTime: "09:00",
+                                endTime: "18:00",
+                                slotDuration: 30,
+                                enabled: false,
+                              };
+                              return (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() =>
+                                    handleUpdateScheduleField(idx, "enabled", !sched.enabled)
+                                  }
+                                  className={`flex flex-col items-center rounded-xl border-2 px-1 py-2.5 text-center transition-all cursor-pointer ${
+                                    sched.enabled
+                                      ? "border-brand bg-brand/8 shadow-sm"
+                                      : "border-zinc-150 bg-white hover:border-zinc-250"
+                                  }`}
+                                >
+                                  <span
+                                    className={`text-[9px] font-black uppercase tracking-wider ${sched.enabled ? "text-brand" : "text-zinc-400"}`}
+                                  >
+                                    {dayLabel}
+                                  </span>
+                                  <div
+                                    className={`mt-1.5 h-7 w-7 rounded-full flex items-center justify-center ${
+                                      sched.enabled
+                                        ? "bg-black text-white"
+                                        : "bg-zinc-100 text-zinc-350"
+                                    }`}
+                                  >
+                                    {sched.enabled ? (
+                                      <CheckCircle2 className="h-4 w-4" />
+                                    ) : (
+                                      <X className="h-3.5 w-3.5" />
+                                    )}
+                                  </div>
+                                  {sched.enabled ? (
+                                    <span className="mt-1.5 text-[8px] font-bold text-brand/70 leading-tight">
+                                      {sched.startTime}
+                                      <br />—<br />
+                                      {sched.endTime}
+                                    </span>
+                                  ) : (
+                                    <span className="mt-1.5 text-[8px] font-semibold text-zinc-300">
+                                      Off
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            },
+                          )}
+                        </div>
+
+                        {/* Detailed Per-Day Config for enabled days */}
+                        <div className="space-y-2">
+                          <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider pl-1">
+                            Adjust Hours per Active Day
+                          </p>
+                          {[
+                            "Sunday", "Monday", "Tuesday", "Wednesday",
+                            "Thursday", "Friday", "Saturday",
+                          ].map((dayName, idx) => {
+                            const sched = docSchedules.find((s) => s.dayOfWeek === idx);
+                            if (!sched?.enabled) return null;
+
+                            const breaks: { start: string; end: string; label: string }[] =
+                              sched.breaks ?? [];
+
+                            const [sh, sm] = (sched.startTime || "09:00").split(":").map(Number);
+                            const [eh, em] = (sched.endTime || "18:00").split(":").map(Number);
+                            let workMins = eh * 60 + em - (sh * 60 + sm);
+                            breaks.forEach((b) => {
+                              if (b.start && b.end) {
+                                const [bsh, bsm] = b.start.split(":").map(Number);
+                                const [beh, bem] = b.end.split(":").map(Number);
+                                const bm = beh * 60 + bem - (bsh * 60 + bsm);
+                                if (bm > 0) workMins -= bm;
+                              }
+                            });
+                            const slots =
+                              workMins > 0
+                                ? Math.floor(workMins / (sched.slotDuration || 30))
+                                : 0;
+
+                            return (
+                              <DayScheduleCard
+                                key={idx}
+                                dayName={dayName}
+                                idx={idx}
+                                sched={sched}
+                                breaks={breaks}
+                                slots={slots}
+                                allSchedules={docSchedules}
+                                onUpdateField={handleUpdateScheduleField}
+                                onAddBreak={addBreakToDay}
+                                onUpdateBreak={updateBreak}
+                                onRemoveBreak={removeBreak}
+                                onCopyBreaks={copyBreaksToDay}
+                              />
+                            );
+                          })}
+                        </div>
+
+                        {docScheduleSuccess && (
+                          <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center animate-in fade-in">
+                            <p className="text-xs font-bold text-emerald-600 flex items-center justify-center gap-1.5">
+                              <CheckCircle2 className="h-4 w-4 text-emerald-500" />{" "}
+                              {docScheduleSuccess}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center border-t border-zinc-100 pt-3">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDocForSchedule(null)}
+                            className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-500 hover:bg-zinc-50 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={savingDocSchedule}
+                            onClick={async () => {
+                              setDocScheduleSuccess("");
+                              setSavingDocSchedule(true);
+                              try {
+                                const activeSchedules = docSchedules
+                                  .filter((s) => s.enabled)
+                                  .map((s) => ({
+                                    dayOfWeek: s.dayOfWeek,
+                                    startTime: s.startTime,
+                                    endTime: s.endTime,
+                                    slotDuration: parseInt(s.slotDuration),
+                                    breaks: (s.breaks ?? []).filter(
+                                      (b: any) => b.start && b.end,
+                                    ),
+                                  }));
+                                const res = await saveDoctorScheduleServerFn({
+                                  data: {
+                                    doctorId: selectedDocForSchedule.id,
+                                    schedules: activeSchedules,
+                                  },
+                                });
+                                if (res.success) {
+                                  setDocScheduleSuccess("Weekly availability saved successfully!");
+                                  setTimeout(() => setSelectedDocForSchedule(null), 1400);
+                                }
+                              } catch (err: any) {
+                                console.error(err);
+                              } finally {
+                                setSavingDocSchedule(false);
+                              }
+                            }}
+                            className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                          >
+                            {savingDocSchedule ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Save className="h-3.5 w-3.5" />
+                            )}
+                            Save Schedule
+                          </button>
+                        </div>
+                      </div>
+                    ) : selectedDocForLeaves ? (
+                      /* Render leaves manager — interactive month calendar */
+                      <LeavesCalendarPanel
+                        doc={selectedDocForLeaves}
+                        docLeaves={docLeaves}
+                        setDocLeaves={setDocLeaves}
+                        addingLeave={addingLeave}
+                        setAddingLeave={setAddingLeave}
+                        onBack={() => setSelectedDocForLeaves(null)}
+                        onDeleteLeave={handleDeleteDoctorLeave}
+                      />
+                    ) : (
+                      <DoctorDirectoryPanel
+                        doctors={doctors}
+                        departments={departments}
+                        appointments={appointments}
+                        loadingDocs={loadingDocs}
+                        onRefreshDoctors={fetchDoctors}
+                        onSaveDoctor={handleSaveDoctor}
+                        onDeleteDoctor={handleDeleteDoctor}
+                        isEditingDoc={isEditingDoc}
+                        setIsEditingDoc={setIsEditingDoc}
+                        editingDoc={editingDoc}
+                        setEditingDoc={setEditingDoc}
+                        docName={docName}
+                        setDocName={setDocName}
+                        docEmail={docEmail}
+                        setDocEmail={setDocEmail}
+                        docPhone={docPhone}
+                        setDocPhone={setDocPhone}
+                        docQualifications={docQualifications}
+                        setDocQualifications={setDocQualifications}
+                        docDeptId={docDeptId}
+                        setDocDeptId={setDocDeptId}
+                        savingDoc={savingDoc}
+                        docError={docError}
+                        setDocError={setDocError}
+                        docSuccess={docSuccess}
+                        setDocSuccess={setDocSuccess}
+                        onOpenAddDoctor={handleOpenAddDoctor}
+                        onOpenEditDoctor={handleOpenEditDoctor}
+                        onEditDoctorSchedule={handleEditDoctorSchedule}
+                        onEditDoctorLeaves={handleEditDoctorLeaves}
+                        onUpgradePlan={() => setActiveTab("plans")}
+                        clinicName={profileClinic || user?.clinicName || "HealthSync Clinic"}
+                        waStatus={waStatus}
+                        waConnectedNumber={waConnectedNumber}
+                      />
+                    )}
+                  </motion.div>
+                )}
+
                 {activeTab === "calendar" && (
                   <motion.div
                     key="calendar"
@@ -11249,6 +12036,31 @@ function MedicalDashboardPage() {
                         ────────────────────────────────────────────── */}
                     {settingsSubTab === "doctors" && (
                       <div className="space-y-6 animate-in fade-in duration-300">
+                        {/* Dedicated Tab Announcement Banner */}
+                        <div className="rounded-2xl border border-rose-200 dark:border-rose-900/60 bg-gradient-to-r from-rose-50/80 via-white to-amber-50/50 dark:from-rose-950/20 dark:via-zinc-900 dark:to-zinc-900 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                          <div className="flex items-center gap-3">
+                            <div className="h-9 w-9 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center border border-rose-200 dark:border-rose-800 shrink-0">
+                              <Stethoscope className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                                <span>Dedicated Doctor Directory Sidebar Available</span>
+                                <span className="text-[9px] font-extrabold bg-rose-500 text-white px-2 py-0.2 rounded-full">NEW</span>
+                              </p>
+                              <p className="text-[11px] text-zinc-500 mt-0.5">
+                                Manage practitioner directory, weekly hours, and the new <strong>Urgent Absence &amp; AI WhatsApp Notice</strong> from the primary sidebar menu.
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab("doctors")}
+                            className="rounded-full bg-zinc-950 hover:bg-zinc-850 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-900 px-4 py-2 text-xs font-bold whitespace-nowrap shadow-xs cursor-pointer transition-transform active:scale-95"
+                          >
+                            Open Doctor Directory →
+                          </button>
+                        </div>
+
                         {/* Render schedule editor if a doctor is selected */}
                         {selectedDocForSchedule ? (
                           <div className="space-y-5 border border-brand/20 bg-gradient-to-br from-brand/[0.02] to-indigo-50/30 rounded-2xl p-5">
@@ -11995,6 +12807,20 @@ function MedicalDashboardPage() {
                                 >
                                   <RefreshCw className="h-3.5 w-3.5 text-zinc-500" />
                                 </button>
+                                {waStatus !== "CONNECTED" && (
+                                  <button
+                                    type="button"
+                                    disabled={resettingWa}
+                                    onClick={handleResetWhatsAppSession}
+                                    title="Purge session lock and regenerate fresh QR"
+                                    className="rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-[10px] font-bold px-3 py-1.5 transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1 shadow-xs"
+                                  >
+                                    <RefreshCw
+                                      className={`h-3 w-3 ${resettingWa ? "animate-spin text-brand" : "text-zinc-500"}`}
+                                    />
+                                    {resettingWa ? "Resetting..." : "Reset Session"}
+                                  </button>
+                                )}
                                 {waStatus === "CONNECTED" && (
                                   <button
                                     type="button"
@@ -12034,24 +12860,54 @@ function MedicalDashboardPage() {
                                         <li>Point your phone camera at the QR code</li>
                                       </ol>
                                       <p className="text-[9px] text-zinc-400 pt-1">
-                                        QR code refreshes automatically every 20s
+                                        QR code stays live and ready. Scan anytime.
                                       </p>
+                                      <div className="pt-1">
+                                        <button
+                                          type="button"
+                                          disabled={resettingWa}
+                                          onClick={handleResetWhatsAppSession}
+                                          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[10px] font-bold text-zinc-700 hover:bg-zinc-50 transition-colors shadow-xs cursor-pointer disabled:opacity-50"
+                                        >
+                                          <RefreshCw
+                                            className={`h-3 w-3 ${resettingWa ? "animate-spin text-brand" : "text-zinc-500"}`}
+                                          />
+                                          {resettingWa
+                                            ? "Regenerating QR..."
+                                            : "Stuck or Can't Link? Reset Session & New QR"}
+                                        </button>
+                                      </div>
                                     </div>
                                   </div>
                                 ) : (
-                                  <div className="flex items-center gap-3 p-2">
-                                    <div className="h-10 w-10 rounded-lg bg-zinc-200 animate-pulse shrink-0" />
-                                    <div className="space-y-1.5">
-                                      <div className="h-2.5 w-32 rounded-full bg-zinc-200 animate-pulse" />
-                                      <div className="h-2 w-48 rounded-full bg-zinc-200 animate-pulse" />
-                                      <p className="text-[10px] text-zinc-400 font-semibold">
-                                        {waStatus === "ERROR"
-                                          ? "WhatsApp session encountered an error. Retrying..."
-                                          : waStatus === "DISCONNECTED"
-                                            ? "Preparing new WhatsApp session..."
-                                            : "Starting WhatsApp browser session..."}
-                                      </p>
+                                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-2">
+                                    <div className="flex items-center gap-3">
+                                      <div className="h-10 w-10 rounded-lg bg-zinc-200 animate-pulse shrink-0" />
+                                      <div className="space-y-1.5">
+                                        <div className="h-2.5 w-32 rounded-full bg-zinc-200 animate-pulse" />
+                                        <div className="h-2 w-48 rounded-full bg-zinc-200 animate-pulse" />
+                                        <p className="text-[10px] text-zinc-400 font-semibold">
+                                          {waStatus === "ERROR"
+                                            ? "WhatsApp session encountered an error. Click Reset to retry."
+                                            : waStatus === "DISCONNECTED"
+                                              ? "Preparing new WhatsApp session..."
+                                              : "Starting WhatsApp browser session..."}
+                                        </p>
+                                      </div>
                                     </div>
+                                    <button
+                                      type="button"
+                                      disabled={resettingWa}
+                                      onClick={handleResetWhatsAppSession}
+                                      className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[10px] font-bold text-zinc-700 hover:bg-zinc-50 transition-colors shadow-xs cursor-pointer disabled:opacity-50 shrink-0"
+                                    >
+                                      <RefreshCw
+                                        className={`h-3 w-3 ${resettingWa ? "animate-spin text-brand" : "text-zinc-500"}`}
+                                      />
+                                      {resettingWa
+                                        ? "Resetting..."
+                                        : "Reset Session & Generate Fresh QR"}
+                                    </button>
                                   </div>
                                 )}
                               </div>
