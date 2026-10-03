@@ -40,6 +40,8 @@ export interface DoctorCancelLeaveModalProps {
     leavesCancelledCount: number;
     reinstatedAppointmentsCount: number;
     notifiedPatientsCount: number;
+    /** True when the server skipped WhatsApp because the caller may not send. */
+    whatsappSkippedForRole?: boolean;
     dates: string[];
   }) => void;
 }
@@ -277,6 +279,7 @@ export function DoctorCancelLeaveModal({
           leavesCancelledCount: res.leavesCancelledCount,
           reinstatedAppointmentsCount: res.reinstatedAppointmentsCount,
           notifiedPatientsCount: res.notifiedPatientsCount,
+          whatsappSkippedForRole: res.whatsappSkippedForRole,
           dates: selectedDatesToCancel,
         });
       } else {
@@ -479,7 +482,8 @@ export function DoctorCancelLeaveModal({
                     <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900">
                       <div className="bg-zinc-50 dark:bg-zinc-800/60 px-3.5 py-2 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800">
                         <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
-                          {scheduledLeaves.length} Scheduled Leave Date{scheduledLeaves.length === 1 ? "" : "s"}
+                          {scheduledLeaves.length} Scheduled Leave Date
+                          {scheduledLeaves.length === 1 ? "" : "s"}
                         </span>
                         <span className="text-[11px] text-zinc-500">
                           {selectedDatesToCancel.length} selected for cancel
@@ -541,7 +545,8 @@ export function DoctorCancelLeaveModal({
                         No upcoming scheduled leaves found for {doctor.name}.
                       </p>
                       <p className="text-[11px] text-zinc-400">
-                        The doctor is currently available according to their standard weekly schedule.
+                        The doctor is currently available according to their standard weekly
+                        schedule.
                       </p>
                     </div>
                   )}
@@ -579,7 +584,8 @@ export function DoctorCancelLeaveModal({
                     <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900">
                       <div className="bg-zinc-50 dark:bg-zinc-800/60 px-3.5 py-2 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800">
                         <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
-                          {affectedAppts.length} Booking{affectedAppts.length === 1 ? "" : "s"} Found
+                          {affectedAppts.length} Booking{affectedAppts.length === 1 ? "" : "s"}{" "}
+                          Found
                         </span>
                         <span className="text-[11px] text-zinc-500">
                           {selectedApptIds.length} marked to reinstate
@@ -637,7 +643,8 @@ export function DoctorCancelLeaveModal({
                         No previously booked appointments on these dates.
                       </p>
                       <p className="text-[11px] text-zinc-400">
-                        Canceling leave will reopen these dates on the booking schedule for new patient bookings.
+                        Canceling leave will reopen these dates on the booking schedule for new
+                        patient bookings.
                       </p>
                     </div>
                   )}
@@ -802,8 +809,9 @@ export function DoctorCancelLeaveModal({
 
             <div className="flex items-center gap-3">
               <span className="text-xs text-zinc-500 font-medium hidden sm:inline">
-                {selectedDatesToCancel.length} leave date{selectedDatesToCancel.length === 1 ? "" : "s"} •{" "}
-                {selectedApptIds.length} patient{selectedApptIds.length === 1 ? "" : "s"} to reinstate
+                {selectedDatesToCancel.length} leave date
+                {selectedDatesToCancel.length === 1 ? "" : "s"} • {selectedApptIds.length} patient
+                {selectedApptIds.length === 1 ? "" : "s"} to reinstate
               </span>
 
               <button

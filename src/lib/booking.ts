@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import crypto from "crypto";
 import { query, queryOne, execute } from "./db";
+import { overlapsBreak, resolveBreaks, type NormalizedBreak } from "./doctor-schedule-breaks";
 
 // ──────────────────────────────────────────────
 // Public: Get Clinic Info + Dynamic Available Slots
@@ -142,11 +143,15 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
             let startTimeStr: string | null = null;
             let endTimeStr: string | null = null;
             let duration = 30;
+            // Breaks (lunch etc.) configured for this weekday. Slots that
+            // overlap one must not be offered.
+            let breaks: NormalizedBreak[] = [];
 
             if (docSchedule) {
               startTimeStr = docSchedule.startTime;
               endTimeStr = docSchedule.endTime;
               duration = docSchedule.slotDuration || 30;
+              breaks = resolveBreaks(docSchedule.breaks);
             } else if (clinicHours && clinicHours.openTime && clinicHours.closeTime) {
               // Fallback: use ClinicHours for this tenant & day
               startTimeStr = clinicHours.openTime;
@@ -185,7 +190,11 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
                   minute: "2-digit",
                   hour12: true,
                 });
-                if (!bookedSlots.includes(slotTimeStr)) {
+                const slotStartMin = temp.getHours() * 60 + temp.getMinutes();
+                if (
+                  !bookedSlots.includes(slotTimeStr) &&
+                  !overlapsBreak(slotStartMin, duration, breaks)
+                ) {
                   slots.push(slotTimeStr);
                 }
                 temp.setMinutes(temp.getMinutes() + duration);
@@ -328,9 +337,8 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     // defaults to 0 and connecting the session never sets it, which previously
     // caused public bookings to silently skip WhatsApp even when connected.
     if (typeof window === "undefined") {
-      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } = await import(
-        "./appointment-notify"
-      );
+      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
+        await import("./appointment-notify");
       const [clinicName, doctorName] = await Promise.all([
         resolveClinicName(data.tenantId),
         resolveDoctorName(docId),

@@ -5,6 +5,29 @@ import crypto from "crypto";
 import { query, queryOne, execute, withTransaction } from "./db";
 import { PROFESSION_RESTAURANT, DEFAULT_SETTINGS } from "./restaurant-availability";
 import { DEFAULT_PROFESSION, generateTenantId } from "./tenant-provisioning";
+import {
+  normalizeBreaks,
+  overlapsBreak,
+  parseBreaksColumn,
+  parseTimeToMinutes,
+  resolveBreaks,
+  type NormalizedBreak,
+} from "./doctor-schedule-breaks";
+import {
+  buildAppointmentDateFilter,
+  buildAppointmentOrderBy,
+  buildAppointmentSearch,
+  isIsoDate,
+  toLocalIsoDate,
+} from "./appointment-query";
+import {
+  emailConflictMessage,
+  isDuplicateKeyError,
+  isPlausibleEmail,
+  normalizeEmail,
+  type EmailConflictKind,
+} from "./account-email";
+import { assertCanPerform, canPerform } from "./staff-permissions";
 import { renumberDailyTokens } from "./token.server";
 import { sendOtpEmail, sendBillingNotificationEmail } from "./email";
 
@@ -41,6 +64,96 @@ function buildAccountContext(user: any): AccountContext {
     subscriptionExpiresAt: user.subscriptionExpiresAt,
     isActive: true,
   };
+}
+
+// ── Tenant-ownership guards ────────────────────────────────────────────────
+// Ids arrive from the client, so every write keyed by a doctor / patient id has
+// to prove that id belongs to the caller's workspace first.
+
+async function assertDoctorInTenant(doctorId: unknown, tenantId: string): Promise<void> {
+  if (typeof doctorId !== "string" || !doctorId) throw new Error("Doctor ID is required");
+  const row = await queryOne<any>("SELECT id FROM Doctor WHERE id = ? AND tenantId = ? LIMIT 1", [
+    doctorId,
+    tenantId,
+  ]);
+  if (!row) throw new Error("Doctor not found or unauthorized");
+}
+
+/**
+ * Resolve a client-supplied patient reference. Clinical screens pass either a
+ * Patient id or, for walk-ins with no registry file yet, the Appointment id.
+ * Either must belong to the tenant; anything else is refused.
+ */
+async function assertPatientRefInTenant(patientId: unknown, tenantId: string): Promise<void> {
+  if (typeof patientId !== "string" || !patientId) throw new Error("Patient ID is required");
+  const patient = await queryOne<any>(
+    "SELECT id FROM Patient WHERE id = ? AND tenantId = ? LIMIT 1",
+    [patientId, tenantId],
+  );
+  if (patient) return;
+  const apt = await queryOne<any>(
+    "SELECT id FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1",
+    [patientId, tenantId],
+  );
+  if (!apt) throw new Error("Patient not found or unauthorized");
+}
+
+/** Statuses an appointment may be set to. Anything else is rejected. */
+const APPOINTMENT_STATUSES = new Set([
+  "Pending",
+  "Scheduled",
+  "Confirmed",
+  "Completed",
+  "Cancelled",
+  "No Show",
+  "Reschedule Needed",
+]);
+/** Statuses that no longer occupy the doctor's slot. */
+const RELEASED_STATUSES = new Set(["Cancelled", "No Show"]);
+
+/**
+ * Another live appointment already holding this doctor's slot, if any.
+ * Matches on the slot label when there is one (that is what the slot picker
+ * books), otherwise on the exact start time.
+ */
+async function findSlotConflict(opts: {
+  tenantId: string;
+  doctorId: string | null;
+  dateVal: Date;
+  timeSlot: string | null;
+  excludeId?: string;
+}): Promise<{ id: string; name: string } | null> {
+  if (!opts.doctorId) return null;
+  const params: any[] = [opts.tenantId, opts.doctorId, opts.dateVal];
+  let slotClause: string;
+  if (opts.timeSlot) {
+    slotClause = "a.timeSlot = ?";
+    params.push(opts.timeSlot);
+  } else {
+    slotClause = "a.dateTime = ?";
+    params.push(opts.dateVal);
+  }
+  params.push(opts.excludeId ?? "");
+  const row = await queryOne<any>(
+    `SELECT a.id, a.name FROM Appointment a
+      WHERE a.tenantId = ? AND a.doctorId = ? AND DATE(a.dateTime) = DATE(?)
+        AND ${slotClause}
+        AND (a.status IS NULL OR a.status NOT IN ('Cancelled', 'No Show'))
+        AND a.id != ?
+      LIMIT 1`,
+    params,
+  );
+  return row ? { id: String(row.id), name: String(row.name || "another patient") } : null;
+}
+
+/** Escape text before interpolating it into an HTML email body. */
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // Helper to generate a 4-digit OTP
@@ -296,6 +409,40 @@ export const signupServerFn = createServerFn({ method: "POST" })
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // 4. Login Server Function
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/** The three independent login sessions, each with its own cookie and table. */
+const SESSION_KINDS = {
+  owner: { cookie: "session_token", table: "Session" },
+  sub: { cookie: "sub_session_token", table: "SubUserSession" },
+  location: { cookie: "location_session_token", table: "LocationSession" },
+} as const;
+type SessionKind = keyof typeof SESSION_KINDS;
+
+/**
+ * End every session on this browser except the one about to be issued.
+ *
+ * verifySession() checks the owner cookie first, then sub-user, then location.
+ * Logging in as a receptionist used to set only `sub_session_token`, leaving an
+ * admin's `session_token` (e.g. the admin who just created that receptionist,
+ * on the same browser) in place — so the reception login landed on the admin
+ * dashboard with admin rights. Exactly one session per browser removes that.
+ * The old session rows are deleted too, so the tokens are dead, not just hidden.
+ */
+async function endOtherSessions(keep: SessionKind): Promise<void> {
+  const { getCookie, deleteCookie } = await import("@tanstack/react-start/server");
+  for (const [kind, { cookie, table }] of Object.entries(SESSION_KINDS)) {
+    if (kind === keep) continue;
+    const token = getCookie(cookie);
+    if (!token) continue;
+    try {
+      await execute(`DELETE FROM ${table} WHERE token = ?`, [token]);
+    } catch (e: any) {
+      // Never block a valid login on cleanup; the cookie is still removed below.
+      console.error(`[Auth] Failed to revoke ${table} on login:`, e?.message);
+    }
+    deleteCookie(cookie, { path: "/" });
+  }
+}
+
 export const loginServerFn = createServerFn({ method: "POST" })
   .validator((data: { username: string; password?: string; rememberMe?: boolean }) => {
     if (!data.username) throw new Error("Username/Email is required");
@@ -337,6 +484,7 @@ export const loginServerFn = createServerFn({ method: "POST" })
         "INSERT INTO Session (id, userId, token, expiresAt, createdAt) VALUES (?, ?, ?, ?, NOW())",
         [generateId(), user.id, token, expiresAt],
       );
+      await endOtherSessions("owner");
       setCookie("session_token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -395,6 +543,7 @@ export const loginServerFn = createServerFn({ method: "POST" })
         "INSERT INTO SubUserSession (id, subUserId, token, expiresAt) VALUES (?, ?, ?, ?)",
         [crypto.randomUUID(), subUser.id, token, expiresAt],
       );
+      await endOtherSessions("sub");
       setCookie("sub_session_token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -458,6 +607,7 @@ export const loginServerFn = createServerFn({ method: "POST" })
         "INSERT INTO LocationSession (id, locationId, token, expiresAt) VALUES (?, ?, ?, ?)",
         [crypto.randomUUID(), location.id, token, expiresAt],
       );
+      await endOtherSessions("location");
       setCookie("location_session_token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -572,6 +722,12 @@ export const getCurrentUserServerFn = createServerFn({ method: "GET" }).handler(
     return null;
   }
 
+  // Staff need the plan/status for feature gating, but not the owner's payment
+  // details (amount, billing interval, payment method).
+  if (!canPerform(user.role, "view_billing")) {
+    const { paymentAmount: _a, billingInterval: _b, paymentMethod: _c, ...rest } = user as any;
+    return rest as typeof user;
+  }
   return user;
 });
 
@@ -635,23 +791,51 @@ export const updateProfileServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    // The clinic's identity (name, owner name, phone) belongs to the owner.
+    assertCanPerform(user.role, "manage_clinic_profile");
 
-    // Check if phone number is already registered under another account
+    // A phone already used by ANOTHER workspace's owner. Comparing by tenant
+    // (not by user.id) keeps the owner's own number from "conflicting".
     const existingPhoneUser = await queryOne<any>(
-      "SELECT id FROM User WHERE phone = ? AND id != ? LIMIT 1",
-      [data.phone, user.id],
+      "SELECT id FROM User WHERE phone = ? AND tenantId != ? LIMIT 1",
+      [data.phone, user.tenantId],
     );
     if (existingPhoneUser) {
       throw new Error("This phone number is already registered under another account.");
     }
 
-    const profession = data.profession || "Healthcare and medical";
+    // Only fields the caller actually sent are updated. The dashboard form
+    // sends four fields; the old upsert wrote NULL into every other column and
+    // silently erased the clinic's address, services and public contact numbers.
+    const optionalKeys = [
+      "address",
+      "contactDetails",
+      "shortDescription",
+      "services",
+      "email",
+      "contactNo",
+      "whatsappNo",
+      "landlineNo",
+    ] as const;
+    const insertProfession = data.profession || "Healthcare and medical";
 
-    // Save/update ClinicProfile
+    const updateCols = ["clinicName = ?", "clinicianName = ?", "phone = ?", "practiceSize = ?"];
+    const updateParams: any[] = [data.clinicName, data.name, data.phone, data.practiceSize];
+    for (const key of optionalKeys) {
+      if (data[key] !== undefined) {
+        updateCols.push(`${key} = ?`);
+        updateParams.push(data[key] || null);
+      }
+    }
+    if (data.profession !== undefined) {
+      updateCols.push("profession = ?");
+      updateParams.push(insertProfession);
+    }
+
     await execute(
       `INSERT INTO ClinicProfile (id, tenantId, clinicName, clinicianName, phone, practiceSize, address, contactDetails, shortDescription, services, email, contactNo, whatsappNo, landlineNo, profession)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE clinicName = ?, clinicianName = ?, phone = ?, practiceSize = ?, address = ?, contactDetails = ?, shortDescription = ?, services = ?, email = ?, contactNo = ?, whatsappNo = ?, landlineNo = ?, profession = ?`,
+       ON DUPLICATE KEY UPDATE ${updateCols.join(", ")}`,
       [
         generateId(),
         user.tenantId,
@@ -659,48 +843,80 @@ export const updateProfileServerFn = createServerFn({ method: "POST" })
         data.name,
         data.phone,
         data.practiceSize,
-        data.address || null,
-        data.contactDetails || null,
-        data.shortDescription || null,
-        data.services || null,
-        data.email || null,
-        data.contactNo || null,
-        data.whatsappNo || null,
-        data.landlineNo || null,
-        profession,
-        data.clinicName,
-        data.name,
-        data.phone,
-        data.practiceSize,
-        data.address || null,
-        data.contactDetails || null,
-        data.shortDescription || null,
-        data.services || null,
-        data.email || null,
-        data.contactNo || null,
-        data.whatsappNo || null,
-        data.landlineNo || null,
-        profession,
+        ...optionalKeys.map((k) => data[k] || null),
+        insertProfession,
+        ...updateParams,
       ],
     );
 
-    // Sync to User table for session/compatibility
-    await execute(
-      `UPDATE User SET name = ?, phone = ?, clinicName = ?, practiceSize = ?, profession = ?, updatedAt = NOW() WHERE id = ?`,
-      [data.name, data.phone, data.clinicName, data.practiceSize, profession, user.id],
-    );
+    // Sync to the owner's User row (one per tenant) for session compatibility.
+    const userCols = ["name = ?", "phone = ?", "clinicName = ?", "practiceSize = ?"];
+    const userParams: any[] = [data.name, data.phone, data.clinicName, data.practiceSize];
+    if (data.profession !== undefined) {
+      userCols.push("profession = ?");
+      userParams.push(insertProfession);
+    }
+    await execute(`UPDATE User SET ${userCols.join(", ")}, updatedAt = NOW() WHERE tenantId = ?`, [
+      ...userParams,
+      user.tenantId,
+    ]);
 
     return { success: true };
   });
 
+/** True when any login account other than (table, ownId) already uses `email`. */
+async function isLoginEmailTakenByOther(
+  email: string,
+  table: "User" | "SubUser" | "Location",
+  ownId: string,
+): Promise<boolean> {
+  for (const t of ["User", "SubUser", "Location"] as const) {
+    const row = await queryOne<any>(
+      `SELECT id FROM ${t} WHERE LOWER(TRIM(email)) = ? ${t === table ? "AND id != ?" : ""} LIMIT 1`,
+      t === table ? [email, ownId] : [email],
+    );
+    if (row) return true;
+  }
+  return false;
+}
+
+/** Which table holds the signed-in account's own row. */
+function accountTableFor(role: unknown): "User" | "SubUser" | "Location" {
+  if (role === "reception" || role === "doctor") return "SubUser";
+  if (role === "location") return "Location";
+  return "User";
+}
+
+// ~5 MB of image bytes once base64-encoded (4/3 overhead + data-URI prefix).
+const MAX_PHOTO_DATA_URI_LENGTH = Math.ceil((5 * 1024 * 1024 * 4) / 3) + 64;
+
 export const uploadProfilePhotoServerFn = createServerFn({ method: "POST" })
-  .validator((data: { base64: string; fileName: string }) => {
-    if (!data.base64) throw new Error("No image data provided");
+  .validator((data: { base64: string; fileName: string; remove?: boolean }) => {
+    // Removal is an explicit flag. It used to be sent as base64: "", which
+    // this validator rejected, so "Remove" never worked.
+    if (data?.remove || data?.fileName === "remove") return { ...data, remove: true };
+    if (!data?.base64) throw new Error("No image data provided");
+    // Only an inline image may be uploaded — never a remote URL for the
+    // server to fetch on the caller's behalf.
+    if (!/^data:image\/(jpeg|png|webp);base64,/.test(data.base64)) {
+      throw new Error("Please upload a JPEG, PNG or WebP image.");
+    }
+    if (data.base64.length > MAX_PHOTO_DATA_URI_LENGTH) {
+      throw new Error("File too large. Max 5MB.");
+    }
     return data;
   })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
+    // Staff accounts have their own row; writing to User by a SubUser id
+    // matched nothing, so their photo was "saved" and then vanished.
+    const table = accountTableFor(user.role);
+
+    if (data.remove) {
+      await execute(`UPDATE ${table} SET profilePhoto = NULL WHERE id = ?`, [user.id]);
+      return { success: true, url: null as string | null };
+    }
 
     const cloudinary = await import("cloudinary");
     const cloud = cloudinary.v2;
@@ -717,11 +933,8 @@ export const uploadProfilePhotoServerFn = createServerFn({ method: "POST" })
       transformation: [{ width: 400, height: 400, crop: "fill", gravity: "face" }],
     });
 
-    const photoUrl = result.secure_url;
-    await execute("UPDATE User SET profilePhoto = ?, updatedAt = NOW() WHERE id = ?", [
-      photoUrl,
-      user.id,
-    ]);
+    const photoUrl: string | null = result.secure_url;
+    await execute(`UPDATE ${table} SET profilePhoto = ? WHERE id = ?`, [photoUrl, user.id]);
 
     return { success: true, url: photoUrl };
   });
@@ -736,36 +949,20 @@ export const updatePasswordServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
+    if (data.newPass.length < 8) throw new Error("New password must be at least 8 characters");
 
-    if (user.role === "reception" || user.role === "doctor") {
-      const dbSubUser = await queryOne<any>("SELECT password FROM SubUser WHERE id = ? LIMIT 1", [
-        user.id,
-      ]);
-      if (!dbSubUser) throw new Error("User not found");
+    // Owner → User, reception/doctor → SubUser, branch → Location.
+    const table = accountTableFor(user.role);
+    const row = await queryOne<any>(`SELECT password FROM ${table} WHERE id = ? LIMIT 1`, [
+      user.id,
+    ]);
+    if (!row) throw new Error("User not found");
 
-      const match = await bcrypt.compare(data.currentPass, dbSubUser.password);
-      if (!match) throw new Error("Incorrect current password");
-
-      const hashedNew = await bcrypt.hash(data.newPass, 10);
-      await execute("UPDATE SubUser SET password = ?, updatedAt = NOW() WHERE id = ?", [
-        hashedNew,
-        user.id,
-      ]);
-      return { success: true };
-    }
-
-    const dbUser = await queryOne<any>("SELECT password FROM User WHERE id = ? LIMIT 1", [user.id]);
-    if (!dbUser) throw new Error("User not found");
-
-    const match = await bcrypt.compare(data.currentPass, dbUser.password);
+    const match = await bcrypt.compare(data.currentPass, row.password);
     if (!match) throw new Error("Incorrect current password");
 
     const hashedNew = await bcrypt.hash(data.newPass, 10);
-    await execute("UPDATE User SET password = ?, updatedAt = NOW() WHERE id = ?", [
-      hashedNew,
-      user.id,
-    ]);
-
+    await execute(`UPDATE ${table} SET password = ? WHERE id = ?`, [hashedNew, user.id]);
     return { success: true };
   });
 
@@ -774,13 +971,17 @@ export const sendEmailChangeOtpServerFn = createServerFn({ method: "POST" })
     if (!email || !email.includes("@")) throw new Error("Invalid email address");
     return email;
   })
-  .handler(async ({ data: newEmail }) => {
+  .handler(async ({ data: rawEmail }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
-    // Check if new email is already registered by another user
-    const existing = await queryOne<any>("SELECT id FROM User WHERE email = ? LIMIT 1", [newEmail]);
-    if (existing) throw new Error("Email already registered by another user");
+    const newEmail = normalizeEmail(rawEmail);
+    if (!isPlausibleEmail(newEmail)) throw new Error("Invalid email address");
+    // Login resolves emails across owners, staff and branches, so the new
+    // address must be free in all three (the caller's own row excepted).
+    if (await isLoginEmailTakenByOther(newEmail, accountTableFor(user.role), user.id)) {
+      throw new Error("Email already registered by another user");
+    }
 
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
@@ -808,21 +1009,26 @@ export const updateEmailServerFn = createServerFn({ method: "POST" })
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
 
+    const newEmail = normalizeEmail(data.newEmail);
+    const table = accountTableFor(user.role);
+
     // Verify OTP
     const valid = await queryOne<any>(
       "SELECT id FROM OtpCode WHERE email = ? AND code = ? AND expiresAt > ? LIMIT 1",
-      [data.newEmail, data.code, new Date()],
+      [newEmail, data.code, new Date()],
     );
     if (!valid) throw new Error("Invalid or expired verification code");
 
-    // Perform Email update
-    await execute("UPDATE User SET email = ?, updatedAt = NOW() WHERE id = ?", [
-      data.newEmail,
-      user.id,
-    ]);
+    // Re-check: the address may have been taken since the OTP was sent.
+    if (await isLoginEmailTakenByOther(newEmail, table, user.id)) {
+      throw new Error("Email already registered by another user");
+    }
+
+    // Update the caller's own row (User / SubUser / Location by role).
+    await execute(`UPDATE ${table} SET email = ? WHERE id = ?`, [newEmail, user.id]);
 
     // Cleanup OTP
-    await execute("DELETE FROM OtpCode WHERE email = ?", [data.newEmail]);
+    await execute("DELETE FROM OtpCode WHERE email = ?", [newEmail]);
 
     return { success: true };
   });
@@ -874,16 +1080,37 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
       return data;
     },
   )
-  .handler(async ({ data }) => {
-    // Plan check: Basic/Solo limit is 500 monthly appointments
+  .handler(async ({ data: input }) => {
+    // Staff booking from the dashboard. (The public portal uses
+    // createAppointmentPublicServerFn in booking.ts.) This used to run with no
+    // session and trust the client's tenantId, so anyone could insert bookings
+    // into any clinic and trigger its WhatsApp notifications.
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const data = { ...input, tenantId: user.tenantId as string };
+
+    if (data.doctorId) await assertDoctorInTenant(data.doctorId, data.tenantId);
+    // A patient reference from another workspace is dropped, never linked.
+    let linkedPatientId: string | null = null;
+    if (data.patientId) {
+      const p = await queryOne<any>(
+        "SELECT id FROM Patient WHERE id = ? AND tenantId = ? LIMIT 1",
+        [data.patientId, data.tenantId],
+      );
+      linkedPatientId = p ? String(p.id) : null;
+    }
+
+    // Plan check: Basic/Solo limit is 500 appointments booked per month.
     const tenant = await queryOne<any>(
       "SELECT subscriptionPlan FROM User WHERE tenantId = ? LIMIT 1",
       [data.tenantId],
     );
     const plan = tenant?.subscriptionPlan || "Basic";
     if (plan === "Solo" || plan === "Basic") {
+      // Count bookings MADE this month (createdAt), not appointments dated from
+      // this month onwards — future-dated bookings were eating the quota.
       const [monthCount] = await query<any>(
-        "SELECT COUNT(*) as count FROM Appointment WHERE tenantId = ? AND dateTime >= DATE_FORMAT(NOW(), '%Y-%m-01')",
+        "SELECT COUNT(*) as count FROM Appointment WHERE tenantId = ? AND createdAt >= DATE_FORMAT(NOW(), '%Y-%m-01')",
         [data.tenantId],
       );
       const count = monthCount?.count || monthCount?.COUNT || 0;
@@ -905,10 +1132,27 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
     if (!modeCheck.ok) throw new Error("Invalid consultation mode");
     const consultationMode = modeCheck.mode;
     if (consultationMode === "video") {
+      // Video is clinical staff only (ROLE_PERMISSIONS.video).
+      assertCanPerform(user.role, "video");
       const { isTenantVideoEligible } = await import("./video.server");
       if (!(await isTenantVideoEligible(data.tenantId))) {
         throw new Error("Video consultation is not available on this workspace's plan.");
       }
+    }
+
+    if (Number.isNaN(dateVal.getTime())) throw new Error("Invalid appointment date");
+    // The slot picker only hides taken slots; two receptionists (or a stale
+    // list) could still book the same doctor twice. Refuse it here.
+    const conflict = await findSlotConflict({
+      tenantId: data.tenantId,
+      doctorId: docId,
+      dateVal,
+      timeSlot: tSlot,
+    });
+    if (conflict) {
+      throw new Error(
+        `This slot is already booked for ${conflict.name}. Please choose another time.`,
+      );
     }
 
     // Provisional token (MAX + 1) keeps the row valid on insert; the final,
@@ -934,7 +1178,7 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
         tSlot,
         data.whatsapp || null,
         data.appointmentType || null,
-        data.patientId || null,
+        linkedPatientId,
         tokenNo,
         consultationMode,
       ],
@@ -1407,14 +1651,74 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
 
     // Verify appointment belongs to the same tenantId
     const existingApt = await queryOne<any>(
-      "SELECT id, dateTime, tokenNo, consultationMode FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1",
+      `SELECT id, dateTime, tokenNo, consultationMode, status, doctorId, timeSlot,
+              whatsapp, appointmentType, patientId
+         FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1`,
       [data.id, user.tenantId],
     );
     if (!existingApt) throw new Error("Appointment not found or unauthorized");
 
+    // New statuses must be known ones; re-saving a row with its existing
+    // status is always allowed (data also holds e.g. restaurant "Seated").
+    if (
+      !APPOINTMENT_STATUSES.has(data.status) &&
+      data.status !== String(existingApt.status || "")
+    ) {
+      throw new Error("Invalid appointment status");
+    }
+
     const dateVal = new Date(data.dateTime);
+    if (Number.isNaN(dateVal.getTime())) throw new Error("Invalid appointment date");
     const docId = data.doctorId || null;
     const tSlot = data.timeSlot || null;
+    if (docId && docId !== existingApt.doctorId) await assertDoctorInTenant(docId, user.tenantId);
+
+    // Omitted fields keep their stored value. Callers that send a partial
+    // payload (calendar drag-and-drop, quick status change) used to null out
+    // the WhatsApp number, visit type and patient link on every save.
+    const whatsappVal =
+      data.whatsapp !== undefined ? data.whatsapp || null : (existingApt.whatsapp ?? null);
+    const appointmentTypeVal =
+      data.appointmentType !== undefined
+        ? data.appointmentType || null
+        : (existingApt.appointmentType ?? null);
+    let patientIdVal: string | null = existingApt.patientId ?? null;
+    if (data.patientId !== undefined) {
+      patientIdVal = null;
+      if (data.patientId) {
+        const p = await queryOne<any>(
+          "SELECT id FROM Patient WHERE id = ? AND tenantId = ? LIMIT 1",
+          [data.patientId, user.tenantId],
+        );
+        patientIdVal = p ? String(p.id) : (existingApt.patientId ?? null);
+      }
+    }
+
+    const prevStatus = String(existingApt.status || "");
+    const statusChanged = data.status !== prevStatus;
+    const prevDate =
+      existingApt.dateTime instanceof Date ? existingApt.dateTime : new Date(existingApt.dateTime);
+    const slotMoved =
+      docId !== (existingApt.doctorId || null) ||
+      tSlot !== (existingApt.timeSlot || null) ||
+      prevDate.getTime() !== dateVal.getTime();
+    const reactivated = RELEASED_STATUSES.has(prevStatus) && !RELEASED_STATUSES.has(data.status);
+    // Only check when the booking moves or comes back to life, so editing an
+    // existing (possibly legacy double-booked) appointment's notes still works.
+    if (!RELEASED_STATUSES.has(data.status) && (slotMoved || reactivated)) {
+      const conflict = await findSlotConflict({
+        tenantId: user.tenantId,
+        doctorId: docId,
+        dateVal,
+        timeSlot: tSlot,
+        excludeId: data.id,
+      });
+      if (conflict) {
+        throw new Error(
+          `This slot is already booked for ${conflict.name}. Please choose another time.`,
+        );
+      }
+    }
 
     // Resolve the target consultation mode (Req 3.5). When omitted, preserve the
     // existing mode rather than silently reverting to in_person.
@@ -1427,6 +1731,7 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
       consultationMode = modeCheck.mode;
     }
     if (consultationMode === "video" && prevMode !== "video") {
+      assertCanPerform(user.role, "video");
       const { isTenantVideoEligible } = await import("./video.server");
       if (!(await isTenantVideoEligible(user.tenantId))) {
         throw new Error("Video consultation is not available on this workspace's plan.");
@@ -1439,10 +1744,11 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
     // the time within a day can reshuffle the sequence. We keep a provisional
     // value for the UPDATE below (a fresh MAX+1 when the date moved, otherwise
     // the existing token) and then renumber both affected days afterwards.
-    const oldDate =
-      existingApt.dateTime instanceof Date ? existingApt.dateTime : new Date(existingApt.dateTime);
-    const oldDateStr = oldDate.toISOString().slice(0, 10);
-    const newDateStr = dateVal.toISOString().slice(0, 10);
+    const oldDate = prevDate;
+    // Local calendar days, matching DATE(dateTime). UTC slicing misread IST
+    // appointments before 05:30 as being on the previous day.
+    const oldDateStr = toLocalIsoDate(oldDate);
+    const newDateStr = toLocalIsoDate(dateVal);
     let tokenNo = existingApt.tokenNo;
 
     if (oldDateStr !== newDateStr) {
@@ -1464,9 +1770,9 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
         data.status,
         docId,
         tSlot,
-        data.whatsapp || null,
-        data.appointmentType || null,
-        data.patientId || null,
+        whatsappVal,
+        appointmentTypeVal,
+        patientIdVal,
         tokenNo,
         consultationMode,
         data.id,
@@ -1482,7 +1788,8 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
       // already carries the fresh token — so don't queue a separate correction
       // for it. A status-less change (e.g. time only) sends nothing, so in that
       // case the row is left eligible for a token correction.
-      const sendsOwnStatusMessage = ["Confirmed", "Cancelled", "Completed"].includes(data.status);
+      const sendsOwnStatusMessage =
+        statusChanged && ["Confirmed", "Cancelled", "Completed"].includes(data.status);
       const renumberOpts = sendsOwnStatusMessage ? { skipNotifyId: data.id } : {};
       await renumberDailyTokens(user.tenantId, dateVal, renumberOpts);
       if (oldDateStr !== newDateStr) {
@@ -1503,7 +1810,9 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
         Cancelled: "cancelled",
         Completed: "completed",
       };
-      const kind = kindMap[data.status];
+      // Only on an actual status change: re-saving a confirmed booking (edit
+      // notes, drag to a new time) used to re-send "confirmed" every time.
+      const kind = statusChanged ? kindMap[data.status] : undefined;
       if (kind) {
         const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
           await import("./appointment-notify");
@@ -1665,7 +1974,25 @@ export const saveClinicHoursServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_clinic_config");
+
+    if (!Array.isArray(data)) throw new Error("Invalid working hours");
+    const seen = new Set<number>();
+    const DAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    for (const h of data) {
+      const day = Number(h?.dayOfWeek);
+      if (!Number.isInteger(day) || day < 0 || day > 6 || seen.has(day)) {
+        throw new Error("Invalid or duplicate day in working hours");
+      }
+      seen.add(day);
+      if (h.isClosed) continue;
+      const open = parseTimeToMinutes(h.openTime);
+      const close = parseTimeToMinutes(h.closeTime);
+      if (open === null || close === null) throw new Error(`Enter valid times for ${DAY[day]}`);
+      // An inverted range generates zero booking slots for that day.
+      if (close <= open) throw new Error(`${DAY[day]}: closing time must be after opening time`);
+    }
 
     for (const h of data) {
       await execute(
@@ -1707,9 +2034,21 @@ export const createDepartmentServerFn = createServerFn({ method: "POST" })
     if (!name) throw new Error("Name is required");
     return name;
   })
-  .handler(async ({ data: name }) => {
+  .handler(async ({ data: rawName }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_clinic_config");
+
+    const name = String(rawName ?? "")
+      .trim()
+      .replace(/\s+/g, " ");
+    if (!name) throw new Error("Name is required");
+    if (name.length > 100) throw new Error("Department name is too long");
+    const dup = await queryOne<any>(
+      "SELECT id FROM Department WHERE tenantId = ? AND LOWER(name) = LOWER(?) LIMIT 1",
+      [user.tenantId, name],
+    );
+    if (dup) throw new Error(`A department named "${name}" already exists`);
 
     await execute("INSERT INTO Department (id, tenantId, name) VALUES (?, ?, ?)", [
       crypto.randomUUID(),
@@ -1726,7 +2065,21 @@ export const deleteDepartmentServerFn = createServerFn({ method: "POST" })
   })
   .handler(async ({ data: id }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_clinic_config");
+
+    // Doctors keep their departmentId, so deleting an in-use department left
+    // them pointing at nothing (blank department everywhere, incl. booking).
+    const [inUse] = await query<any>(
+      "SELECT COUNT(*) AS n FROM Doctor WHERE tenantId = ? AND departmentId = ?",
+      [user.tenantId, id],
+    );
+    const n = Number(inUse?.n || 0);
+    if (n > 0) {
+      throw new Error(
+        `This department has ${n} doctor${n === 1 ? "" : "s"} assigned. Move them to another department first.`,
+      );
+    }
 
     await execute("DELETE FROM Department WHERE id = ? AND tenantId = ?", [id, user.tenantId]);
     return { success: true };
@@ -1774,7 +2127,14 @@ export const saveDoctorServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_clinic_config");
+
+    const dept = await queryOne<any>(
+      "SELECT id FROM Department WHERE id = ? AND tenantId = ? LIMIT 1",
+      [data.departmentId, user.tenantId],
+    );
+    if (!dept) throw new Error("Please choose a valid department");
 
     // Plan check: Basic/Solo limit is 1 doctor profile in directory
     if (!data.id) {
@@ -1867,15 +2227,7 @@ export const saveDoctorServerFn = createServerFn({ method: "POST" })
             `INSERT INTO DoctorSchedule (id, doctorId, dayOfWeek, startTime, endTime, slotDuration, breaks)
              VALUES (?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE startTime = VALUES(startTime), endTime = VALUES(endTime)`,
-            [
-              crypto.randomUUID(),
-              id,
-              day,
-              startTime,
-              endTime,
-              30,
-              "[]",
-            ],
+            [crypto.randomUUID(), id, day, startTime, endTime, 30, "[]"],
           );
         }
       } catch (schedErr: any) {
@@ -1894,7 +2246,8 @@ export const deleteDoctorServerFn = createServerFn({ method: "POST" })
   })
   .handler(async ({ data: id }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_clinic_config");
 
     const doc = await queryOne("SELECT id FROM Doctor WHERE id = ? AND tenantId = ? LIMIT 1", [
       id,
@@ -1902,9 +2255,11 @@ export const deleteDoctorServerFn = createServerFn({ method: "POST" })
     ]);
     if (!doc) throw new Error("Doctor not found or unauthorized");
 
-    await execute("DELETE FROM Doctor WHERE id = ?", [id]);
-    await execute("DELETE FROM DoctorSchedule WHERE doctorId = ?", [id]);
-    await execute("DELETE FROM DoctorLeave WHERE doctorId = ?", [id]);
+    await withTransaction(async (conn) => {
+      await conn.query("DELETE FROM DoctorSchedule WHERE doctorId = ?", [id]);
+      await conn.query("DELETE FROM DoctorLeave WHERE doctorId = ?", [id]);
+      await conn.query("DELETE FROM Doctor WHERE id = ? AND tenantId = ?", [id, user.tenantId]);
+    });
     return { success: true };
   });
 
@@ -1919,7 +2274,8 @@ export const getDoctorScheduleServerFn = createServerFn({ method: "GET" })
   })
   .handler(async ({ data: doctorId }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    await assertDoctorInTenant(doctorId, user.tenantId);
 
     const schedules = await query<any>(
       "SELECT * FROM DoctorSchedule WHERE doctorId = ? ORDER BY dayOfWeek ASC",
@@ -1932,13 +2288,7 @@ export const getDoctorScheduleServerFn = createServerFn({ method: "GET" })
       startTime: s.startTime,
       endTime: s.endTime,
       slotDuration: s.slotDuration,
-      breaks: (() => {
-        try {
-          return s.breaks ? (typeof s.breaks === "string" ? JSON.parse(s.breaks) : s.breaks) : [];
-        } catch {
-          return [];
-        }
-      })(),
+      breaks: parseBreaksColumn(s.breaks),
     }));
   });
 
@@ -1960,25 +2310,52 @@ export const saveDoctorScheduleServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_doctor_availability");
+    // Without this, any signed-in user could wipe another clinic's schedule.
+    await assertDoctorInTenant(data.doctorId, user.tenantId);
+    if (!Array.isArray(data.schedules)) throw new Error("Invalid schedule");
 
-    await execute("DELETE FROM DoctorSchedule WHERE doctorId = ?", [data.doctorId]);
-    for (const s of data.schedules) {
-      const breaksJson = JSON.stringify(s.breaks ?? []);
-      await execute(
-        `INSERT INTO DoctorSchedule (id, doctorId, dayOfWeek, startTime, endTime, slotDuration, breaks)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          crypto.randomUUID(),
-          data.doctorId,
-          s.dayOfWeek,
-          s.startTime,
-          s.endTime,
-          s.slotDuration || 30,
-          breaksJson,
-        ],
+    const DAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const seen = new Set<number>();
+    const rows = data.schedules.map((s) => {
+      const day = Number(s?.dayOfWeek);
+      if (!Number.isInteger(day) || day < 0 || day > 6 || seen.has(day)) {
+        throw new Error("Invalid or duplicate day in schedule");
+      }
+      seen.add(day);
+      const start = parseTimeToMinutes(s.startTime);
+      const end = parseTimeToMinutes(s.endTime);
+      if (start === null || end === null) throw new Error(`Enter valid times for ${DAY[day]}`);
+      if (end <= start) throw new Error(`${DAY[day]}: end time must be after start time`);
+      const slot = Math.round(Number(s.slotDuration) || 30);
+      if (slot < 5 || slot > 240) throw new Error(`${DAY[day]}: slot length must be 5–240 minutes`);
+      // Drop malformed / inverted breaks. A well-formed break outside the
+      // working window is kept: it is harmless (removes no slot) and the
+      // editor already flags it as "outside hours".
+      const validBreaks = (Array.isArray(s.breaks) ? s.breaks : []).filter(
+        (b) => normalizeBreaks([b]).length === 1,
       );
-    }
+      return {
+        day,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        slot,
+        breaksJson: JSON.stringify(validBreaks),
+      };
+    });
+
+    // Atomic: a failure mid-way used to leave the doctor with no schedule at all.
+    await withTransaction(async (conn) => {
+      await conn.query("DELETE FROM DoctorSchedule WHERE doctorId = ?", [data.doctorId]);
+      for (const r of rows) {
+        await conn.query(
+          `INSERT INTO DoctorSchedule (id, doctorId, dayOfWeek, startTime, endTime, slotDuration, breaks)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [crypto.randomUUID(), data.doctorId, r.day, r.startTime, r.endTime, r.slot, r.breaksJson],
+        );
+      }
+    });
     return { success: true };
   });
 
@@ -1989,7 +2366,8 @@ export const getDoctorLeavesServerFn = createServerFn({ method: "GET" })
   })
   .handler(async ({ data: doctorId }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    await assertDoctorInTenant(doctorId, user.tenantId);
 
     const leaves = await query<any>(
       "SELECT * FROM DoctorLeave WHERE doctorId = ? ORDER BY leaveDate ASC",
@@ -2027,11 +2405,13 @@ export const addDoctorLeaveServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_doctor_availability");
+    await assertDoctorInTenant(data.doctorId, user.tenantId);
 
     const id = crypto.randomUUID();
     const dateStr = typeof data.leaveDate === "string" ? data.leaveDate.slice(0, 10) : "";
-    if (!dateStr) throw new Error("Invalid leave date");
+    if (!isIsoDate(dateStr)) throw new Error("Invalid leave date");
 
     await execute(
       `INSERT INTO DoctorLeave (id, doctorId, leaveDate, reason, isHoliday)
@@ -2061,12 +2441,14 @@ export const addDoctorLeavesBulkServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_doctor_availability");
+    await assertDoctorInTenant(data.doctorId, user.tenantId);
 
     let count = 0;
     for (const raw of data.leaveDates) {
       const dateStr = typeof raw === "string" ? raw.slice(0, 10) : "";
-      if (!dateStr) continue;
+      if (!isIsoDate(dateStr)) continue;
       const id = crypto.randomUUID();
       await execute(
         `INSERT INTO DoctorLeave (id, doctorId, leaveDate, reason, isHoliday)
@@ -2094,9 +2476,17 @@ export const deleteDoctorLeaveServerFn = createServerFn({ method: "POST" })
   })
   .handler(async ({ data: id }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_doctor_availability");
 
-    await execute("DELETE FROM DoctorLeave WHERE id = ?", [id]);
+    // Scoped to the caller's doctors (COLLATE: these id columns can carry
+    // mismatched collations in this database, see account-lifecycle.ts).
+    await execute(
+      `DELETE FROM DoctorLeave WHERE id = ?
+         AND doctorId COLLATE utf8mb4_unicode_ci IN
+             (SELECT id COLLATE utf8mb4_unicode_ci FROM Doctor WHERE tenantId = ?)`,
+      [id, user.tenantId],
+    );
     return { success: true };
   });
 
@@ -2109,11 +2499,18 @@ export const deleteDoctorLeavesBulkServerFn = createServerFn({ method: "POST" })
   })
   .handler(async ({ data: ids }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_doctor_availability");
 
     const placeholders = ids.map(() => "?").join(",");
-    await execute(`DELETE FROM DoctorLeave WHERE id IN (${placeholders})`, ids);
-    return { success: true, count: ids.length };
+    const res: any = await execute(
+      `DELETE FROM DoctorLeave WHERE id IN (${placeholders})
+         AND doctorId COLLATE utf8mb4_unicode_ci IN
+             (SELECT id COLLATE utf8mb4_unicode_ci FROM Doctor WHERE tenantId = ?)`,
+      [...ids, user.tenantId],
+    );
+    const affected = Number(res?.affectedRows ?? ids.length);
+    return { success: true, count: affected };
   });
 
 // ──────────────────────────────────────────────
@@ -2122,11 +2519,7 @@ export const deleteDoctorLeavesBulkServerFn = createServerFn({ method: "POST" })
 
 export const getDoctorSmartAnalysisServerFn = createServerFn({ method: "POST" })
   .validator(
-    (data: {
-      doctorId: string;
-      period?: "day" | "week" | "month" | "year";
-      dateStr?: string;
-    }) => {
+    (data: { doctorId: string; period?: "day" | "week" | "month" | "year"; dateStr?: string }) => {
       if (!data.doctorId) throw new Error("Doctor ID is required");
       return data;
     },
@@ -2146,26 +2539,32 @@ export const getDoctorSmartAnalysisServerFn = createServerFn({ method: "POST" })
   });
 
 export const sendDoctorMonthlyReportEmailServerFn = createServerFn({ method: "POST" })
-  .validator(
-    (data: {
-      doctorId: string;
-      monthDateStr?: string;
-      overrideRecipient?: string;
-    }) => {
-      if (!data.doctorId) throw new Error("Doctor ID is required");
-      return data;
-    },
-  )
+  .validator((data: { doctorId: string; monthDateStr?: string; overrideRecipient?: string }) => {
+    if (!data.doctorId) throw new Error("Doctor ID is required");
+    return data;
+  })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+
+    await assertDoctorInTenant(data.doctorId, user.tenantId);
+    // The report contains patient names, phones and emails. Only the owner may
+    // redirect it to an arbitrary address; everyone else sends to the doctor /
+    // clinic on file (the dashboard never passes an override anyway).
+    const override =
+      user.role === "admin" && data.overrideRecipient
+        ? normalizeEmail(data.overrideRecipient)
+        : undefined;
+    if (override !== undefined && !isPlausibleEmail(override)) {
+      throw new Error("Please provide a valid recipient email.");
+    }
 
     const { sendDoctorMonthlyReportEmail } = await import("./doctor-report.server");
     const res = await sendDoctorMonthlyReportEmail({
       tenantId: user.tenantId,
       doctorId: data.doctorId,
       monthDateStr: data.monthDateStr,
-      overrideRecipient: data.overrideRecipient,
+      overrideRecipient: override,
     });
     return res;
   });
@@ -2321,7 +2720,14 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
   )
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_doctor_availability");
+    // Front desk records the leave AND notifies the booked patients. Messages go
+    // through the clinic's own session (enqueueWA by tenantId) — the number the
+    // owner connected — so reception needs no WhatsApp admin rights for this.
+    const canSendWA = canPerform(user.role, "send_patient_notices");
+    data.leaveDates = data.leaveDates.map((d) => String(d).slice(0, 10)).filter(isIsoDate);
+    if (data.leaveDates.length === 0) throw new Error("Please select valid leave dates");
 
     // 1. Fetch Doctor details
     const doc = await queryOne<any>(
@@ -2371,11 +2777,11 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
       [user.tenantId, data.doctorId, ...data.leaveDates],
     );
 
-    // Target appointments based on optional selection
-    const targetAppts =
-      data.selectedAppointmentIds && data.selectedAppointmentIds.length > 0
-        ? appts.filter((a: any) => data.selectedAppointmentIds!.includes(a.id))
-        : appts;
+    // An explicit list (even an empty one) is honoured. Empty used to mean
+    // "everyone", so unticking every patient messaged and flagged all of them.
+    const targetAppts = Array.isArray(data.selectedAppointmentIds)
+      ? appts.filter((a: any) => data.selectedAppointmentIds!.includes(a.id))
+      : appts;
 
     // 5. Send personalized WhatsApp messages
     const template =
@@ -2416,7 +2822,7 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
 
       let sendStatus: "sent" | "failed" | "skipped" = "skipped";
 
-      if (apt.phone) {
+      if (apt.phone && canSendWA) {
         try {
           const res = await enqueueWA(user.tenantId, apt.phone, personalizedMessage);
           sendStatus = res.success ? "sent" : "failed";
@@ -2454,6 +2860,7 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
       leavesCreated,
       affectedAppointmentsCount: appts.length,
       notifiedPatientsCount: notifiedPatients.filter((p) => p.status === "sent").length,
+      whatsappSkippedForRole: !canSendWA,
       patients: notifiedPatients,
     };
   });
@@ -2465,7 +2872,8 @@ export const getDoctorScheduledLeavesServerFn = createServerFn({ method: "POST" 
   })
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    await assertDoctorInTenant(data.doctorId, user.tenantId);
 
     const leaves = await query<any>(
       `SELECT dl.id, dl.doctorId, dl.leaveDate, dl.reason, dl.isHoliday,
@@ -2585,7 +2993,11 @@ export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn(
   )
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_doctor_availability");
+    const canSendWA = canPerform(user.role, "send_patient_notices");
+    data.leaveDates = data.leaveDates.map((d) => String(d).slice(0, 10)).filter(isIsoDate);
+    if (data.leaveDates.length === 0) throw new Error("Please select valid leave dates");
 
     // 1. Fetch Doctor details
     const doc = await queryOne<any>(
@@ -2621,10 +3033,10 @@ export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn(
       [user.tenantId, data.doctorId, ...data.leaveDates],
     );
 
-    const targetAppts =
-      data.selectedAppointmentIds && data.selectedAppointmentIds.length > 0
-        ? appts.filter((a: any) => data.selectedAppointmentIds!.includes(a.id))
-        : appts;
+    // Explicit list honoured even when empty (empty used to mean "everyone").
+    const targetAppts = Array.isArray(data.selectedAppointmentIds)
+      ? appts.filter((a: any) => data.selectedAppointmentIds!.includes(a.id))
+      : appts;
 
     // 5. Update appointment status back to 'Confirmed'
     for (const apt of targetAppts) {
@@ -2651,7 +3063,7 @@ export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn(
       status: "sent" | "failed" | "skipped";
     }> = [];
 
-    if (data.sendWhatsAppNotice !== false && targetAppts.length > 0) {
+    if (canSendWA && data.sendWhatsAppNotice !== false && targetAppts.length > 0) {
       const template =
         data.customMessage ||
         `Hello *{{patient_name}}*,\n\nGood news! We are pleased to inform you that *Dr. ${doc.name}* at *${clinicName}* has resumed availability and will be consulting on *{{appointment_date}}*.\n\nYour scheduled appointment at *{{appointment_time}}* has been *reinstated and confirmed*. You do not need to reschedule, and your slot is reserved for you.\n\nWe look forward to seeing you. If you have any questions, feel free to reply directly to this WhatsApp message.\n\nWarm regards,\n*${clinicName}*`;
@@ -2706,6 +3118,7 @@ export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn(
       leavesCancelledCount: data.leaveDates.length,
       reinstatedAppointmentsCount: targetAppts.length,
       notifiedPatientsCount: notifiedPatients.filter((p) => p.status === "sent").length,
+      whatsappSkippedForRole: !canSendWA,
       patients: notifiedPatients,
     };
   });
@@ -2726,7 +3139,9 @@ export const getWhatsAppStatusServerFn = createServerFn({ method: "GET" }).handl
   let status = await getWAStatus(user.tenantId);
   // Auto-trigger initialization only if DISCONNECTED and not requested in the last 45s.
   // This prevents destroying and recreating sessions on rapid 3-second frontend poll intervals.
-  if (status.state === "DISCONNECTED") {
+  // Only for accounts that may operate WhatsApp: a view-only receptionist's
+  // poll used to restart a session the owner had deliberately disconnected.
+  if (status.state === "DISCONNECTED" && canPerform(user.role, "whatsapp_operate")) {
     const now = Date.now();
     const lastInit = lastAutoInitMap.get(user.tenantId) || 0;
     if (now - lastInit > 45000) {
@@ -2932,11 +3347,15 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
           let startTimeStr: string | null = null;
           let endTimeStr: string | null = null;
           let duration = 30;
+          // Breaks (lunch etc.) configured for this weekday. Slots that overlap
+          // one must not be offered.
+          let breaks: NormalizedBreak[] = [];
 
           if (docSchedule) {
             startTimeStr = docSchedule.startTime;
             endTimeStr = docSchedule.endTime;
             duration = docSchedule.slotDuration || 30;
+            breaks = resolveBreaks(docSchedule.breaks);
           } else if (clinicHours && clinicHours.openTime && clinicHours.closeTime) {
             startTimeStr = clinicHours.openTime;
             endTimeStr = clinicHours.closeTime;
@@ -2976,8 +3395,12 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
                 hour12: true,
               });
 
-              // Only include if not already booked
-              if (!bookedSlots.includes(slotTimeStr)) {
+              // Only include if not already booked and not inside a break
+              const slotStartMin = temp.getHours() * 60 + temp.getMinutes();
+              if (
+                !bookedSlots.includes(slotTimeStr) &&
+                !overlapsBreak(slotStartMin, duration, breaks)
+              ) {
                 slots.push(slotTimeStr);
               }
 
@@ -3003,7 +3426,9 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
 export const getDashboardStatsServerFn = createServerFn({ method: "GET" }).handler(async () => {
   const user = await verifySession();
   if (!user) throw new Error("Unauthorized");
-  const todayStr = new Date().toISOString().split("T")[0];
+  // Local calendar date (the server runs in the clinic's timezone, matching
+  // DATE(dateTime)); toISOString() gave yesterday until 05:30 IST.
+  const todayStr = toLocalIsoDate(new Date());
   const isDoctor = user.role === "doctor" && user.doctorId;
 
   let todayAppointments: any[] = [];
@@ -3321,15 +3746,22 @@ export const createPatientServerFn = createServerFn({ method: "POST" })
       }
     }
 
-    const [lastP] = await query<any>(
-      "SELECT patientNo FROM Patient WHERE tenantId = ? ORDER BY createdAt DESC LIMIT 1",
+    const name = String(data.name || "").trim();
+    if (!name) throw new Error("Patient name is required");
+    if (data.age !== undefined && data.age !== null) {
+      const age = Number(data.age);
+      if (!Number.isFinite(age) || age < 0 || age > 150)
+        throw new Error("Please enter a valid age");
+    }
+
+    // Next number = numeric MAX + 1. "Newest by createdAt" (second resolution)
+    // picked an arbitrary row on ties and re-issued a deleted newest number.
+    const [maxRow] = await query<any>(
+      `SELECT MAX(CAST(SUBSTRING(patientNo, 3) AS UNSIGNED)) AS maxNo
+         FROM Patient WHERE tenantId = ? AND patientNo LIKE 'P-%'`,
       [user.tenantId],
     );
-    let nextNum = 1;
-    if (lastP?.patientNo) {
-      const m = String(lastP.patientNo).match(/P-(\d+)/);
-      if (m) nextNum = parseInt(m[1]) + 1;
-    }
+    const nextNum = (Number(maxRow?.maxNo) || 0) + 1;
     const patientNo = `P-${String(nextNum).padStart(3, "0")}`;
     const cryptoMod = await import("crypto");
     const id = cryptoMod.randomUUID();
@@ -3339,7 +3771,7 @@ export const createPatientServerFn = createServerFn({ method: "POST" })
         id,
         user.tenantId,
         patientNo,
-        data.name,
+        name,
         data.age || null,
         data.gender || null,
         data.phone || null,
@@ -3381,19 +3813,26 @@ export const updatePatientServerFn = createServerFn({ method: "POST" })
       [data.id, user.tenantId],
     );
     if (!existing) throw new Error("Patient not found");
+    // `undefined` = not sent, keep. `null` / "" = cleared by the user. The old
+    // `??` treated null as "not sent", so a field could never be emptied.
+    const pick = (value: any, current: any) =>
+      value === undefined ? current : value === "" ? null : value;
+    if (data.name !== undefined && !String(data.name).trim()) {
+      throw new Error("Patient name is required");
+    }
     await execute(
       `UPDATE Patient SET name=?,age=?,gender=?,phone=?,email=?,address=?,chiefComplaint=?,notes=?,dob=?,bloodGroup=? WHERE id=? AND tenantId=?`,
       [
-        data.name ?? existing.name,
-        data.age ?? existing.age,
-        data.gender ?? existing.gender,
-        data.phone ?? existing.phone,
-        data.email ?? existing.email,
-        data.address ?? existing.address,
-        data.chiefComplaint ?? existing.chiefComplaint,
-        data.notes ?? existing.notes,
-        data.dob ?? existing.dob,
-        data.bloodGroup ?? existing.bloodGroup,
+        data.name !== undefined ? String(data.name).trim() : existing.name,
+        pick(data.age, existing.age),
+        pick(data.gender, existing.gender),
+        pick(data.phone, existing.phone),
+        pick(data.email, existing.email),
+        pick(data.address, existing.address),
+        pick(data.chiefComplaint, existing.chiefComplaint),
+        pick(data.notes, existing.notes),
+        pick(data.dob, existing.dob),
+        pick(data.bloodGroup, existing.bloodGroup),
         data.id,
         user.tenantId,
       ],
@@ -3408,9 +3847,29 @@ export const deletePatientServerFn = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
-    await execute("DELETE FROM SoapNote WHERE patientId = ?", [data.id]);
-    await execute("DELETE FROM Patient WHERE id = ? AND tenantId = ?", [data.id, user.tenantId]);
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    // Ownership first. The SOAP-note delete used to run unscoped BEFORE this,
+    // so another clinic's patient id wiped that clinic's notes.
+    const owned = await queryOne<any>(
+      "SELECT id FROM Patient WHERE id = ? AND tenantId = ? LIMIT 1",
+      [data.id, user.tenantId],
+    );
+    if (!owned) throw new Error("Patient not found or unauthorized");
+    await withTransaction(async (conn) => {
+      await conn.query("DELETE FROM SoapNote WHERE patientId = ? AND tenantId = ?", [
+        data.id,
+        user.tenantId,
+      ]);
+      // Prescriptions were never deleted and were left orphaned.
+      await conn.query("DELETE FROM Prescription WHERE patientId = ? AND tenantId = ?", [
+        data.id,
+        user.tenantId,
+      ]);
+      await conn.query("DELETE FROM Patient WHERE id = ? AND tenantId = ?", [
+        data.id,
+        user.tenantId,
+      ]);
+    });
     return { success: true };
   });
 
@@ -3499,8 +3958,10 @@ export const getPatientChartServerFn = createServerFn({ method: "GET" })
     }));
 
     const isDoctor = user.role === "doctor" && user.doctorId;
-    let aptSql = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE (a.patientId = ? OR a.id = ? OR (a.name = ? AND a.tenantId = ?))`;
-    const aptParams = [data.patientId, data.patientId, patient.name, user.tenantId];
+    // tenantId must bind every branch. It used to bind only the name match, so
+    // a patientId / appointment id returned other clinics' appointments.
+    let aptSql = `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id WHERE a.tenantId = ? AND (a.patientId = ? OR a.id = ? OR a.name = ?)`;
+    const aptParams = [user.tenantId, data.patientId, data.patientId, patient.name];
     if (isDoctor) {
       aptSql += ` AND a.doctorId = ?`;
       aptParams.push(user.doctorId);
@@ -3523,6 +3984,7 @@ export const generateSoapNoteServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "clinical_records");
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -3608,7 +4070,16 @@ export const saveSoapNoteServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "clinical_records");
+    await assertPatientRefInTenant(data.patientId, user.tenantId);
+    if (data.appointmentId) {
+      const apt = await queryOne<any>(
+        "SELECT id FROM Appointment WHERE id = ? AND tenantId = ? LIMIT 1",
+        [data.appointmentId, user.tenantId],
+      );
+      if (!apt) throw new Error("Appointment not found or unauthorized");
+    }
     const cryptoMod = await import("crypto");
     const id = cryptoMod.randomUUID();
     await execute(
@@ -3641,6 +4112,7 @@ export const generatePrescriptionServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "clinical_records");
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -3732,7 +4204,6 @@ function cleanAndExtractJson(content: string): any {
   return JSON.parse(cleaned);
 }
 
-
 export const aiAssistConsultationServerFn = createServerFn({ method: "POST" })
   .validator((data: { chiefComplaint: string; vitals?: string }) => {
     if (!data.chiefComplaint) throw new Error("Chief complaint is required for AI Assist.");
@@ -3741,6 +4212,7 @@ export const aiAssistConsultationServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "clinical_records");
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -3817,7 +4289,10 @@ Only return a valid JSON object matching this structure. Do not wrap the JSON in
       }
     }
 
-    throw new Error(lastError?.message || "Failed to generate AI recommendations. Please check API credits or try again.");
+    throw new Error(
+      lastError?.message ||
+        "Failed to generate AI recommendations. Please check API credits or try again.",
+    );
   });
 
 export const voiceRxAnalyzeServerFn = createServerFn({ method: "POST" })
@@ -3828,6 +4303,7 @@ export const voiceRxAnalyzeServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "clinical_records");
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -3917,7 +4393,9 @@ Only return a valid JSON object matching this structure. Do not wrap the JSON in
       }
     }
 
-    throw new Error(lastError?.message || "Failed to analyze transcript. Please check API credits or try again.");
+    throw new Error(
+      lastError?.message || "Failed to analyze transcript. Please check API credits or try again.",
+    );
   });
 
 export const sendPrescriptionEmailServerFn = createServerFn({ method: "POST" })
@@ -3943,13 +4421,42 @@ export const sendPrescriptionEmailServerFn = createServerFn({ method: "POST" })
       return data;
     },
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data: input }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "clinical_records");
+
+    const recipient = normalizeEmail(input.patientEmail);
+    if (!isPlausibleEmail(recipient)) throw new Error("Please provide a valid patient email.");
+
+    // Every client-supplied field is escaped before it reaches the HTML body:
+    // unescaped, this was a branded open mail relay for arbitrary HTML.
+    const data = {
+      ...input,
+      patientName: escapeHtml(input.patientName),
+      doctorName: input.doctorName ? escapeHtml(input.doctorName) : "",
+      chiefComplaint: input.chiefComplaint ? escapeHtml(input.chiefComplaint) : "",
+      diagnosis: input.diagnosis ? escapeHtml(input.diagnosis) : "",
+      advice: input.advice ? escapeHtml(input.advice).replace(/\n/g, "<br/>") : "",
+      medications: (Array.isArray(input.medications) ? input.medications : []).map((m) => ({
+        name: escapeHtml(m?.name),
+        dosage: escapeHtml(m?.dosage),
+        frequency: escapeHtml(m?.frequency),
+        route: escapeHtml(m?.route),
+        duration: escapeHtml(m?.duration),
+        instructions: escapeHtml(m?.instructions),
+      })),
+    };
 
     const { transporter } = await import("./email");
-    const clinicName = data.clinicName || user.clinicName || "BookMyTime Healthcare";
-    const doctorName = data.doctorName || user.name || "Attending Physician";
+    // The sender name comes from the workspace, never from the request.
+    const profileRow = await queryOne<any>(
+      "SELECT clinicName FROM ClinicProfile WHERE tenantId = ? LIMIT 1",
+      [user.tenantId],
+    );
+    const rawClinicName = profileRow?.clinicName || user.clinicName || "BookMyTime Healthcare";
+    const clinicName = escapeHtml(rawClinicName);
+    const doctorName = data.doctorName || escapeHtml(user.name) || "Attending Physician";
 
     const medsRows =
       data.medications && data.medications.length > 0
@@ -4048,11 +4555,15 @@ export const sendPrescriptionEmailServerFn = createServerFn({ method: "POST" })
       </div>
     `;
 
+    // Strip characters that could break out of the quoted display name.
+    const fromName = String(rawClinicName)
+      .replace(/["\r\n<>]/g, "")
+      .slice(0, 80);
     await transporter.sendMail({
-      from: `"${clinicName}" <${process.env.EMAIL_USERNAME}>`,
-      to: data.patientEmail,
+      from: `"${fromName}" <${process.env.EMAIL_USERNAME}>`,
+      to: recipient,
       bcc: process.env.EMAIL_BCC || undefined,
-      subject: `Your Prescription & Consultation Summary — ${clinicName}`,
+      subject: `Your Prescription & Consultation Summary — ${fromName}`,
       html: htmlContent,
     });
 
@@ -4066,10 +4577,12 @@ export const savePrescriptionServerFn = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "clinical_records");
+    await assertPatientRefInTenant(data.patientId, user.tenantId);
     const cryptoMod = await import("crypto");
     const id = cryptoMod.randomUUID();
-    const medsJson = JSON.stringify(data.medications);
+    const medsJson = JSON.stringify(Array.isArray(data.medications) ? data.medications : []);
     await execute(
       `INSERT INTO Prescription (id, tenantId, patientId, medications, notes, createdAt) VALUES (?, ?, ?, ?, ?, NOW())`,
       [id, user.tenantId, data.patientId, medsJson, data.notes || null],
@@ -4079,12 +4592,21 @@ export const savePrescriptionServerFn = createServerFn({ method: "POST" })
 
 export const getAppointmentsPagedServerFn = createServerFn({ method: "GET" })
   .validator(
-    (data: { search?: string; status?: string; dateFilter?: string; page?: number }) => data,
+    (data: {
+      search?: string;
+      status?: string;
+      dateFilter?: string;
+      page?: number;
+      sortBy?: string;
+      sortDir?: string;
+      /** A specific calendar day, "YYYY-MM-DD". Overrides `dateFilter`. */
+      date?: string;
+    }) => data,
   )
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
-    const page = data.page || 1;
+    const page = Math.max(1, Math.floor(Number(data.page) || 1));
     const pageSize = 20;
     const offset = (page - 1) * pageSize;
     const conditions: string[] = ["a.tenantId = ?"];
@@ -4096,35 +4618,50 @@ export const getAppointmentsPagedServerFn = createServerFn({ method: "GET" })
       params.push(user.doctorId);
     }
 
-    if (data.search) {
-      conditions.push("(a.name LIKE ? OR a.email LIKE ? OR a.phone LIKE ?)");
-      const s = `%${data.search}%`;
-      params.push(s, s, s);
-    }
+    // Search across name, email, phone, complaint, doctor and token. Every
+    // whitespace-separated term must match, and all values stay bound.
+    const search = buildAppointmentSearch(data.search);
+    conditions.push(...search.clauses);
+    params.push(...search.params);
+
     if (data.status && data.status !== "All") {
       conditions.push("a.status = ?");
       params.push(data.status);
     }
-    if (data.dateFilter === "today") conditions.push("DATE(a.dateTime) = CURDATE()");
-    else if (data.dateFilter === "week")
-      conditions.push("a.dateTime >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
-    else if (data.dateFilter === "month")
-      conditions.push("a.dateTime >= DATE_SUB(NOW(), INTERVAL 30 DAY)");
+
+    if (isIsoDate(data.date)) {
+      // The client sends its own local date, so "today" is the clinic's today
+      // rather than the server's CURDATE().
+      conditions.push("DATE(a.dateTime) = ?");
+      params.push(data.date);
+    } else {
+      const dateClause = buildAppointmentDateFilter(data.dateFilter);
+      if (dateClause) conditions.push(dateClause);
+    }
+
+    // The search predicate can reference `d.name`, so the JOIN has to be
+    // present in the COUNT query too — otherwise searching by doctor threw.
+    const from = "FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id";
     const where = `WHERE ${conditions.join(" AND ")}`;
+    const orderBy = buildAppointmentOrderBy(data.sortBy, data.sortDir);
+
     const appointments = await query<any>(
-      `SELECT a.*, d.name as doctorName FROM Appointment a LEFT JOIN Doctor d ON a.doctorId = d.id ${where} ORDER BY a.dateTime DESC LIMIT ? OFFSET ?`,
+      `SELECT a.*, d.name as doctorName ${from} ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
       [...params, pageSize, offset],
     );
-    const [countRow] = await query<any>(
-      `SELECT COUNT(*) as total FROM Appointment a ${where}`,
-      params,
-    );
+    const [countRow] = await query<any>(`SELECT COUNT(*) as total ${from} ${where}`, params);
 
     let summaryQuery = `SELECT COUNT(*) as total, SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending, SUM(CASE WHEN status='Confirmed' THEN 1 ELSE 0 END) as confirmed, SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed, SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) as cancelled FROM Appointment WHERE tenantId = ?`;
     const summaryParams = [user.tenantId];
     if (isDoctor) {
       summaryQuery += " AND doctorId = ?";
       summaryParams.push(user.doctorId);
+    }
+    // Scope the stat cards to the selected day (but not to search/status, so
+    // the per-status counts stay meaningful while filtering).
+    if (isIsoDate(data.date)) {
+      summaryQuery += " AND DATE(dateTime) = ?";
+      summaryParams.push(data.date);
     }
     const [summary] = await query<any>(summaryQuery, summaryParams);
 
@@ -4150,12 +4687,74 @@ export const getAppointmentsPagedServerFn = createServerFn({ method: "GET" })
 export const getSubUsersServerFn = createServerFn({ method: "GET" }).handler(async () => {
   const user = await verifySession();
   if (!user || !user.tenantId) throw new Error("Unauthorized");
+  assertCanPerform(user.role, "manage_users");
   const rows = await query<any>(
     "SELECT id, name, email, phone, role, doctorId, isActive, createdAt FROM SubUser WHERE tenantId = ? ORDER BY createdAt DESC",
     [user.tenantId],
   );
   return rows;
 });
+
+/**
+ * Find any existing account that already owns `email` as a login.
+ *
+ * Checked globally because login resolves usernames across every tenant (see
+ * account-email.ts). Precedence puts the caller's own workspace first so the
+ * most actionable message wins. Comparison is trim + case-insensitive; the old
+ * check used exact equality, so "Dr.Smith@Clinic.com" slipped past an existing
+ * "dr.smith@clinic.com" in another tenant (or the owner account) entirely.
+ */
+async function findLoginEmailConflict(
+  tenantId: string,
+  email: string,
+): Promise<EmailConflictKind | null> {
+  const sameTenantSub = await queryOne<any>(
+    "SELECT id FROM SubUser WHERE tenantId = ? AND LOWER(TRIM(email)) = ? LIMIT 1",
+    [tenantId, email],
+  );
+  if (sameTenantSub) return "same_workspace_sub_user";
+
+  const owner = await queryOne<any>("SELECT id FROM User WHERE LOWER(TRIM(email)) = ? LIMIT 1", [
+    email,
+  ]);
+  if (owner) return "owner_account";
+
+  const otherSub = await queryOne<any>(
+    "SELECT id FROM SubUser WHERE LOWER(TRIM(email)) = ? LIMIT 1",
+    [email],
+  );
+  if (otherSub) return "other_sub_user";
+
+  const location = await queryOne<any>(
+    "SELECT id FROM Location WHERE LOWER(TRIM(email)) = ? LIMIT 1",
+    [email],
+  );
+  if (location) return "location_account";
+
+  return null;
+}
+
+/**
+ * Live availability check for the "Create New Sub-User" modal. Same auth as
+ * creating a sub-user. Advisory only — createSubUserServerFn re-checks, so a
+ * stale "available" can never produce a duplicate.
+ */
+export const checkSubUserEmailServerFn = createServerFn({ method: "POST" })
+  .validator((data: { email: string }) => data)
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_users");
+
+    const email = normalizeEmail(data?.email);
+    if (!email || !isPlausibleEmail(email)) {
+      return { available: false, message: "Enter a valid email address." };
+    }
+    const conflict = await findLoginEmailConflict(user.tenantId, email);
+    return conflict
+      ? { available: false, message: emailConflictMessage(conflict) }
+      : { available: true, message: "" };
+  });
 
 export const createSubUserServerFn = createServerFn({ method: "POST" })
   .validator(
@@ -4175,6 +4774,20 @@ export const createSubUserServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    // Only the owner mints staff logins. Previously any signed-in staff member
+    // could create accounts — including a doctor login with a password of their
+    // choosing, an escalation path into clinical features.
+    assertCanPerform(user.role, "manage_users");
+    if (data.role !== "reception" && data.role !== "doctor") throw new Error("Invalid role");
+    if (String(data.password).length < 8) throw new Error("Password must be at least 8 characters");
+    if (data.doctorId) await assertDoctorInTenant(data.doctorId, user.tenantId);
+
+    // Email uniqueness first: it's about what the admin just typed, so it
+    // should win over a plan-limit message.
+    const email = normalizeEmail(data.email);
+    if (!isPlausibleEmail(email)) throw new Error("Enter a valid email address.");
+    const conflict = await findLoginEmailConflict(user.tenantId, email);
+    if (conflict) throw new Error(emailConflictMessage(conflict));
 
     // Plan check for user limits
     const tenant = await queryOne<any>(
@@ -4211,28 +4824,32 @@ export const createSubUserServerFn = createServerFn({ method: "POST" })
       }
     }
 
-    const existing = await queryOne<any>(
-      "SELECT id FROM SubUser WHERE tenantId = ? AND email = ? LIMIT 1",
-      [user.tenantId, data.email],
-    );
-    if (existing) throw new Error("A sub-user with this email already exists in your clinic");
-
     const hashed = await bcrypt.hash(data.password, 10);
     const id = crypto.randomUUID();
-    await execute(
-      `INSERT INTO SubUser (id, tenantId, name, email, phone, role, doctorId, password, isActive)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-      [
-        id,
-        user.tenantId,
-        data.name,
-        data.email,
-        data.phone || null,
-        data.role,
-        data.doctorId || null,
-        hashed,
-      ],
-    );
+    try {
+      await execute(
+        `INSERT INTO SubUser (id, tenantId, name, email, phone, role, doctorId, password, isActive)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [
+          id,
+          user.tenantId,
+          data.name.trim(),
+          email, // stored normalized so future comparisons stay exact
+          data.phone || null,
+          data.role,
+          data.doctorId || null,
+          hashed,
+        ],
+      );
+    } catch (err) {
+      // Two admins submitting the same address at once: the UNIQUE
+      // (tenantId, email) key rejects the loser. Surface the friendly message
+      // instead of a raw "Duplicate entry" driver error.
+      if (isDuplicateKeyError(err)) {
+        throw new Error(emailConflictMessage("same_workspace_sub_user"));
+      }
+      throw err;
+    }
     return { success: true, id };
   });
 
@@ -4254,6 +4871,21 @@ export const updateSubUserServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    // Owner only: staff could reset a doctor's password and sign in as them,
+    // deactivate colleagues, or promote themselves to doctor.
+    assertCanPerform(user.role, "manage_users");
+    if (data.role !== undefined && data.role !== "reception" && data.role !== "doctor") {
+      throw new Error("Invalid role");
+    }
+    if (data.password && String(data.password).length < 8) {
+      throw new Error("Password must be at least 8 characters");
+    }
+    if (data.doctorId) await assertDoctorInTenant(data.doctorId, user.tenantId);
+    const target = await queryOne<any>(
+      "SELECT id FROM SubUser WHERE id = ? AND tenantId = ? LIMIT 1",
+      [data.id, user.tenantId],
+    );
+    if (!target) throw new Error("User not found or unauthorized");
 
     // Plan check for role updates
     if (data.role) {
@@ -4342,6 +4974,14 @@ export const deleteSubUserServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data: id }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "manage_users");
+    // Ownership first: the session delete used to run unscoped, so any id
+    // force-logged-out another clinic's staff member.
+    const target = await queryOne<any>(
+      "SELECT id FROM SubUser WHERE id = ? AND tenantId = ? LIMIT 1",
+      [id, user.tenantId],
+    );
+    if (!target) throw new Error("User not found or unauthorized");
     await execute("DELETE FROM SubUserSession WHERE subUserId = ?", [id]);
     await execute("DELETE FROM SubUser WHERE id = ? AND tenantId = ?", [id, user.tenantId]);
     return { success: true };
@@ -4371,6 +5011,7 @@ export const subUserLoginServerFn = createServerFn({ method: "POST" })
       [crypto.randomUUID(), subUser.id, token, expiresAt],
     );
 
+    await endOtherSessions("sub");
     const { setCookie } = await import("@tanstack/react-start/server");
     setCookie("sub_session_token", token, {
       httpOnly: true,
@@ -4407,6 +5048,8 @@ function getLocationPlanTier(plan: string | null | undefined): "basic" | "premiu
 export const getLocationsServerFn = createServerFn({ method: "GET" }).handler(async () => {
   const user = await verifySession();
   if (!user || !user.tenantId) throw new Error("Unauthorized");
+  // Exposes branch login emails; owner and branches only.
+  assertCanPerform(user.role, "view_locations");
   const rows = await query<any>(
     `SELECT id, name, address, city, state, pincode, phone, email, managerName, isActive, createdAt
        FROM Location WHERE tenantId = ? ORDER BY createdAt DESC`,
@@ -4640,6 +5283,7 @@ export const saveWATemplateServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
 
     const id = data.id || crypto.randomUUID();
     const ctaJson = data.ctaButtons ? JSON.stringify(data.ctaButtons) : null;
@@ -4697,6 +5341,7 @@ export const deleteWATemplateServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data: id }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
     await execute("DELETE FROM WATemplate WHERE id = ? AND tenantId = ?", [id, user.tenantId]);
     return { success: true };
   });
@@ -4729,6 +5374,7 @@ export const createWACampaignServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
 
     const campaignId = crypto.randomUUID();
 
@@ -4765,6 +5411,7 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data: campaignId }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
 
     const campaign = await queryOne<any>("SELECT * FROM WACampaign WHERE id = ? AND tenantId = ?", [
       campaignId,
@@ -4873,6 +5520,7 @@ export const pauseWACampaignServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data: campaignId }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
 
     await pauseWACampaign(user.tenantId, campaignId);
     return { success: true };
@@ -4883,6 +5531,7 @@ export const deleteWACampaignServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data: campaignId }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
 
     try {
       await pauseWACampaign(user.tenantId, campaignId);
@@ -4941,6 +5590,7 @@ export const saveWAAutoReplyServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
 
     const id = data.id || crypto.randomUUID();
     if (data.id) {
@@ -4980,6 +5630,7 @@ export const deleteWAAutoReplyServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data: id }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
     await execute("DELETE FROM WAAutoReply WHERE id = ? AND tenantId = ?", [id, user.tenantId]);
     return { success: true };
   });
@@ -4991,6 +5642,7 @@ export const sendBulkWAServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
 
     const formattedMessages = data.numbers.map((num) => ({
       recipientId: crypto.randomUUID(),
@@ -5035,6 +5687,7 @@ export const uploadWATemplateHeaderImageServerFn = createServerFn({ method: "POS
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
 
     const cloudinary = await import("cloudinary");
     const cloud = cloudinary.v2;
@@ -5060,6 +5713,7 @@ export const generateWATemplateServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -5203,6 +5857,7 @@ export const toggleWAAIReplyServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
+    assertCanPerform(user.role, "whatsapp_operate");
     // Upsert the WhatsAppConfig row
     const existing = await queryOne<any>(
       "SELECT id FROM WhatsAppConfig WHERE tenantId = ? LIMIT 1",

@@ -77,24 +77,12 @@ import {
   Upload,
   MessageCircle,
   FileSpreadsheet,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  BarChart,
-  Bar,
-  Cell,
-  PieChart,
-  Pie,
-} from "recharts";
 import {
   getCurrentUserServerFn,
   logoutServerFn,
@@ -148,6 +136,7 @@ import {
   deleteSubLocationBookingServerFn,
   getSubUsersServerFn,
   createSubUserServerFn,
+  checkSubUserEmailServerFn,
   updateSubUserServerFn,
   deleteSubUserServerFn,
   generateSoapNoteServerFn,
@@ -165,8 +154,35 @@ import MultiLocationSettings from "../../components/settings/MultiLocationSettin
 import AccountDangerZone from "../../components/settings/AccountDangerZone";
 import { DoctorVideoConsultPanel } from "../../components/video/DoctorVideoConsultPanel";
 import { DoctorDirectoryPanel } from "../../components/medical/DoctorDirectoryPanel";
+import { OverviewAnalytics } from "../../components/medical/OverviewAnalytics";
 import { resolveFeatureAccess, type FeatureId } from "@/lib/feature-access";
+import { canPerform, roleLabel } from "@/lib/staff-permissions";
 import { isWorkspacePaymentLocked } from "@/lib/workspace-access";
+import {
+  countAvailableSlots,
+  normalizeBreaks,
+  parseTimeToMinutes,
+  totalBreakMinutes,
+} from "@/lib/doctor-schedule-breaks";
+import { isPlausibleEmail, normalizeEmail } from "@/lib/account-email";
+import {
+  APPOINTMENT_DATE_FILTER_OPTIONS,
+  APPOINTMENT_SORT_OPTIONS,
+  DEFAULT_SORT_DIRECTION,
+  DEFAULT_SORT_KEY,
+  toLocalIsoDate,
+  type AppointmentSortKey,
+  type SortDirection,
+} from "@/lib/appointment-query";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+// Aliased: `Calendar` is already the lucide icon used in the sidebar.
+import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
+
+/** "YYYY-MM-DD" → local-midnight Date (new Date("YYYY-MM-DD") would be UTC). */
+function parseLocalIsoDate(value: string): Date {
+  const [y, m, d] = value.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
 
 export const Route = createFileRoute("/dashboards/medical")({
   head: () => ({
@@ -421,6 +437,55 @@ function FloatingMenu({
 // DayScheduleCard — Per-day schedule row with multi-break support + copy-to-days
 // ==========================================
 
+/**
+ * A clickable column header for the appointments table.
+ *
+ * Clicking a new column sorts by it; clicking the active column flips the
+ * direction. The caret only renders on the active column so the header row
+ * stays readable.
+ */
+function SortableAptHeader({
+  label,
+  sortKey,
+  activeKey,
+  direction,
+  onSort,
+}: {
+  label: string;
+  sortKey: AppointmentSortKey;
+  activeKey: AppointmentSortKey;
+  direction: SortDirection;
+  onSort: (key: AppointmentSortKey) => void;
+}) {
+  const isActive = activeKey === sortKey;
+  return (
+    <th
+      className="px-5 py-3"
+      aria-sort={isActive ? (direction === "asc" ? "ascending" : "descending") : "none"}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${label.toLowerCase()}`}
+        className={`inline-flex items-center gap-1 uppercase font-bold transition-colors cursor-pointer ${
+          isActive ? "text-brand" : "text-zinc-400 hover:text-zinc-600"
+        }`}
+      >
+        {label}
+        {isActive ? (
+          direction === "asc" ? (
+            <ArrowUp className="h-3 w-3" />
+          ) : (
+            <ArrowDown className="h-3 w-3" />
+          )
+        ) : (
+          <ArrowUpDown className="h-3 w-3 opacity-30" />
+        )}
+      </button>
+    </th>
+  );
+}
+
 type BreakSlot = { start: string; end: string; label: string };
 
 function DayScheduleCard({
@@ -451,22 +516,23 @@ function DayScheduleCard({
     value: string,
   ) => void;
   onRemoveBreak: (day: number, bIdx: number) => void;
-  onCopyBreaks: (fromDay: number, toDays: number[]) => void;
+  onCopyBreaks: (fromDay: number, bIdx: number, toDays: number[]) => void;
 }) {
-  const [showCopyMenu, setShowCopyMenu] = useState(false);
+  // Which break row currently has its "Copy to days" popover open.
+  // Must be the break index (not a boolean) — a single boolean opened the
+  // popover on every break row of the day at once.
+  const [copyMenuFor, setCopyMenuFor] = useState<number | null>(null);
   const [copyTargets, setCopyTargets] = useState<number[]>([]);
   const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-  const totalBreakMins = breaks.reduce((acc, b) => {
-    if (!b.start || !b.end) return acc;
-    const [bsh, bsm] = b.start.split(":").map(Number);
-    const [beh, bem] = b.end.split(":").map(Number);
-    const bm = beh * 60 + bem - (bsh * 60 + bsm);
-    return acc + (bm > 0 ? bm : 0);
-  }, 0);
+  // Shared helper: ignores incomplete/inverted breaks and counts overlapping
+  // windows once instead of double-charging the total.
+  const totalBreakMins = totalBreakMinutes(normalizeBreaks(breaks));
 
   return (
-    <div className="rounded-xl border border-brand/15 bg-brand/[0.025] animate-in fade-in duration-200 overflow-hidden">
+    // No `overflow-hidden` here: it clipped the "Copy to days" popover. The
+    // break rows carry `rounded-b-xl` instead so the corners still look right.
+    <div className="rounded-xl border border-brand/15 bg-brand/[0.025] animate-in fade-in duration-200">
       {/* Row 1: Day label + working hours + slot picker */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3">
         <div className="flex items-center gap-2 min-w-[80px]">
@@ -502,6 +568,7 @@ function DayScheduleCard({
               className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
             >
               <option value={8}>8 min</option>
+              <option value={10}>10 min</option>
               <option value={15}>15 min</option>
               <option value={30}>30 min</option>
               <option value={45}>45 min</option>
@@ -531,11 +598,19 @@ function DayScheduleCard({
 
       {/* Break rows */}
       {breaks.length > 0 && (
-        <div className="border-t border-amber-100 bg-amber-50/40 divide-y divide-amber-100/70">
+        <div className="border-t border-amber-100 bg-amber-50/40 divide-y divide-amber-100/70 rounded-b-xl">
           {breaks.map((br, bIdx) => {
             const [bsh, bsm] = (br.start || "00:00").split(":").map(Number);
             const [beh, bem] = (br.end || "00:00").split(":").map(Number);
-            const bMins = beh * 60 + bem - (bsh * 60 + bsm);
+            const bStartMin = bsh * 60 + bsm;
+            const bEndMin = beh * 60 + bem;
+            const bMins = br.start && br.end ? bEndMin - bStartMin : 0;
+            // A break outside the working window never removes a slot, so flag
+            // it rather than letting the slot count look wrong.
+            const [wsh, wsm] = (sched.startTime || "09:00").split(":").map(Number);
+            const [weh, wem] = (sched.endTime || "18:00").split(":").map(Number);
+            const outsideHours =
+              bMins > 0 && (bStartMin < wsh * 60 + wsm || bEndMin > weh * 60 + wem);
             return (
               <div
                 key={bIdx}
@@ -569,10 +644,18 @@ function DayScheduleCard({
                   onChange={(e) => onUpdateBreak(idx, bIdx, "end", e.target.value)}
                   className="rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-amber-400"
                 />
-                {/* Duration badge */}
-                {bMins > 0 && (
+                {/* Duration badge, or why this break will be ignored. An
+                    invalid break used to render nothing at all and was then
+                    dropped by the save filter with no feedback. */}
+                {bMins > 0 ? (
                   <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5 text-[9px] font-bold text-amber-700">
                     <MinusCircle className="h-2.5 w-2.5" /> {bMins} min
+                    {outsideHours && " · outside hours"}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-0.5 rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[9px] font-bold text-red-500">
+                    <X className="h-2.5 w-2.5" />
+                    {!br.start || !br.end ? "Set both times" : "End must be after start"}
                   </span>
                 )}
                 {/* Add same break to other days */}
@@ -580,15 +663,15 @@ function DayScheduleCard({
                   <button
                     type="button"
                     onClick={() => {
-                      setShowCopyMenu((v) => !v);
+                      setCopyMenuFor((cur) => (cur === bIdx ? null : bIdx));
                       setCopyTargets([]);
                     }}
                     className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white hover:bg-brand/5 hover:border-brand/30 hover:text-brand px-2 py-0.5 text-[9px] font-bold text-zinc-400 transition-all cursor-pointer"
                   >
                     <Copy className="h-2.5 w-2.5" /> Copy to days
                   </button>
-                  {showCopyMenu && (
-                    <div className="absolute right-0 top-6 z-30 bg-white border border-zinc-200 rounded-xl shadow-lg p-3 min-w-[180px] animate-in fade-in duration-150">
+                  {copyMenuFor === bIdx && (
+                    <div className="absolute right-0 bottom-full mb-1.5 z-50 bg-white border border-zinc-200 rounded-xl shadow-xl p-3 min-w-[180px] animate-in fade-in duration-150">
                       <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
                         Copy this break to:
                       </p>
@@ -621,7 +704,7 @@ function DayScheduleCard({
                       <div className="flex gap-1.5 border-t border-zinc-100 pt-2">
                         <button
                           type="button"
-                          onClick={() => setShowCopyMenu(false)}
+                          onClick={() => setCopyMenuFor(null)}
                           className="flex-1 rounded-full border border-zinc-200 py-1 text-[9px] font-bold text-zinc-400 cursor-pointer"
                         >
                           Cancel
@@ -630,8 +713,8 @@ function DayScheduleCard({
                           type="button"
                           disabled={copyTargets.length === 0}
                           onClick={() => {
-                            onCopyBreaks(idx, copyTargets);
-                            setShowCopyMenu(false);
+                            onCopyBreaks(idx, bIdx, copyTargets);
+                            setCopyMenuFor(null);
                             setCopyTargets([]);
                           }}
                           className="flex-1 rounded-full bg-black text-white py-1 text-[9px] font-bold cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1"
@@ -657,7 +740,9 @@ function DayScheduleCard({
           <div className="px-3 py-1.5">
             <button
               type="button"
-              onClick={() => onAddBreak(idx, { start: "", end: "", label: "Break" })}
+              // Must default to a real window: empty times are stripped by the
+              // save filter, so a blank row vanished without explanation.
+              onClick={() => onAddBreak(idx, { start: "16:00", end: "16:30", label: "Break" })}
               className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-500 hover:text-amber-700 cursor-pointer"
             >
               <Plus className="h-3 w-3" /> Add another break
@@ -716,8 +801,18 @@ function LeavesCalendarPanel({
   const [isBulkDeleting, setIsBulkDeleting] = useState<boolean>(false);
 
   const monthNames = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
   ];
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
   const startDayOfWeek = new Date(calYear, calMonth, 1).getDay();
@@ -845,7 +940,9 @@ function LeavesCalendarPanel({
         return next;
       });
       setSelectedBlockedLeave(null);
-      setStatusFeedback(`Successfully cancelled ${idsToDelete.length} leave date(s) in ${monthNames[calMonth]}.`);
+      setStatusFeedback(
+        `Successfully cancelled ${idsToDelete.length} leave date(s) in ${monthNames[calMonth]}.`,
+      );
     } catch (err: any) {
       console.error("Bulk delete failed:", err);
       alert("Failed to cancel selected leaves: " + err.message);
@@ -1162,10 +1259,7 @@ function LeavesCalendarPanel({
           <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-2xs">
             <div className="grid grid-cols-7 bg-zinc-50 dark:bg-zinc-850/80 border-b border-zinc-150 dark:border-zinc-800">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                <div
-                  key={d}
-                  className="text-center text-[10px] font-bold text-zinc-400 py-1.5"
-                >
+                <div key={d} className="text-center text-[10px] font-bold text-zinc-400 py-1.5">
                   {d}
                 </div>
               ))}
@@ -1174,7 +1268,10 @@ function LeavesCalendarPanel({
             <div className="grid grid-cols-7 gap-px bg-zinc-100 dark:bg-zinc-800 p-1">
               {/* Empty leading days */}
               {Array.from({ length: startDayOfWeek }).map((_, i) => (
-                <div key={`empty-${i}`} className="h-9 bg-white dark:bg-zinc-900 rounded-md opacity-20" />
+                <div
+                  key={`empty-${i}`}
+                  className="h-9 bg-white dark:bg-zinc-900 rounded-md opacity-20"
+                />
               ))}
 
               {/* Month Days */}
@@ -1228,7 +1325,9 @@ function LeavesCalendarPanel({
                     {isBlocked && (
                       <span
                         className={`h-1 w-1 rounded-full absolute bottom-1 ${
-                          blockedLeave.isHoliday ? "bg-indigo-600 dark:bg-indigo-400" : "bg-rose-600 dark:bg-rose-400"
+                          blockedLeave.isHoliday
+                            ? "bg-indigo-600 dark:bg-indigo-400"
+                            : "bg-rose-600 dark:bg-rose-400"
                         }`}
                       />
                     )}
@@ -1424,16 +1523,17 @@ function LeavesCalendarPanel({
                         className="h-3.5 w-3.5 rounded text-rose-600 focus:ring-rose-500 cursor-pointer accent-rose-600"
                       />
                       <div className="truncate">
-                        <p className="font-semibold text-zinc-800 dark:text-zinc-200">
-                          {dStr}
-                        </p>
+                        <p className="font-semibold text-zinc-800 dark:text-zinc-200">{dStr}</p>
                         <p className="text-[10px] text-zinc-400 truncate max-w-36">
                           {leave.reason || (leave.isHoliday ? "Holiday" : "Leave")}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <div
+                      className="flex items-center gap-1.5 shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <span
                         className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
                           leave.isHoliday
@@ -2033,27 +2133,51 @@ function MedicalDashboardPage() {
   const [appointmentsPage, setAppointmentsPage] = useState(1);
 
   // Appointments CRUD tab States
+  // `searchAptInput` is what the box shows; `searchAptQuery` is the debounced
+  // value actually sent to the server. Firing a request per keystroke meant
+  // responses could land out of order and leave the list showing results for a
+  // query the user had already typed past.
+  const [searchAptInput, setSearchAptInput] = useState("");
   const [searchAptQuery, setSearchAptQuery] = useState("");
   const [filterAptStatus, setFilterAptStatus] = useState("All");
   const [filterAptDate, setFilterAptDate] = useState("all");
+  const [sortAptBy, setSortAptBy] = useState<AppointmentSortKey>(DEFAULT_SORT_KEY);
+  const [sortAptDir, setSortAptDir] = useState<SortDirection>(DEFAULT_SORT_DIRECTION);
+  // The day the Appointments List shows. Defaults to today (front-desk view);
+  // "" means no specific day, i.e. the range presets apply instead.
+  const [aptListDate, setAptListDate] = useState<string>(() => toLocalIsoDate(new Date()));
+  const [aptDatePickerOpen, setAptDatePickerOpen] = useState(false);
+  // Rows for the Appointments List only. Kept apart from the shared
+  // `appointments` array, which Calendar / Consultation filter client-side and
+  // must therefore never be narrowed to one day.
+  const [aptListRows, setAptListRows] = useState<any[]>([]);
+
+  // Header clicks: same column flips direction, new column starts descending
+  // for dates (newest first is the useful default) and ascending otherwise.
+  const handleSortApt = useCallback((key: AppointmentSortKey) => {
+    setSortAptBy((currentKey) => {
+      if (currentKey === key) {
+        setSortAptDir((d) => (d === "asc" ? "desc" : "asc"));
+      } else {
+        setSortAptDir(key === "dateTime" || key === "createdAt" ? "desc" : "asc");
+      }
+      return key;
+    });
+  }, []);
   const [isSchedulingApt, setIsSchedulingApt] = useState(false);
   const [editingApt, setEditingApt] = useState<any | null>(null);
   const [selectedAptDetails, setSelectedAptDetails] = useState<any | null>(null);
 
   // The Appointments tab list, shared by the desktop table, the mobile cards and
   // the multi-select bar so all three always agree on which rows are visible.
-  const filteredAppointments = useMemo(() => {
-    const q = searchAptQuery.toLowerCase();
-    return appointments.filter((apt) => {
-      const matchQuery =
-        (apt.name || "").toLowerCase().includes(q) ||
-        (apt.email || "").toLowerCase().includes(q) ||
-        (apt.phone || "").includes(searchAptQuery) ||
-        (apt.reason || "").toLowerCase().includes(q);
-      const matchStatus = filterAptStatus === "All" || apt.status === filterAptStatus;
-      return matchQuery && matchStatus;
-    });
-  }, [appointments, searchAptQuery, filterAptStatus]);
+  //
+  // This is the server's page verbatim. It used to re-filter the page a second
+  // time on the client, which is what made search look broken: the server
+  // matched only name/email/phone while this filter also required `reason` to
+  // match, so the two disagreed and rows the server had found were thrown away.
+  // Re-filtering a paginated page is wrong regardless — it cannot see the other
+  // pages, so it only ever hides rows the server already counted in the total.
+  const filteredAppointments = aptListRows;
 
   // Deliberately act only on rows the user can currently see selected. A row
   // that was selected and then filtered out of view keeps its tick for when the
@@ -2085,6 +2209,51 @@ function MedicalDashboardPage() {
   const [subLocationBookings, setSubLocationBookings] = useState<any[]>([]);
   const [loadingSubLocBookings, setLoadingSubLocBookings] = useState(false);
   const [isSubLocationUser, setIsSubLocationUser] = useState(false);
+
+  // ── Single source of truth for "may this account open this tab?" ──
+  // Used by the sidebars, the mobile bottom bar, every tab body, and every
+  // in-page button that jumps to another tab. Previously only the sidebars
+  // checked, so a restored tab, a ?tab= link or a "Consult"/"Upgrade" button
+  // dropped reception straight into Consultation or Billing.
+  const isTabAllowed = useCallback(
+    (tab: string): boolean => {
+      switch (tab) {
+        case "scribe":
+        case "video":
+        case "plans":
+        case "whatsapp":
+        case "analytics":
+          return featureAccess[tab as FeatureId]?.visible === true;
+        case "subLocationBookings":
+          return user?.role === "admin" && subLocations.length > 0;
+        case "overview":
+        case "calendar":
+        case "appointments":
+        case "doctors":
+        case "patients":
+        case "settings":
+          return true;
+        default:
+          return false;
+      }
+    },
+    [featureAccess, user?.role, subLocations.length],
+  );
+  const accountRole = user?.role ?? "admin";
+  const canManageClinicProfile = canPerform(accountRole, "manage_clinic_profile");
+  const canManageClinicConfig = canPerform(accountRole, "manage_clinic_config");
+  const canOperateWhatsApp = featureAccess.whatsapp?.permission === "operate";
+
+  // Leave any tab this account may not open (restored from localStorage by a
+  // previous user on this browser, or deep-linked with ?tab=).
+  useEffect(() => {
+    if (!user) return;
+    // Sub-locations load asynchronously; don't bounce an admin off that tab
+    // before we know whether they have any.
+    if (activeTab === "subLocationBookings" && user.role === "admin") return;
+    if (!isTabAllowed(activeTab)) setActiveTab("overview");
+  }, [user, activeTab, isTabAllowed]);
+
   const [subLocFilter, setSubLocFilter] = useState<string>("all");
   const [subLocSearch, setSubLocSearch] = useState("");
   const [subLocStatusFilter, setSubLocStatusFilter] = useState<string>("all");
@@ -2135,6 +2304,65 @@ function MedicalDashboardPage() {
   const [showSubUserPwd, setShowSubUserPwd] = useState(false);
   const [subUserToDelete, setSubUserToDelete] = useState<any | null>(null);
   const [isDeletingSubUser, setIsDeletingSubUser] = useState(false);
+
+  // Live "is this email already registered?" state for the Create Sub-User
+  // modal. Advisory: the server re-checks on submit.
+  const [subUserEmailCheck, setSubUserEmailCheck] = useState<{
+    status: "idle" | "checking" | "available" | "taken" | "invalid";
+    message: string;
+  }>({ status: "idle", message: "" });
+  const subUserEmailCheckSeq = useRef(0);
+
+  useEffect(() => {
+    if (!showSubUserForm) return;
+    const email = normalizeEmail(subUserForm.email);
+    if (!email) {
+      setSubUserEmailCheck({ status: "idle", message: "" });
+      return;
+    }
+    if (!isPlausibleEmail(email)) {
+      setSubUserEmailCheck({ status: "invalid", message: "Enter a valid email address." });
+      return;
+    }
+    setSubUserEmailCheck({ status: "checking", message: "" });
+    const seq = ++subUserEmailCheckSeq.current;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkSubUserEmailServerFn({ data: { email } });
+        if (seq !== subUserEmailCheckSeq.current) return; // a newer keystroke won
+        setSubUserEmailCheck(
+          res.available
+            ? { status: "available", message: "" }
+            : { status: "taken", message: res.message },
+        );
+      } catch {
+        // Network hiccup: fall back to idle; the submit-time check still guards.
+        if (seq === subUserEmailCheckSeq.current) {
+          setSubUserEmailCheck({ status: "idle", message: "" });
+        }
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [subUserForm.email, showSubUserForm]);
+
+  const closeCreateSubUserModal = useCallback(() => {
+    setShowSubUserForm(false);
+    setEditingSubUser(null);
+    setSubUserError("");
+    setSubUserSuccess("");
+    setShowSubUserPwd(false);
+    setSubUserEmailCheck({ status: "idle", message: "" });
+  }, []);
+
+  // Escape closes the modal (unless a save is mid-flight).
+  useEffect(() => {
+    if (!showSubUserForm) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !savingSubUser) closeCreateSubUserModal();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showSubUserForm, savingSubUser, closeCreateSubUserModal]);
 
   // Clinic Hours States
   const [clinicHours, setClinicHours] = useState<any[]>([]);
@@ -2372,7 +2600,11 @@ function MedicalDashboardPage() {
     }
     setFieldErrors({});
 
+    if (savingApt) return; // ignore a second click while a save is in flight
     setSavingApt(true);
+    // On success the drawer closes after a short confirmation; the button must
+    // stay disabled until then, or a second click books a duplicate.
+    let keepLocked = false;
     try {
       let finalPatientId = selectedPatientId;
       const calculatedAge = calculateAge(aptDob);
@@ -2431,6 +2663,7 @@ function MedicalDashboardPage() {
           },
         });
         if (res.success) {
+          keepLocked = true;
           setAptSuccess("Appointment updated successfully!");
           await fetchAppointments();
           try {
@@ -2442,6 +2675,7 @@ function MedicalDashboardPage() {
             setIsSchedulingApt(false);
             setEditingApt(null);
             clearAptForm();
+            setSavingApt(false);
           }, 1000);
         }
       } else {
@@ -2463,6 +2697,7 @@ function MedicalDashboardPage() {
           },
         });
         if (res.success) {
+          keepLocked = true;
           setAptSuccess("Appointment scheduled successfully!");
           await fetchAppointments();
           try {
@@ -2474,13 +2709,21 @@ function MedicalDashboardPage() {
             setIsSchedulingApt(false);
             setEditingApt(null);
             clearAptForm();
+            setSavingApt(false);
           }, 1000);
         }
       }
     } catch (err: any) {
       setAptError(err.message || "Failed to save appointment. Please try again.");
     } finally {
-      setSavingApt(false);
+      if (!keepLocked) setSavingApt(false);
+    }
+  };
+
+  /** Deleting the last row on a later page leaves that page empty; step back. */
+  const stepBackIfPageEmptied = (removed: number) => {
+    if (appointmentsPage > 1 && aptListRows.length - removed <= 0) {
+      setAppointmentsPage((p) => Math.max(1, p - 1));
     }
   };
 
@@ -2490,10 +2733,14 @@ function MedicalDashboardPage() {
       if (res.success) {
         // Drop it from any pending multi-selection so the count stays truthful.
         setBulkAptIds((prev) => prev.filter((selectedId) => selectedId !== id));
+        stepBackIfPageEmptied(1);
         await fetchAppointments();
+        showToast("success", "Appointment deleted");
       }
     } catch (err: any) {
+      // Used to log to the console only, so a failed delete looked like a no-op.
       console.error("Failed to delete appointment:", err);
+      showToast("error", err?.message || "Failed to delete the appointment");
     }
   };
 
@@ -2505,6 +2752,7 @@ function MedicalDashboardPage() {
       if (res.success) {
         setBulkAptIds([]);
         setConfirmBulkAptDelete(false);
+        stepBackIfPageEmptied(Number(res.deleted) || ids.length);
         await fetchAppointments();
         showToast(
           "success",
@@ -2519,9 +2767,15 @@ function MedicalDashboardPage() {
     }
   };
 
+  // Rows with a status change in flight; rapid clicks used to fire several
+  // updates (and several patient WhatsApp messages).
+  const statusUpdatingRef = useRef<Set<string>>(new Set());
+
   const handleUpdateStatus = async (apt: any, newStatus: string) => {
     setActiveStatusDropdownId(null);
     if (apt.status === newStatus) return;
+    if (statusUpdatingRef.current.has(apt.id)) return;
+    statusUpdatingRef.current.add(apt.id);
 
     try {
       const res = await updateAppointmentServerFn({
@@ -2537,7 +2791,8 @@ function MedicalDashboardPage() {
           timeSlot: apt.timeSlot || undefined,
           whatsapp: apt.whatsapp || undefined,
           appointmentType: apt.appointmentType || undefined,
-          patientId: apt.patientId || null,
+          // Omitted = keep the stored link (null would now mean "unlink").
+          patientId: apt.patientId || undefined,
         },
       });
 
@@ -2551,6 +2806,8 @@ function MedicalDashboardPage() {
       }
     } catch (err: any) {
       showToast("error", err.message || "Failed to update appointment status.");
+    } finally {
+      statusUpdatingRef.current.delete(apt.id);
     }
   };
 
@@ -2697,27 +2954,65 @@ function MedicalDashboardPage() {
   // Clipboard link state
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const fetchAppointments = async () => {
-    setLoadingAppointments(true);
+  // Monotonic request id. Only the newest in-flight appointment fetch is
+  // allowed to write state, so a slow earlier response can't overwrite the
+  // results of a later query.
+  const appointmentsRequestRef = useRef(0);
+
+  const [loadingAptList, setLoadingAptList] = useState(true);
+  const allAppointmentsRequestRef = useRef(0);
+
+  /** The Appointments List: server-paged, filtered, sorted, scoped to one day. */
+  const fetchAptList = async () => {
+    const requestId = ++appointmentsRequestRef.current;
+    setLoadingAptList(true);
     try {
       const res = await getAppointmentsPagedServerFn({
         data: {
           search: searchAptQuery,
           status: filterAptStatus,
           dateFilter: filterAptDate,
+          date: aptListDate || undefined,
           page: appointmentsPage,
+          sortBy: sortAptBy,
+          sortDir: sortAptDir,
         },
       });
-      setAppointments(res.appointments || []);
+      if (requestId !== appointmentsRequestRef.current) return;
+      setAptListRows(res.appointments || []);
       setAppointmentsTotal(res.total || 0);
       setAppointmentSummary(
         res.summary || { total: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0 },
       );
+    } catch (err: any) {
+      if (requestId !== appointmentsRequestRef.current) return;
+      console.error("Failed to fetch appointments list:", err);
+      // Without this the list silently kept stale rows / showed "no appointments".
+      showToast("error", err?.message || "Couldn't load appointments. Please retry.");
+    } finally {
+      if (requestId === appointmentsRequestRef.current) setLoadingAptList(false);
+    }
+  };
+
+  /** Every appointment, for Calendar / Consultation, which filter client-side. */
+  const fetchAllAppointments = async () => {
+    const requestId = ++allAppointmentsRequestRef.current;
+    setLoadingAppointments(true);
+    try {
+      const all = await getAppointmentsServerFn();
+      if (requestId !== allAppointmentsRequestRef.current) return;
+      setAppointments(all || []);
     } catch (err) {
+      if (requestId !== allAppointmentsRequestRef.current) return;
       console.error("Failed to fetch appointments:", err);
     } finally {
-      setLoadingAppointments(false);
+      if (requestId === allAppointmentsRequestRef.current) setLoadingAppointments(false);
     }
+  };
+
+  /** Refresh both views — used after any create / update / delete. */
+  const fetchAppointments = async () => {
+    await Promise.all([fetchAptList(), fetchAllAppointments()]);
   };
 
   const fetchSubLocationBookings = async () => {
@@ -3150,11 +3445,37 @@ function MedicalDashboardPage() {
       });
   }, [navigate]);
 
+  // Debounce the search box into the query actually sent to the server.
   useEffect(() => {
-    if (user) {
-      fetchAppointments();
-    }
-  }, [user, searchAptQuery, filterAptStatus, filterAptDate, appointmentsPage]);
+    const timer = setTimeout(() => setSearchAptQuery(searchAptInput.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchAptInput]);
+
+  // Any change to the query, filters or sort invalidates the current page
+  // number. Without this, searching while on page 3 asked the server for page 3
+  // of a much smaller result set and rendered an empty list.
+  useEffect(() => {
+    setAppointmentsPage(1);
+  }, [searchAptQuery, filterAptStatus, filterAptDate, sortAptBy, sortAptDir, aptListDate]);
+
+  // Appointments List: refetch on any list filter.
+  useEffect(() => {
+    if (user) fetchAptList();
+  }, [
+    user,
+    searchAptQuery,
+    filterAptStatus,
+    filterAptDate,
+    aptListDate,
+    appointmentsPage,
+    sortAptBy,
+    sortAptDir,
+  ]);
+
+  // Full set for Calendar / Consultation: independent of the list's filters.
+  useEffect(() => {
+    if (user) fetchAllAppointments();
+  }, [user]);
 
   // Load sub-locations once to decide whether to show the "Sub Dep. Bookings" menu.
   useEffect(() => {
@@ -3189,6 +3510,12 @@ function MedicalDashboardPage() {
       }
     }
   }, [user, activeTab, searchQuery, patientsPage]);
+
+  // A new search starts from page 1. Searching while on page 3 used to ask for
+  // page 3 of a much smaller result set and show "no patients match".
+  useEffect(() => {
+    setPatientsPage(1);
+  }, [searchQuery]);
 
   // Load patient chart (SOAP notes + appointments)
   useEffect(() => {
@@ -3350,8 +3677,10 @@ function MedicalDashboardPage() {
         },
       });
       setAptAvailableSlots(res.slots);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to fetch slots:", e);
+      setAptAvailableSlots([]);
+      showToast("error", "Couldn't load available slots for that date. Please retry.");
     } finally {
       setLoadingAptSlots(false);
     }
@@ -3448,18 +3777,25 @@ function MedicalDashboardPage() {
   };
 
   // Departments CRUD handlers
+  const savingDeptRef = useRef(false);
   const handleCreateDept = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newDeptName.trim()) return;
+    if (!newDeptName.trim() || savingDeptRef.current) return;
+    // A double-click used to create the department twice.
+    savingDeptRef.current = true;
     try {
       const res = await createDepartmentServerFn({ data: newDeptName.trim() });
       if (res.success) {
         setNewDeptName("");
         const refreshed = await getDepartmentsServerFn();
         setDepartments(refreshed);
+        showToast("success", "Department added");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      showToast("error", e?.message || "Failed to add department");
+    } finally {
+      savingDeptRef.current = false;
     }
   };
 
@@ -3469,9 +3805,12 @@ function MedicalDashboardPage() {
       if (res.success) {
         const refreshed = await getDepartmentsServerFn();
         setDepartments(refreshed);
+        showToast("success", "Department deleted");
       }
-    } catch (e) {
+    } catch (e: any) {
+      // e.g. "This department has 2 doctors assigned…"
       console.error(e);
+      showToast("error", e?.message || "Failed to delete department");
     }
   };
 
@@ -3549,9 +3888,11 @@ function MedicalDashboardPage() {
       if (res.success) {
         const refreshed = await getDoctorsServerFn();
         setDoctors(refreshed);
+        showToast("success", "Doctor removed from the directory");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      showToast("error", e?.message || "Failed to delete doctor");
     }
   };
 
@@ -3559,6 +3900,9 @@ function MedicalDashboardPage() {
   const handleEditDoctorSchedule = async (doc: any) => {
     setSelectedDocForSchedule(doc);
     setDocScheduleSuccess("");
+    // Clear first: on a failed load the previous doctor's hours stayed in the
+    // editor, and saving would have written them onto this doctor.
+    setDocSchedules([]);
     try {
       const res = await getDoctorScheduleServerFn({ data: doc.id });
       const scheduleMap = Array.from({ length: 7 }, (_, day) => {
@@ -3574,8 +3918,10 @@ function MedicalDashboardPage() {
         };
       });
       setDocSchedules(scheduleMap);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setSelectedDocForSchedule(null);
+      showToast("error", e?.message || "Couldn't load this doctor's schedule");
     }
   };
 
@@ -3612,13 +3958,30 @@ function MedicalDashboardPage() {
       ),
     );
   };
-  const copyBreaksToDay = (fromDay: number, toDays: number[]) => {
-    const srcBreaks = docSchedules.find((s) => s.dayOfWeek === fromDay)?.breaks ?? [];
-    setDocSchedules((prev) =>
-      prev.map((s) =>
-        toDays.includes(s.dayOfWeek) ? { ...s, breaks: srcBreaks.map((b: any) => ({ ...b })) } : s,
-      ),
-    );
+  /**
+   * Copy ONE break ("Copy this break to:") onto the chosen days.
+   *
+   * Appends rather than replaces: the previous version copied every break from
+   * the source day and overwrote the target days' break lists outright, so
+   * copying a lunch break to Tuesday silently destroyed Tuesday's own breaks.
+   * Exact duplicates are skipped so repeated Apply clicks stay idempotent.
+   */
+  const copyBreaksToDay = (fromDay: number, bIdx: number, toDays: number[]) => {
+    setDocSchedules((prev) => {
+      const source = prev.find((s) => s.dayOfWeek === fromDay);
+      const br = (source?.breaks ?? [])[bIdx];
+      if (!br) return prev;
+
+      return prev.map((s) => {
+        if (!toDays.includes(s.dayOfWeek)) return s;
+        const existing = (s.breaks ?? []) as BreakSlot[];
+        const duplicate = existing.some(
+          (b) => b.start === br.start && b.end === br.end && b.label === br.label,
+        );
+        if (duplicate) return s;
+        return { ...s, breaks: [...existing, { ...br }] };
+      });
+    });
   };
 
   const handleUpdateScheduleField = (dayOfWeek: number, field: string, value: any) => {
@@ -3656,6 +4019,7 @@ function MedicalDashboardPage() {
       }
     } catch (err: any) {
       console.error(err);
+      showToast("error", err?.message || "Failed to save schedule");
     } finally {
       setSavingDocSchedule(false);
     }
@@ -3664,11 +4028,14 @@ function MedicalDashboardPage() {
   // Doctor leaves & holidays handlers
   const handleEditDoctorLeaves = async (doc: any) => {
     setSelectedDocForLeaves(doc);
+    // Don't show the previous doctor's leaves while (or if failing) loading.
+    setDocLeaves([]);
     try {
       const res = await getDoctorLeavesServerFn({ data: doc.id });
       setDocLeaves(res);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      showToast("error", e?.message || "Couldn't load leaves for this doctor");
     }
   };
 
@@ -3692,8 +4059,9 @@ function MedicalDashboardPage() {
         const refreshed = await getDoctorLeavesServerFn({ data: selectedDocForLeaves.id });
         setDocLeaves(refreshed);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      showToast("error", e?.message || "Failed to add leave");
     } finally {
       setAddingLeave(false);
     }
@@ -3706,8 +4074,9 @@ function MedicalDashboardPage() {
         const refreshed = await getDoctorLeavesServerFn({ data: selectedDocForLeaves.id });
         setDocLeaves(refreshed);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      showToast("error", e?.message || "Failed to remove leave");
     }
   };
 
@@ -3735,8 +4104,9 @@ function MedicalDashboardPage() {
       // Brief delay to allow the WA microservice to fully clean up the old
       // session before the next status fetch triggers auto-initialization.
       setTimeout(() => fetchWhatsAppStatus(), 2000);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      showToast("error", e?.message || "Failed to disconnect WhatsApp");
     }
   };
 
@@ -4483,10 +4853,17 @@ function MedicalDashboardPage() {
         // 1. Try finding in loaded patientsList
         const existing = patientsList.find(
           (p) =>
-            (selectedAptForConsultation.patientId && p.id === selectedAptForConsultation.patientId) ||
-            (p.name && selectedAptForConsultation.name && p.name.toLowerCase() === selectedAptForConsultation.name.toLowerCase()) ||
-            (p.phone && selectedAptForConsultation.phone && p.phone === selectedAptForConsultation.phone) ||
-            (p.email && selectedAptForConsultation.email && p.email.toLowerCase() === selectedAptForConsultation.email.toLowerCase()),
+            (selectedAptForConsultation.patientId &&
+              p.id === selectedAptForConsultation.patientId) ||
+            (p.name &&
+              selectedAptForConsultation.name &&
+              p.name.toLowerCase() === selectedAptForConsultation.name.toLowerCase()) ||
+            (p.phone &&
+              selectedAptForConsultation.phone &&
+              p.phone === selectedAptForConsultation.phone) ||
+            (p.email &&
+              selectedAptForConsultation.email &&
+              p.email.toLowerCase() === selectedAptForConsultation.email.toLowerCase()),
         );
         if (existing) {
           targetId = existing.id;
@@ -4498,7 +4875,8 @@ function MedicalDashboardPage() {
                 name: selectedAptForConsultation.name,
                 phone: selectedAptForConsultation.phone || null,
                 email: selectedAptForConsultation.email || null,
-                chiefComplaint: consultationChiefComplaint || selectedAptForConsultation.reason || undefined,
+                chiefComplaint:
+                  consultationChiefComplaint || selectedAptForConsultation.reason || undefined,
               },
             });
             if (newPatientRes.success && newPatientRes.patientId) {
@@ -4545,7 +4923,9 @@ function MedicalDashboardPage() {
       // 3. Mark appointment as completed
       if (selectedAptForConsultation) {
         const aptDateStr = selectedAptForConsultation.dateTime
-          ? (typeof selectedAptForConsultation.dateTime === "string" ? selectedAptForConsultation.dateTime : new Date(selectedAptForConsultation.dateTime).toISOString())
+          ? typeof selectedAptForConsultation.dateTime === "string"
+            ? selectedAptForConsultation.dateTime
+            : new Date(selectedAptForConsultation.dateTime).toISOString()
           : new Date().toISOString();
 
         await updateAppointmentServerFn({
@@ -4555,7 +4935,10 @@ function MedicalDashboardPage() {
             email: selectedAptForConsultation.email || "",
             phone: selectedAptForConsultation.phone || "N/A",
             dateTime: aptDateStr,
-            reason: consultationChiefComplaint || selectedAptForConsultation.reason || "Consultation Completed",
+            reason:
+              consultationChiefComplaint ||
+              selectedAptForConsultation.reason ||
+              "Consultation Completed",
             status: "Completed",
             doctorId: selectedAptForConsultation.doctorId || undefined,
             timeSlot: selectedAptForConsultation.timeSlot || undefined,
@@ -4794,7 +5177,8 @@ function MedicalDashboardPage() {
           styles: { fontSize: 8.5 },
         });
 
-        currentY = ((doc as any).lastAutoTable?.finalY ?? (currentY + tableRows.length * 7 + 10)) + 12;
+        currentY =
+          ((doc as any).lastAutoTable?.finalY ?? currentY + tableRows.length * 7 + 10) + 12;
       }
 
       // Lab Tests
@@ -5154,17 +5538,6 @@ function MedicalDashboardPage() {
     return `${m}:${s}`;
   };
 
-  const formatMonth = (monthStr: string) => {
-    if (!monthStr) return "";
-    try {
-      const [year, month] = monthStr.split("-");
-      const date = new Date(parseInt(year), parseInt(month) - 1, 1);
-      return date.toLocaleDateString("en-US", { month: "short" });
-    } catch (e) {
-      return monthStr;
-    }
-  };
-
   const getWeekRangeLabel = (date: Date) => {
     const start = new Date(date);
     start.setDate(start.getDate() - start.getDay()); // Sunday
@@ -5226,15 +5599,35 @@ function MedicalDashboardPage() {
     const apt = appointments.find((a) => a.id === aptId);
     if (!apt) return;
 
+    // Finished or cancelled visits are history; moving them rewrote records.
+    if (apt.status === "Completed" || apt.status === "Cancelled" || apt.status === "No Show") {
+      showToast("error", `A ${apt.status.toLowerCase()} appointment can't be rescheduled.`);
+      return;
+    }
+
     // Construct new date object keeping minutes
     const originalDate = new Date(apt.dateTime);
     const targetDate = new Date(targetDay);
     targetDate.setHours(targetHour, originalDate.getMinutes(), 0, 0);
+    if (targetDate.getTime() === originalDate.getTime()) return;
+    if (targetDate.getTime() < Date.now()) {
+      showToast("error", "Can't move an appointment into the past.");
+      return;
+    }
 
     // Formatted timeSlot
     const formattedHour = targetHour % 12 === 0 ? 12 : targetHour % 12;
     const ampm = targetHour >= 12 ? "PM" : "AM";
     const timeSlotStr = `${String(formattedHour).padStart(2, "0")}:${String(originalDate.getMinutes()).padStart(2, "0")} ${ampm}`;
+
+    // A drop is easy to do by accident and the patient may be notified.
+    if (
+      !window.confirm(
+        `Move ${apt.name} to ${targetDay.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })} at ${timeSlotStr}?`,
+      )
+    ) {
+      return;
+    }
 
     try {
       const res = await updateAppointmentServerFn({
@@ -5315,9 +5708,28 @@ function MedicalDashboardPage() {
     return [...prevMonthDays, ...currentMonthDays, ...nextMonthDays];
   };
 
+  /**
+   * Hour rows for the week/day grids: 8am–6pm by default, widened to include
+   * every appointment on the visible days. A fixed 8–18 grid silently hid
+   * evening clinics (e.g. 18:00–21:00 doctors) and early slots.
+   */
+  const visibleHours = (days: Date[]): number[] => {
+    let min = 8;
+    let max = 18;
+    const keys = new Set(days.map((d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`));
+    for (const apt of appointments) {
+      const d = new Date(apt.dateTime);
+      if (Number.isNaN(d.getTime())) continue;
+      if (!keys.has(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`)) continue;
+      min = Math.min(min, d.getHours());
+      max = Math.max(max, d.getHours());
+    }
+    return Array.from({ length: max - min + 1 }, (_, i) => i + min);
+  };
+
   const renderWeekView = () => {
     const weekDates = getWeekDates(currentCalendarDate);
-    const hours = Array.from({ length: 11 }, (_, i) => i + 8); // 8am to 6pm
+    const hours = visibleHours(weekDates);
 
     return (
       <div className="min-w-[800px] border border-zinc-200 rounded-3xl overflow-hidden bg-white text-xs select-none">
@@ -5347,7 +5759,14 @@ function MedicalDashboardPage() {
         {/* Hours grid */}
         <div className="divide-y divide-zinc-150">
           {hours.map((hour) => {
-            const ampmLabel = hour === 12 ? "12pm" : hour > 12 ? `${hour - 12}pm` : `${hour}am`;
+            const ampmLabel =
+              hour === 0
+                ? "12am"
+                : hour === 12
+                  ? "12pm"
+                  : hour > 12
+                    ? `${hour - 12}pm`
+                    : `${hour}am`;
             return (
               <div key={hour} className="grid grid-cols-8 min-h-[64px] items-stretch relative">
                 {/* Hour label */}
@@ -5470,7 +5889,7 @@ function MedicalDashboardPage() {
 
   const renderDayView = () => {
     const day = currentCalendarDate;
-    const hours = Array.from({ length: 11 }, (_, i) => i + 8); // 8am to 6pm
+    const hours = visibleHours([day]);
 
     return (
       <div className="max-w-2xl mx-auto border border-zinc-200 rounded-3xl overflow-hidden bg-white text-xs select-none">
@@ -5490,7 +5909,14 @@ function MedicalDashboardPage() {
         {/* Hours grid */}
         <div className="divide-y divide-zinc-150">
           {hours.map((hour) => {
-            const ampmLabel = hour === 12 ? "12pm" : hour > 12 ? `${hour - 12}pm` : `${hour}am`;
+            const ampmLabel =
+              hour === 0
+                ? "12am"
+                : hour === 12
+                  ? "12pm"
+                  : hour > 12
+                    ? `${hour - 12}pm`
+                    : `${hour}am`;
             return (
               <div key={hour} className="grid grid-cols-5 min-h-[64px] items-stretch relative">
                 {/* Hour label */}
@@ -5734,12 +6160,11 @@ function MedicalDashboardPage() {
   };
 
   // Filter patients based on query
-  const filteredPatients = patientsList.filter(
-    (p) =>
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.reason.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  // The server already searched (name, patient no., phone, email) and paged.
+  // Re-filtering here crashed on `p.reason` (Patient rows have no such column)
+  // whenever a search didn't match the name, and hid phone / patient-no.
+  // matches the server had found.
+  const filteredPatients = patientsList;
 
   // ──────────────────────────────────────────────
   // Render Loading / Authenticating state
@@ -5995,10 +6420,12 @@ function MedicalDashboardPage() {
                     {user?.name ? user.name.split(" ")[0] + "." : "Dr."}
                   </p>
                   <p className="text-[10px] text-zinc-400 leading-tight truncate max-w-[80px]">
-                    {user?.role === "admin" ? "Hosp. Admin" : user?.role || "Doctor"}
+                    {roleLabel(user?.role)}
                   </p>
                 </div>
-                <ChevronDown className={`h-3.5 w-3.5 text-zinc-400 hidden sm:block transition-transform duration-200 ${profileDropdownOpen ? "rotate-180" : ""}`} />
+                <ChevronDown
+                  className={`h-3.5 w-3.5 text-zinc-400 hidden sm:block transition-transform duration-200 ${profileDropdownOpen ? "rotate-180" : ""}`}
+                />
               </button>
 
               {/* Profile Dropdown Menu */}
@@ -6394,7 +6821,9 @@ function MedicalDashboardPage() {
                                             <button
                                               type="button"
                                               title="Download as PDF"
-                                              onClick={() => handleDownloadPrescriptionPDF(rxExport)}
+                                              onClick={() =>
+                                                handleDownloadPrescriptionPDF(rxExport)
+                                              }
                                               className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[9px] font-bold text-zinc-600 hover:bg-zinc-50 transition-all cursor-pointer active:scale-95"
                                             >
                                               <FileDown className="h-3 w-3 text-zinc-500" />
@@ -6562,480 +6991,277 @@ function MedicalDashboardPage() {
                     </div>
 
                     {/* 1.5. Interactive Analytics Charts Section */}
-                    <div className="grid gap-6 md:grid-cols-2">
-                      {/* Chart A: Volume Trend */}
-                      <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="text-xs font-bold text-zinc-800 uppercase tracking-tight">
-                              Appointment Volume Trends
-                            </h4>
-                            <p className="text-[10px] text-zinc-400 mt-0.5">
-                              Clinical consultation velocity over time
-                            </p>
-                          </div>
-                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-2.5 py-0.5">
-                            Live Analytics
-                          </span>
-                        </div>
+                    {isClient && (
+                      <OverviewAnalytics
+                        data={analyticsData}
+                        loading={loadingAnalytics}
+                        onRefresh={fetchAnalytics}
+                      />
+                    )}
 
-                        <div className="h-[240px] w-full">
-                          {isClient && !loadingAnalytics && analyticsData ? (
-                            analyticsData.monthlyTrend && analyticsData.monthlyTrend.length > 0 ? (
-                              <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart
-                                  data={analyticsData.monthlyTrend.map((t: any) => ({
-                                    name: formatMonth(t.month),
-                                    Appointments: t.count,
-                                  }))}
-                                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                                >
-                                  <defs>
-                                    <linearGradient
-                                      id="colorAppointments"
-                                      x1="0"
-                                      y1="0"
-                                      x2="0"
-                                      y2="1"
-                                    >
-                                      <stop offset="5%" stopColor="#0f766e" stopOpacity={0.2} />
-                                      <stop offset="95%" stopColor="#0f766e" stopOpacity={0} />
-                                    </linearGradient>
-                                  </defs>
-                                  <CartesianGrid
-                                    strokeDasharray="3 3"
-                                    stroke="#f4f4f5"
-                                    vertical={false}
-                                  />
-                                  <XAxis
-                                    dataKey="name"
-                                    stroke="#a1a1aa"
-                                    fontSize={10}
-                                    tickLine={false}
-                                    axisLine={false}
-                                  />
-                                  <YAxis
-                                    stroke="#a1a1aa"
-                                    fontSize={10}
-                                    tickLine={false}
-                                    axisLine={false}
-                                    allowDecimals={false}
-                                  />
-                                  <Tooltip
-                                    contentStyle={{
-                                      background: "rgba(255, 255, 255, 0.9)",
-                                      border: "1px solid #e4e4e7",
-                                      borderRadius: "12px",
-                                      boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-                                      fontSize: "11px",
-                                    }}
-                                  />
-                                  <Area
-                                    type="monotone"
-                                    dataKey="Appointments"
-                                    stroke="#0f766e"
-                                    strokeWidth={2.5}
-                                    fillOpacity={1}
-                                    fill="url(#colorAppointments)"
-                                    animationDuration={1500}
-                                  />
-                                </AreaChart>
-                              </ResponsiveContainer>
-                            ) : (
-                              <div className="h-full w-full bg-zinc-50/60 rounded-xl flex flex-col items-center justify-center text-center px-4">
-                                <BarChart3 className="h-7 w-7 text-zinc-300 mb-2" />
-                                <p className="text-xs font-semibold text-zinc-500">
-                                  No appointment data yet
-                                </p>
-                                <p className="text-[10px] text-zinc-400 mt-0.5">
-                                  Trends will appear here once you start receiving bookings.
-                                </p>
-                              </div>
-                            )
-                          ) : (
-                            <div className="h-full w-full bg-zinc-50 rounded-xl flex items-center justify-center animate-pulse">
-                              <Loader2 className="h-6 w-6 text-zinc-300 animate-spin" />
+                    {/* 2. Main Row (Scribe Emulator & Timeline) */}
+                    <div className={`grid gap-6 ${isTabAllowed("scribe") ? "lg:grid-cols-3" : ""}`}>
+                      {/* Left Column: Scribe Emulator Widget — clinical staff only.
+                          It records audio and syncs SOAP notes to the EHR. */}
+                      {isTabAllowed("scribe") && (
+                        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 bg-white p-5 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Stethoscope className="h-4 w-4 text-brand" />
+                              <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-tight">
+                                Real-time AI SOAP Dictation
+                              </h3>
                             </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Chart B: Donut Breakdown */}
-                      <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="text-xs font-bold text-zinc-800 uppercase tracking-tight">
-                              Appointment Distribution
-                            </h4>
-                            <p className="text-[10px] text-zinc-400 mt-0.5">
-                              Real-time status and outcome metrics
-                            </p>
+                            <div className="flex items-center gap-2">
+                              {/* Specialty pill selector */}
+                              <select
+                                value={scribeSpecialty}
+                                onChange={(e) => setScribeSpecialty(e.target.value as any)}
+                                className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-[10px] font-bold focus:outline-none"
+                                disabled={isRecording || scribeStep === "transcribing"}
+                              >
+                                <option>Family Medicine</option>
+                                <option>Cardiology</option>
+                                <option>Pediatrics</option>
+                                <option>Psychiatry</option>
+                              </select>
+                            </div>
                           </div>
-                          <span className="text-[10px] font-bold text-zinc-500 bg-zinc-50 border border-zinc-200/50 rounded-full px-2.5 py-0.5">
-                            Performance
-                          </span>
-                        </div>
 
-                        <div className="h-[240px] w-full flex items-center justify-center relative">
-                          {isClient && !loadingAnalytics && analyticsData ? (
-                            analyticsData.statusBreakdown &&
-                            analyticsData.statusBreakdown.length > 0 ? (
-                              <div className="w-full h-full flex flex-col sm:flex-row items-center justify-center gap-4">
-                                <div className="relative w-[160px] h-[160px] shrink-0">
-                                  <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                      <Pie
-                                        data={analyticsData.statusBreakdown.map((s: any) => ({
-                                          name:
-                                            s.status === "Pending" ? "Pending Review" : s.status,
-                                          value: s.count,
-                                        }))}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={50}
-                                        outerRadius={70}
-                                        paddingAngle={3}
-                                        dataKey="value"
-                                        animationDuration={1200}
-                                      >
-                                        {analyticsData.statusBreakdown.map(
-                                          (entry: any, index: number) => {
-                                            const colors: Record<string, string> = {
-                                              Completed: "#10b981",
-                                              Confirmed: "#0f766e",
-                                              Pending: "#f59e0b",
-                                              Cancelled: "#ef4444",
-                                            };
-                                            const color = colors[entry.status] || "#6366f1";
-                                            return <Cell key={`cell-${index}`} fill={color} />;
-                                          },
-                                        )}
-                                      </Pie>
-                                      <Tooltip
-                                        contentStyle={{
-                                          background: "rgba(255, 255, 255, 0.9)",
-                                          border: "1px solid #e4e4e7",
-                                          borderRadius: "12px",
-                                          boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-                                          fontSize: "11px",
-                                        }}
-                                      />
-                                    </PieChart>
-                                  </ResponsiveContainer>
-                                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                    <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
-                                      Total
-                                    </span>
-                                    <span className="text-xl font-extrabold text-zinc-800">
-                                      {analyticsData.scorecard?.totalAppointments || 0}
-                                    </span>
+                          {/* Interactive Recording Area */}
+                          <div className="rounded-xl border border-zinc-150 bg-zinc-50/50 p-6 flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[160px]">
+                            {scribeStep === "idle" && (
+                              <div className="space-y-3">
+                                <button
+                                  onClick={handleStartScribe}
+                                  className="h-16 w-16 rounded-full bg-black hover:bg-black/90 shadow-lg flex items-center justify-center text-white transition-all transform active:scale-95 cursor-pointer mx-auto"
+                                >
+                                  <Mic className="h-6 w-6" />
+                                </button>
+                                <div>
+                                  <h4 className="text-xs font-bold text-zinc-800">
+                                    Start Scribing
+                                  </h4>
+                                  <p className="text-[10px] text-zinc-400 mt-1 max-w-[280px]">
+                                    Click to dictate patient dialogue. AI will synthesize structured
+                                    SOAP notes.
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {scribeStep === "listening" && (
+                              <div className="space-y-3 w-full">
+                                {/* Animated Voice Soundwave */}
+                                <div className="flex items-center justify-center gap-1.5 h-12">
+                                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((bar) => (
+                                    <motion.div
+                                      key={bar}
+                                      className="w-1 bg-brand rounded-full"
+                                      animate={{
+                                        height: [12, 36, 12],
+                                      }}
+                                      transition={{
+                                        duration: 0.8,
+                                        repeat: Infinity,
+                                        delay: bar * 0.08,
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-bold text-red-500 bg-red-50 border border-red-100 rounded-full px-2.5 py-0.5 animate-pulse">
+                                    Listening...
+                                  </span>
+                                  <span className="block text-xs font-mono text-zinc-700 mt-2 font-semibold">
+                                    {formatTime(recordingSeconds)}
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={handleStopScribe}
+                                  className="rounded-full bg-zinc-900 hover:bg-zinc-800 text-white text-[10px] font-bold px-4 py-2 transition-colors cursor-pointer mt-3 shadow-md inline-flex items-center gap-1.5"
+                                >
+                                  <MicOff className="h-3.5 w-3.5" /> Stop Scribe
+                                </button>
+                              </div>
+                            )}
+
+                            {scribeStep === "transcribing" && (
+                              <div className="space-y-3 text-center">
+                                <Loader2 className="h-8 w-8 animate-spin text-brand mx-auto" />
+                                <div>
+                                  <h4 className="text-xs font-bold text-zinc-800">
+                                    Structuring Clinical Note
+                                  </h4>
+                                  <p className="text-[10px] text-zinc-400 mt-1">
+                                    BookMyTime is synthesizing the dialogue into standard SOAP
+                                    format...
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {scribeStep === "completed" && (
+                              <div className="w-full text-left space-y-3">
+                                <div className="flex items-center justify-between border-b border-zinc-150 pb-2">
+                                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-2.5 py-0.5">
+                                    ✓ SOAP Synthesis Complete ({scribeSpecialty})
+                                  </span>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => setScribeStep("idle")}
+                                      className="text-[10px] font-bold text-zinc-400 hover:text-zinc-600 transition-colors"
+                                    >
+                                      Discard
+                                    </button>
+                                    <button
+                                      onClick={() => handleSyncToEhr()}
+                                      className="text-[10px] font-bold text-brand hover:underline flex items-center gap-1"
+                                    >
+                                      <Save className="h-3 w-3" /> Sync to EHR
+                                    </button>
                                   </div>
                                 </div>
 
-                                {/* Custom legend for status breakdown */}
-                                <div className="flex flex-wrap sm:flex-col gap-2.5 text-[11px] justify-center sm:justify-start">
-                                  {[
-                                    { label: "Completed", color: "#10b981" },
-                                    { label: "Confirmed", color: "#0f766e" },
-                                    { label: "Pending", color: "#f59e0b" },
-                                    { label: "Cancelled", color: "#ef4444" },
-                                  ].map((item) => {
-                                    const match = analyticsData.statusBreakdown?.find(
-                                      (s: any) => s.status === item.label,
-                                    );
-                                    const count = match ? match.count : 0;
-                                    return (
-                                      <div key={item.label} className="flex items-center gap-2">
-                                        <span
-                                          className="h-2.5 w-2.5 rounded-full"
-                                          style={{ backgroundColor: item.color }}
-                                        />
-                                        <span className="font-semibold text-zinc-600">
-                                          {item.label}:
-                                        </span>
-                                        <span className="font-bold text-zinc-850">{count}</span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="h-full w-full bg-zinc-50/60 rounded-xl flex flex-col items-center justify-center text-center px-4">
-                                <BarChart3 className="h-7 w-7 text-zinc-300 mb-2" />
-                                <p className="text-xs font-semibold text-zinc-500">
-                                  No appointment data yet
-                                </p>
-                                <p className="text-[10px] text-zinc-400 mt-0.5">
-                                  Status breakdown will appear once appointments are recorded.
-                                </p>
-                              </div>
-                            )
-                          ) : (
-                            <div className="h-full w-full bg-zinc-50 rounded-xl flex items-center justify-center animate-pulse">
-                              <Loader2 className="h-6 w-6 text-zinc-300 animate-spin" />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 2. Main Row (Scribe Emulator & Timeline) */}
-                    <div className="grid gap-6 lg:grid-cols-3">
-                      {/* Left Column: Scribe Emulator Widget */}
-                      <div className="lg:col-span-2 rounded-2xl border border-zinc-200 bg-white p-5 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Stethoscope className="h-4 w-4 text-brand" />
-                            <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-tight">
-                              Real-time AI SOAP Dictation
-                            </h3>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {/* Specialty pill selector */}
-                            <select
-                              value={scribeSpecialty}
-                              onChange={(e) => setScribeSpecialty(e.target.value as any)}
-                              className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-[10px] font-bold focus:outline-none"
-                              disabled={isRecording || scribeStep === "transcribing"}
-                            >
-                              <option>Family Medicine</option>
-                              <option>Cardiology</option>
-                              <option>Pediatrics</option>
-                              <option>Psychiatry</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        {/* Interactive Recording Area */}
-                        <div className="rounded-xl border border-zinc-150 bg-zinc-50/50 p-6 flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[160px]">
-                          {scribeStep === "idle" && (
-                            <div className="space-y-3">
-                              <button
-                                onClick={handleStartScribe}
-                                className="h-16 w-16 rounded-full bg-black hover:bg-black/90 shadow-lg flex items-center justify-center text-white transition-all transform active:scale-95 cursor-pointer mx-auto"
-                              >
-                                <Mic className="h-6 w-6" />
-                              </button>
-                              <div>
-                                <h4 className="text-xs font-bold text-zinc-800">Start Scribing</h4>
-                                <p className="text-[10px] text-zinc-400 mt-1 max-w-[280px]">
-                                  Click to dictate patient dialogue. AI will synthesize structured
-                                  SOAP notes.
-                                </p>
-                              </div>
-                            </div>
-                          )}
-
-                          {scribeStep === "listening" && (
-                            <div className="space-y-3 w-full">
-                              {/* Animated Voice Soundwave */}
-                              <div className="flex items-center justify-center gap-1.5 h-12">
-                                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((bar) => (
-                                  <motion.div
-                                    key={bar}
-                                    className="w-1 bg-brand rounded-full"
-                                    animate={{
-                                      height: [12, 36, 12],
-                                    }}
-                                    transition={{
-                                      duration: 0.8,
-                                      repeat: Infinity,
-                                      delay: bar * 0.08,
-                                    }}
-                                  />
-                                ))}
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-red-500 bg-red-50 border border-red-100 rounded-full px-2.5 py-0.5 animate-pulse">
-                                  Listening...
-                                </span>
-                                <span className="block text-xs font-mono text-zinc-700 mt-2 font-semibold">
-                                  {formatTime(recordingSeconds)}
-                                </span>
-                              </div>
-                              <button
-                                onClick={handleStopScribe}
-                                className="rounded-full bg-zinc-900 hover:bg-zinc-800 text-white text-[10px] font-bold px-4 py-2 transition-colors cursor-pointer mt-3 shadow-md inline-flex items-center gap-1.5"
-                              >
-                                <MicOff className="h-3.5 w-3.5" /> Stop Scribe
-                              </button>
-                            </div>
-                          )}
-
-                          {scribeStep === "transcribing" && (
-                            <div className="space-y-3 text-center">
-                              <Loader2 className="h-8 w-8 animate-spin text-brand mx-auto" />
-                              <div>
-                                <h4 className="text-xs font-bold text-zinc-800">
-                                  Structuring Clinical Note
-                                </h4>
-                                <p className="text-[10px] text-zinc-400 mt-1">
-                                  BookMyTime is synthesizing the dialogue into standard SOAP
-                                  format...
-                                </p>
-                              </div>
-                            </div>
-                          )}
-
-                          {scribeStep === "completed" && (
-                            <div className="w-full text-left space-y-3">
-                              <div className="flex items-center justify-between border-b border-zinc-150 pb-2">
-                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-2.5 py-0.5">
-                                  ✓ SOAP Synthesis Complete ({scribeSpecialty})
-                                </span>
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => setScribeStep("idle")}
-                                    className="text-[10px] font-bold text-zinc-400 hover:text-zinc-600 transition-colors"
-                                  >
-                                    Discard
-                                  </button>
-                                  <button
-                                    onClick={() => handleSyncToEhr()}
-                                    className="text-[10px] font-bold text-brand hover:underline flex items-center gap-1"
-                                  >
-                                    <Save className="h-3 w-3" /> Sync to EHR
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* Recent Patient visits */}
-                              <div className="space-y-3">
-                                <h4 className="text-[10px] font-bold text-zinc-400 tracking-wider uppercase">
-                                  Recent Appointments
-                                </h4>
-                                <div className="overflow-hidden border border-zinc-150 rounded-xl bg-white">
-                                  <table className="min-w-full divide-y divide-zinc-200 text-left">
-                                    <thead className="bg-zinc-50 text-[10px] font-bold text-zinc-500 uppercase">
-                                      <tr>
-                                        <th className="px-4 py-2">Patient</th>
-                                        <th className="px-4 py-2">Date & Time</th>
-                                        <th className="px-4 py-2">Status</th>
-                                        <th className="px-4 py-2 text-right">Action</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-zinc-150 text-xs">
-                                      {loadingStats ? (
-                                        Array.from({ length: 3 }).map((_, idx) => (
-                                          <tr key={idx} className="animate-pulse">
-                                            <td className="px-4 py-3">
-                                              <div className="h-3.5 w-24 bg-zinc-100 rounded" />
-                                            </td>
-                                            <td className="px-4 py-3">
-                                              <div className="h-3 w-32 bg-zinc-50 rounded" />
-                                            </td>
-                                            <td className="px-4 py-3">
-                                              <div className="h-3.5 w-16 bg-zinc-100 rounded-full" />
-                                            </td>
-                                            <td className="px-4 py-3">
-                                              <div className="h-3 w-12 bg-zinc-50 rounded" />
-                                            </td>
-                                          </tr>
-                                        ))
-                                      ) : !dashboardStats?.recentAppointments ||
-                                        dashboardStats.recentAppointments.length === 0 ? (
+                                {/* Recent Patient visits */}
+                                <div className="space-y-3">
+                                  <h4 className="text-[10px] font-bold text-zinc-400 tracking-wider uppercase">
+                                    Recent Appointments
+                                  </h4>
+                                  <div className="overflow-hidden border border-zinc-150 rounded-xl bg-white">
+                                    <table className="min-w-full divide-y divide-zinc-200 text-left">
+                                      <thead className="bg-zinc-50 text-[10px] font-bold text-zinc-500 uppercase">
                                         <tr>
-                                          <td
-                                            colSpan={4}
-                                            className="px-4 py-6 text-center text-zinc-400 italic"
-                                          >
-                                            No appointments scheduled yet.
-                                          </td>
+                                          <th className="px-4 py-2">Patient</th>
+                                          <th className="px-4 py-2">Date & Time</th>
+                                          <th className="px-4 py-2">Status</th>
+                                          <th className="px-4 py-2 text-right">Action</th>
                                         </tr>
-                                      ) : (
-                                        dashboardStats.recentAppointments.map((apt: any) => (
-                                          <tr key={apt.id} className="hover:bg-zinc-50/50">
-                                            <td className="px-4 py-2.5 font-semibold text-zinc-800">
-                                              {apt.name}
-                                            </td>
-                                            <td className="px-4 py-2.5 text-zinc-500">
-                                              {new Date(apt.dateTime).toLocaleDateString()}{" "}
-                                              {apt.timeSlot ||
-                                                new Date(apt.dateTime).toLocaleTimeString([], {
-                                                  hour: "2-digit",
-                                                  minute: "2-digit",
-                                                })}
-                                            </td>
-                                            <td className="px-4 py-2.5">
-                                              <span
-                                                className={`inline-block rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
-                                                  apt.status === "Completed"
-                                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                                                    : apt.status === "Confirmed"
-                                                      ? "bg-blue-50 text-blue-700 border border-blue-100"
-                                                      : apt.status === "Cancelled"
-                                                        ? "bg-red-50 text-red-700 border border-red-100"
-                                                        : "bg-amber-50 text-amber-700 border border-amber-100"
-                                                }`}
-                                              >
-                                                {apt.status}
-                                              </span>
-                                            </td>
-                                            <td className="px-4 py-2.5 text-right">
-                                              <button
-                                                onClick={() => {
-                                                  const p = patientsList.find(
-                                                    (x) =>
-                                                      x.name === apt.name || x.phone === apt.phone,
-                                                  );
-                                                  if (p) {
-                                                    setSelectedPatient(p);
-                                                  } else {
-                                                    setSelectedPatient({
-                                                      id: apt.patientId || apt.id,
-                                                      name: apt.name,
-                                                      age: 35,
-                                                      gender: "Not specified",
-                                                      dob: "N/A",
-                                                      phone: apt.phone,
-                                                      insurance: "Self-Pay / Online Booking",
-                                                      lastVisit: new Date(apt.dateTime)
-                                                        .toISOString()
-                                                        .split("T")[0],
-                                                      reason: apt.reason,
-                                                      status:
-                                                        apt.status === "Pending"
-                                                          ? "Pending Review"
-                                                          : "Completed",
-                                                      notesHistory: [],
-                                                    });
-                                                  }
-                                                }}
-                                                className="text-[10px] font-bold text-brand hover:underline cursor-pointer"
-                                              >
-                                                View Chart
-                                              </button>
+                                      </thead>
+                                      <tbody className="divide-y divide-zinc-150 text-xs">
+                                        {loadingStats ? (
+                                          Array.from({ length: 3 }).map((_, idx) => (
+                                            <tr key={idx} className="animate-pulse">
+                                              <td className="px-4 py-3">
+                                                <div className="h-3.5 w-24 bg-zinc-100 rounded" />
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                <div className="h-3 w-32 bg-zinc-50 rounded" />
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                <div className="h-3.5 w-16 bg-zinc-100 rounded-full" />
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                <div className="h-3 w-12 bg-zinc-50 rounded" />
+                                              </td>
+                                            </tr>
+                                          ))
+                                        ) : !dashboardStats?.recentAppointments ||
+                                          dashboardStats.recentAppointments.length === 0 ? (
+                                          <tr>
+                                            <td
+                                              colSpan={4}
+                                              className="px-4 py-6 text-center text-zinc-400 italic"
+                                            >
+                                              No appointments scheduled yet.
                                             </td>
                                           </tr>
-                                        ))
-                                      )}
-                                    </tbody>
-                                  </table>
+                                        ) : (
+                                          dashboardStats.recentAppointments.map((apt: any) => (
+                                            <tr key={apt.id} className="hover:bg-zinc-50/50">
+                                              <td className="px-4 py-2.5 font-semibold text-zinc-800">
+                                                {apt.name}
+                                              </td>
+                                              <td className="px-4 py-2.5 text-zinc-500">
+                                                {new Date(apt.dateTime).toLocaleDateString()}{" "}
+                                                {apt.timeSlot ||
+                                                  new Date(apt.dateTime).toLocaleTimeString([], {
+                                                    hour: "2-digit",
+                                                    minute: "2-digit",
+                                                  })}
+                                              </td>
+                                              <td className="px-4 py-2.5">
+                                                <span
+                                                  className={`inline-block rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
+                                                    apt.status === "Completed"
+                                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                                                      : apt.status === "Confirmed"
+                                                        ? "bg-blue-50 text-blue-700 border border-blue-100"
+                                                        : apt.status === "Cancelled"
+                                                          ? "bg-red-50 text-red-700 border border-red-100"
+                                                          : "bg-amber-50 text-amber-700 border border-amber-100"
+                                                  }`}
+                                                >
+                                                  {apt.status}
+                                                </span>
+                                              </td>
+                                              <td className="px-4 py-2.5 text-right">
+                                                <button
+                                                  onClick={() => {
+                                                    const p = patientsList.find(
+                                                      (x) =>
+                                                        x.name === apt.name ||
+                                                        x.phone === apt.phone,
+                                                    );
+                                                    if (p) {
+                                                      setSelectedPatient(p);
+                                                    } else {
+                                                      setSelectedPatient({
+                                                        id: apt.patientId || apt.id,
+                                                        name: apt.name,
+                                                        age: 35,
+                                                        gender: "Not specified",
+                                                        dob: "N/A",
+                                                        phone: apt.phone,
+                                                        insurance: "Self-Pay / Online Booking",
+                                                        lastVisit: new Date(apt.dateTime)
+                                                          .toISOString()
+                                                          .split("T")[0],
+                                                        reason: apt.reason,
+                                                        status:
+                                                          apt.status === "Pending"
+                                                            ? "Pending Review"
+                                                            : "Completed",
+                                                        notesHistory: [],
+                                                      });
+                                                    }
+                                                  }}
+                                                  className="text-[10px] font-bold text-brand hover:underline cursor-pointer"
+                                                >
+                                                  View Chart
+                                                </button>
+                                              </td>
+                                            </tr>
+                                          ))
+                                        )}
+                                      </tbody>
+                                    </table>
+                                  </div>
                                 </div>
-                              </div>
 
-                              <div className="grid gap-3 sm:grid-cols-2 text-[10px]">
-                                <div className="rounded-lg bg-white border border-zinc-150 p-2.5 space-y-1">
-                                  <h5 className="font-bold text-zinc-800">Subjective</h5>
-                                  <p className="text-zinc-500 line-clamp-3">{soapSubjective}</p>
-                                </div>
-                                <div className="rounded-lg bg-white border border-zinc-150 p-2.5 space-y-1">
-                                  <h5 className="font-bold text-zinc-800">Objective</h5>
-                                  <p className="text-zinc-500 line-clamp-3">{soapObjective}</p>
-                                </div>
-                                <div className="rounded-lg bg-white border border-zinc-150 p-2.5 space-y-1">
-                                  <h5 className="font-bold text-zinc-800">Assessment</h5>
-                                  <p className="text-zinc-500 line-clamp-3">{soapAssessment}</p>
-                                </div>
-                                <div className="rounded-lg bg-white border border-zinc-150 p-2.5 space-y-1">
-                                  <h5 className="font-bold text-zinc-800">Plan</h5>
-                                  <p className="text-zinc-500 line-clamp-3">{soapPlan}</p>
+                                <div className="grid gap-3 sm:grid-cols-2 text-[10px]">
+                                  <div className="rounded-lg bg-white border border-zinc-150 p-2.5 space-y-1">
+                                    <h5 className="font-bold text-zinc-800">Subjective</h5>
+                                    <p className="text-zinc-500 line-clamp-3">{soapSubjective}</p>
+                                  </div>
+                                  <div className="rounded-lg bg-white border border-zinc-150 p-2.5 space-y-1">
+                                    <h5 className="font-bold text-zinc-800">Objective</h5>
+                                    <p className="text-zinc-500 line-clamp-3">{soapObjective}</p>
+                                  </div>
+                                  <div className="rounded-lg bg-white border border-zinc-150 p-2.5 space-y-1">
+                                    <h5 className="font-bold text-zinc-800">Assessment</h5>
+                                    <p className="text-zinc-500 line-clamp-3">{soapAssessment}</p>
+                                  </div>
+                                  <div className="rounded-lg bg-white border border-zinc-150 p-2.5 space-y-1">
+                                    <h5 className="font-bold text-zinc-800">Plan</h5>
+                                    <p className="text-zinc-500 line-clamp-3">{soapPlan}</p>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       {/* Right Column: Timeline & AI Receptionist */}
                       <div className="space-y-6">
@@ -7045,9 +7271,14 @@ function MedicalDashboardPage() {
                             <h3 className="text-xs font-bold text-zinc-850 uppercase tracking-tight">
                               Today's Timeline
                             </h3>
-                            <span className="text-[10px] text-brand font-semibold hover:underline cursor-pointer">
+                            {/* Was a dead <span> that looked clickable. */}
+                            <button
+                              type="button"
+                              onClick={() => setActiveTab("calendar")}
+                              className="text-[10px] text-brand font-semibold hover:underline cursor-pointer"
+                            >
                               Full Calendar
-                            </span>
+                            </button>
                           </div>
                           <div className="space-y-3.5 relative pl-3 border-l border-zinc-150">
                             {loadingStats ? (
@@ -7103,7 +7334,7 @@ function MedicalDashboardPage() {
                 {/* ──────────────────────────────────────────────
                 TAB: SCRIBE WORKSPACE (Consultation Workspace)
                 ────────────────────────────────────────────── */}
-                {activeTab === "scribe" && (
+                {activeTab === "scribe" && isTabAllowed("scribe") && (
                   <motion.div
                     key="scribe-workspace"
                     initial={{ opacity: 0, y: 8 }}
@@ -8064,7 +8295,7 @@ function MedicalDashboardPage() {
                           return (
                             <div className="grid gap-4 grid-cols-2 sm:grid-cols-5">
                               {/* Today's Appointments */}
-                              <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 flex items-center justify-between shadow-sm">
+                              <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 flex items-center justify-between">
                                 <div className="space-y-1">
                                   <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight block">
                                     {consultationSubTab === "followups"
@@ -8087,7 +8318,7 @@ function MedicalDashboardPage() {
                               </div>
 
                               {/* Completed */}
-                              <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 flex items-center justify-between shadow-sm">
+                              <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 flex items-center justify-between">
                                 <div className="space-y-1">
                                   <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight block">
                                     Completed
@@ -8105,7 +8336,7 @@ function MedicalDashboardPage() {
                               </div>
 
                               {/* Remaining */}
-                              <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 flex items-center justify-between shadow-sm">
+                              <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 flex items-center justify-between">
                                 <div className="space-y-1">
                                   <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight block">
                                     Remaining
@@ -8127,7 +8358,7 @@ function MedicalDashboardPage() {
                               </div>
 
                               {/* Total Appointments */}
-                              <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 flex items-center justify-between shadow-sm">
+                              <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 flex items-center justify-between">
                                 <div className="space-y-1">
                                   <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight block">
                                     {consultationSubTab === "followups"
@@ -8144,7 +8375,7 @@ function MedicalDashboardPage() {
                               </div>
 
                               {/* Cancelled */}
-                              <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 flex items-center justify-between shadow-sm">
+                              <div className="rounded-2xl border border-zinc-200/80 bg-white p-4 flex items-center justify-between">
                                 <div className="space-y-1">
                                   <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight block">
                                     Cancelled
@@ -8659,7 +8890,17 @@ function MedicalDashboardPage() {
 
                       {/* Add Patient trigger */}
                       <button
-                        onClick={() => setIsAddingPatient(!isAddingPatient)}
+                        onClick={() => {
+                          // Always a fresh, blank form. Toggling used to keep
+                          // `editingPatient`, so "Add" silently updated the last
+                          // patient that had been opened for editing.
+                          if (isAddingPatient && !editingPatient) {
+                            setIsAddingPatient(false);
+                            return;
+                          }
+                          clearPatientForm();
+                          setIsAddingPatient(true);
+                        }}
                         className="rounded-full bg-zinc-950 hover:bg-zinc-850 text-white text-xs font-semibold px-4 py-2 flex items-center gap-1.5 cursor-pointer transition-transform active:scale-[0.98]"
                       >
                         <Plus className="h-4 w-4" /> Add Patient File
@@ -9135,7 +9376,7 @@ function MedicalDashboardPage() {
                 {/* ──────────────────────────────────────────────
                 TAB: PRACTICE ANALYTICS
                 ────────────────────────────────────────────── */}
-                {activeTab === "analytics" && (
+                {activeTab === "analytics" && isTabAllowed("analytics") && (
                   <motion.div
                     key="analytics"
                     initial={{ opacity: 0, y: 8 }}
@@ -9388,6 +9629,7 @@ function MedicalDashboardPage() {
                 TAB: SUB DEP. BOOKINGS (Multi-Location)
                 ────────────────────────────────────────────── */}
                 {activeTab === "subLocationBookings" &&
+                  isTabAllowed("subLocationBookings") &&
                   (() => {
                     const norm = (s: string) => (s || "").toLowerCase();
                     const filtered = subLocationBookings.filter((b) => {
@@ -10059,11 +10301,14 @@ function MedicalDashboardPage() {
                     {/* 1. Statistics Bar */}
                     <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
                       <div className="rounded-2xl border border-zinc-200/80 bg-white p-4">
+                        {/* Server-side counts for the selected day. These used to
+                            count the current 20-row page, so they were capped
+                            at 20 and ignored every other page. */}
                         <span className="text-[10px] font-bold text-zinc-400 uppercase">
-                          Total Scheduled
+                          {aptListDate ? "Total Scheduled" : "Total Scheduled (all dates)"}
                         </span>
                         <h3 className="text-xl font-extrabold text-zinc-900 mt-1">
-                          {appointments.length}
+                          {appointmentSummary.total}
                         </h3>
                       </div>
                       <div className="rounded-2xl border border-zinc-200/80 bg-white p-4">
@@ -10071,7 +10316,7 @@ function MedicalDashboardPage() {
                           Pending Review
                         </span>
                         <h3 className="text-xl font-extrabold text-amber-655 text-amber-600 mt-1">
-                          {appointments.filter((a) => a.status === "Pending").length}
+                          {appointmentSummary.pending}
                         </h3>
                       </div>
                       <div className="rounded-2xl border border-zinc-200/80 bg-white p-4">
@@ -10079,7 +10324,7 @@ function MedicalDashboardPage() {
                           Confirmed
                         </span>
                         <h3 className="text-xl font-extrabold text-brand mt-1">
-                          {appointments.filter((a) => a.status === "Confirmed").length}
+                          {appointmentSummary.confirmed}
                         </h3>
                       </div>
                       <div className="rounded-2xl border border-zinc-200/80 bg-white p-4">
@@ -10087,24 +10332,25 @@ function MedicalDashboardPage() {
                           Completed
                         </span>
                         <h3 className="text-xl font-extrabold text-emerald-600 mt-1">
-                          {appointments.filter((a) => a.status === "Completed").length}
+                          {appointmentSummary.completed}
                         </h3>
                       </div>
                     </div>
 
                     {/* 2. Control & Filters Bar */}
                     <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
-                      <div className="flex flex-1 flex-col sm:flex-row gap-3 items-stretch sm:items-center max-w-2xl">
+                      <div className="flex flex-1 flex-wrap gap-3 items-stretch sm:items-center">
                         <AnimatedSearch
-                          value={searchAptQuery}
-                          onChange={setSearchAptQuery}
-                          placeholder="Search appointments by name, email, phone, or complaint..."
+                          value={searchAptInput}
+                          onChange={setSearchAptInput}
+                          placeholder="Search by name, email, phone, complaint, doctor or token..."
                           roundedFull
-                          expandedWidth={280}
+                          expandedWidth={300}
                         />
                         <select
                           value={filterAptStatus}
                           onChange={(e) => setFilterAptStatus(e.target.value)}
+                          aria-label="Filter appointments by status"
                           className="px-4 py-2 text-xs rounded-full border border-zinc-200 bg-white font-bold text-zinc-700 focus:outline-none cursor-pointer"
                         >
                           <option value="All">All Statuses</option>
@@ -10113,6 +10359,207 @@ function MedicalDashboardPage() {
                           <option value="Completed">Completed</option>
                           <option value="Cancelled">Cancelled</option>
                         </select>
+                        {/* Day picker: ‹ [Today, 3 Oct 2026 ▾] ›  — defaults to
+                            today; the calendar popover picks any other day. */}
+                        {(() => {
+                          const today = toLocalIsoDate(new Date());
+                          const selected = aptListDate ? parseLocalIsoDate(aptListDate) : null;
+                          const shiftDay = (delta: number) => {
+                            const base = selected ?? new Date();
+                            const next = new Date(
+                              base.getFullYear(),
+                              base.getMonth(),
+                              base.getDate() + delta,
+                            );
+                            setAptListDate(toLocalIsoDate(next));
+                          };
+                          const relative =
+                            aptListDate === today
+                              ? "Today"
+                              : aptListDate === toLocalIsoDate(new Date(Date.now() + 864e5))
+                                ? "Tomorrow"
+                                : aptListDate === toLocalIsoDate(new Date(Date.now() - 864e5))
+                                  ? "Yesterday"
+                                  : "";
+                          const label = selected
+                            ? `${relative ? `${relative}, ` : ""}${selected.toLocaleDateString(
+                                "en-IN",
+                                {
+                                  weekday: relative ? undefined : "short",
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                },
+                              )}`
+                            : "All dates";
+                          return (
+                            <div className="inline-flex items-center rounded-full border border-zinc-200 bg-white">
+                              {selected && (
+                                <button
+                                  type="button"
+                                  onClick={() => shiftDay(-1)}
+                                  aria-label="Previous day"
+                                  title="Previous day"
+                                  className="pl-2.5 pr-1 py-2 text-zinc-400 hover:text-brand cursor-pointer"
+                                >
+                                  <ChevronLeft className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              <Popover open={aptDatePickerOpen} onOpenChange={setAptDatePickerOpen}>
+                                <PopoverTrigger asChild>
+                                  <button
+                                    type="button"
+                                    aria-label={`Showing appointments for ${label}. Change date`}
+                                    className={`inline-flex items-center gap-1.5 py-2 text-xs font-bold text-zinc-700 hover:text-brand cursor-pointer ${
+                                      selected ? "px-1.5" : "px-4"
+                                    }`}
+                                  >
+                                    <CalendarDays className="h-3.5 w-3.5 text-brand" />
+                                    {label}
+                                    <ChevronDown className="h-3 w-3 text-zinc-400" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent align="start" className="w-auto p-0 rounded-2xl">
+                                  <div className="flex flex-wrap gap-1.5 border-b border-zinc-100 p-2.5">
+                                    {[
+                                      { label: "Yesterday", offset: -1 },
+                                      { label: "Today", offset: 0 },
+                                      { label: "Tomorrow", offset: 1 },
+                                    ].map((q) => {
+                                      const value = toLocalIsoDate(
+                                        new Date(Date.now() + q.offset * 864e5),
+                                      );
+                                      return (
+                                        <button
+                                          key={q.label}
+                                          type="button"
+                                          onClick={() => {
+                                            setAptListDate(value);
+                                            setAptDatePickerOpen(false);
+                                          }}
+                                          className={`rounded-full border px-3 py-1 text-[10px] font-bold cursor-pointer transition-colors ${
+                                            aptListDate === value
+                                              ? "bg-brand text-white border-brand"
+                                              : "border-zinc-200 text-zinc-600 hover:border-brand/40 hover:text-brand"
+                                          }`}
+                                        >
+                                          {q.label}
+                                        </button>
+                                      );
+                                    })}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setAptListDate("");
+                                        setAptDatePickerOpen(false);
+                                      }}
+                                      className={`rounded-full border px-3 py-1 text-[10px] font-bold cursor-pointer transition-colors ${
+                                        !aptListDate
+                                          ? "bg-brand text-white border-brand"
+                                          : "border-zinc-200 text-zinc-600 hover:border-brand/40 hover:text-brand"
+                                      }`}
+                                    >
+                                      All dates
+                                    </button>
+                                  </div>
+                                  <DatePickerCalendar
+                                    mode="single"
+                                    selected={selected ?? undefined}
+                                    defaultMonth={selected ?? new Date()}
+                                    onSelect={(d) => {
+                                      if (!d) return; // clicking the selected day again keeps it
+                                      setAptListDate(toLocalIsoDate(d));
+                                      setAptDatePickerOpen(false);
+                                    }}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                              {selected && (
+                                <button
+                                  type="button"
+                                  onClick={() => shiftDay(1)}
+                                  aria-label="Next day"
+                                  title="Next day"
+                                  className="pl-1 pr-2.5 py-2 text-zinc-400 hover:text-brand cursor-pointer"
+                                >
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {/* Range presets only make sense across dates, so they
+                            appear once "All dates" is chosen. */}
+                        {!aptListDate && (
+                          <select
+                            value={filterAptDate}
+                            onChange={(e) => setFilterAptDate(e.target.value)}
+                            aria-label="Filter appointments by date range"
+                            className="px-4 py-2 text-xs rounded-full border border-zinc-200 bg-white font-bold text-zinc-700 focus:outline-none cursor-pointer"
+                          >
+                            {APPOINTMENT_DATE_FILTER_OPTIONS.filter((o) => o.value !== "today").map(
+                              (opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ),
+                            )}
+                          </select>
+                        )}
+                        {/* Sort field + direction */}
+                        <div className="inline-flex items-center rounded-full border border-zinc-200 bg-white overflow-hidden">
+                          <ArrowUpDown className="h-3.5 w-3.5 text-zinc-400 ml-3 shrink-0" />
+                          <select
+                            value={sortAptBy}
+                            onChange={(e) => setSortAptBy(e.target.value as AppointmentSortKey)}
+                            aria-label="Sort appointments by"
+                            className="px-2 py-2 text-xs bg-white font-bold text-zinc-700 focus:outline-none cursor-pointer"
+                          >
+                            {APPOINTMENT_SORT_OPTIONS.map((opt) => (
+                              <option key={opt.key} value={opt.key}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => setSortAptDir((d) => (d === "asc" ? "desc" : "asc"))}
+                            title={
+                              sortAptDir === "asc"
+                                ? "Ascending — click for descending"
+                                : "Descending — click for ascending"
+                            }
+                            aria-label={`Sort direction: ${sortAptDir === "asc" ? "ascending" : "descending"}`}
+                            className="px-3 py-2 border-l border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-brand transition-all cursor-pointer"
+                          >
+                            {sortAptDir === "asc" ? (
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            ) : (
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        </div>
+                        {(searchAptInput ||
+                          filterAptStatus !== "All" ||
+                          filterAptDate !== "all" ||
+                          aptListDate !== toLocalIsoDate(new Date()) ||
+                          sortAptBy !== DEFAULT_SORT_KEY ||
+                          sortAptDir !== DEFAULT_SORT_DIRECTION) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSearchAptInput("");
+                              setFilterAptStatus("All");
+                              setFilterAptDate("all");
+                              setAptListDate(toLocalIsoDate(new Date()));
+                              setSortAptBy(DEFAULT_SORT_KEY);
+                              setSortAptDir(DEFAULT_SORT_DIRECTION);
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-2 text-xs rounded-full border border-zinc-200 bg-white font-bold text-zinc-400 hover:text-zinc-700 hover:bg-zinc-50 transition-all cursor-pointer"
+                          >
+                            <X className="h-3 w-3" /> Reset
+                          </button>
+                        )}
                       </div>
                       <button
                         type="button"
@@ -10155,7 +10602,7 @@ function MedicalDashboardPage() {
                     )}
 
                     {/* 3. Responsive Table & Card View */}
-                    {loadingAppointments ? (
+                    {loadingAptList ? (
                       <div className="rounded-2xl border border-zinc-200 bg-white p-6 text-center">
                         <Loader2 className="mx-auto h-6 w-6 animate-spin text-zinc-400 mb-2" />
                         <p className="text-xs text-zinc-400">Loading appointments...</p>
@@ -10182,9 +10629,51 @@ function MedicalDashboardPage() {
                             );
 
                           if (list.length === 0) {
+                            const hasFilters =
+                              Boolean(searchAptQuery) ||
+                              filterAptStatus !== "All" ||
+                              filterAptDate !== "all";
+                            const dayLabel = aptListDate
+                              ? parseLocalIsoDate(aptListDate).toLocaleDateString("en-IN", {
+                                  weekday: "long",
+                                  day: "numeric",
+                                  month: "long",
+                                })
+                              : "";
                             return (
-                              <div className="p-8 text-center text-zinc-400 font-semibold text-xs">
-                                No clinic appointments found matching constraints.
+                              <div className="p-8 text-center">
+                                <CalendarDays className="mx-auto h-7 w-7 text-zinc-200 mb-2" />
+                                <p className="text-zinc-400 font-semibold text-xs">
+                                  {hasFilters
+                                    ? "No appointments match your search or filters."
+                                    : aptListDate
+                                      ? `No appointments on ${dayLabel}.`
+                                      : "No appointments yet."}
+                                </p>
+                                <div className="mt-2 flex items-center justify-center gap-3">
+                                  {hasFilters && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSearchAptInput("");
+                                        setFilterAptStatus("All");
+                                        setFilterAptDate("all");
+                                      }}
+                                      className="inline-flex items-center gap-1 text-[11px] font-bold text-brand hover:underline cursor-pointer"
+                                    >
+                                      <X className="h-3 w-3" /> Clear search and filters
+                                    </button>
+                                  )}
+                                  {aptListDate && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setAptListDate("")}
+                                      className="inline-flex items-center gap-1 text-[11px] font-bold text-brand hover:underline cursor-pointer"
+                                    >
+                                      <CalendarDays className="h-3 w-3" /> Show all dates
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             );
                           }
@@ -10209,10 +10698,28 @@ function MedicalDashboardPage() {
                                           className="rounded border-zinc-300 text-brand focus:ring-brand cursor-pointer align-middle"
                                         />
                                       </th>
-                                      <th className="px-5 py-3">Patient Info</th>
-                                      <th className="px-5 py-3">Date & Time</th>
+                                      <SortableAptHeader
+                                        label="Patient Info"
+                                        sortKey="name"
+                                        activeKey={sortAptBy}
+                                        direction={sortAptDir}
+                                        onSort={handleSortApt}
+                                      />
+                                      <SortableAptHeader
+                                        label="Date & Time"
+                                        sortKey="dateTime"
+                                        activeKey={sortAptBy}
+                                        direction={sortAptDir}
+                                        onSort={handleSortApt}
+                                      />
                                       <th className="px-5 py-3">Chief Complaint</th>
-                                      <th className="px-5 py-3">Status</th>
+                                      <SortableAptHeader
+                                        label="Status"
+                                        sortKey="status"
+                                        activeKey={sortAptBy}
+                                        direction={sortAptDir}
+                                        onSort={handleSortApt}
+                                      />
                                       <th className="px-5 py-3 text-right">Actions</th>
                                     </tr>
                                   </thead>
@@ -10359,47 +10866,49 @@ function MedicalDashboardPage() {
                                         {/* Action buttons */}
                                         <td className="px-5 py-3.5">
                                           <div className="flex items-center justify-end gap-1.5">
-                                            {/* Consultation link */}
-                                            <button
-                                              type="button"
-                                              title="Start Consultation"
-                                              onClick={() => {
-                                                setSelectedAptForConsultation(apt);
-                                                const pid = resolvePatientForApt(apt);
-                                                setScribePatientId(pid);
-                                                setLiveTranscript(apt.reason || "");
-                                                setConsultationChiefComplaint(apt.reason || "");
-                                                setConsultationDiagnosis("");
-                                                setConsultationAdvice("");
-                                                setPrescriptionMedications([]);
-                                                setConsultationLabTests([]);
-                                                setConsultationReferrals([]);
-                                                setConsultationFollowUpDate("");
-                                                setConsultationFollowUpNotes("");
-                                                setConsultationFee(1500);
-                                                setConsultationPrivateNotes("");
-                                                setVitalBP("120/80");
-                                                setVitalPulse("72");
-                                                setVitalTemp("98.6");
-                                                setVitalWeight("70");
-                                                setVitalHeight("170");
-                                                setVitalSpO2("98");
-                                                setVitalRespRate("16");
-                                                setPatientChartData(null);
-                                                if (pid) {
-                                                  getPatientChartServerFn({
-                                                    data: { patientId: pid },
-                                                  })
-                                                    .then((res) => setPatientChartData(res))
-                                                    .catch((err) => console.error(err));
-                                                }
-                                                setActiveTab("scribe");
-                                              }}
-                                              className="inline-flex items-center gap-1 bg-black text-white hover:opacity-90 transition-all font-bold px-3 py-1 rounded-full text-[10px] cursor-pointer shrink-0 shadow-none active:scale-[0.98]"
-                                            >
-                                              <Stethoscope className="h-3 w-3" />
-                                              Consult
-                                            </button>
+                                            {/* Consultation link — clinical staff only */}
+                                            {isTabAllowed("scribe") && (
+                                              <button
+                                                type="button"
+                                                title="Start Consultation"
+                                                onClick={() => {
+                                                  setSelectedAptForConsultation(apt);
+                                                  const pid = resolvePatientForApt(apt);
+                                                  setScribePatientId(pid);
+                                                  setLiveTranscript(apt.reason || "");
+                                                  setConsultationChiefComplaint(apt.reason || "");
+                                                  setConsultationDiagnosis("");
+                                                  setConsultationAdvice("");
+                                                  setPrescriptionMedications([]);
+                                                  setConsultationLabTests([]);
+                                                  setConsultationReferrals([]);
+                                                  setConsultationFollowUpDate("");
+                                                  setConsultationFollowUpNotes("");
+                                                  setConsultationFee(1500);
+                                                  setConsultationPrivateNotes("");
+                                                  setVitalBP("120/80");
+                                                  setVitalPulse("72");
+                                                  setVitalTemp("98.6");
+                                                  setVitalWeight("70");
+                                                  setVitalHeight("170");
+                                                  setVitalSpO2("98");
+                                                  setVitalRespRate("16");
+                                                  setPatientChartData(null);
+                                                  if (pid) {
+                                                    getPatientChartServerFn({
+                                                      data: { patientId: pid },
+                                                    })
+                                                      .then((res) => setPatientChartData(res))
+                                                      .catch((err) => console.error(err));
+                                                  }
+                                                  setActiveTab("scribe");
+                                                }}
+                                                className="inline-flex items-center gap-1 bg-black text-white hover:opacity-90 transition-all font-bold px-3 py-1 rounded-full text-[10px] cursor-pointer shrink-0 shadow-none active:scale-[0.98]"
+                                              >
+                                                <Stethoscope className="h-3 w-3" />
+                                                Consult
+                                              </button>
+                                            )}
 
                                             {/* Edit button */}
                                             <button
@@ -10459,23 +10968,23 @@ function MedicalDashboardPage() {
                                           className="mt-1 rounded border-zinc-300 text-brand focus:ring-brand shrink-0 cursor-pointer"
                                         />
                                         <div>
-                                        <h4 className="text-sm font-bold text-zinc-800 flex items-center gap-1.5">
-                                          {apt.tokenNo && (
-                                            <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-md bg-brand/10 border border-brand/20 text-brand text-[9px] font-black">
-                                              #{apt.tokenNo}
-                                            </span>
-                                          )}
-                                          <span>{apt.name}</span>
-                                          {apt.appointmentType && (
-                                            <span className="text-[8px] font-extrabold text-brand bg-brand/5 border border-brand/10 rounded px-1.5 py-0.5">
-                                              {apt.appointmentType}
-                                            </span>
-                                          )}
-                                        </h4>
-                                        <div className="flex flex-col text-[10px] text-zinc-400 gap-0.5 mt-0.5">
-                                          <span>Phone: {apt.phone}</span>
-                                          {apt.whatsapp && <span>WA: {apt.whatsapp}</span>}
-                                        </div>
+                                          <h4 className="text-sm font-bold text-zinc-800 flex items-center gap-1.5">
+                                            {apt.tokenNo && (
+                                              <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-md bg-brand/10 border border-brand/20 text-brand text-[9px] font-black">
+                                                #{apt.tokenNo}
+                                              </span>
+                                            )}
+                                            <span>{apt.name}</span>
+                                            {apt.appointmentType && (
+                                              <span className="text-[8px] font-extrabold text-brand bg-brand/5 border border-brand/10 rounded px-1.5 py-0.5">
+                                                {apt.appointmentType}
+                                              </span>
+                                            )}
+                                          </h4>
+                                          <div className="flex flex-col text-[10px] text-zinc-400 gap-0.5 mt-0.5">
+                                            <span>Phone: {apt.phone}</span>
+                                            {apt.whatsapp && <span>WA: {apt.whatsapp}</span>}
+                                          </div>
                                         </div>
                                       </div>
                                       <span
@@ -10516,6 +11025,33 @@ function MedicalDashboardPage() {
                                     </div>
 
                                     <div className="flex items-center justify-end gap-3 pt-1">
+                                      {/* Status change — desktop had this, mobile didn't. */}
+                                      <select
+                                        value={apt.status}
+                                        onChange={(e) => handleUpdateStatus(apt, e.target.value)}
+                                        aria-label={`Change status for ${apt.name}`}
+                                        className="mr-auto rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[10px] font-bold text-zinc-700 focus:outline-none cursor-pointer"
+                                      >
+                                        {![
+                                          "Pending",
+                                          "Confirmed",
+                                          "Completed",
+                                          "Cancelled",
+                                        ].includes(apt.status) && (
+                                          <option value={apt.status}>{apt.status}</option>
+                                        )}
+                                        <option value="Pending">Pending</option>
+                                        <option value="Confirmed">Confirmed</option>
+                                        <option value="Completed">Completed</option>
+                                        <option value="Cancelled">Cancelled</option>
+                                      </select>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedAptDetails(apt)}
+                                        className="text-brand hover:underline font-bold text-xs cursor-pointer"
+                                      >
+                                        Details
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -10646,7 +11182,7 @@ function MedicalDashboardPage() {
                 {/* ──────────────────────────────────────────────
                 TAB: VIDEO CONSULTATION
                 ────────────────────────────────────────────── */}
-                {activeTab === "video" && (
+                {activeTab === "video" && isTabAllowed("video") && (
                   <motion.div
                     key="video"
                     initial={{ opacity: 0, y: 8 }}
@@ -10713,7 +11249,11 @@ function MedicalDashboardPage() {
                               [
                                 { label: "Mon – Fri", days: [1, 2, 3, 4, 5], Icon: Briefcase },
                                 { label: "Mon – Sat", days: [1, 2, 3, 4, 5, 6], Icon: Building2 },
-                                { label: "All 7 Days", days: [0, 1, 2, 3, 4, 5, 6], Icon: CalendarDays },
+                                {
+                                  label: "All 7 Days",
+                                  days: [0, 1, 2, 3, 4, 5, 6],
+                                  Icon: CalendarDays,
+                                },
                                 { label: "Weekends Only", days: [0, 6], Icon: Sunrise },
                                 { label: "Clear All", days: [], Icon: RotateCcw },
                               ] as { label: string; days: number[]; Icon: React.ElementType }[]
@@ -10805,8 +11345,13 @@ function MedicalDashboardPage() {
                             Adjust Hours per Active Day
                           </p>
                           {[
-                            "Sunday", "Monday", "Tuesday", "Wednesday",
-                            "Thursday", "Friday", "Saturday",
+                            "Sunday",
+                            "Monday",
+                            "Tuesday",
+                            "Wednesday",
+                            "Thursday",
+                            "Friday",
+                            "Saturday",
                           ].map((dayName, idx) => {
                             const sched = docSchedules.find((s) => s.dayOfWeek === idx);
                             if (!sched?.enabled) return null;
@@ -10814,21 +11359,16 @@ function MedicalDashboardPage() {
                             const breaks: { start: string; end: string; label: string }[] =
                               sched.breaks ?? [];
 
-                            const [sh, sm] = (sched.startTime || "09:00").split(":").map(Number);
-                            const [eh, em] = (sched.endTime || "18:00").split(":").map(Number);
-                            let workMins = eh * 60 + em - (sh * 60 + sm);
-                            breaks.forEach((b) => {
-                              if (b.start && b.end) {
-                                const [bsh, bsm] = b.start.split(":").map(Number);
-                                const [beh, bem] = b.end.split(":").map(Number);
-                                const bm = beh * 60 + bem - (bsh * 60 + bsm);
-                                if (bm > 0) workMins -= bm;
-                              }
-                            });
-                            const slots =
-                              workMins > 0
-                                ? Math.floor(workMins / (sched.slotDuration || 30))
-                                : 0;
+                            // Count slots the same way the server generates
+                            // them, so breaks are reflected accurately.
+                            const startMin = parseTimeToMinutes(sched.startTime) ?? 9 * 60;
+                            const endMin = parseTimeToMinutes(sched.endTime) ?? 18 * 60;
+                            const slots = countAvailableSlots(
+                              startMin,
+                              endMin,
+                              sched.slotDuration || 30,
+                              normalizeBreaks(breaks),
+                            );
 
                             return (
                               <DayScheduleCard
@@ -10880,9 +11420,7 @@ function MedicalDashboardPage() {
                                     startTime: s.startTime,
                                     endTime: s.endTime,
                                     slotDuration: parseInt(s.slotDuration),
-                                    breaks: (s.breaks ?? []).filter(
-                                      (b: any) => b.start && b.end,
-                                    ),
+                                    breaks: (s.breaks ?? []).filter((b: any) => b.start && b.end),
                                   }));
                                 const res = await saveDoctorScheduleServerFn({
                                   data: {
@@ -10896,6 +11434,7 @@ function MedicalDashboardPage() {
                                 }
                               } catch (err: any) {
                                 console.error(err);
+                                showToast("error", err?.message || "Failed to save schedule");
                               } finally {
                                 setSavingDocSchedule(false);
                               }
@@ -10954,7 +11493,12 @@ function MedicalDashboardPage() {
                         onOpenEditDoctor={handleOpenEditDoctor}
                         onEditDoctorSchedule={handleEditDoctorSchedule}
                         onEditDoctorLeaves={handleEditDoctorLeaves}
-                        onUpgradePlan={() => setActiveTab("plans")}
+                        onUpgradePlan={() => {
+                          if (isTabAllowed("plans")) setActiveTab("plans");
+                          else showToast("info", "Ask the workspace owner to upgrade the plan.");
+                        }}
+                        canManageDoctors={canManageClinicConfig}
+                        canSendWhatsApp={canPerform(accountRole, "send_patient_notices")}
                         clinicName={profileClinic || user?.clinicName || "HealthSync Clinic"}
                         waStatus={waStatus}
                         waConnectedNumber={waConnectedNumber}
@@ -11101,6 +11645,13 @@ function MedicalDashboardPage() {
                         Configure clinic profiles, working hours, departments, doctor directory
                         schedules, and WhatsApp alerts.
                       </p>
+                      {!canManageClinicProfile && (
+                        <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-bold text-amber-700">
+                          <Info className="h-3 w-3" />
+                          Signed in as {roleLabel(user?.role)} — clinic settings are view only. You
+                          can still update your own photo, email and password.
+                        </p>
+                      )}
                     </div>
 
                     {/* Nested Sub-Tab Navigation */}
@@ -11409,16 +11960,23 @@ function MedicalDashboardPage() {
                                       type="button"
                                       onClick={async () => {
                                         setUploadingPhoto(true);
+                                        setPhotoError("");
                                         try {
                                           await uploadProfilePhotoServerFn({
-                                            data: { base64: "", fileName: "remove" },
+                                            data: { base64: "", fileName: "remove", remove: true },
                                           });
-                                        } catch {}
-                                        setUser((prev) =>
-                                          prev ? { ...prev, profilePhoto: null } : null,
-                                        );
-                                        setPhotoPreview(null);
-                                        setUploadingPhoto(false);
+                                          // Only clear locally once the server agreed; it used
+                                          // to clear regardless and the photo came back on reload.
+                                          setUser((prev) =>
+                                            prev ? { ...prev, profilePhoto: null } : null,
+                                          );
+                                          setPhotoPreview(null);
+                                          showToast("success", "Profile photo removed");
+                                        } catch (err: any) {
+                                          setPhotoError(err?.message || "Could not remove photo");
+                                        } finally {
+                                          setUploadingPhoto(false);
+                                        }
                                       }}
                                       className="inline-flex items-center gap-1 rounded-full border border-red-100 bg-red-50 px-3 py-1.5 text-[10px] font-bold text-red-500 hover:bg-red-100 cursor-pointer transition-colors"
                                     >
@@ -11439,102 +11997,109 @@ function MedicalDashboardPage() {
 
                           {/* 3. Profile Details Form */}
                           <form onSubmit={handleUpdateProfile} className="space-y-4">
-                            <div className="flex items-center gap-2">
-                              <User className="h-4 w-4 text-brand" />
-                              <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                                Clinician Profile details
-                              </h4>
-                            </div>
+                            <fieldset
+                              disabled={!canManageClinicProfile}
+                              className="space-y-4 min-w-0 border-0 p-0 m-0 disabled:opacity-60"
+                            >
+                              <div className="flex items-center gap-2">
+                                <User className="h-4 w-4 text-brand" />
+                                <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                                  Clinician Profile details
+                                </h4>
+                              </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <label className="block">
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                  Clinician Name
-                                </span>
-                                <input
-                                  type="text"
-                                  value={profileName}
-                                  onChange={(e) => setProfileName(e.target.value)}
-                                  placeholder="Dr. Clinician"
-                                  required
-                                  className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
-                                />
-                              </label>
-                              <label className="block">
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                  Contact Phone
-                                </span>
-                                <input
-                                  type="text"
-                                  value={profilePhone}
-                                  onChange={(e) => setProfilePhone(e.target.value)}
-                                  placeholder="+91 98765 43210"
-                                  required
-                                  className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
-                                />
-                              </label>
-                            </div>
+                              <div className="grid gap-4 sm:grid-cols-2">
+                                <label className="block">
+                                  <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                    Clinician Name
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={profileName}
+                                    onChange={(e) => setProfileName(e.target.value)}
+                                    placeholder="Dr. Clinician"
+                                    required
+                                    className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
+                                  />
+                                </label>
+                                <label className="block">
+                                  <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                    Contact Phone
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={profilePhone}
+                                    onChange={(e) => setProfilePhone(e.target.value)}
+                                    placeholder="+91 98765 43210"
+                                    required
+                                    className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
+                                  />
+                                </label>
+                              </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <label className="block">
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                  Clinic Affiliation
-                                </span>
-                                <input
-                                  type="text"
-                                  value={profileClinic}
-                                  onChange={(e) => setProfileClinic(e.target.value)}
-                                  placeholder="Clinic Name"
-                                  required
-                                  className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
-                                />
-                              </label>
-                              <label className="block">
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                  Practice Size
-                                </span>
-                                <select
-                                  value={profilePracticeSize}
-                                  onChange={(e) => setProfilePracticeSize(e.target.value)}
-                                  className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-850 font-semibold focus:border-brand focus:outline-none transition-all"
+                              <div className="grid gap-4 sm:grid-cols-2">
+                                <label className="block">
+                                  <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                    Clinic Affiliation
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={profileClinic}
+                                    onChange={(e) => setProfileClinic(e.target.value)}
+                                    placeholder="Clinic Name"
+                                    required
+                                    className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
+                                  />
+                                </label>
+                                <label className="block">
+                                  <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                    Practice Size
+                                  </span>
+                                  <select
+                                    value={profilePracticeSize}
+                                    onChange={(e) => setProfilePracticeSize(e.target.value)}
+                                    className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-850 font-semibold focus:border-brand focus:outline-none transition-all"
+                                  >
+                                    <option value="Solo Practice">Solo Practice</option>
+                                    <option value="2-5 Providers">2-5 Providers</option>
+                                    <option value="6-15 Providers">6-15 Providers</option>
+                                    <option value="16-50 Providers">16-50 Providers</option>
+                                    <option value="50+ Providers">50+ Providers</option>
+                                  </select>
+                                </label>
+                              </div>
+
+                              {/* Profile success/error inline message */}
+                              {profileSuccess && (
+                                <div className="rounded-full bg-emerald-50 border border-emerald-100 p-2.5 text-center">
+                                  <p className="text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1 leading-none">
+                                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />{" "}
+                                    {profileSuccess}
+                                  </p>
+                                </div>
+                              )}
+                              {profileError && (
+                                <div className="rounded-full bg-red-50 border border-red-100 p-2.5 text-center">
+                                  <p className="text-[10px] font-bold text-red-650 flex items-center justify-center gap-1 leading-none">
+                                    <AlertCircle className="h-3.5 w-3.5 text-red-500" />{" "}
+                                    {profileError}
+                                  </p>
+                                </div>
+                              )}
+
+                              <div className="flex justify-end pt-1">
+                                <button
+                                  type="submit"
+                                  disabled={savingProfile}
+                                  className="rounded-full bg-zinc-950 hover:bg-zinc-850 px-5 py-2 text-xs font-semibold text-white transition-all active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
                                 >
-                                  <option value="Solo Practice">Solo Practice</option>
-                                  <option value="2-5 Providers">2-5 Providers</option>
-                                  <option value="6-15 Providers">6-15 Providers</option>
-                                  <option value="16-50 Providers">16-50 Providers</option>
-                                  <option value="50+ Providers">50+ Providers</option>
-                                </select>
-                              </label>
-                            </div>
-
-                            {/* Profile success/error inline message */}
-                            {profileSuccess && (
-                              <div className="rounded-full bg-emerald-50 border border-emerald-100 p-2.5 text-center">
-                                <p className="text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1 leading-none">
-                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />{" "}
-                                  {profileSuccess}
-                                </p>
+                                  {savingProfile && (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  )}
+                                  Save Profile Changes
+                                </button>
                               </div>
-                            )}
-                            {profileError && (
-                              <div className="rounded-full bg-red-50 border border-red-100 p-2.5 text-center">
-                                <p className="text-[10px] font-bold text-red-650 flex items-center justify-center gap-1 leading-none">
-                                  <AlertCircle className="h-3.5 w-3.5 text-red-500" />{" "}
-                                  {profileError}
-                                </p>
-                              </div>
-                            )}
-
-                            <div className="flex justify-end pt-1">
-                              <button
-                                type="submit"
-                                disabled={savingProfile}
-                                className="rounded-full bg-zinc-950 hover:bg-zinc-850 px-5 py-2 text-xs font-semibold text-white transition-all active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
-                              >
-                                {savingProfile && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                                Save Profile Changes
-                              </button>
-                            </div>
+                            </fieldset>
                           </form>
 
                           <hr className="border-zinc-105" />
@@ -11850,103 +12415,117 @@ function MedicalDashboardPage() {
                           </div>
                         ) : (
                           <form onSubmit={handleSaveHours} className="space-y-6">
-                            <div className="space-y-3">
-                              {[
-                                "Sunday",
-                                "Monday",
-                                "Tuesday",
-                                "Wednesday",
-                                "Thursday",
-                                "Friday",
-                                "Saturday",
-                              ].map((dayName, idx) => {
-                                const dayHour = clinicHours.find((h) => h.dayOfWeek === idx) || {
-                                  dayOfWeek: idx,
-                                  openTime: "09:00",
-                                  closeTime: "17:00",
-                                  isClosed: idx === 0 || idx === 6,
-                                };
-                                return (
-                                  <div
-                                    key={idx}
-                                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-3 rounded-xl border border-zinc-150 bg-zinc-50/30"
-                                  >
-                                    <span className="text-xs font-bold text-zinc-700 w-24">
-                                      {dayName}
-                                    </span>
+                            <fieldset
+                              disabled={!canManageClinicConfig}
+                              className="space-y-6 min-w-0 border-0 p-0 m-0 disabled:opacity-60"
+                            >
+                              <div className="space-y-3">
+                                {[
+                                  "Sunday",
+                                  "Monday",
+                                  "Tuesday",
+                                  "Wednesday",
+                                  "Thursday",
+                                  "Friday",
+                                  "Saturday",
+                                ].map((dayName, idx) => {
+                                  const dayHour = clinicHours.find((h) => h.dayOfWeek === idx) || {
+                                    dayOfWeek: idx,
+                                    openTime: "09:00",
+                                    closeTime: "17:00",
+                                    isClosed: idx === 0 || idx === 6,
+                                  };
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-3 rounded-xl border border-zinc-150 bg-zinc-50/30"
+                                    >
+                                      <span className="text-xs font-bold text-zinc-700 w-24">
+                                        {dayName}
+                                      </span>
 
-                                    <div className="flex items-center gap-4 flex-wrap">
-                                      <label className="flex items-center gap-1.5 text-xs text-zinc-500 font-semibold cursor-pointer">
-                                        <input
-                                          type="checkbox"
-                                          checked={dayHour.isClosed}
-                                          onChange={(e) =>
-                                            handleUpdateHourField(idx, "isClosed", e.target.checked)
-                                          }
-                                          className="rounded border-zinc-300 text-brand focus:ring-brand"
-                                        />
-                                        Closed
-                                      </label>
-
-                                      {!dayHour.isClosed && (
-                                        <div className="flex items-center gap-2 animate-in fade-in duration-200">
+                                      <div className="flex items-center gap-4 flex-wrap">
+                                        <label className="flex items-center gap-1.5 text-xs text-zinc-500 font-semibold cursor-pointer">
                                           <input
-                                            type="time"
-                                            value={dayHour.openTime}
-                                            onChange={(e) =>
-                                              handleUpdateHourField(idx, "openTime", e.target.value)
-                                            }
-                                            className="rounded-lg border border-zinc-200 bg-white px-2 py-0.5 text-xs font-semibold focus:outline-none"
-                                          />
-                                          <span className="text-[10px] text-zinc-400 font-bold">
-                                            to
-                                          </span>
-                                          <input
-                                            type="time"
-                                            value={dayHour.closeTime}
+                                            type="checkbox"
+                                            checked={dayHour.isClosed}
                                             onChange={(e) =>
                                               handleUpdateHourField(
                                                 idx,
-                                                "closeTime",
-                                                e.target.value,
+                                                "isClosed",
+                                                e.target.checked,
                                               )
                                             }
-                                            className="rounded-lg border border-zinc-200 bg-white px-2 py-0.5 text-xs font-semibold focus:outline-none"
+                                            className="rounded border-zinc-300 text-brand focus:ring-brand"
                                           />
-                                        </div>
-                                      )}
+                                          Closed
+                                        </label>
+
+                                        {!dayHour.isClosed && (
+                                          <div className="flex items-center gap-2 animate-in fade-in duration-200">
+                                            <input
+                                              type="time"
+                                              value={dayHour.openTime}
+                                              onChange={(e) =>
+                                                handleUpdateHourField(
+                                                  idx,
+                                                  "openTime",
+                                                  e.target.value,
+                                                )
+                                              }
+                                              className="rounded-lg border border-zinc-200 bg-white px-2 py-0.5 text-xs font-semibold focus:outline-none"
+                                            />
+                                            <span className="text-[10px] text-zinc-400 font-bold">
+                                              to
+                                            </span>
+                                            <input
+                                              type="time"
+                                              value={dayHour.closeTime}
+                                              onChange={(e) =>
+                                                handleUpdateHourField(
+                                                  idx,
+                                                  "closeTime",
+                                                  e.target.value,
+                                                )
+                                              }
+                                              className="rounded-lg border border-zinc-200 bg-white px-2 py-0.5 text-xs font-semibold focus:outline-none"
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {hoursSuccess && (
-                              <div className="rounded-full bg-emerald-50 border border-emerald-100 p-2.5 text-center">
-                                <p className="text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1 leading-none">
-                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />{" "}
-                                  {hoursSuccess}
-                                </p>
+                                  );
+                                })}
                               </div>
-                            )}
-                            {hoursError && (
-                              <div className="rounded-full bg-red-50 border border-red-100 p-2.5 text-center">
-                                <p className="text-[10px] font-bold text-red-600 flex items-center justify-center gap-1 leading-none">
-                                  <AlertCircle className="h-3.5 w-3.5 text-red-500" /> {hoursError}
-                                </p>
-                              </div>
-                            )}
 
-                            <div className="flex justify-end pt-1">
-                              <button
-                                type="submit"
-                                disabled={savingHours}
-                                className="rounded-full bg-zinc-950 hover:bg-zinc-850 px-5 py-2 text-xs font-semibold text-white transition-all active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
-                              >
-                                {savingHours && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                                Save Timetable Hours
-                              </button>
-                            </div>
+                              {hoursSuccess && (
+                                <div className="rounded-full bg-emerald-50 border border-emerald-100 p-2.5 text-center">
+                                  <p className="text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1 leading-none">
+                                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />{" "}
+                                    {hoursSuccess}
+                                  </p>
+                                </div>
+                              )}
+                              {hoursError && (
+                                <div className="rounded-full bg-red-50 border border-red-100 p-2.5 text-center">
+                                  <p className="text-[10px] font-bold text-red-600 flex items-center justify-center gap-1 leading-none">
+                                    <AlertCircle className="h-3.5 w-3.5 text-red-500" />{" "}
+                                    {hoursError}
+                                  </p>
+                                </div>
+                              )}
+
+                              <div className="flex justify-end pt-1">
+                                <button
+                                  type="submit"
+                                  disabled={savingHours}
+                                  className="rounded-full bg-zinc-950 hover:bg-zinc-850 px-5 py-2 text-xs font-semibold text-white transition-all active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
+                                >
+                                  {savingHours && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                                  Save Timetable Hours
+                                </button>
+                              </div>
+                            </fieldset>
                           </form>
                         )}
                       </div>
@@ -11966,23 +12545,31 @@ function MedicalDashboardPage() {
                           </div>
                         </div>
 
+                        {!canManageClinicConfig && (
+                          <p className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-[11px] font-semibold text-zinc-500">
+                            View only — departments are managed by the workspace owner.
+                          </p>
+                        )}
+
                         {/* Add department form */}
-                        <form onSubmit={handleCreateDept} className="flex gap-2">
-                          <input
-                            type="text"
-                            placeholder="Department name (e.g. Cardiology)"
-                            value={newDeptName}
-                            onChange={(e) => setNewDeptName(e.target.value)}
-                            className="w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
-                            required
-                          />
-                          <button
-                            type="submit"
-                            className="rounded-full bg-black hover:bg-black/90 px-5 py-2 text-xs font-semibold text-white transition-all cursor-pointer whitespace-nowrap"
-                          >
-                            Add Department
-                          </button>
-                        </form>
+                        {canManageClinicConfig && (
+                          <form onSubmit={handleCreateDept} className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder="Department name (e.g. Cardiology)"
+                              value={newDeptName}
+                              onChange={(e) => setNewDeptName(e.target.value)}
+                              className="w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
+                              required
+                            />
+                            <button
+                              type="submit"
+                              className="rounded-full bg-black hover:bg-black/90 px-5 py-2 text-xs font-semibold text-white transition-all cursor-pointer whitespace-nowrap"
+                            >
+                              Add Department
+                            </button>
+                          </form>
+                        )}
 
                         {/* Departments list */}
                         {loadingDepts ? (
@@ -12005,12 +12592,24 @@ function MedicalDashboardPage() {
                                       {dept.name}
                                     </td>
                                     <td className="px-6 py-3 text-right">
-                                      <button
-                                        onClick={() => handleDeleteDept(dept.id)}
-                                        className="text-red-500 font-bold hover:underline cursor-pointer"
-                                      >
-                                        Delete
-                                      </button>
+                                      {canManageClinicConfig && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (
+                                              window.confirm(
+                                                `Delete the "${dept.name}" department?`,
+                                              )
+                                            ) {
+                                              handleDeleteDept(dept.id);
+                                            }
+                                          }}
+                                          aria-label={`Delete ${dept.name} department`}
+                                          className="text-red-500 font-bold hover:underline cursor-pointer"
+                                        >
+                                          Delete
+                                        </button>
+                                      )}
                                     </td>
                                   </tr>
                                 ))}
@@ -12045,10 +12644,14 @@ function MedicalDashboardPage() {
                             <div>
                               <p className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
                                 <span>Dedicated Doctor Directory Sidebar Available</span>
-                                <span className="text-[9px] font-extrabold bg-rose-500 text-white px-2 py-0.2 rounded-full">NEW</span>
+                                <span className="text-[9px] font-extrabold bg-rose-500 text-white px-2 py-0.2 rounded-full">
+                                  NEW
+                                </span>
                               </p>
                               <p className="text-[11px] text-zinc-500 mt-0.5">
-                                Manage practitioner directory, weekly hours, and the new <strong>Urgent Absence &amp; AI WhatsApp Notice</strong> from the primary sidebar menu.
+                                Manage practitioner directory, weekly hours, and the new{" "}
+                                <strong>Urgent Absence &amp; AI WhatsApp Notice</strong> from the
+                                primary sidebar menu.
                               </p>
                             </div>
                           </div>
@@ -12158,6 +12761,7 @@ function MedicalDashboardPage() {
                                     className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
                                   >
                                     <option value={8}>8 min slots</option>
+                                    <option value={10}>10 min slots</option>
                                     <option value={15}>15 min slots</option>
                                     <option value={30}>30 min slots</option>
                                     <option value={45}>45 min slots</option>
@@ -12282,24 +12886,16 @@ function MedicalDashboardPage() {
                                 const breaks: { start: string; end: string; label: string }[] =
                                   sched.breaks ?? [];
 
-                                // Compute slot preview: total work mins minus all break durations
-                                const [sh, sm] = (sched.startTime || "09:00")
-                                  .split(":")
-                                  .map(Number);
-                                const [eh, em] = (sched.endTime || "18:00").split(":").map(Number);
-                                let workMins = eh * 60 + em - (sh * 60 + sm);
-                                breaks.forEach((b) => {
-                                  if (b.start && b.end) {
-                                    const [bsh, bsm] = b.start.split(":").map(Number);
-                                    const [beh, bem] = b.end.split(":").map(Number);
-                                    const bm = beh * 60 + bem - (bsh * 60 + bsm);
-                                    if (bm > 0) workMins -= bm;
-                                  }
-                                });
-                                const slots =
-                                  workMins > 0
-                                    ? Math.floor(workMins / (sched.slotDuration || 30))
-                                    : 0;
+                                // Count slots the same way the server generates
+                                // them, so breaks are reflected accurately.
+                                const startMin = parseTimeToMinutes(sched.startTime) ?? 9 * 60;
+                                const endMin = parseTimeToMinutes(sched.endTime) ?? 18 * 60;
+                                const slots = countAvailableSlots(
+                                  startMin,
+                                  endMin,
+                                  sched.slotDuration || 30,
+                                  normalizeBreaks(breaks),
+                                );
 
                                 return (
                                   <DayScheduleCard
@@ -12524,21 +13120,22 @@ function MedicalDashboardPage() {
                                 <p className="text-[11px] leading-relaxed text-red-750 font-medium">
                                   {docError}
                                 </p>
-                                {docError.toLowerCase().includes("upgrade") && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setActiveTab("plans");
-                                      setDocError("");
-                                      setIsEditingDoc(false);
-                                      setEditingDoc(null);
-                                      clearDocForm();
-                                    }}
-                                    className="rounded-full bg-red-650 hover:bg-red-700 text-white px-3.5 py-1.5 text-[10px] font-bold transition-all cursor-pointer shadow-sm active:scale-[0.98]"
-                                  >
-                                    Upgrade Plan Now
-                                  </button>
-                                )}
+                                {docError.toLowerCase().includes("upgrade") &&
+                                  isTabAllowed("plans") && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActiveTab("plans");
+                                        setDocError("");
+                                        setIsEditingDoc(false);
+                                        setEditingDoc(null);
+                                        clearDocForm();
+                                      }}
+                                      className="rounded-full bg-red-650 hover:bg-red-700 text-white px-3.5 py-1.5 text-[10px] font-bold transition-all cursor-pointer shadow-sm active:scale-[0.98]"
+                                    >
+                                      Upgrade Plan Now
+                                    </button>
+                                  )}
                               </div>
                             )}
 
@@ -12568,12 +13165,14 @@ function MedicalDashboardPage() {
                           /* Doctors List View */
                           <div className="space-y-4">
                             <div className="flex justify-end">
-                              <button
-                                onClick={handleOpenAddDoctor}
-                                className="rounded-full bg-zinc-950 hover:bg-zinc-850 px-4 py-2 text-xs font-semibold text-white transition-all cursor-pointer inline-flex items-center gap-1"
-                              >
-                                <Plus className="h-3.5 w-3.5" /> Add Doctor File
-                              </button>
+                              {canManageClinicConfig && (
+                                <button
+                                  onClick={handleOpenAddDoctor}
+                                  className="rounded-full bg-zinc-950 hover:bg-zinc-850 px-4 py-2 text-xs font-semibold text-white transition-all cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <Plus className="h-3.5 w-3.5" /> Add Doctor File
+                                </button>
+                              )}
                             </div>
 
                             {loadingDocs ? (
@@ -12597,21 +13196,33 @@ function MedicalDashboardPage() {
                                             {doc.departmentName || "General Staff"}
                                           </span>
                                         </div>
-                                        <div className="flex gap-1.5">
-                                          <button
-                                            onClick={() => handleOpenEditDoctor(doc)}
-                                            className="text-[10px] font-bold text-zinc-400 hover:text-zinc-650"
-                                          >
-                                            Edit
-                                          </button>
-                                          <span className="text-zinc-200 text-[10px]">|</span>
-                                          <button
-                                            onClick={() => handleDeleteDoctor(doc.id)}
-                                            className="text-[10px] font-bold text-red-400 hover:text-red-650"
-                                          >
-                                            Delete
-                                          </button>
-                                        </div>
+                                        {canManageClinicConfig && (
+                                          <div className="flex gap-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenEditDoctor(doc)}
+                                              className="text-[10px] font-bold text-zinc-400 hover:text-zinc-650"
+                                            >
+                                              Edit
+                                            </button>
+                                            <span className="text-zinc-200 text-[10px]">|</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                if (
+                                                  window.confirm(
+                                                    `Delete ${doc.name}? Their weekly schedule and leaves will be removed too.`,
+                                                  )
+                                                ) {
+                                                  handleDeleteDoctor(doc.id);
+                                                }
+                                              }}
+                                              className="text-[10px] font-bold text-red-400 hover:text-red-650"
+                                            >
+                                              Delete
+                                            </button>
+                                          </div>
+                                        )}
                                       </div>
 
                                       <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed">
@@ -12680,68 +13291,75 @@ function MedicalDashboardPage() {
                           </div>
 
                           <form onSubmit={handleSaveWhatsAppConfig} className="space-y-4 text-left">
-                            <div className="flex items-center justify-between p-3 rounded-xl border border-zinc-150 bg-zinc-50/30">
-                              <div>
-                                <p className="text-xs font-bold text-zinc-800">
-                                  Enable Automated Alerts
-                                </p>
-                                <p className="text-[10px] text-zinc-400 mt-0.5">
-                                  Send booking confirmations and updates directly to patients.
-                                </p>
+                            <fieldset
+                              disabled={!canOperateWhatsApp}
+                              className="space-y-4 min-w-0 border-0 p-0 m-0 disabled:opacity-60"
+                            >
+                              <div className="flex items-center justify-between p-3 rounded-xl border border-zinc-150 bg-zinc-50/30">
+                                <div>
+                                  <p className="text-xs font-bold text-zinc-800">
+                                    Enable Automated Alerts
+                                  </p>
+                                  <p className="text-[10px] text-zinc-400 mt-0.5">
+                                    Send booking confirmations and updates directly to patients.
+                                  </p>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={waConfigEnabled}
+                                    onChange={(e) => setWaConfigEnabled(e.target.checked)}
+                                    className="sr-only peer"
+                                  />
+                                  <div className="w-9 h-5 bg-zinc-250 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand"></div>
+                                </label>
                               </div>
-                              <label className="relative inline-flex items-center cursor-pointer select-none">
+
+                              <label className="block">
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                  WhatsApp Alert Mobile Number
+                                </span>
                                 <input
-                                  type="checkbox"
-                                  checked={waConfigEnabled}
-                                  onChange={(e) => setWaConfigEnabled(e.target.checked)}
-                                  className="sr-only peer"
+                                  type="text"
+                                  placeholder="e.g. 919876543210"
+                                  value={waConfigPhone}
+                                  onChange={(e) =>
+                                    setWaConfigPhone(e.target.value.replace(/\D/g, ""))
+                                  }
+                                  className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
                                 />
-                                <div className="w-9 h-5 bg-zinc-250 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand"></div>
                               </label>
-                            </div>
 
-                            <label className="block">
-                              <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                WhatsApp Alert Mobile Number
-                              </span>
-                              <input
-                                type="text"
-                                placeholder="e.g. 919876543210"
-                                value={waConfigPhone}
-                                onChange={(e) =>
-                                  setWaConfigPhone(e.target.value.replace(/\D/g, ""))
-                                }
-                                className="mt-1 block w-full rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs text-zinc-800 font-semibold focus:border-brand focus:outline-none transition-all"
-                              />
-                            </label>
+                              {waConfigSuccess && (
+                                <div className="rounded-full bg-emerald-50 border border-emerald-100 p-2.5 text-center animate-in fade-in duration-200">
+                                  <p className="text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1 leading-none">
+                                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />{" "}
+                                    {waConfigSuccess}
+                                  </p>
+                                </div>
+                              )}
+                              {waConfigError && (
+                                <div className="rounded-full bg-red-50 border border-red-100 p-2.5 text-center animate-in fade-in duration-200">
+                                  <p className="text-[10px] font-bold text-red-600 flex items-center justify-center gap-1 leading-none">
+                                    <AlertCircle className="h-3.5 w-3.5 text-red-500" />{" "}
+                                    {waConfigError}
+                                  </p>
+                                </div>
+                              )}
 
-                            {waConfigSuccess && (
-                              <div className="rounded-full bg-emerald-50 border border-emerald-100 p-2.5 text-center animate-in fade-in duration-200">
-                                <p className="text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1 leading-none">
-                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />{" "}
-                                  {waConfigSuccess}
-                                </p>
+                              <div className="flex justify-end pt-1">
+                                <button
+                                  type="submit"
+                                  disabled={savingWaConfig}
+                                  className="rounded-full bg-zinc-950 hover:bg-zinc-850 px-5 py-2 text-xs font-semibold text-white transition-all active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
+                                >
+                                  {savingWaConfig && (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  )}
+                                  Save Alert Settings
+                                </button>
                               </div>
-                            )}
-                            {waConfigError && (
-                              <div className="rounded-full bg-red-50 border border-red-100 p-2.5 text-center animate-in fade-in duration-200">
-                                <p className="text-[10px] font-bold text-red-600 flex items-center justify-center gap-1 leading-none">
-                                  <AlertCircle className="h-3.5 w-3.5 text-red-500" />{" "}
-                                  {waConfigError}
-                                </p>
-                              </div>
-                            )}
-
-                            <div className="flex justify-end pt-1">
-                              <button
-                                type="submit"
-                                disabled={savingWaConfig}
-                                className="rounded-full bg-zinc-950 hover:bg-zinc-850 px-5 py-2 text-xs font-semibold text-white transition-all active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
-                              >
-                                {savingWaConfig && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                                Save Alert Settings
-                              </button>
-                            </div>
+                            </fieldset>
                           </form>
                         </div>
 
@@ -12810,7 +13428,7 @@ function MedicalDashboardPage() {
                                 {waStatus !== "CONNECTED" && (
                                   <button
                                     type="button"
-                                    disabled={resettingWa}
+                                    disabled={resettingWa || !canOperateWhatsApp}
                                     onClick={handleResetWhatsAppSession}
                                     title="Purge session lock and regenerate fresh QR"
                                     className="rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-[10px] font-bold px-3 py-1.5 transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1 shadow-xs"
@@ -12821,7 +13439,7 @@ function MedicalDashboardPage() {
                                     {resettingWa ? "Resetting..." : "Reset Session"}
                                   </button>
                                 )}
-                                {waStatus === "CONNECTED" && (
+                                {waStatus === "CONNECTED" && canOperateWhatsApp && (
                                   <button
                                     type="button"
                                     onClick={handleDisconnectWhatsApp}
@@ -12865,7 +13483,7 @@ function MedicalDashboardPage() {
                                       <div className="pt-1">
                                         <button
                                           type="button"
-                                          disabled={resettingWa}
+                                          disabled={resettingWa || !canOperateWhatsApp}
                                           onClick={handleResetWhatsAppSession}
                                           className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[10px] font-bold text-zinc-700 hover:bg-zinc-50 transition-colors shadow-xs cursor-pointer disabled:opacity-50"
                                         >
@@ -12897,7 +13515,7 @@ function MedicalDashboardPage() {
                                     </div>
                                     <button
                                       type="button"
-                                      disabled={resettingWa}
+                                      disabled={resettingWa || !canOperateWhatsApp}
                                       onClick={handleResetWhatsAppSession}
                                       className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[10px] font-bold text-zinc-700 hover:bg-zinc-50 transition-colors shadow-xs cursor-pointer disabled:opacity-50 shrink-0"
                                     >
@@ -12948,60 +13566,65 @@ function MedicalDashboardPage() {
                             </div>
 
                             <form onSubmit={handleSendTestWa} className="space-y-3">
-                              <div className="space-y-1">
-                                <label className="text-[9px] font-bold text-zinc-400 uppercase pl-1">
-                                  Recipient Number (with country code)
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. 919876543210"
-                                  value={testWaPhone}
-                                  onChange={(e) =>
-                                    setTestWaPhone(e.target.value.replace(/\D/g, ""))
-                                  }
-                                  className="w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:border-brand transition-all"
-                                  required
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="text-[9px] font-bold text-zinc-400 uppercase pl-1">
-                                  Message
-                                </label>
-                                <textarea
-                                  placeholder="Hello! This is a test notification from BookMyTime..."
-                                  value={testWaBody}
-                                  onChange={(e) => setTestWaBody(e.target.value)}
-                                  rows={2}
-                                  className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:outline-none focus:border-brand transition-all"
-                                  required
-                                />
-                              </div>
-                              {testWaSuccess && (
-                                <div className="rounded-full bg-emerald-50 border border-emerald-100 px-4 py-2.5 text-center">
-                                  <p className="text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1">
-                                    <CheckCircle2 className="h-3 w-3" /> {testWaSuccess}
-                                  </p>
-                                </div>
-                              )}
-                              {testWaError && (
-                                <div className="rounded-full bg-red-50 border border-red-100 px-4 py-2.5 text-center">
-                                  <p className="text-[10px] font-bold text-red-600 flex items-center justify-center gap-1">
-                                    <AlertCircle className="h-3 w-3" /> {testWaError}
-                                  </p>
-                                </div>
-                              )}
-                              <button
-                                type="submit"
-                                disabled={sendingTestWa}
-                                className="w-full rounded-full bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-bold py-2.5 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:bg-zinc-100 disabled:text-zinc-400"
+                              <fieldset
+                                disabled={!canOperateWhatsApp}
+                                className="space-y-3 min-w-0 border-0 p-0 m-0 disabled:opacity-60"
                               >
-                                {sendingTestWa ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Send className="h-3.5 w-3.5" />
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-zinc-400 uppercase pl-1">
+                                    Recipient Number (with country code)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. 919876543210"
+                                    value={testWaPhone}
+                                    onChange={(e) =>
+                                      setTestWaPhone(e.target.value.replace(/\D/g, ""))
+                                    }
+                                    className="w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:border-brand transition-all"
+                                    required
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-zinc-400 uppercase pl-1">
+                                    Message
+                                  </label>
+                                  <textarea
+                                    placeholder="Hello! This is a test notification from BookMyTime..."
+                                    value={testWaBody}
+                                    onChange={(e) => setTestWaBody(e.target.value)}
+                                    rows={2}
+                                    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-xs text-zinc-800 focus:outline-none focus:border-brand transition-all"
+                                    required
+                                  />
+                                </div>
+                                {testWaSuccess && (
+                                  <div className="rounded-full bg-emerald-50 border border-emerald-100 px-4 py-2.5 text-center">
+                                    <p className="text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1">
+                                      <CheckCircle2 className="h-3 w-3" /> {testWaSuccess}
+                                    </p>
+                                  </div>
                                 )}
-                                Queue Message
-                              </button>
+                                {testWaError && (
+                                  <div className="rounded-full bg-red-50 border border-red-100 px-4 py-2.5 text-center">
+                                    <p className="text-[10px] font-bold text-red-600 flex items-center justify-center gap-1">
+                                      <AlertCircle className="h-3 w-3" /> {testWaError}
+                                    </p>
+                                  </div>
+                                )}
+                                <button
+                                  type="submit"
+                                  disabled={sendingTestWa}
+                                  className="w-full rounded-full bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-bold py-2.5 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:bg-zinc-100 disabled:text-zinc-400"
+                                >
+                                  {sendingTestWa ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Send className="h-3.5 w-3.5" />
+                                  )}
+                                  Queue Message
+                                </button>
+                              </fieldset>
                             </form>
                           </div>
                         )}
@@ -13108,7 +13731,9 @@ function MedicalDashboardPage() {
                               });
                               setSubUserError("");
                               setSubUserSuccess("");
-                              setShowSubUserForm((v) => !v);
+                              setShowSubUserPwd(false);
+                              setSubUserEmailCheck({ status: "idle", message: "" });
+                              setShowSubUserForm(true);
                             }}
                             className="inline-flex items-center gap-1.5 rounded-full bg-black text-white px-4 py-2 text-[10px] font-bold hover:bg-black/90 cursor-pointer transition-all"
                           >
@@ -13139,262 +13764,370 @@ function MedicalDashboardPage() {
                               </div>
                             );
                           })()}
-                        {showSubUserForm && (
-                          <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4 animate-in slide-in-from-top-2 duration-200">
-                            <h5 className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                              <UserPlus className="h-3.5 w-3.5 text-brand" />
-                              {editingSubUser ? "Edit Sub-User" : "Create New Sub-User"}
-                            </h5>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <label className="block">
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                  Full Name *
-                                </span>
-                                <input
-                                  type="text"
-                                  value={subUserForm.name}
-                                  placeholder="Enter full name"
-                                  onChange={(e) =>
-                                    setSubUserForm((f) => ({ ...f, name: e.target.value }))
-                                  }
-                                  className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
-                                />
-                              </label>
-                              <label className="block">
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                  Email Address *
-                                </span>
-                                <input
-                                  type="email"
-                                  value={subUserForm.email}
-                                  placeholder="youremail@gmail.com"
-                                  disabled={!!editingSubUser}
-                                  onChange={(e) =>
-                                    setSubUserForm((f) => ({ ...f, email: e.target.value }))
-                                  }
-                                  className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all disabled:opacity-50"
-                                />
-                              </label>
-                              <label className="block">
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                  Phone (optional)
-                                </span>
-                                <input
-                                  type="tel"
-                                  value={subUserForm.phone}
-                                  placeholder="+91 9876543210"
-                                  onChange={(e) =>
-                                    setSubUserForm((f) => ({ ...f, phone: e.target.value }))
-                                  }
-                                  className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
-                                />
-                              </label>
-                              <label className="block">
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                  Role *
-                                </span>
-                                <select
-                                  value={subUserForm.role}
-                                  onChange={(e) =>
-                                    setSubUserForm((f) => ({
-                                      ...f,
-                                      role: e.target.value as "reception" | "doctor",
-                                    }))
-                                  }
-                                  className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all cursor-pointer"
-                                >
-                                  <option value="reception">Reception</option>
-                                  <option value="doctor">Doctor</option>
-                                </select>
-                              </label>
-                              {subUserForm.role === "doctor" && (
-                                <label className="block sm:col-span-2">
-                                  <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                    Link to Doctor Profile
-                                  </span>
-                                  <select
-                                    value={subUserForm.doctorId}
-                                    onChange={(e) =>
-                                      setSubUserForm((f) => ({ ...f, doctorId: e.target.value }))
-                                    }
-                                    className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all cursor-pointer"
+                        {/* Create Sub-User — modal (was an inline panel). Portalled
+                            to <body> so ancestors with transforms can't clip or
+                            reposition the fixed overlay. */}
+                        {showSubUserForm &&
+                          typeof document !== "undefined" &&
+                          createPortal(
+                            <div
+                              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm animate-in fade-in duration-150"
+                              onClick={() => {
+                                if (!savingSubUser) closeCreateSubUserModal();
+                              }}
+                            >
+                              <div
+                                role="dialog"
+                                aria-modal="true"
+                                aria-labelledby="create-subuser-title"
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl border border-zinc-200 animate-in zoom-in-95 duration-200"
+                              >
+                                <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
+                                  <h3
+                                    id="create-subuser-title"
+                                    className="text-sm font-bold text-zinc-900 flex items-center gap-2"
                                   >
-                                    <option value="">Select doctor profile</option>
-                                    {doctors.map((d: any) => (
-                                      <option key={d.id} value={d.id}>
-                                        {d.name}
-                                        {d.specialization ? ` (${d.specialization})` : ""}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                              )}
-                              <label className="block">
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                  {editingSubUser
-                                    ? "New Password (leave blank to keep)"
-                                    : "Password *"}
-                                </span>
-                                <div className="relative mt-1">
-                                  <input
-                                    type={showSubUserPwd ? "text" : "password"}
-                                    value={subUserForm.password}
-                                    placeholder={
-                                      editingSubUser
-                                        ? "Leave blank to keep current"
-                                        : "Min 8 characters"
-                                    }
-                                    onChange={(e) =>
-                                      setSubUserForm((f) => ({ ...f, password: e.target.value }))
-                                    }
-                                    className="w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 pr-10 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
-                                  />
+                                    <UserPlus className="h-4 w-4 text-brand" />
+                                    Create New Sub-User
+                                  </h3>
                                   <button
                                     type="button"
-                                    onClick={() => setShowSubUserPwd((v) => !v)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                                    onClick={closeCreateSubUserModal}
+                                    disabled={savingSubUser}
+                                    aria-label="Close"
+                                    className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 transition-colors cursor-pointer disabled:opacity-50"
                                   >
-                                    <Lock className="h-3.5 w-3.5" />
+                                    <X className="h-4 w-4" />
                                   </button>
                                 </div>
-                              </label>
-                              <label className="block">
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
-                                  Confirm Password{!editingSubUser ? " *" : ""}
-                                </span>
-                                <input
-                                  type={showSubUserPwd ? "text" : "password"}
-                                  value={subUserForm.confirmPassword}
-                                  placeholder="Re-enter password"
-                                  onChange={(e) =>
-                                    setSubUserForm((f) => ({
-                                      ...f,
-                                      confirmPassword: e.target.value,
-                                    }))
-                                  }
-                                  className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
-                                />
-                              </label>
-                            </div>
-                            {subUserError && (
-                              <div className="rounded-2xl bg-red-50 border border-red-100 p-3.5 text-[10px] font-bold text-red-650 text-left space-y-2 flex flex-col items-start w-full">
-                                <div className="flex items-center gap-1.5 text-red-800">
-                                  <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
-                                  <span>Plan Restriction Alert</span>
+                                <div className="px-6 py-5 space-y-4">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <label className="block">
+                                      <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                        Full Name *
+                                      </span>
+                                      <input
+                                        type="text"
+                                        autoFocus
+                                        value={subUserForm.name}
+                                        placeholder="Enter full name"
+                                        onChange={(e) =>
+                                          setSubUserForm((f) => ({ ...f, name: e.target.value }))
+                                        }
+                                        className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
+                                      />
+                                    </label>
+                                    <label className="block">
+                                      <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                        Email Address *
+                                      </span>
+                                      <div className="relative mt-1">
+                                        <input
+                                          type="email"
+                                          value={subUserForm.email}
+                                          placeholder="youremail@gmail.com"
+                                          autoComplete="off"
+                                          aria-invalid={
+                                            subUserEmailCheck.status === "taken" ||
+                                            subUserEmailCheck.status === "invalid"
+                                          }
+                                          aria-describedby="subuser-email-status"
+                                          onChange={(e) =>
+                                            setSubUserForm((f) => ({ ...f, email: e.target.value }))
+                                          }
+                                          className={`w-full rounded-full border bg-zinc-50 px-4 py-2 pr-9 text-xs font-semibold focus:outline-none transition-all ${
+                                            subUserEmailCheck.status === "taken" ||
+                                            subUserEmailCheck.status === "invalid"
+                                              ? "border-red-300 focus:border-red-400 bg-red-50/40"
+                                              : subUserEmailCheck.status === "available"
+                                                ? "border-emerald-300 focus:border-emerald-400"
+                                                : "border-zinc-200 focus:border-brand"
+                                          }`}
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                                          {subUserEmailCheck.status === "checking" && (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />
+                                          )}
+                                          {subUserEmailCheck.status === "available" && (
+                                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                                          )}
+                                          {(subUserEmailCheck.status === "taken" ||
+                                            subUserEmailCheck.status === "invalid") && (
+                                            <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                                          )}
+                                        </span>
+                                      </div>
+                                      <p
+                                        id="subuser-email-status"
+                                        role={
+                                          subUserEmailCheck.status === "taken" ? "alert" : undefined
+                                        }
+                                        className={`mt-1 pl-1 text-[10px] font-semibold min-h-[14px] ${
+                                          subUserEmailCheck.status === "available"
+                                            ? "text-emerald-600"
+                                            : "text-red-600"
+                                        }`}
+                                      >
+                                        {subUserEmailCheck.status === "available"
+                                          ? "Email is available"
+                                          : subUserEmailCheck.message}
+                                      </p>
+                                    </label>
+                                    <label className="block">
+                                      <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                        Phone (optional)
+                                      </span>
+                                      <input
+                                        type="tel"
+                                        value={subUserForm.phone}
+                                        placeholder="+91 9876543210"
+                                        onChange={(e) =>
+                                          setSubUserForm((f) => ({ ...f, phone: e.target.value }))
+                                        }
+                                        className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
+                                      />
+                                    </label>
+                                    <label className="block">
+                                      <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                        Role *
+                                      </span>
+                                      <select
+                                        value={subUserForm.role}
+                                        onChange={(e) =>
+                                          setSubUserForm((f) => ({
+                                            ...f,
+                                            role: e.target.value as "reception" | "doctor",
+                                          }))
+                                        }
+                                        className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all cursor-pointer"
+                                      >
+                                        <option value="reception">Reception</option>
+                                        <option value="doctor">Doctor</option>
+                                      </select>
+                                    </label>
+                                    {subUserForm.role === "doctor" && (
+                                      <label className="block sm:col-span-2">
+                                        <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                          Link to Doctor Profile
+                                        </span>
+                                        <select
+                                          value={subUserForm.doctorId}
+                                          onChange={(e) =>
+                                            setSubUserForm((f) => ({
+                                              ...f,
+                                              doctorId: e.target.value,
+                                            }))
+                                          }
+                                          className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all cursor-pointer"
+                                        >
+                                          <option value="">Select doctor profile</option>
+                                          {doctors.map((d: any) => (
+                                            <option key={d.id} value={d.id}>
+                                              {d.name}
+                                              {d.specialization ? ` (${d.specialization})` : ""}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+                                    )}
+                                    <label className="block">
+                                      <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                        {editingSubUser
+                                          ? "New Password (leave blank to keep)"
+                                          : "Password *"}
+                                      </span>
+                                      <div className="relative mt-1">
+                                        <input
+                                          type={showSubUserPwd ? "text" : "password"}
+                                          value={subUserForm.password}
+                                          placeholder={
+                                            editingSubUser
+                                              ? "Leave blank to keep current"
+                                              : "Min 8 characters"
+                                          }
+                                          onChange={(e) =>
+                                            setSubUserForm((f) => ({
+                                              ...f,
+                                              password: e.target.value,
+                                            }))
+                                          }
+                                          className="w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 pr-10 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => setShowSubUserPwd((v) => !v)}
+                                          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                                        >
+                                          <Lock className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                    </label>
+                                    <label className="block">
+                                      <span className="text-[10px] font-bold text-zinc-400 uppercase pl-1">
+                                        Confirm Password{!editingSubUser ? " *" : ""}
+                                      </span>
+                                      <input
+                                        type={showSubUserPwd ? "text" : "password"}
+                                        value={subUserForm.confirmPassword}
+                                        placeholder="Re-enter password"
+                                        onChange={(e) =>
+                                          setSubUserForm((f) => ({
+                                            ...f,
+                                            confirmPassword: e.target.value,
+                                          }))
+                                        }
+                                        className="mt-1 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 py-2 text-xs font-semibold focus:outline-none focus:border-brand transition-all"
+                                      />
+                                    </label>
+                                  </div>
+                                  {subUserError && (
+                                    <div
+                                      role="alert"
+                                      className="rounded-2xl bg-red-50 border border-red-100 p-3.5 text-[10px] font-bold text-red-650 text-left space-y-2 flex flex-col items-start w-full"
+                                    >
+                                      <div className="flex items-center gap-1.5 text-red-800">
+                                        <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+                                        {/* Only plan errors are plan errors — this used to
+                                      title validation failures the same way. */}
+                                        <span>
+                                          {subUserError.toLowerCase().includes("upgrade") ||
+                                          subUserError.toLowerCase().includes("plan")
+                                            ? "Plan Restriction Alert"
+                                            : "Couldn't create user"}
+                                        </span>
+                                      </div>
+                                      <p className="text-[11px] leading-relaxed text-red-750 font-medium">
+                                        {subUserError}
+                                      </p>
+                                      {subUserError.toLowerCase().includes("upgrade") && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setActiveTab("plans");
+                                            closeCreateSubUserModal();
+                                          }}
+                                          className="rounded-full bg-red-650 hover:bg-red-700 text-white px-3.5 py-1.5 text-[10px] font-bold transition-all cursor-pointer shadow-sm active:scale-[0.98]"
+                                        >
+                                          Upgrade Plan Now
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                  {subUserSuccess && (
+                                    <div className="rounded-full bg-emerald-50 border border-emerald-100 px-4 py-2 text-[10px] font-bold text-emerald-600 flex items-center gap-1.5">
+                                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />{" "}
+                                      {subUserSuccess}
+                                    </div>
+                                  )}
                                 </div>
-                                <p className="text-[11px] leading-relaxed text-red-750 font-medium">
-                                  {subUserError}
-                                </p>
-                                {subUserError.toLowerCase().includes("upgrade") && (
+                                <div className="flex gap-2 justify-end px-6 py-4 border-t border-zinc-100 bg-zinc-50/50">
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setActiveTab("plans");
+                                    onClick={closeCreateSubUserModal}
+                                    disabled={savingSubUser}
+                                    className="rounded-full border border-zinc-200 bg-white px-5 py-2 text-xs font-bold text-zinc-500 hover:bg-zinc-50 cursor-pointer disabled:opacity-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      savingSubUser ||
+                                      subUserEmailCheck.status === "taken" ||
+                                      subUserEmailCheck.status === "invalid" ||
+                                      subUserEmailCheck.status === "checking"
+                                    }
+                                    onClick={async () => {
                                       setSubUserError("");
-                                      setShowSubUserForm(false);
-                                      setEditingSubUser(null);
-                                    }}
-                                    className="rounded-full bg-red-650 hover:bg-red-700 text-white px-3.5 py-1.5 text-[10px] font-bold transition-all cursor-pointer shadow-sm active:scale-[0.98]"
-                                  >
-                                    Upgrade Plan Now
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                            {subUserSuccess && (
-                              <div className="rounded-full bg-emerald-50 border border-emerald-100 px-4 py-2 text-[10px] font-bold text-emerald-600 flex items-center gap-1.5">
-                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> {subUserSuccess}
-                              </div>
-                            )}
-                            <div className="flex gap-2 justify-end pt-1 border-t border-zinc-100">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setShowSubUserForm(false);
-                                  setEditingSubUser(null);
-                                }}
-                                className="rounded-full border border-zinc-200 px-5 py-2 text-xs font-bold text-zinc-500 hover:bg-zinc-50 cursor-pointer"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                disabled={savingSubUser}
-                                onClick={async () => {
-                                  setSubUserError("");
-                                  setSubUserSuccess("");
-                                  if (!subUserForm.name.trim() || !subUserForm.email.trim()) {
-                                    setSubUserError("Name and email are required");
-                                    return;
-                                  }
-                                  if (!editingSubUser && !subUserForm.password) {
-                                    setSubUserError("Password is required");
-                                    return;
-                                  }
-                                  if (subUserForm.password && subUserForm.password.length < 8) {
-                                    setSubUserError("Password must be at least 8 characters");
-                                    return;
-                                  }
-                                  if (
-                                    subUserForm.password &&
-                                    subUserForm.password !== subUserForm.confirmPassword
-                                  ) {
-                                    setSubUserError("Passwords do not match");
-                                    return;
-                                  }
-                                  setSavingSubUser(true);
-                                  try {
-                                    if (editingSubUser) {
-                                      await updateSubUserServerFn({
-                                        data: {
-                                          id: editingSubUser.id,
-                                          name: subUserForm.name,
-                                          phone: subUserForm.phone,
-                                          role: subUserForm.role,
-                                          doctorId: subUserForm.doctorId || undefined,
-                                          password: subUserForm.password || undefined,
-                                        },
-                                      });
-                                    } else {
-                                      await createSubUserServerFn({
-                                        data: {
-                                          name: subUserForm.name,
-                                          email: subUserForm.email,
-                                          phone: subUserForm.phone,
-                                          role: subUserForm.role,
-                                          doctorId: subUserForm.doctorId || undefined,
-                                          password: subUserForm.password,
-                                        },
-                                      });
-                                    }
-                                    setSubUserSuccess(
-                                      editingSubUser ? "Sub-user updated!" : "Sub-user created!",
-                                    );
-                                    const refreshed = await getSubUsersServerFn();
-                                    setSubUsers(refreshed);
-                                    setTimeout(() => {
-                                      setShowSubUserForm(false);
-                                      setEditingSubUser(null);
                                       setSubUserSuccess("");
-                                    }, 1200);
-                                  } catch (e: any) {
-                                    setSubUserError(e.message || "Failed to save sub-user");
-                                  } finally {
-                                    setSavingSubUser(false);
-                                  }
-                                }}
-                                className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 disabled:opacity-60 cursor-pointer flex items-center gap-1.5"
-                              >
-                                {savingSubUser ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Check className="h-3.5 w-3.5" />
-                                )}
-                                {editingSubUser ? "Update User" : "Create User"}
-                              </button>
-                            </div>
-                          </div>
-                        )}
+                                      if (!subUserForm.name.trim() || !subUserForm.email.trim()) {
+                                        setSubUserError("Name and email are required");
+                                        return;
+                                      }
+                                      if (subUserEmailCheck.status === "taken") {
+                                        // Belt and braces: the button is disabled in
+                                        // this state, but never submit a known clash.
+                                        return;
+                                      }
+                                      if (!editingSubUser && !subUserForm.password) {
+                                        setSubUserError("Password is required");
+                                        return;
+                                      }
+                                      if (subUserForm.password && subUserForm.password.length < 8) {
+                                        setSubUserError("Password must be at least 8 characters");
+                                        return;
+                                      }
+                                      if (
+                                        subUserForm.password &&
+                                        subUserForm.password !== subUserForm.confirmPassword
+                                      ) {
+                                        setSubUserError("Passwords do not match");
+                                        return;
+                                      }
+                                      setSavingSubUser(true);
+                                      try {
+                                        if (editingSubUser) {
+                                          await updateSubUserServerFn({
+                                            data: {
+                                              id: editingSubUser.id,
+                                              name: subUserForm.name,
+                                              phone: subUserForm.phone,
+                                              role: subUserForm.role,
+                                              doctorId: subUserForm.doctorId || undefined,
+                                              password: subUserForm.password || undefined,
+                                            },
+                                          });
+                                        } else {
+                                          await createSubUserServerFn({
+                                            data: {
+                                              name: subUserForm.name,
+                                              email: subUserForm.email,
+                                              phone: subUserForm.phone,
+                                              role: subUserForm.role,
+                                              doctorId: subUserForm.doctorId || undefined,
+                                              password: subUserForm.password,
+                                            },
+                                          });
+                                        }
+                                        setSubUserSuccess(
+                                          editingSubUser
+                                            ? "Sub-user updated!"
+                                            : "Sub-user created!",
+                                        );
+                                        const refreshed = await getSubUsersServerFn();
+                                        setSubUsers(refreshed);
+                                        setTimeout(() => {
+                                          closeCreateSubUserModal();
+                                        }, 1200);
+                                      } catch (e: any) {
+                                        const message = e?.message || "Failed to save sub-user";
+                                        // Server-side conflict (e.g. registered between
+                                        // the live check and submit): pin it to the
+                                        // email field rather than the generic box.
+                                        if (message.includes("email ID is already registered")) {
+                                          setSubUserEmailCheck({ status: "taken", message });
+                                        } else {
+                                          setSubUserError(message);
+                                        }
+                                      } finally {
+                                        setSavingSubUser(false);
+                                      }
+                                    }}
+                                    className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+                                  >
+                                    {savingSubUser ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Check className="h-3.5 w-3.5" />
+                                    )}
+                                    Create User
+                                  </button>
+                                </div>
+                              </div>
+                            </div>,
+                            document.body,
+                          )}
                         {subUsersLoading ? (
                           <div className="flex items-center justify-center py-10 gap-2 text-zinc-400">
                             <Loader2 className="h-4 w-4 animate-spin" /> Loading...
@@ -13939,6 +14672,7 @@ function MedicalDashboardPage() {
                 TAB: MANAGE PLANS & BILLING
                 ────────────────────────────────────────────── */}
                 {activeTab === "plans" &&
+                  isTabAllowed("plans") &&
                   (() => {
                     const rawPlan = (user?.subscriptionPlan || "").toLowerCase();
                     const currentTier: "Basic" | "Premium" | "Enterprise" =
@@ -14672,7 +15406,7 @@ function MedicalDashboardPage() {
                     );
                   })()}
 
-                {activeTab === "whatsapp" && (
+                {activeTab === "whatsapp" && isTabAllowed("whatsapp") && (
                   <motion.div
                     key="whatsapp"
                     initial={{ opacity: 0, y: 8 }}
@@ -14700,29 +15434,31 @@ function MedicalDashboardPage() {
             { id: "appointments", label: "Bookings", icon: Calendar },
             { id: "patients", label: "Patients", icon: Users },
             { id: "settings", label: "Settings", icon: Settings },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return (
-              <button
-                type="button"
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id as any);
-                  setSelectedPatient(null);
-                  setPatientChartData(null);
-                }}
-                className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-[9px] font-bold transition-all cursor-pointer active:scale-95 ${
-                  active ? "text-brand" : "text-zinc-400 hover:text-zinc-655"
-                }`}
-              >
-                <Icon
-                  className={`h-4.5 w-4.5 mb-1 ${active ? "text-brand animate-pulse" : "text-zinc-400"}`}
-                />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+          ]
+            .filter((tab) => isTabAllowed(tab.id))
+            .map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  type="button"
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id as any);
+                    setSelectedPatient(null);
+                    setPatientChartData(null);
+                  }}
+                  className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-[9px] font-bold transition-all cursor-pointer active:scale-95 ${
+                    active ? "text-brand" : "text-zinc-400 hover:text-zinc-655"
+                  }`}
+                >
+                  <Icon
+                    className={`h-4.5 w-4.5 mb-1 ${active ? "text-brand animate-pulse" : "text-zinc-400"}`}
+                  />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
         </nav>
       </main>
 
@@ -16043,47 +16779,49 @@ function MedicalDashboardPage() {
 
               {/* Action Buttons */}
               <div className="pt-2 flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const apt = selectedAptDetails;
-                    setSelectedAptDetails(null);
+                {isTabAllowed("scribe") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const apt = selectedAptDetails;
+                      setSelectedAptDetails(null);
 
-                    // Run Start Consultation trigger logic
-                    setSelectedAptForConsultation(apt);
-                    const pid = resolvePatientForApt(apt);
-                    setScribePatientId(pid);
-                    setLiveTranscript(apt.reason || "");
-                    setConsultationChiefComplaint(apt.reason || "");
-                    setConsultationDiagnosis("");
-                    setConsultationAdvice("");
-                    setPrescriptionMedications([]);
-                    setConsultationLabTests([]);
-                    setConsultationReferrals([]);
-                    setConsultationFollowUpDate("");
-                    setConsultationFollowUpNotes("");
-                    setConsultationFee(1500);
-                    setConsultationPrivateNotes("");
-                    setVitalBP("120/80");
-                    setVitalPulse("72");
-                    setVitalTemp("98.6");
-                    setVitalWeight("70");
-                    setVitalHeight("170");
-                    setVitalSpO2("98");
-                    setVitalRespRate("16");
-                    setPatientChartData(null);
-                    if (pid) {
-                      getPatientChartServerFn({ data: { patientId: pid } })
-                        .then((res) => setPatientChartData(res))
-                        .catch((err) => console.error(err));
-                    }
-                    setActiveTab("scribe");
-                  }}
-                  className="w-full inline-flex items-center justify-center gap-1.5 bg-black hover:opacity-95 text-white font-extrabold text-xs py-2.5 rounded-full transition-all active:scale-[0.98] cursor-pointer shadow-none animate-pulse hover:animate-none"
-                >
-                  <Stethoscope className="h-3.5 w-3.5" />
-                  Start Consultation Scribe
-                </button>
+                      // Run Start Consultation trigger logic
+                      setSelectedAptForConsultation(apt);
+                      const pid = resolvePatientForApt(apt);
+                      setScribePatientId(pid);
+                      setLiveTranscript(apt.reason || "");
+                      setConsultationChiefComplaint(apt.reason || "");
+                      setConsultationDiagnosis("");
+                      setConsultationAdvice("");
+                      setPrescriptionMedications([]);
+                      setConsultationLabTests([]);
+                      setConsultationReferrals([]);
+                      setConsultationFollowUpDate("");
+                      setConsultationFollowUpNotes("");
+                      setConsultationFee(1500);
+                      setConsultationPrivateNotes("");
+                      setVitalBP("120/80");
+                      setVitalPulse("72");
+                      setVitalTemp("98.6");
+                      setVitalWeight("70");
+                      setVitalHeight("170");
+                      setVitalSpO2("98");
+                      setVitalRespRate("16");
+                      setPatientChartData(null);
+                      if (pid) {
+                        getPatientChartServerFn({ data: { patientId: pid } })
+                          .then((res) => setPatientChartData(res))
+                          .catch((err) => console.error(err));
+                      }
+                      setActiveTab("scribe");
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-1.5 bg-black hover:opacity-95 text-white font-extrabold text-xs py-2.5 rounded-full transition-all active:scale-[0.98] cursor-pointer shadow-none animate-pulse hover:animate-none"
+                  >
+                    <Stethoscope className="h-3.5 w-3.5" />
+                    Start Consultation Scribe
+                  </button>
+                )}
 
                 <div className="grid grid-cols-2 gap-2">
                   <button

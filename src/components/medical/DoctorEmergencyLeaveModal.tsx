@@ -41,6 +41,8 @@ export interface DoctorEmergencyLeaveModalProps {
   onSuccess: (result: {
     leavesCreated: number;
     notifiedPatientsCount: number;
+    /** True when the server skipped WhatsApp because the caller may not send. */
+    whatsappSkippedForRole?: boolean;
     dates: string[];
   }) => void;
 }
@@ -145,8 +147,18 @@ export function DoctorEmergencyLeaveModal({
 
   // Month navigation
   const monthNames = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
   ];
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
   const startDayOfWeek = new Date(calYear, calMonth, 1).getDay();
@@ -527,6 +539,7 @@ export function DoctorEmergencyLeaveModal({
         onSuccess({
           leavesCreated: res.leavesCreated,
           notifiedPatientsCount: res.notifiedPatientsCount,
+          whatsappSkippedForRole: res.whatsappSkippedForRole,
           dates: selectedDates,
         });
       } else {
@@ -827,7 +840,9 @@ export function DoctorEmergencyLeaveModal({
 
                   {/* Quick Select Presets */}
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] text-zinc-400 font-medium mr-1">Quick Select:</span>
+                    <span className="text-[11px] text-zinc-400 font-medium mr-1">
+                      Quick Select:
+                    </span>
                     {[
                       { label: "Today", key: "today" as const },
                       { label: "Tomorrow", key: "tomorrow" as const },
@@ -905,17 +920,16 @@ export function DoctorEmergencyLeaveModal({
                         const dateObj = new Date(calYear, calMonth, dayNum);
                         const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
                         const isPast =
-                          dateObj < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                          dateObj <
+                          new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
                         const isSelected = selectedDates.includes(dateStr);
                         const isCurrentToday = dateStr === todayStr;
 
                         // Range boundary states
-                        const isStart =
-                          dateStr === (rangeFrom || selectedDates[0]);
+                        const isStart = dateStr === (rangeFrom || selectedDates[0]);
                         const isEnd =
-                          dateStr ===
-                          (rangeTo || selectedDates[selectedDates.length - 1]);
+                          dateStr === (rangeTo || selectedDates[selectedDates.length - 1]);
 
                         // Hover range preview
                         const isInHoverRange =
@@ -973,13 +987,14 @@ export function DoctorEmergencyLeaveModal({
                                 month: "short",
                               })}{" "}
                               to{" "}
-                              {new Date(
-                                selectedDates[selectedDates.length - 1],
-                              ).toLocaleDateString("en-IN", {
-                                day: "numeric",
-                                month: "short",
-                                year: "numeric",
-                              })}{" "}
+                              {new Date(selectedDates[selectedDates.length - 1]).toLocaleDateString(
+                                "en-IN",
+                                {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                },
+                              )}{" "}
                               <span className="text-zinc-500 font-normal">
                                 ({selectedDates.length} days total)
                               </span>
@@ -1025,9 +1040,7 @@ export function DoctorEmergencyLeaveModal({
                             onClick={() => setShowAllDateChips(!showAllDateChips)}
                             className="text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 cursor-pointer"
                           >
-                            {showAllDateChips
-                              ? "Show less"
-                              : `+${selectedDates.length - 6} more`}
+                            {showAllDateChips ? "Show less" : `+${selectedDates.length - 6} more`}
                           </button>
                         )}
                       </div>
@@ -1109,7 +1122,8 @@ export function DoctorEmergencyLeaveModal({
                     <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900">
                       <div className="bg-zinc-50 dark:bg-zinc-800/60 px-3.5 py-2 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800">
                         <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
-                          {affectedAppts.length} Booking{affectedAppts.length === 1 ? "" : "s"} Found
+                          {affectedAppts.length} Booking{affectedAppts.length === 1 ? "" : "s"}{" "}
+                          Found
                         </span>
                         <span className="text-[11px] text-zinc-500">
                           {selectedApptIds.length} marked for notice
@@ -1167,7 +1181,8 @@ export function DoctorEmergencyLeaveModal({
                         ✨ No booked appointments found on the selected date(s).
                       </p>
                       <p className="text-[11px] text-zinc-400">
-                        Declaring emergency leave will block slots so no new appointments can be booked on the public booking portal.
+                        Declaring emergency leave will block slots so no new appointments can be
+                        booked on the public booking portal.
                       </p>
                     </div>
                   )}
@@ -1245,7 +1260,10 @@ export function DoctorEmergencyLeaveModal({
                       <div>{previewSample}</div>
                       <div className="flex justify-end items-center gap-1 text-[10px] text-zinc-400 pt-1">
                         <span>
-                          {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {new Date().toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </span>
                         <span className="text-zinc-500">✓✓</span>
                       </div>

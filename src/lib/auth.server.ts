@@ -50,7 +50,7 @@ export async function verifySession() {
   if (subToken) {
     const subSession = await queryOne<any>(
       `SELECT ss.id as sessionId, ss.subUserId, ss.token, ss.expiresAt,
-              su.id as uid, su.name, su.email, su.phone, su.role, su.tenantId, su.isActive, su.doctorId,
+              su.id as uid, su.name, su.email, su.phone, su.role, su.tenantId, su.isActive, su.doctorId, su.profilePhoto,
               u.clinicName, u.practiceSize, u.profession,
               u.subscriptionStatus, u.subscriptionPlan, u.subscriptionExpiresAt,
               u.paymentAmount, u.billingInterval, u.paymentMethod, u.createdAt as uCreatedAt
@@ -83,6 +83,7 @@ export async function verifySession() {
           subSession.uCreatedAt instanceof Date
             ? subSession.uCreatedAt.toISOString()
             : subSession.uCreatedAt,
+        profilePhoto: subSession.profilePhoto || null,
         role: subSession.role as "reception" | "doctor",
         doctorId: subSession.doctorId,
         profession: subSession.profession || "Healthcare and medical",
@@ -95,7 +96,7 @@ export async function verifySession() {
   if (locToken) {
     const locSession = await queryOne<any>(
       `SELECT ls.id as sessionId, ls.locationId, ls.token, ls.expiresAt,
-              l.id as lid, l.name as locName, l.email as locEmail, l.phone as locPhone, l.tenantId, l.isActive,
+              l.id as lid, l.name as locName, l.email as locEmail, l.phone as locPhone, l.tenantId, l.isActive, l.profilePhoto,
               l.address, l.city, l.state, l.pincode, l.managerName,
               u.clinicName, u.practiceSize, u.profession,
               u.subscriptionStatus, u.subscriptionPlan, u.subscriptionExpiresAt,
@@ -129,6 +130,7 @@ export async function verifySession() {
           locSession.uCreatedAt instanceof Date
             ? locSession.uCreatedAt.toISOString()
             : locSession.uCreatedAt,
+        profilePhoto: locSession.profilePhoto || null,
         role: "location" as const,
         locationId: locSession.lid,
         locationName: locSession.locName,

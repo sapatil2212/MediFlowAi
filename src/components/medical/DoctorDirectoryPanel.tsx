@@ -62,6 +62,10 @@ export interface DoctorDirectoryPanelProps {
   onEditDoctorSchedule: (doc: any) => void;
   onEditDoctorLeaves: (doc: any) => void;
   onUpgradePlan?: () => void;
+  /** May add / edit / delete doctor profiles (owner & branch). Defaults to true. */
+  canManageDoctors?: boolean;
+  /** May message patients over WhatsApp. When false, absence notices are skipped. */
+  canSendWhatsApp?: boolean;
   clinicName?: string;
   waStatus?: string;
   waConnectedNumber?: string;
@@ -99,6 +103,8 @@ export function DoctorDirectoryPanel({
   onEditDoctorSchedule,
   onEditDoctorLeaves,
   onUpgradePlan,
+  canManageDoctors = true,
+  canSendWhatsApp = true,
   clinicName = "HealthSync Clinic",
   waStatus = "DISCONNECTED",
   waConnectedNumber = "",
@@ -114,7 +120,11 @@ export function DoctorDirectoryPanel({
   const [analysisModalDoctor, setAnalysisModalDoctor] = useState<any | null>(null);
   const [toastMessage, setToastMessage] = useState<string>("");
 
-  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
+  // Local date — toISOString() is UTC and reported yesterday until 05:30 IST.
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
 
   // Compute metrics
   const stats = useMemo(() => {
@@ -122,10 +132,9 @@ export function DoctorDirectoryPanel({
     // Count appointments for today across all doctors
     const todayAppts = appointments.filter((a) => {
       if (!a.dateTime) return false;
-      const dStr =
-        a.dateTime instanceof Date
-          ? a.dateTime.toISOString().split("T")[0]
-          : String(a.dateTime).split("T")[0];
+      const d = a.dateTime instanceof Date ? a.dateTime : new Date(a.dateTime);
+      if (Number.isNaN(d.getTime())) return false;
+      const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       return dStr === todayStr;
     }).length;
 
@@ -147,8 +156,7 @@ export function DoctorDirectoryPanel({
         doc.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         doc.departmentName?.toLowerCase().includes(searchQuery.toLowerCase());
 
-      const matchDept =
-        selectedDeptFilter === "all" || doc.departmentId === selectedDeptFilter;
+      const matchDept = selectedDeptFilter === "all" || doc.departmentId === selectedDeptFilter;
 
       return matchSearch && matchDept;
     });
@@ -181,14 +189,15 @@ export function DoctorDirectoryPanel({
                 Doctor &amp; Specialist Directory
               </h2>
               <p className="text-xs text-zinc-500 mt-0.5">
-                Manage practitioner profiles, clinical availability schedules, and emergency leave broadcasts
+                Manage practitioner profiles, clinical availability schedules, and emergency leave
+                broadcasts
               </p>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {!isEditingDoc && (
+          {!isEditingDoc && canManageDoctors && (
             <button
               onClick={onOpenAddDoctor}
               className="rounded-lg bg-zinc-900 hover:bg-black dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 px-4 py-2 text-xs font-medium transition-colors inline-flex items-center gap-1.5 cursor-pointer"
@@ -243,7 +252,9 @@ export function DoctorDirectoryPanel({
             <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mt-1">
               AI WhatsApp Patient Notice
             </p>
-            <p className="text-[11px] text-zinc-400 mt-0.5">Instant multi-date block &amp; notify</p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">
+              Instant multi-date block &amp; notify
+            </p>
           </div>
           <div className="h-10 w-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 flex items-center justify-center border border-zinc-200 dark:border-zinc-700">
             <CalendarDays className="h-5 w-5" />
@@ -491,25 +502,38 @@ export function DoctorDirectoryPanel({
                         </div>
                       </div>
 
-                      {/* Quick actions */}
-                      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => onOpenEditDoctor(doc)}
-                          className="p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors cursor-pointer"
-                          title="Edit Doctor Details"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onDeleteDoctor(doc.id)}
-                          className="p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-950/40 text-zinc-400 hover:text-red-500 transition-colors cursor-pointer"
-                          title="Delete Doctor"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                      {/* Quick actions — profile changes are owner/branch only */}
+                      {canManageDoctors && (
+                        <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => onOpenEditDoctor(doc)}
+                            className="p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+                            title="Edit Doctor Details"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Deletes the profile with its schedule and leaves;
+                              // one mis-click used to do that with no prompt.
+                              if (
+                                window.confirm(
+                                  `Delete ${doc.name}? Their weekly schedule and leaves will be removed too. This cannot be undone.`,
+                                )
+                              ) {
+                                onDeleteDoctor(doc.id);
+                              }
+                            }}
+                            className="p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-950/40 text-zinc-400 hover:text-red-500 transition-colors cursor-pointer"
+                            title="Delete Doctor"
+                            aria-label={`Delete ${doc.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Row 2: Qualifications & Contact — side by side, equal size, no background */}
@@ -541,15 +565,12 @@ export function DoctorDirectoryPanel({
                         <button
                           type="button"
                           onClick={() => setEmergencyModalDoctor(doc)}
-                          className="rounded-lg bg-zinc-900 hover:bg-black dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 py-1.5 px-2.5 text-xs font-medium transition-colors flex items-center justify-between cursor-pointer group/btn"
+                          className="rounded-lg bg-rose-600 hover:bg-rose-700 text-white py-1.5 px-2.5 text-xs font-medium transition-colors flex items-center justify-center cursor-pointer group/btn"
                         >
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <CalendarDays className="h-3.5 w-3.5 text-rose-400 dark:text-rose-500 shrink-0" />
+                            <CalendarDays className="h-3.5 w-3.5 text-white shrink-0" />
                             <span className="truncate">Urgent Absence</span>
                           </div>
-                          <span className="text-[9px] font-semibold tracking-wide bg-rose-600 group-hover/btn:bg-rose-700 text-white px-1.5 py-0.5 rounded shadow-xs transition-colors ml-1 shrink-0">
-                            AI WhatsApp
-                          </span>
                         </button>
 
                         {/* Cancel Leave */}
@@ -613,16 +634,19 @@ export function DoctorDirectoryPanel({
                     : "No doctors registered in directory yet."}
                 </p>
                 <p className="text-xs text-zinc-400 mt-1">
-                  Add a practitioner profile to start configuring schedules and emergency absence broadcasts.
+                  Add a practitioner profile to start configuring schedules and emergency absence
+                  broadcasts.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={onOpenAddDoctor}
-                className="rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-5 py-2 text-xs font-bold cursor-pointer transition-transform active:scale-95"
-              >
-                + Register First Doctor
-              </button>
+              {canManageDoctors && (
+                <button
+                  type="button"
+                  onClick={onOpenAddDoctor}
+                  className="rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-5 py-2 text-xs font-bold cursor-pointer transition-transform active:scale-95"
+                >
+                  + Register First Doctor
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -639,7 +663,9 @@ export function DoctorDirectoryPanel({
           waConnectedNumber={waConnectedNumber}
           onSuccess={(res) => {
             showToast(
-              `Emergency leave declared for ${res.leavesCreated} date(s). ${res.notifiedPatientsCount} WhatsApp alert(s) dispatched!`,
+              res.whatsappSkippedForRole || !canSendWhatsApp
+                ? `Emergency leave declared for ${res.leavesCreated} date(s). WhatsApp notices were not sent — ask the owner or a doctor to notify patients.`
+                : `Emergency leave declared for ${res.leavesCreated} date(s). ${res.notifiedPatientsCount} WhatsApp alert(s) dispatched!`,
             );
             onRefreshDoctors();
           }}
@@ -657,7 +683,10 @@ export function DoctorDirectoryPanel({
           waConnectedNumber={waConnectedNumber}
           onSuccess={(res) => {
             showToast(
-              `Leave cancelled for ${res.leavesCancelledCount} date(s). ${res.reinstatedAppointmentsCount} appointment(s) successfully reinstated!`,
+              `Leave cancelled for ${res.leavesCancelledCount} date(s). ${res.reinstatedAppointmentsCount} appointment(s) successfully reinstated!` +
+                (res.whatsappSkippedForRole || !canSendWhatsApp
+                  ? " WhatsApp notices were not sent."
+                  : ""),
             );
             onRefreshDoctors();
           }}

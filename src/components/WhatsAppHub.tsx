@@ -645,8 +645,10 @@ export default function WhatsAppHub({
                     </p>
                   </div>
                   <button
+                    type="button"
+                    disabled={!canOperate}
                     onClick={() => setEditingTemplate({})}
-                    className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-4 py-1.5 flex items-center gap-1 cursor-pointer shadow-sm"
+                    className="rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs px-4 py-1.5 flex items-center gap-1 cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Plus className="h-3.5 w-3.5" /> New Template
                   </button>
@@ -685,6 +687,9 @@ export default function WhatsAppHub({
                             <Edit3 className="h-3 w-3" /> Edit
                           </button>
                           <button
+                            type="button"
+                            disabled={!canOperate}
+                            title={canOperate ? undefined : "View only"}
                             onClick={() => {
                               setConfirmDialog({
                                 open: true,
@@ -701,7 +706,7 @@ export default function WhatsAppHub({
                                 },
                               });
                             }}
-                            className="rounded-full border border-red-200 hover:bg-red-50 px-3 py-1 text-[10px] font-bold text-red-500 cursor-pointer flex items-center gap-1"
+                            className="rounded-full border border-red-200 hover:bg-red-50 px-3 py-1 text-[10px] font-bold text-red-500 cursor-pointer flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             <Trash2 className="h-3 w-3" /> Delete
                           </button>
@@ -1572,8 +1577,12 @@ export default function WhatsAppHub({
                         }}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[10px] font-bold text-zinc-700 hover:bg-zinc-50 transition-colors shadow-xs cursor-pointer disabled:opacity-50"
                       >
-                        <RefreshCw className={`h-3 w-3 ${resettingWa ? "animate-spin text-brand" : "text-zinc-500"}`} />
-                        {resettingWa ? "Regenerating..." : "Stuck or Can't Link? Reset Session & New QR"}
+                        <RefreshCw
+                          className={`h-3 w-3 ${resettingWa ? "animate-spin text-brand" : "text-zinc-500"}`}
+                        />
+                        {resettingWa
+                          ? "Regenerating..."
+                          : "Stuck or Can't Link? Reset Session & New QR"}
                       </button>
                     </div>
                   </div>
@@ -1620,7 +1629,9 @@ export default function WhatsAppHub({
                       }}
                       className="rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 text-[10px] font-bold px-4 py-2 cursor-pointer shadow-xs inline-flex items-center gap-1.5 disabled:opacity-50"
                     >
-                      <RefreshCw className={`h-3 w-3 ${resettingWa ? "animate-spin text-brand" : "text-zinc-500"}`} />
+                      <RefreshCw
+                        className={`h-3 w-3 ${resettingWa ? "animate-spin text-brand" : "text-zinc-500"}`}
+                      />
                       {resettingWa ? "Resetting..." : "Reset Session & New QR"}
                     </button>
                   </div>
