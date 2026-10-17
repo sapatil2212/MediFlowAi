@@ -12,7 +12,7 @@
 // it can never block the booking/consultation flow).
 // ─────────────────────────────────────────────────────────────────────────────
 import { queryOne } from "./db";
-import { getWAStatus, enqueueWA } from "./whatsapp";
+import { getWAStatus } from "./whatsapp";
 
 export type AptNotifyKind =
   | "booked"
@@ -70,6 +70,83 @@ function fmtDate(d: Date): string {
 function fmtTime(d: Date, slot?: string | null): string {
   if (slot) return slot;
   return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Official (Meta Cloud API) template variable mapping.
+//
+// Co-located here so buildTemplateVars reuses the module-private fmtDate/fmtTime,
+// keeping the official date/time params byte-identical to the Web body. The
+// order of each spec is the POSITIONAL order of the {{n}} placeholders in the
+// approved Meta template body.
+//
+// Video kinds (videoLinkIssued / videoLinkReissued) are present for
+// completeness/tests ONLY — they are forced to WhatsApp Web always and are
+// never sent through the official channel (see whatsapp-router.ts HIGH-1).
+// ─────────────────────────────────────────────────────────────────────────────
+export const TEMPLATE_VAR_SPEC: Record<
+  AptNotifyKind,
+  (keyof AptNotifyContext | "date" | "time")[]
+> = {
+  booked: ["name", "clinicName", "doctorName", "date", "time", "tokenNo"],
+  confirmed: ["name", "clinicName", "doctorName", "date", "time", "tokenNo"],
+  tokenUpdated: ["name", "clinicName", "doctorName", "date", "time", "tokenNo"],
+  reminderDayBefore: ["name", "clinicName", "doctorName", "date", "time", "tokenNo"],
+  cancelled: ["name", "clinicName", "date", "time"],
+  completed: ["name", "clinicName", "doctorName"],
+  reminderDayOf: ["name", "clinicName", "doctorName", "time", "tokenNo"],
+  reminder2h: ["name", "clinicName", "doctorName", "time", "tokenNo"],
+  reminder1h: ["name", "clinicName", "doctorName", "time", "tokenNo"],
+  videoLinkIssued: ["name", "clinicName", "doctorName", "date", "time"],
+  videoLinkReissued: ["name", "clinicName", "doctorName", "date", "time"],
+};
+
+/** Number of positional body variables an approved template for `kind` must carry. */
+export function expectedVarCount(kind: AptNotifyKind): number {
+  return TEMPLATE_VAR_SPEC[kind].length;
+}
+
+/**
+ * Builds the ordered, non-empty body parameter strings for an official template
+ * message. Uses the same fmtDate/fmtTime as the Web body so date/time read
+ * identically on both channels. Documented fallbacks guarantee no slot is empty
+ * (Meta rejects empty body params).
+ */
+export function buildTemplateVars(kind: AptNotifyKind, ctx: AptNotifyContext): string[] {
+  const dateStr = fmtDate(ctx.dateTime);
+  const timeStr = fmtTime(ctx.dateTime, ctx.timeSlot);
+  return TEMPLATE_VAR_SPEC[kind].map((field) => {
+    switch (field) {
+      case "date":
+        return dateStr;
+      case "time":
+        return timeStr;
+      case "name":
+        return ctx.name || "there";
+      case "clinicName":
+        return ctx.clinicName || "our clinic";
+      case "doctorName":
+        return ctx.doctorName || "our doctor";
+      case "tokenNo":
+        return ctx.tokenNo != null ? String(ctx.tokenNo) : "—";
+      default: {
+        const v = (ctx as any)[field];
+        return v != null && String(v) !== "" ? String(v) : "—";
+      }
+    }
+  });
+}
+
+/** Counts distinct {{n}} placeholder tokens in a template body. */
+export function countBodyPlaceholders(bodyText: string): number {
+  if (!bodyText) return 0;
+  const seen = new Set<string>();
+  const re = /\{\{\s*(\d+)\s*\}\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(bodyText)) !== null) {
+    seen.add(m[1]);
+  }
+  return seen.size;
 }
 
 /** Builds the WhatsApp message body for a given notification kind. */
@@ -138,15 +215,17 @@ export async function sendAppointmentNotification(
       console.warn(`[WhatsApp][${kind}] Skipped — no phone number for ${ctx.name} (${tenantId}).`);
       return false;
     }
-    if (!(await isWhatsAppReady(tenantId))) {
-      console.warn(`[WhatsApp][${kind}] Skipped — WhatsApp not CONNECTED for tenant ${tenantId}.`);
-      return false;
-    }
-    const body = buildAppointmentMessage(kind, ctx);
-    if (!body) return false;
-    await enqueueWA(tenantId, phone, body);
-    console.log(`[WhatsApp][${kind}] Queued to ${phone} (tenant ${tenantId}).`);
-    return true;
+    // Route through the central channel router (official Cloud API primary,
+    // WhatsApp Web fallback). The router logs the attempt and never throws.
+    const { sendPatientMessage } = await import("./whatsapp-router");
+    const result = await sendPatientMessage({
+      tenantId,
+      notifyKind: kind,
+      recipientPhone: phone,
+      ctx,
+      buildMessage: () => buildAppointmentMessage(kind, ctx),
+    });
+    return result.delivered;
   } catch (err: any) {
     console.error(`[WhatsApp][${kind}] Failed to enqueue notification:`, err?.message);
     return false;

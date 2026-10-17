@@ -58,6 +58,7 @@ import {
   toggleWAAIReplyServerFn,
   getWAConversationsServerFn,
   getWAConversationHistoryServerFn,
+  getTenantWaLogsServerFn,
 } from "../lib/auth";
 
 interface WhatsAppHubProps {
@@ -76,8 +77,12 @@ export default function WhatsAppHub({
   canOperate = true,
 }: WhatsAppHubProps) {
   const [activeSubTab, setActiveSubTab] = useState<
-    "dashboard" | "templates" | "campaigns" | "auto-reply" | "connection"
+    "dashboard" | "templates" | "campaigns" | "auto-reply" | "connection" | "official-status"
   >("dashboard");
+
+  // Official (Meta Cloud API) delivery log for this tenant.
+  const [officialLogs, setOfficialLogs] = useState<any>(null);
+  const [loadingOfficial, setLoadingOfficial] = useState(false);
 
   // Connection & polling states
   const [waStatus, setWaStatus] = useState<string>("DISCONNECTED");
@@ -177,6 +182,7 @@ export default function WhatsAppHub({
     loadStats();
     if (activeSubTab === "templates") loadTemplates();
     if (activeSubTab === "campaigns") loadCampaigns();
+    if (activeSubTab === "official-status") loadOfficialLogs();
     if (activeSubTab === "auto-reply") {
       loadAutoReplies();
       loadAIStatus();
@@ -190,6 +196,18 @@ export default function WhatsAppHub({
       setAiEnabled(res.aiEnabled);
     } catch (e) {
       /* silent */
+    }
+  };
+
+  const loadOfficialLogs = async () => {
+    setLoadingOfficial(true);
+    try {
+      const res = await getTenantWaLogsServerFn({ data: { limit: 100 } });
+      setOfficialLogs(res);
+    } catch (e) {
+      /* silent */
+    } finally {
+      setLoadingOfficial(false);
     }
   };
 
@@ -468,6 +486,7 @@ export default function WhatsAppHub({
             { id: "campaigns", label: "Campaigns", icon: Send },
             { id: "auto-reply", label: "Auto-Replies", icon: RotateCcw },
             { id: "connection", label: "Device Link", icon: Wifi },
+            { id: "official-status", label: "Official API Status", icon: Check },
           ].map((t) => {
             const Icon = t.icon;
             return (
@@ -1671,6 +1690,109 @@ export default function WhatsAppHub({
                   <p className="text-zinc-500 italic">No messages sent in this session yet.</p>
                 )}
               </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* OFFICIAL API STATUS TAB */}
+        {activeSubTab === "official-status" && (
+          <motion.div
+            key="official-status"
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -5 }}
+            className="space-y-5"
+          >
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {(() => {
+                const b = officialLogs?.breakdown || {};
+                const cards: [string, number, string][] = [
+                  ["Official sent", Number(b.officialOk || 0), "text-emerald-600"],
+                  ["Official failed", Number(b.officialFailed || 0), "text-red-600"],
+                  ["Web sent", Number(b.webOk || 0), "text-emerald-600"],
+                  ["Web failed", Number(b.webFailed || 0), "text-red-600"],
+                ];
+                return cards.map(([label, value, color]) => (
+                  <div key={label} className="bg-white border border-zinc-200 rounded-2xl p-4">
+                    <div className="text-[10px] font-bold text-zinc-500 uppercase">{label}</div>
+                    <div className={`text-2xl font-black ${color}`}>{value}</div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            <div className="bg-white border border-zinc-200 rounded-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
+                <h3 className="text-xs font-bold text-zinc-900">Recent messages</h3>
+                <button
+                  onClick={loadOfficialLogs}
+                  className="inline-flex items-center gap-1.5 text-[10px] font-bold text-zinc-600 hover:text-zinc-900 cursor-pointer"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Refresh
+                </button>
+              </div>
+              {loadingOfficial ? (
+                <div className="flex items-center gap-2 text-zinc-500 text-xs p-6">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-zinc-50 text-zinc-500">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-bold">Recipient</th>
+                        <th className="text-left px-3 py-2 font-bold">Kind</th>
+                        <th className="text-left px-3 py-2 font-bold">Channel</th>
+                        <th className="text-left px-3 py-2 font-bold">Status</th>
+                        <th className="text-left px-3 py-2 font-bold">Error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(officialLogs?.recent || []).length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="px-3 py-6 text-center text-zinc-400">
+                            No official or web messages logged yet.
+                          </td>
+                        </tr>
+                      )}
+                      {(officialLogs?.recent || []).map((r: any) => (
+                        <tr key={r.id} className="border-t border-zinc-100">
+                          <td className="px-3 py-2 text-zinc-700">{r.recipient}</td>
+                          <td className="px-3 py-2 text-zinc-600">{r.kind}</td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold ${
+                                r.channel === "official"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-zinc-100 text-zinc-600"
+                              }`}
+                            >
+                              {r.channel || "—"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`inline-flex items-center gap-1 font-semibold ${
+                                r.status === "failed" ? "text-red-600" : "text-zinc-700"
+                              }`}
+                            >
+                              {r.status === "failed" ? (
+                                <AlertCircle className="h-3.5 w-3.5" />
+                              ) : (
+                                <Check className="h-3.5 w-3.5 text-emerald-500" />
+                              )}
+                              {r.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-red-500">
+                            {r.errorCode ? `${r.errorCode}: ${r.errorMessage || ""}` : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </motion.div>
         )}

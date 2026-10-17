@@ -5705,6 +5705,17 @@ export const uploadWATemplateHeaderImageServerFn = createServerFn({ method: "POS
     return { success: true, url: result.secure_url };
   });
 
+/**
+ * Tenant-scoped WhatsApp delivery log (official + web) for the "Official API
+ * Status" sub-tab. The tenant is resolved from the session server-side.
+ */
+export const getTenantWaLogsServerFn = createServerFn({ method: "GET" })
+  .validator((data?: { limit?: number; offset?: number }) => data || {})
+  .handler(async ({ data }) => {
+    const { getTenantWaLogs } = await import("./auth.server");
+    return await getTenantWaLogs(data);
+  });
+
 export const generateWATemplateServerFn = createServerFn({ method: "POST" })
   .validator((data: { prompt: string }) => {
     if (!data.prompt) throw new Error("Prompt is required");

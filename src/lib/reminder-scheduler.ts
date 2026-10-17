@@ -16,8 +16,9 @@
 // affect the others.
 // ─────────────────────────────────────────────────────────────────────────────
 import { query, execute } from "./db";
-import { isWhatsAppReady, buildAppointmentMessage, type AptNotifyKind } from "./appointment-notify";
-import { enqueueWA } from "./whatsapp";
+import { buildAppointmentMessage, type AptNotifyKind } from "./appointment-notify";
+import { sendPatientMessage } from "./whatsapp-router";
+import { isCloudAvailable } from "./whatsapp-cloud";
 
 const globalForScheduler = globalThis as unknown as {
   reminderSchedulerStarted?: boolean;
@@ -82,13 +83,9 @@ async function runTokenCorrections(): Promise<void> {
     return;
   }
 
-  const readiness = new Map<string, boolean>();
-  const canSend = async (tenantId: string): Promise<boolean> => {
-    if (readiness.has(tenantId)) return readiness.get(tenantId)!;
-    const ok = await isWhatsAppReady(tenantId);
-    readiness.set(tenantId, ok);
-    return ok;
-  };
+  // tokenNotifyPending has OPPOSITE polarity to the reminder flags: 1 means
+  // "still needs sending", cleared to 0 ONLY on successful delivery (MEDIUM-2).
+  const cloudAvailable = await isCloudAvailable();
 
   for (const apt of rows) {
     try {
@@ -98,23 +95,32 @@ async function runTokenCorrections(): Promise<void> {
         await execute("UPDATE Appointment SET tokenNotifyPending = 0 WHERE id = ?", [apt.id]);
         continue;
       }
-      if (!(await canSend(apt.tenantId))) continue; // retry next cycle
 
-      const body = buildAppointmentMessage("tokenUpdated", {
+      const ctx = {
         name: apt.name,
         clinicName: apt.clinicName,
         doctorName: apt.doctorName,
         dateTime: new Date(apt.dateTime),
         timeSlot: apt.timeSlot,
         tokenNo: apt.tokenNo,
-      });
-      if (!body) continue;
+      };
 
-      await enqueueWA(apt.tenantId, phone, body);
-      await execute("UPDATE Appointment SET tokenNotifyPending = 0 WHERE id = ?", [apt.id]);
-      console.log(
-        `[Reminder Scheduler] Sent corrected token #${apt.tokenNo} for appointment ${apt.id} (${apt.tenantId})`,
-      );
+      const result = await sendPatientMessage({
+        tenantId: apt.tenantId,
+        appointmentId: apt.id,
+        notifyKind: "tokenUpdated",
+        recipientPhone: phone,
+        cloudAvailable,
+        ctx,
+        buildMessage: () => buildAppointmentMessage("tokenUpdated", ctx),
+      });
+
+      if (result.delivered) {
+        await execute("UPDATE Appointment SET tokenNotifyPending = 0 WHERE id = ?", [apt.id]);
+        console.log(
+          `[Reminder Scheduler] Sent corrected token #${apt.tokenNo} for appointment ${apt.id} (${apt.tenantId})`,
+        );
+      }
     } catch (rowErr: any) {
       console.error("[Reminder Scheduler] token correction error:", rowErr?.message);
     }
@@ -177,14 +183,9 @@ async function runReminderCycle(): Promise<void> {
 
     if (!rows || rows.length === 0) return;
 
-    // Cache per-tenant readiness so we hit the WA service once per tenant per cycle.
-    const readiness = new Map<string, boolean>();
-    const canSend = async (tenantId: string): Promise<boolean> => {
-      if (readiness.has(tenantId)) return readiness.get(tenantId)!;
-      const ok = await isWhatsAppReady(tenantId);
-      readiness.set(tenantId, ok);
-      return ok;
-    };
+    // Compute Cloud API availability once per cycle (REL-3) and pass it on
+    // every send so the router does not re-resolve the central config per row.
+    const cloudAvailable = await isCloudAvailable();
 
     const now = Date.now();
 
@@ -221,8 +222,6 @@ async function runReminderCycle(): Promise<void> {
         const phone = apt.whatsapp || apt.phone;
         if (!phone) continue;
 
-        if (!(await canSend(apt.tenantId))) continue;
-
         // For a video consultation, mint a fresh join link to carry in the
         // reminder. Tokens are stored only as hashes, so a reminder cannot
         // re-send a prior link; this issues an additional room-scoped token that
@@ -241,7 +240,7 @@ async function runReminderCycle(): Promise<void> {
           }
         }
 
-        const body = buildAppointmentMessage(kind, {
+        const ctx = {
           name: apt.name,
           clinicName: apt.clinicName,
           doctorName: apt.doctorName,
@@ -249,15 +248,28 @@ async function runReminderCycle(): Promise<void> {
           timeSlot: apt.timeSlot,
           tokenNo: apt.tokenNo,
           joinLink,
-        });
-        if (!body) continue;
+        };
 
-        await enqueueWA(apt.tenantId, phone, body);
-        // Mark this reminder as sent so it never repeats.
-        await execute(`UPDATE Appointment SET ${column} = 1 WHERE id = ?`, [apt.id]);
-        console.log(
-          `[Reminder Scheduler] Sent ${kind} for appointment ${apt.id} (${apt.tenantId})`,
-        );
+        const result = await sendPatientMessage({
+          tenantId: apt.tenantId,
+          appointmentId: apt.id,
+          notifyKind: kind,
+          recipientPhone: phone,
+          cloudAvailable,
+          ctx,
+          buildMessage: () => buildAppointmentMessage(kind, ctx),
+          // VIDEO JOIN LINK (HIGH-1): when this reminder carries a joinLink,
+          // force web so the fresh per-send link is delivered.
+          channel: joinLink ? "web" : undefined,
+        });
+
+        if (result.delivered) {
+          // Mark this reminder as sent so it never repeats.
+          await execute(`UPDATE Appointment SET ${column} = 1 WHERE id = ?`, [apt.id]);
+          console.log(
+            `[Reminder Scheduler] Sent ${kind} for appointment ${apt.id} (${apt.tenantId})`,
+          );
+        }
       } catch (rowErr: any) {
         console.error("[Reminder Scheduler] row error:", rowErr?.message);
       }

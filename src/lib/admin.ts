@@ -1118,3 +1118,96 @@ export const deletePaymentServerFn = createServerFn({ method: "POST" })
 
     return { success: true };
   });
+
+// ──────────────────────────────────────────────
+// WhatsApp Cloud API (Super Admin) Server Functions
+//
+// Central Meta WhatsApp Cloud API administration. Handler logic lives in
+// wa-cloud-admin.ts; these wrappers gate on verifyAdminSession and are the
+// client-imported surface. Secrets are never returned to the client.
+// ──────────────────────────────────────────────
+
+export const getWaCloudConfigServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const admin = await verifyAdminSession();
+  if (!admin) throw new Error("Unauthorized");
+  const { getWaCloudConfig } = await import("./wa-cloud-admin");
+  return await getWaCloudConfig();
+});
+
+export const saveWaCloudConfigServerFn = createServerFn({ method: "POST" })
+  .validator(async (data: import("./wa-cloud-admin").SaveWaCloudConfigInput) => {
+    const { validateSaveWaCloudConfig } = await import("./wa-cloud-admin");
+    return validateSaveWaCloudConfig(data || {});
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+    const { saveWaCloudConfig } = await import("./wa-cloud-admin");
+    return await saveWaCloudConfig(data);
+  });
+
+export const testWaCloudConfigServerFn = createServerFn({ method: "POST" })
+  .validator((data: { toPhone: string; templateName: string; language?: string }) => {
+    if (!data?.toPhone || !data?.templateName) {
+      throw new Error("toPhone and templateName are required");
+    }
+    return { toPhone: data.toPhone, templateName: data.templateName, language: data.language || "en_US" };
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+    const { testWaCloudConfig } = await import("./wa-cloud-admin");
+    return await testWaCloudConfig(data);
+  });
+
+export const listWaCloudTemplatesServerFn = createServerFn({ method: "GET" }).handler(async () => {
+  const admin = await verifyAdminSession();
+  if (!admin) throw new Error("Unauthorized");
+  const { listWaCloudTemplates } = await import("./wa-cloud-admin");
+  return await listWaCloudTemplates();
+});
+
+export const saveWaCloudTemplateServerFn = createServerFn({ method: "POST" })
+  .validator((data: import("./wa-cloud-admin").SaveWaCloudTemplateInput) => {
+    if (!data?.name || !data?.bodyText) throw new Error("name and bodyText are required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+    const { saveWaCloudTemplate } = await import("./wa-cloud-admin");
+    return await saveWaCloudTemplate(data);
+  });
+
+export const submitWaCloudTemplateServerFn = createServerFn({ method: "POST" })
+  .validator((data: import("./wa-cloud-admin").SaveWaCloudTemplateInput) => {
+    if (!data?.name || !data?.bodyText) throw new Error("name and bodyText are required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+    const { submitWaCloudTemplate } = await import("./wa-cloud-admin");
+    return await submitWaCloudTemplate(data);
+  });
+
+export const syncWaCloudTemplateStatusServerFn = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => {
+    if (!data?.id) throw new Error("Template id is required");
+    return data;
+  })
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+    const { syncWaCloudTemplateStatus } = await import("./wa-cloud-admin");
+    return await syncWaCloudTemplateStatus(data);
+  });
+
+export const getWaCloudLogsServerFn = createServerFn({ method: "GET" })
+  .validator((data?: { limit?: number; offset?: number }) => data || {})
+  .handler(async ({ data }) => {
+    const admin = await verifyAdminSession();
+    if (!admin) throw new Error("Unauthorized");
+    const { getWaCloudLogs } = await import("./wa-cloud-admin");
+    return await getWaCloudLogs(data);
+  });

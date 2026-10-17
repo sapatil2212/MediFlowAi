@@ -1782,6 +1782,89 @@ if (typeof window === "undefined") {
           console.error("[DB] ❌ Failed to create WAConversation table:", err.message);
         }
 
+        // Create WaCloudConfig Table (single central Meta WhatsApp Cloud API config)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS WaCloudConfig (
+              id VARCHAR(32) PRIMARY KEY,
+              phoneNumberId VARCHAR(64) NULL,
+              wabaId VARCHAR(64) NULL,
+              accessTokenEnc TEXT NULL,
+              appSecretEnc TEXT NULL,
+              verifyToken VARCHAR(255) NULL,
+              apiVersion VARCHAR(16) NOT NULL DEFAULT 'v20.0',
+              isEnabled TINYINT(1) NOT NULL DEFAULT 0,
+              tokenLast4 VARCHAR(8) NULL,
+              appSecretLast4 VARCHAR(8) NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create WaCloudConfig table:", err.message);
+        }
+
+        // Create WaCloudTemplate Table (Meta Cloud API message templates)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS WaCloudTemplate (
+              id VARCHAR(255) PRIMARY KEY,
+              name VARCHAR(128) NOT NULL,
+              language VARCHAR(16) NOT NULL DEFAULT 'en_US',
+              category VARCHAR(32) NOT NULL DEFAULT 'UTILITY',
+              bodyText TEXT NOT NULL,
+              components JSON NULL,
+              variables JSON NULL,
+              varCount INT NOT NULL DEFAULT 0,
+              headerType VARCHAR(16) NULL,
+              headerImageUrl VARCHAR(1024) NULL,
+              status VARCHAR(16) NOT NULL DEFAULT 'DRAFT',
+              rejectionReason TEXT NULL,
+              metaTemplateId VARCHAR(64) NULL,
+              notifyKind VARCHAR(48) NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_wa_cloud_template_name_lang (name, language),
+              KEY idx_wa_cloud_template_kind (notifyKind, language, status, updatedAt)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create WaCloudTemplate table:", err.message);
+        }
+
+        // Create WaMessageLog Table (official + web delivery tracking)
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS WaMessageLog (
+              id VARCHAR(255) PRIMARY KEY,
+              tenantId VARCHAR(255) NOT NULL,
+              direction VARCHAR(8) NOT NULL DEFAULT 'out',
+              recipient VARCHAR(64) NOT NULL,
+              kind VARCHAR(48) NOT NULL,
+              templateId VARCHAR(255) NULL,
+              channel VARCHAR(16) NOT NULL,
+              metaMessageId VARCHAR(128) NULL,
+              status VARCHAR(16) NOT NULL DEFAULT 'queued',
+              errorCode VARCHAR(32) NULL,
+              errorMessage TEXT NULL,
+              officialAttempted TINYINT(1) NOT NULL DEFAULT 0,
+              officialStatus VARCHAR(16) NULL,
+              officialErrorCode VARCHAR(32) NULL,
+              officialErrorMessage TEXT NULL,
+              rawPayload MEDIUMTEXT NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              KEY idx_wml_tenant_created (tenantId, createdAt),
+              KEY idx_wml_meta_msg (metaMessageId),
+              KEY idx_wml_channel_status (channel, status),
+              KEY idx_wml_official (officialAttempted, officialStatus),
+              KEY idx_wml_kind (kind)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create WaMessageLog table:", err.message);
+        }
+
         // Migrate: add aiEnabled column to WhatsAppConfig if missing
         try {
           await conn.query(`ALTER TABLE WhatsAppConfig ADD COLUMN aiEnabled TINYINT(1) DEFAULT 0`);
@@ -2110,6 +2193,9 @@ if (typeof window === "undefined") {
           "RestaurantMenuCategory",
           "RestaurantMenuItem",
           "AccountEmailVerification",
+          "WaCloudConfig",
+          "WaCloudTemplate",
+          "WaMessageLog",
         ];
         for (const tbl of tablesToNormalize) {
           try {

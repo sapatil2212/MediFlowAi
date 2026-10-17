@@ -47,6 +47,7 @@ import {
   XCircle,
   Ban,
   Sparkles,
+  MessageCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -97,6 +98,7 @@ import {
 } from "../lib/demo";
 import { PLAN_BILLING, normalizePlan, type PlanTier } from "../lib/feature-access";
 import { CustomPlansPanel } from "../components/admin/CustomPlansPanel";
+import { WaCloudAdminPanel } from "../components/admin/WaCloudAdminPanel";
 
 export const Route = createFileRoute("/admin/dashboard")({
   head: () => ({
@@ -292,7 +294,13 @@ function AdminDashboardPage() {
 
   // Active Dashboard Tab View — persisted across refreshes via localStorage.
   const [activeTab, setActiveTab] = useState<
-    "overview" | "registry" | "payments" | "subscriptions" | "custom-plans" | "demo"
+    | "overview"
+    | "registry"
+    | "payments"
+    | "subscriptions"
+    | "custom-plans"
+    | "demo"
+    | "wa-cloud"
   >(() => {
     if (typeof window !== "undefined") {
       const saved = window.localStorage.getItem("bmt_admin_active_tab");
@@ -1803,6 +1811,7 @@ function AdminDashboardPage() {
               { id: "payments", label: "Payments", icon: CreditCard },
               { id: "subscriptions", label: "Subscriptions", icon: RefreshCw },
               { id: "custom-plans", label: "Custom Plans", icon: Sparkles },
+              { id: "wa-cloud", label: "WhatsApp API", icon: MessageCircle },
               { id: "demo", label: "Demo Requests", icon: Calendar },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -1869,6 +1878,7 @@ function AdminDashboardPage() {
               {activeTab === "payments" && <CreditCard className="h-5 w-5 text-[#0059C6]" />}
               {activeTab === "subscriptions" && <RefreshCw className="h-5 w-5 text-[#0059C6]" />}
               {activeTab === "custom-plans" && <Sparkles className="h-5 w-5 text-[#0059C6]" />}
+              {activeTab === "wa-cloud" && <MessageCircle className="h-5 w-5 text-[#0059C6]" />}
               {activeTab === "demo" && <Calendar className="h-5 w-5 text-[#0059C6]" />}
 
               <span className="text-sm font-bold text-zinc-900">
@@ -1877,6 +1887,7 @@ function AdminDashboardPage() {
                 {activeTab === "payments" && "Payment History"}
                 {activeTab === "subscriptions" && "Recurring Subscriptions"}
                 {activeTab === "custom-plans" && "Custom Plans"}
+                {activeTab === "wa-cloud" && "WhatsApp Cloud API"}
                 {activeTab === "demo" && "Demo Pipeline"}
               </span>
             </div>
@@ -1907,6 +1918,7 @@ function AdminDashboardPage() {
                   {activeTab === "payments" && "Payment History"}
                   {activeTab === "subscriptions" && "Recurring Subscriptions"}
                   {activeTab === "custom-plans" && "Custom Plans"}
+                  {activeTab === "wa-cloud" && "WhatsApp Cloud API"}
                   {activeTab === "demo" && "Demo Pipeline"}
                 </h1>
                 <p className="text-sm text-zinc-500 mt-1">
@@ -1920,6 +1932,8 @@ function AdminDashboardPage() {
                     "AutoPay subscription management — active mandates, renewals, and billing cycles"}
                   {activeTab === "custom-plans" &&
                     "Negotiated plans — price a deal, grant workspace access, and upgrade or downgrade a tenant"}
+                  {activeTab === "wa-cloud" &&
+                    "Central Meta WhatsApp Cloud API — credentials, message templates, and cross-tenant delivery monitoring"}
                   {activeTab === "demo" &&
                     "Track demo requests, follow-ups, and conversion pipeline"}
                 </p>
@@ -4322,6 +4336,9 @@ function AdminDashboardPage() {
             {activeTab === "custom-plans" && (
               <CustomPlansPanel onTenantsChanged={fetchDashboardData} />
             )}
+
+            {/* VIEW: WHATSAPP CLOUD API */}
+            {activeTab === "wa-cloud" && <WaCloudAdminPanel />}
 
             {/* VIEW: DEMO APPOINTMENTS */}
             {activeTab === "demo" && (

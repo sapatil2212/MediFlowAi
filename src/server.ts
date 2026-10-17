@@ -55,6 +55,10 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 //   https://<your-domain>/api/cashfree/webhook
 const CASHFREE_WEBHOOK_PATH = "/api/cashfree/webhook";
 
+// Stable public endpoint for Meta WhatsApp Cloud API webhooks. Configure this
+// URL in the Meta app dashboard: https://<your-domain>/api/whatsapp/webhook
+const WA_WEBHOOK_PATH = "/api/whatsapp/webhook";
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
@@ -62,6 +66,13 @@ export default {
       if (request.method === "POST" && url.pathname === CASHFREE_WEBHOOK_PATH) {
         const { handleCashfreeWebhookRequest } = await import("./lib/subscription-webhook");
         return await handleCashfreeWebhookRequest(request);
+      }
+
+      // Meta WhatsApp Cloud API webhook. Handles BOTH GET (verify handshake)
+      // and POST (status + inbound callbacks) — do not gate on method here.
+      if (url.pathname === WA_WEBHOOK_PATH) {
+        const { handleWaWebhook } = await import("./lib/whatsapp-webhook");
+        return await handleWaWebhook(request);
       }
 
       const handler = await getServerEntry();

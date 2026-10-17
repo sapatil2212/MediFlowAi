@@ -143,6 +143,47 @@ export async function verifySession() {
 }
 
 /**
+ * Tenant-scoped WhatsApp message log + delivery breakdown. The tenantId is
+ * bound from the verified session, NEVER from client input (TEN-1).
+ */
+export async function getTenantWaLogs(data?: { limit?: number; offset?: number }) {
+  const user = await verifySession();
+  if (!user) throw new Error("Unauthorized");
+  const tenantId = user.tenantId;
+
+  const { query, queryOne } = await import("./db");
+  const limit = Math.min(Math.max(Number(data?.limit) || 50, 1), 200);
+  const offset = Math.max(Number(data?.offset) || 0, 0);
+
+  const recent = await query<any>(
+    `SELECT id, recipient, kind, channel, status, metaMessageId,
+            officialAttempted, officialStatus,
+            COALESCE(officialErrorCode, errorCode) AS errorCode,
+            COALESCE(officialErrorMessage, errorMessage) AS errorMessage,
+            createdAt
+       FROM WaMessageLog
+      WHERE direction = 'out' AND tenantId = ?
+      ORDER BY createdAt DESC
+      LIMIT ? OFFSET ?`,
+    [tenantId, limit, offset],
+  );
+
+  const breakdown = await queryOne<any>(
+    `SELECT
+       SUM(CASE WHEN officialAttempted = 1 AND officialStatus IN ('sent','delivered','read') THEN 1 ELSE 0 END) AS officialOk,
+       SUM(CASE WHEN officialStatus = 'failed' THEN 1 ELSE 0 END) AS officialFailed,
+       SUM(CASE WHEN channel = 'web' AND status = 'sent' THEN 1 ELSE 0 END) AS webOk,
+       SUM(CASE WHEN channel = 'web' AND status = 'failed' THEN 1 ELSE 0 END) AS webFailed,
+       COUNT(*) AS total
+     FROM WaMessageLog
+     WHERE direction = 'out' AND tenantId = ?`,
+    [tenantId],
+  );
+
+  return { recent: recent || [], breakdown: breakdown || {} };
+}
+
+/**
  * Resolves the origin the request actually came from (so the post-mandate
  * redirect returns to the same host/port — localhost:8080 in dev,
  * https://bookmytime.tech in prod) rather than a hardcoded config value.
