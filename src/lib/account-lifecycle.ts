@@ -213,6 +213,7 @@ export async function purgeTenantCompletely(
       "WACampaignRecipient",
       "WAAutoReply",
       "WAConversation",
+      "WaMessageLog",
       "VideoRoom",
       "VideoJoinToken",
       "VideoParticipant",

@@ -1792,7 +1792,7 @@ if (typeof window === "undefined") {
               accessTokenEnc TEXT NULL,
               appSecretEnc TEXT NULL,
               verifyToken VARCHAR(255) NULL,
-              apiVersion VARCHAR(16) NOT NULL DEFAULT 'v20.0',
+              apiVersion VARCHAR(16) NOT NULL DEFAULT 'v21.0',
               isEnabled TINYINT(1) NOT NULL DEFAULT 0,
               tokenLast4 VARCHAR(8) NULL,
               appSecretLast4 VARCHAR(8) NULL,
@@ -1863,6 +1863,48 @@ if (typeof window === "undefined") {
           `);
         } catch (err: any) {
           console.error("[DB] ❌ Failed to create WaMessageLog table:", err.message);
+        }
+
+        // Migrate WaMessageLog for plain-text Cloud sends + inbound auto-reply:
+        //   • body — outbound tenant sends: AES-256-GCM encrypted (wa-crypto),
+        //     written only once Meta accepts an official send and NULLed once
+        //     the row can no longer fall back (it may hold video join links);
+        //     auto-reply rows: the reply text; inbound: the received text
+        //     (capped at 4096 chars). Never selected by the tenant or admin
+        //     log views.
+        //   • webFallbackAttempted — one-time claim flag for the async Web
+        //     fallback triggered by a 'failed' status webhook.
+        try {
+          const wmlCols: any[] = await conn.query("SHOW COLUMNS FROM WaMessageLog");
+          const wmlColNames = wmlCols.map((c: any) => c.Field || c.field || "");
+          if (!wmlColNames.includes("body")) {
+            await conn.query("ALTER TABLE WaMessageLog ADD COLUMN body TEXT NULL");
+            console.log("[DB] ✅ Added body column to WaMessageLog table");
+          }
+          if (!wmlColNames.includes("webFallbackAttempted")) {
+            await conn.query(
+              "ALTER TABLE WaMessageLog ADD COLUMN webFallbackAttempted TINYINT(1) NOT NULL DEFAULT 0",
+            );
+            console.log("[DB] ✅ Added webFallbackAttempted column to WaMessageLog table");
+          }
+        } catch (err: any) {
+          console.error("[DB] ❌ Could not verify/add WaMessageLog columns:", err.message);
+        }
+
+        // Inbound tenant resolution + auto-reply cooldown look up by recipient,
+        // newest first.
+        try {
+          const wmlRecipientIdx: any[] = await conn.query(
+            "SHOW INDEX FROM WaMessageLog WHERE Key_name = 'idx_wml_recipient_created'",
+          );
+          if (!wmlRecipientIdx || wmlRecipientIdx.length === 0) {
+            await conn.query(
+              "ALTER TABLE WaMessageLog ADD INDEX idx_wml_recipient_created (recipient, createdAt)",
+            );
+            console.log("[DB] ✅ Added idx_wml_recipient_created index to WaMessageLog table");
+          }
+        } catch (err: any) {
+          console.error("[DB] ❌ Could not verify/add WaMessageLog recipient index:", err.message);
         }
 
         // Migrate: add aiEnabled column to WhatsAppConfig if missing

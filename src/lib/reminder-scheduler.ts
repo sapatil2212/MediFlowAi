@@ -258,13 +258,13 @@ async function runReminderCycle(): Promise<void> {
           cloudAvailable,
           ctx,
           buildMessage: () => buildAppointmentMessage(kind, ctx),
-          // VIDEO JOIN LINK (HIGH-1): when this reminder carries a joinLink,
-          // force web so the fresh per-send link is delivered.
-          channel: joinLink ? "web" : undefined,
         });
 
         if (result.delivered) {
-          // Mark this reminder as sent so it never repeats.
+          // Mark this reminder as sent so it never repeats. A Meta-accepted
+          // official send counts as delivered; if Meta later reports it failed
+          // and the async Web fallback finds Web disconnected, it is not
+          // retried (known and accepted; see whatsapp-router.ts).
           await execute(`UPDATE Appointment SET ${column} = 1 WHERE id = ?`, [apt.id]);
           console.log(
             `[Reminder Scheduler] Sent ${kind} for appointment ${apt.id} (${apt.tenantId})`,

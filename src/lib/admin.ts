@@ -1147,11 +1147,11 @@ export const saveWaCloudConfigServerFn = createServerFn({ method: "POST" })
   });
 
 export const testWaCloudConfigServerFn = createServerFn({ method: "POST" })
-  .validator((data: { toPhone: string; templateName: string; language?: string }) => {
-    if (!data?.toPhone || !data?.templateName) {
-      throw new Error("toPhone and templateName are required");
+  .validator((data: { toPhone: string; message: string }) => {
+    if (!data?.toPhone || typeof data?.message !== "string") {
+      throw new Error("toPhone and message are required");
     }
-    return { toPhone: data.toPhone, templateName: data.templateName, language: data.language || "en_US" };
+    return { toPhone: String(data.toPhone), message: String(data.message) };
   })
   .handler(async ({ data }) => {
     const admin = await verifyAdminSession();

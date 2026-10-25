@@ -9,13 +9,61 @@
 // PER-FIELD fallback to environment variables (DB wins over env). Encrypted
 // secrets are decrypted via wa-crypto. No secret ever appears in a return value
 // or a log line.
+//
+// PLAIN-TEXT MODE:
+//   The send path is sendTextMessage: the official channel sends exactly the
+//   same free-form text as the WhatsApp Web channel. The template helpers below
+//   (sendTemplateMessage, submitTemplate, syncTemplateStatus, sendTestTemplate)
+//   are dormant: kept for the Templates tab, not used for patient sends.
+//
+// META 24-HOUR RULE:
+//   Free-form text is only allowed within 24 hours of the recipient's last
+//   inbound message to the business number. Outside that window Meta usually
+//   ACCEPTS the send (returns a wamid) and reports error 131047 later in a
+//   'failed' status webhook (it can also reject synchronously). Either way the
+//   router falls back to WhatsApp Web when the tenant's Web session is
+//   connected. Expected, not a bug. The webhook handshake and app secret must
+//   be verified before the config is enabled, or the async failures are missed.
+//
+// A 2xx from Meta means "accepted", not "delivered". A send can still fail
+// later; that arrives as a 'failed' status webhook (see whatsapp-webhook.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 import { queryOne } from "./db";
 import { decryptSecret } from "./wa-crypto";
 
 const GRAPH_HOST = "https://graph.facebook.com";
 const REQUEST_TIMEOUT_MS = 10000;
-const DEFAULT_API_VERSION = "v20.0";
+export const DEFAULT_API_VERSION = "v21.0";
+/** Meta's maximum length for a text message body. */
+export const MAX_TEXT_BODY_LENGTH = 4096;
+
+/**
+ * Normalizes a phone number exactly like wa-server.cjs: strip every non-digit,
+ * and a bare 10-digit number gets the Indian country code "91" prefixed.
+ */
+export function normalizeWaPhone(raw: string | null | undefined): string {
+  const digits = String(raw ?? "").replace(/\D/g, "");
+  return digits.length === 10 ? "91" + digits : digits;
+}
+
+/**
+ * Local-testing safety net. When WA_CLOUD_TEST_RECIPIENTS is set (comma-separated
+ * phone numbers), the official API only sends to those numbers. Every other
+ * recipient is refused before any network call, so the router treats it as a
+ * failed official send and falls back to WhatsApp Web exactly as before.
+ * Leave it UNSET in production: unset or blank means no restriction.
+ */
+export function isOfficialRecipientAllowed(to: string | null | undefined): boolean {
+  const raw = process.env.WA_CLOUD_TEST_RECIPIENTS;
+  if (!raw || !raw.trim()) return true;
+  const allowed = raw
+    .split(",")
+    .map((s) => normalizeWaPhone(s))
+    .filter(Boolean);
+  return allowed.includes(normalizeWaPhone(to));
+}
+
+const TEST_RECIPIENT_BLOCKED = "Recipient not in WA_CLOUD_TEST_RECIPIENTS (local test mode)";
 
 export interface ResolvedCloudConfig {
   phoneNumberId: string | null;
@@ -121,6 +169,121 @@ function metaErrorResult(data: any): CloudSendResult {
   };
 }
 
+/**
+ * POST a plain-text message to the Cloud API. This is the official send path.
+ *
+ * Subject to Meta's 24-hour rule: outside 24h of the recipient's last inbound
+ * message the send usually still returns ok (accepted) and fails later with
+ * 131047 via the status webhook; a synchronous 131047 meta_error is possible
+ * too. `ok:true` therefore means "accepted by Meta", not "delivered".
+ * An empty or >4096-char body is rejected without a network call. Never throws.
+ */
+export async function sendTextMessage(args: {
+  to: string;
+  body: string;
+}): Promise<CloudSendResult> {
+  const text = typeof args.body === "string" ? args.body : "";
+  if (text.trim() === "") {
+    return { ok: false, kind: "transport", message: "Message body is empty" };
+  }
+  if (text.length > MAX_TEXT_BODY_LENGTH) {
+    return {
+      ok: false,
+      kind: "transport",
+      message: `Message body exceeds ${MAX_TEXT_BODY_LENGTH} characters`,
+    };
+  }
+  if (!isOfficialRecipientAllowed(args.to)) {
+    return { ok: false, kind: "transport", message: TEST_RECIPIENT_BLOCKED };
+  }
+
+  try {
+    const cfg = await resolveCloudConfig();
+    if (!cfg || !cfg.phoneNumberId || !cfg.accessToken) {
+      return { ok: false, kind: "transport", message: "Cloud API not configured" };
+    }
+
+    const payload = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: args.to,
+      type: "text",
+      text: { preview_url: true, body: text },
+    };
+
+    const res = await fetch(`${GRAPH_HOST}/${cfg.apiVersion}/${cfg.phoneNumberId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${cfg.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    const data = await parseJsonSafe(res);
+    if (res.ok) {
+      const messageId = data?.messages?.[0]?.id;
+      if (messageId) return { ok: true, messageId: String(messageId) };
+      return { ok: false, kind: "transport", message: "No message id in response" };
+    }
+    if (res.status >= 400 && res.status < 500 && data?.error) {
+      return metaErrorResult(data);
+    }
+    return { ok: false, kind: "transport", message: `Graph API returned ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, kind: "transport", message: err?.message || "network error" };
+  }
+}
+
+export type VerifyPhoneNumberResult =
+  | {
+      ok: true;
+      verifiedName: string | null;
+      displayPhoneNumber: string | null;
+      qualityRating: string | null;
+    }
+  | { ok: false; code: string; message: string };
+
+/**
+ * Pre-flight credential check: GET the phone number object with the given
+ * token. Used by the admin save to reject bad credentials before they are
+ * written. Never throws; the token never appears in the result.
+ */
+export async function verifyPhoneNumber(args: {
+  phoneNumberId: string;
+  accessToken: string;
+  apiVersion: string;
+}): Promise<VerifyPhoneNumberResult> {
+  try {
+    const res = await fetch(
+      `${GRAPH_HOST}/${args.apiVersion}/${encodeURIComponent(args.phoneNumberId)}?fields=display_phone_number,verified_name,quality_rating`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${args.accessToken}` },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      },
+    );
+    const data = await parseJsonSafe(res);
+    if (!res.ok) {
+      const error = data?.error || {};
+      return {
+        ok: false,
+        code: error.code != null ? String(error.code) : String(res.status),
+        message: error.message || `Graph API returned ${res.status}`,
+      };
+    }
+    return {
+      ok: true,
+      verifiedName: data?.verified_name != null ? String(data.verified_name) : null,
+      displayPhoneNumber:
+        data?.display_phone_number != null ? String(data.display_phone_number) : null,
+      qualityRating: data?.quality_rating != null ? String(data.quality_rating) : null,
+    };
+  } catch (err: any) {
+    return { ok: false, code: "transport", message: err?.message || "network error" };
+  }
+}
+
 export interface SendTemplateArgs {
   to: string;
   templateName: string;
@@ -131,6 +294,9 @@ export interface SendTemplateArgs {
 
 /** POST a template message to the Cloud API. */
 export async function sendTemplateMessage(args: SendTemplateArgs): Promise<CloudSendResult> {
+  if (!isOfficialRecipientAllowed(args.to)) {
+    return { ok: false, kind: "transport", message: TEST_RECIPIENT_BLOCKED };
+  }
   const cfg = await resolveCloudConfig();
   if (!cfg || !cfg.phoneNumberId || !cfg.accessToken) {
     return { ok: false, kind: "transport", message: "Cloud API not configured" };

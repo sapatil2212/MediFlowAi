@@ -13,10 +13,14 @@ import crypto from "crypto";
 import { query, queryOne, execute } from "./db";
 import { encryptSecret, isEncKeyConfigured, last4 } from "./wa-crypto";
 import {
+  DEFAULT_API_VERSION,
+  MAX_TEXT_BODY_LENGTH,
+  normalizeWaPhone,
   resolveCloudConfig,
-  sendTestTemplate,
+  sendTextMessage,
   submitTemplate,
   syncTemplateStatus,
+  verifyPhoneNumber,
 } from "./whatsapp-cloud";
 import {
   countBodyPlaceholders,
@@ -39,7 +43,7 @@ export async function getWaCloudConfig() {
   return {
     phoneNumberId: row?.phoneNumberId ?? resolved?.phoneNumberId ?? null,
     wabaId: row?.wabaId ?? resolved?.wabaId ?? null,
-    apiVersion: row?.apiVersion ?? resolved?.apiVersion ?? "v20.0",
+    apiVersion: row?.apiVersion ?? resolved?.apiVersion ?? DEFAULT_API_VERSION,
     isEnabled: row ? Number(row.isEnabled) === 1 : false,
     tokenConfigured: !!(row?.accessTokenEnc || process.env.WA_CLOUD_ACCESS_TOKEN),
     tokenLast4: row?.tokenLast4 ?? null,
@@ -64,7 +68,7 @@ export interface SaveWaCloudConfigInput {
 /** Validates + upserts the single central config row. */
 export function validateSaveWaCloudConfig(data: SaveWaCloudConfigInput): SaveWaCloudConfigInput {
   if (data.apiVersion != null && data.apiVersion !== "" && !/^v\d+\.\d+$/.test(data.apiVersion)) {
-    throw new Error("Invalid apiVersion (expected like v20.0)");
+    throw new Error("Invalid apiVersion (expected like v21.0)");
   }
   if (data.phoneNumberId != null && data.phoneNumberId !== "") {
     if (!/^\d{1,64}$/.test(data.phoneNumberId)) throw new Error("Invalid phoneNumberId");
@@ -81,7 +85,15 @@ export function validateSaveWaCloudConfig(data: SaveWaCloudConfigInput): SaveWaC
   return data;
 }
 
-export async function saveWaCloudConfig(data: SaveWaCloudConfigInput): Promise<{ ok: true }> {
+export interface VerifiedPhoneInfo {
+  verifiedName: string | null;
+  displayPhoneNumber: string | null;
+  qualityRating: string | null;
+}
+
+export async function saveWaCloudConfig(
+  data: SaveWaCloudConfigInput,
+): Promise<{ ok: true; verified: VerifiedPhoneInfo | null }> {
   const row = await queryOne<any>("SELECT * FROM WaCloudConfig WHERE id = 'central' LIMIT 1");
 
   // Encrypt secrets only when provided; require the enc key first.
@@ -108,12 +120,39 @@ export async function saveWaCloudConfig(data: SaveWaCloudConfigInput): Promise<{
 
   const phoneNumberId = data.phoneNumberId ?? row?.phoneNumberId ?? null;
   const wabaId = data.wabaId ?? row?.wabaId ?? null;
-  const apiVersion = data.apiVersion || row?.apiVersion || "v20.0";
+  const apiVersion = data.apiVersion || row?.apiVersion || DEFAULT_API_VERSION;
   const verifyToken =
     data.verifyToken != null && data.verifyToken !== ""
       ? data.verifyToken
       : (row?.verifyToken ?? null);
   const isEnabled = data.isEnabled != null ? (data.isEnabled ? 1 : 0) : (row?.isEnabled ?? 0);
+
+  // Pre-flight validation: when the phone number ID or access token changes,
+  // ask Meta about the phone number with the NEW token (or the saved one when
+  // the token isn't changing) BEFORE writing. A Meta error rejects the save and
+  // nothing is written. The token never appears in the error.
+  let verified: VerifiedPhoneInfo | null = null;
+  const phoneChanging = !!data.phoneNumberId && data.phoneNumberId !== (row?.phoneNumberId ?? null);
+  if (phoneChanging || hasNewToken) {
+    const resolved = await resolveCloudConfig();
+    const effPhone = data.phoneNumberId || row?.phoneNumberId || resolved?.phoneNumberId || null;
+    const effToken = hasNewToken ? data.accessToken!.trim() : resolved?.accessToken || null;
+    if (effPhone && effToken) {
+      const check = await verifyPhoneNumber({
+        phoneNumberId: String(effPhone),
+        accessToken: effToken,
+        apiVersion,
+      });
+      if (!check.ok) {
+        throw new Error(`Meta rejected these credentials (code ${check.code}): ${check.message}`);
+      }
+      verified = {
+        verifiedName: check.verifiedName,
+        displayPhoneNumber: check.displayPhoneNumber,
+        qualityRating: check.qualityRating,
+      };
+    }
+  }
 
   if (row) {
     await execute(
@@ -153,18 +192,68 @@ export async function saveWaCloudConfig(data: SaveWaCloudConfigInput): Promise<{
       ],
     );
   }
-  return { ok: true };
+  return { ok: true, verified };
 }
 
+// Server-side cooldown for admin test-sends: each test sends a real WhatsApp
+// text message to a real number, so throttle repeated calls. Module-scoped
+// (single-process boot).
+const TEST_SEND_COOLDOWN_MS = 30_000;
+let lastTestSendAt = 0;
+
+/** Shown with Meta error 131047 (recipient outside the 24-hour window). */
+export const META_24H_HINT =
+  "The recipient must message your business WhatsApp number first (Meta 24-hour rule).";
+
+export interface TestWaCloudConfigResult {
+  ok: boolean;
+  messageId?: string;
+  code?: string;
+  message?: string;
+  hint?: string;
+}
+
+/**
+ * Sends a plain-text test message through the Cloud API. Free-form text only
+ * reaches a recipient who messaged the business number within the last 24h.
+ * Outside it Meta usually ACCEPTS the send ({ok:true, messageId}) and reports
+ * 131047 later in a 'failed' status webhook (visible in Monitoring); only a
+ * synchronous 131047 returns here with META_24H_HINT. So ok:true means
+ * "accepted by Meta", not "delivered".
+ */
 export async function testWaCloudConfig(data: {
   toPhone: string;
-  templateName: string;
-  language: string;
-}): Promise<{ ok: boolean; code?: string; message?: string }> {
-  const result = await sendTestTemplate(data.toPhone, data.templateName, data.language || "en_US");
-  if (result.ok) return { ok: true };
-  if (result.kind === "meta_error")
-    return { ok: false, code: result.code, message: result.message };
+  message: string;
+}): Promise<TestWaCloudConfigResult> {
+  // Validate BEFORE reserving the cooldown so a typo doesn't lock the admin out.
+  const to = normalizeWaPhone(data?.toPhone);
+  if (to.length < 11 || to.length > 15) {
+    throw new Error("Enter a valid WhatsApp number with country code");
+  }
+  const text = String(data?.message ?? "").trim();
+  if (text === "") throw new Error("Message is required");
+  if (text.length > MAX_TEXT_BODY_LENGTH) {
+    throw new Error(`Message must be ${MAX_TEXT_BODY_LENGTH} characters or fewer`);
+  }
+
+  const now = Date.now();
+  const elapsed = now - lastTestSendAt;
+  if (lastTestSendAt > 0 && elapsed < TEST_SEND_COOLDOWN_MS) {
+    const wait = Math.ceil((TEST_SEND_COOLDOWN_MS - elapsed) / 1000);
+    throw new Error(`Please wait ${wait}s before sending another test message.`);
+  }
+  // Reserve the window before the network call so concurrent calls are throttled.
+  lastTestSendAt = now;
+  const result = await sendTextMessage({ to, body: text });
+  if (result.ok) return { ok: true, messageId: result.messageId };
+  if (result.kind === "meta_error") {
+    return {
+      ok: false,
+      code: result.code,
+      message: result.message,
+      ...(result.code === "131047" ? { hint: META_24H_HINT } : {}),
+    };
+  }
   return { ok: false, message: result.message };
 }
 
@@ -208,6 +297,12 @@ function validateTemplatePayload(data: SaveWaCloudTemplateInput): {
   }
   if (!data.bodyText || data.bodyText.length > 1024) {
     throw new Error("bodyText is required and must be <= 1024 chars");
+  }
+  // Only NONE and IMAGE headers are supported. A TEXT header would be silently
+  // dropped from the Meta submission (buildTemplateComponents has no TEXT path),
+  // so reject it at validation rather than offer a no-op.
+  if (data.headerType != null && !["NONE", "IMAGE"].includes(data.headerType)) {
+    throw new Error("Unsupported headerType: only NONE and IMAGE are allowed");
   }
 
   const notifyKind = data.notifyKind ? (data.notifyKind as AptNotifyKind) : null;
@@ -293,14 +388,13 @@ export async function saveWaCloudTemplate(
 /** Builds the Meta components payload for a template definition. */
 function buildTemplateComponents(data: SaveWaCloudTemplateInput): any[] {
   const components: any[] = [];
+  // Only IMAGE headers are supported; TEXT is rejected at validation.
   if (data.headerType === "IMAGE" && data.headerImageUrl) {
     components.push({
       type: "HEADER",
       format: "IMAGE",
       example: { header_handle: [data.headerImageUrl] },
     });
-  } else if (data.headerType === "TEXT") {
-    // Header text, when used, is carried in bodyText authoring; skip for now.
   }
   components.push({ type: "BODY", text: data.bodyText });
   return components;

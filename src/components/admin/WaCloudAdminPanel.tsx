@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import {
   AlertCircle,
   CheckCircle2,
+  Copy,
   Loader2,
   Plus,
   RefreshCw,
@@ -48,6 +49,25 @@ const STATUS_BADGE: Record<string, string> = {
 
 type SubTab = "credentials" | "templates" | "monitoring";
 
+// Same path the server mounts in src/server.ts. Kept local: lib/whatsapp-webhook
+// is server-only (crypto/db) and must not be imported into the client bundle.
+const WA_WEBHOOK_PATH = "/api/whatsapp/webhook";
+const DEFAULT_TEST_MESSAGE = "Test message from BookMyTime";
+
+interface VerifiedInfo {
+  verifiedName: string | null;
+  displayPhoneNumber: string | null;
+  qualityRating: string | null;
+}
+
+interface TestResult {
+  ok: boolean;
+  messageId?: string;
+  code?: string;
+  message?: string;
+  hint?: string;
+}
+
 export function WaCloudAdminPanel() {
   const [subTab, setSubTab] = useState<SubTab>("credentials");
 
@@ -92,13 +112,21 @@ function CredentialsTab() {
   const [form, setForm] = useState({
     phoneNumberId: "",
     wabaId: "",
-    apiVersion: "v20.0",
+    apiVersion: "v21.0",
     verifyToken: "",
     accessToken: "",
     appSecret: "",
     isEnabled: false,
   });
-  const [test, setTest] = useState({ toPhone: "", templateName: "", language: "en_US" });
+  const [test, setTest] = useState({ toPhone: "", message: DEFAULT_TEST_MESSAGE });
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [verified, setVerified] = useState<VerifiedInfo | null>(null);
+  const [webhookUrl, setWebhookUrl] = useState("");
+
+  // window is only available in the browser (SSR-safe).
+  useEffect(() => {
+    setWebhookUrl(`${window.location.origin}${WA_WEBHOOK_PATH}`);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -109,7 +137,7 @@ function CredentialsTab() {
         ...f,
         phoneNumberId: data.phoneNumberId || "",
         wabaId: data.wabaId || "",
-        apiVersion: data.apiVersion || "v20.0",
+        apiVersion: data.apiVersion || "v21.0",
         isEnabled: !!data.isEnabled,
         verifyToken: "",
         accessToken: "",
@@ -129,7 +157,7 @@ function CredentialsTab() {
   const save = async () => {
     setSaving(true);
     try {
-      await saveWaCloudConfigServerFn({
+      const res = await saveWaCloudConfigServerFn({
         data: {
           phoneNumberId: form.phoneNumberId || undefined,
           wabaId: form.wabaId || undefined,
@@ -140,23 +168,40 @@ function CredentialsTab() {
           isEnabled: form.isEnabled,
         },
       });
+      setVerified(res?.verified ?? null);
       toast.success("Configuration saved");
       await load();
     } catch (e: any) {
+      setVerified(null);
       toast.error(e?.message || "Save failed");
     } finally {
       setSaving(false);
     }
   };
 
+  const copyWebhookUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      toast.success("Webhook URL copied");
+    } catch {
+      toast.error("Could not copy. Select the URL and copy it manually.");
+    }
+  };
+
   const runTest = async () => {
-    if (!test.toPhone || !test.templateName) {
-      toast.error("Enter a phone number and template name");
+    if (!test.toPhone.trim() || !test.message.trim()) {
+      toast.error("Enter a phone number and a message");
       return;
     }
+    const confirmed = window.confirm(
+      `This sends a real WhatsApp message to ${test.toPhone} and spends WABA send budget. Continue?`,
+    );
+    if (!confirmed) return;
     setTesting(true);
+    setTestResult(null);
     try {
       const res = await testWaCloudConfigServerFn({ data: test });
+      setTestResult(res);
       if (res.ok) toast.success("Test message sent");
       else toast.error(`Test failed${res.code ? ` (${res.code})` : ""}: ${res.message || ""}`);
     } catch (e: any) {
@@ -264,29 +309,72 @@ function CredentialsTab() {
         </button>
       </div>
 
+      {verified && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800"
+        >
+          <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600" aria-hidden="true" />
+          <div className="space-y-0.5">
+            <div className="font-semibold">Verified with Meta</div>
+            <div>Verified name: {verified.verifiedName || "—"}</div>
+            <div>Display phone number: {verified.displayPhoneNumber || "—"}</div>
+            <div>Quality rating: {verified.qualityRating || "—"}</div>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-lg border border-zinc-200 p-4 space-y-2">
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <Field label="Webhook Callback URL">
+              <input className="input" readOnly value={webhookUrl} />
+            </Field>
+          </div>
+          <button
+            type="button"
+            onClick={copyWebhookUrl}
+            aria-label="Copy webhook callback URL"
+            className="inline-flex items-center gap-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-700 cursor-pointer"
+          >
+            <Copy className="h-4 w-4" aria-hidden="true" /> Copy
+          </button>
+        </div>
+        <p className="text-xs text-zinc-500">
+          Paste this URL in Meta → WhatsApp → Configuration → Webhook, use your Verify Token, and
+          subscribe to the &quot;messages&quot; field. Verify the webhook and the App Secret before
+          enabling the Cloud API: Meta reports most delivery failures through it.
+        </p>
+      </div>
+
       <div className="rounded-lg border border-zinc-200 p-4 space-y-3">
         <div className="flex items-center gap-2 text-sm font-semibold text-zinc-800">
-          <ShieldCheck className="h-4 w-4 text-[#0059C6]" /> Send a test template message
+          <ShieldCheck className="h-4 w-4 text-[#0059C6]" /> Send a test message
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <input
-            className="input"
-            placeholder="Recipient phone"
-            value={test.toPhone}
-            onChange={(e) => setTest({ ...test, toPhone: e.target.value })}
-          />
-          <input
-            className="input"
-            placeholder="Template name"
-            value={test.templateName}
-            onChange={(e) => setTest({ ...test, templateName: e.target.value })}
-          />
-          <input
-            className="input"
-            placeholder="Language (en_US)"
-            value={test.language}
-            onChange={(e) => setTest({ ...test, language: e.target.value })}
-          />
+        <p className="text-xs text-zinc-500">
+          Meta only delivers free-form text to a number that messaged your business WhatsApp number
+          in the last 24 hours.
+        </p>
+        <div className="grid grid-cols-1 gap-3">
+          <Field label="To phone (with country code)">
+            <input
+              className="input"
+              type="tel"
+              inputMode="tel"
+              autoComplete="off"
+              placeholder="e.g. 918830553868"
+              value={test.toPhone}
+              onChange={(e) => setTest({ ...test, toPhone: e.target.value })}
+            />
+          </Field>
+          <Field label="Message">
+            <textarea
+              className="input min-h-[96px]"
+              maxLength={4096}
+              value={test.message}
+              onChange={(e) => setTest({ ...test, message: e.target.value })}
+            />
+          </Field>
         </div>
         <button
           onClick={runTest}
@@ -294,8 +382,24 @@ function CredentialsTab() {
           className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 disabled:opacity-60 cursor-pointer"
         >
           {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          Send test
+          Send test message
         </button>
+        <div aria-live="polite" className="text-sm">
+          {testResult?.ok && (
+            <div className="text-emerald-700">
+              Accepted by Meta. Message ID: {testResult.messageId || "—"}. Check Monitoring for
+              delivery.
+            </div>
+          )}
+          {testResult && !testResult.ok && (
+            <div className="text-red-600 space-y-1">
+              <div>
+                Failed{testResult.code ? ` (${testResult.code})` : ""}: {testResult.message || ""}
+              </div>
+              {testResult.hint && <div>{testResult.hint}</div>}
+            </div>
+          )}
+        </div>
       </div>
 
       <StyleTag />
@@ -561,7 +665,6 @@ function TemplatesTab() {
                   onChange={(e) => setEditing({ ...editing, headerType: e.target.value })}
                 >
                   <option>NONE</option>
-                  <option>TEXT</option>
                   <option>IMAGE</option>
                 </select>
               </Field>

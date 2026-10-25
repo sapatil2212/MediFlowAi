@@ -80,9 +80,10 @@ function fmtTime(d: Date, slot?: string | null): string {
 // order of each spec is the POSITIONAL order of the {{n}} placeholders in the
 // approved Meta template body.
 //
-// Video kinds (videoLinkIssued / videoLinkReissued) are present for
-// completeness/tests ONLY — they are forced to WhatsApp Web always and are
-// never sent through the official channel (see whatsapp-router.ts HIGH-1).
+// Templates are DORMANT: the official send path is plain text (the same body as
+// WhatsApp Web, see whatsapp-router.ts). This spec is kept for the Templates
+// tab only. Video kinds (videoLinkIssued / videoLinkReissued) are present for
+// completeness/tests.
 // ─────────────────────────────────────────────────────────────────────────────
 export const TEMPLATE_VAR_SPEC: Record<
   AptNotifyKind,

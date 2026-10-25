@@ -11,18 +11,76 @@
 //     change. Invalid signature → 401, no side effects.
 //   • A signature-valid POST always returns 200 so Meta does not storm retries.
 //   • Each flattened entry is idempotent via the shared WebhookEvent table
-//     (eventType='whatsapp', UNIQUE eventKey). Duplicate entries are skipped.
+//     (eventType='whatsapp', UNIQUE eventKey). Duplicate entries are skipped,
+//     so a re-delivered inbound message never triggers a second auto-reply and
+//     a re-delivered 'failed' status never triggers a second Web fallback.
+//
+// Inbound messages:
+//   • Stored with the tenantId of the business whose message the sender is
+//     answering ('global' only when unresolved; see resolveInboundTenant in
+//     wa-auto-reply.ts, which prefers the quoted wamid in messages[].context.id),
+//     plus the text body for text messages.
+//   • Eligible user messages get ONE plain-text auto-reply naming the business
+//     (see wa-auto-reply.ts).
+//
+// Status callbacks:
+//   • A 2xx from Meta on send means "accepted", not "delivered". A later
+//     'failed' status for an official tenant send (typically 131047, Meta's
+//     24-hour rule, which Meta reports asynchronously) triggers a one-time
+//     async Web fallback (whatsapp-router.ts runAsyncWebFallback).
+//   • A 'failed' status whose wamid is not in WaMessageLog yet (the router's
+//     wamid UPDATE may not have committed) is re-checked ONCE after
+//     FAILED_STATUS_RECHECK_MS, in the background.
+//   • delivered/read NULL the stored (encrypted) body of a tenant send: the
+//     patient has the message, so it can never fall back.
+//
+// Background work (auto-reply, async fallback, failed-status re-check) is
+// fire-and-forget: it is never awaited inside the request, so Meta always gets
+// a fast 200.
 //
 // Uses crypto.randomUUID() directly (NIT-4 — generateId in subscription-webhook
-// is private). Inbound rows use tenantId='global' (NIT-3 sentinel).
+// is private).
 // ─────────────────────────────────────────────────────────────────────────────
 import crypto from "crypto";
-import { execute } from "./db";
-import { resolveCloudConfig } from "./whatsapp-cloud";
+import { execute, queryOne } from "./db";
+import { normalizeWaPhone, resolveCloudConfig } from "./whatsapp-cloud";
+import { dispatchAutoReply, resolveInboundTenant, shouldAutoReply } from "./wa-auto-reply";
+import { isAsyncFallbackEligible, runAsyncWebFallback } from "./whatsapp-router";
 
 export const WA_WEBHOOK_PATH = "/api/whatsapp/webhook";
 
 const STATUS_RANK = ["queued", "sent", "delivered", "read"] as const;
+
+/** Inbound text stored in WaMessageLog.body is capped at Meta's text limit. */
+const MAX_INBOUND_BODY = 4096;
+
+/** Delay before the one-time re-check of a 'failed' status with an unknown wamid. */
+export const FAILED_STATUS_RECHECK_MS = 5000;
+
+// ── Background runner ─────────────────────────────────────────────────────────
+// Tracks fire-and-forget work so tests can wait for it. The request handler
+// NEVER awaits these promises.
+const backgroundTasks = new Set<Promise<void>>();
+
+function runInBackground(label: string, fn: () => Promise<unknown>): void {
+  const task: Promise<void> = Promise.resolve()
+    .then(fn)
+    .then(() => undefined)
+    .catch((err: any) => {
+      console.error(`[WaWebhook] ${label} failed:`, err?.message);
+    })
+    .finally(() => {
+      backgroundTasks.delete(task);
+    });
+  backgroundTasks.add(task);
+}
+
+/** Test helper: resolves once every tracked background task has settled. */
+export async function drainWaBackgroundTasks(): Promise<void> {
+  while (backgroundTasks.size > 0) {
+    await Promise.allSettled([...backgroundTasks]);
+  }
+}
 
 /**
  * Verifies a Meta webhook signature. The header is `sha256=<hex>` of
@@ -84,6 +142,14 @@ interface InboundEntry {
   type: "inbound";
   id: string;
   from: string;
+  /** Meta message type (text, image, reaction, ...). */
+  msgType: string;
+  /** Text body, only for type 'text'. */
+  text: string | null;
+  /** Our business display number from value.metadata. */
+  displayPhone: string | null;
+  /** wamid of the message being replied to (messages[].context.id), if any. */
+  contextId: string | null;
 }
 
 type FlatEntry = StatusEntry | InboundEntry;
@@ -110,9 +176,22 @@ function flattenPayload(payload: any): { raw: any; entries: FlatEntry[] }[] {
         });
       }
       const messages: any[] = Array.isArray(value?.messages) ? value.messages : [];
+      const displayPhone =
+        value?.metadata?.display_phone_number != null
+          ? String(value.metadata.display_phone_number)
+          : null;
       for (const m of messages) {
         if (!m?.id) continue;
-        flat.push({ type: "inbound", id: String(m.id), from: String(m.from || "") });
+        const msgType = String(m.type || "");
+        flat.push({
+          type: "inbound",
+          id: String(m.id),
+          from: String(m.from || ""),
+          msgType,
+          text: msgType === "text" && typeof m.text?.body === "string" ? m.text.body : null,
+          displayPhone,
+          contextId: m.context?.id != null ? String(m.context.id) : null,
+        });
       }
     }
     out.push({ raw: entry, entries: flat });
@@ -157,13 +236,28 @@ async function handleGet(req: Request): Promise<Response> {
   return new Response("", { status: 403 });
 }
 
-async function applyStatusEntry(entry: StatusEntry): Promise<void> {
-  // Monotonic UPDATE keyed on metaMessageId. read→delivered never applies;
-  // 'failed' is terminal; unknown wamid → 0 rows (still 200).
+/** Reads the row a status refers to (before the status UPDATE). Throws on DB error. */
+async function lookupStatusRow(wamid: string): Promise<any> {
+  return queryOne<any>(
+    `SELECT id, tenantId, direction, recipient, kind, channel, body, officialStatus,
+            webFallbackAttempted
+       FROM WaMessageLog WHERE metaMessageId = ? LIMIT 1`,
+    [wamid],
+  );
+}
+
+/**
+ * Monotonic UPDATE keyed on metaMessageId. read→delivered never applies;
+ * 'failed' is terminal; unknown wamid → 0 rows (still 200). delivered/read
+ * also NULL the stored body of a tenant send (it can no longer fall back);
+ * auto-reply rows keep their reply text.
+ */
+async function applyStatusUpdate(entry: StatusEntry): Promise<void> {
   await execute(
     `UPDATE WaMessageLog
         SET officialStatus = ?,
             status = CASE WHEN channel = 'official' THEN ? ELSE status END,
+            body = CASE WHEN ? IN ('delivered','read') AND kind <> 'autoReply' THEN NULL ELSE body END,
             errorCode = COALESCE(?, errorCode),
             errorMessage = COALESCE(?, errorMessage),
             officialErrorCode = COALESCE(?, officialErrorCode),
@@ -174,6 +268,7 @@ async function applyStatusEntry(entry: StatusEntry): Promise<void> {
                 > FIELD(officialStatus, 'queued','sent','delivered','read')
               OR ? = 'failed' )`,
     [
+      entry.status,
       entry.status,
       entry.status,
       entry.errorCode,
@@ -187,13 +282,72 @@ async function applyStatusEntry(entry: StatusEntry): Promise<void> {
   );
 }
 
-async function applyInboundEntry(entry: InboundEntry): Promise<void> {
+function toFallbackRow(prior: any) {
+  return {
+    id: String(prior.id),
+    tenantId: String(prior.tenantId),
+    recipient: String(prior.recipient),
+    body: String(prior.body),
+  };
+}
+
+/**
+ * One-time delayed re-check of a 'failed' status whose wamid was not found:
+ * the router writes the wamid only after Meta's response, so a very fast
+ * 'failed' webhook can arrive first. Runs in the background only.
+ */
+async function recheckFailedStatus(entry: StatusEntry): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, FAILED_STATUS_RECHECK_MS));
+  const row = await lookupStatusRow(entry.id);
+  if (!row) return;
+  await applyStatusUpdate(entry);
+  if (isAsyncFallbackEligible(row)) await runAsyncWebFallback(toFallbackRow(row));
+}
+
+async function applyStatusEntry(entry: StatusEntry): Promise<void> {
+  // For 'failed', read the row BEFORE the status UPDATE so the async Web
+  // fallback can tell whether the patient ever received it (delivered/read).
+  let prior: any = null;
+  let lookedUp = false;
+  if (entry.status === "failed") {
+    try {
+      prior = await lookupStatusRow(entry.id);
+      lookedUp = true;
+    } catch (err: any) {
+      console.error("[WaWebhook] failed-status row lookup error:", err?.message);
+      prior = null;
+    }
+  }
+
+  await applyStatusUpdate(entry);
+
+  if (prior && isAsyncFallbackEligible(prior)) {
+    const row = toFallbackRow(prior);
+    runInBackground("async web fallback", () => runAsyncWebFallback(row));
+  } else if (lookedUp && !prior) {
+    // Unknown wamid: maybe the router's wamid UPDATE hasn't committed yet.
+    runInBackground("failed-status recheck", () => recheckFailedStatus(entry));
+  }
+}
+
+/**
+ * Stores an inbound message under the tenant that last messaged this sender
+ * ('global' when unresolved). Returns the resolved tenantId (or null).
+ */
+async function applyInboundEntry(entry: InboundEntry): Promise<string | null> {
+  const tenantId = await resolveInboundTenant(entry.from, entry.contextId);
   await execute(
     `INSERT INTO WaMessageLog
-       (id, tenantId, direction, recipient, kind, channel, status, createdAt)
-     VALUES (?, 'global', 'in', ?, 'inbound', 'official', 'delivered', NOW())`,
-    [crypto.randomUUID(), entry.from],
+       (id, tenantId, direction, recipient, kind, channel, status, body, createdAt)
+     VALUES (?, ?, 'in', ?, 'inbound', 'official', 'delivered', ?, NOW())`,
+    [
+      crypto.randomUUID(),
+      tenantId ?? "global",
+      normalizeWaPhone(entry.from),
+      entry.text ? entry.text.slice(0, MAX_INBOUND_BODY) : null,
+    ],
   );
+  return tenantId;
 }
 
 async function handlePost(req: Request): Promise<Response> {
@@ -235,7 +389,12 @@ async function handlePost(req: Request): Promise<Response> {
         if (entry.type === "status") {
           await applyStatusEntry(entry);
         } else {
-          await applyInboundEntry(entry);
+          const tenantId = await applyInboundEntry(entry);
+          if (shouldAutoReply(entry)) {
+            const from = entry.from;
+            // Fire-and-forget: never awaited, so the 200 goes back immediately.
+            runInBackground("auto-reply", () => dispatchAutoReply({ from, tenantId }));
+          }
         }
         await execute("UPDATE WebhookEvent SET status = 'processed' WHERE eventKey = ?", [
           eventKey,
