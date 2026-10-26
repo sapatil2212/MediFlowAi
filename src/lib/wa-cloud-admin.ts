@@ -9,32 +9,61 @@
 // Secrets (accessToken, appSecret) are AES-256-GCM encrypted at rest and NEVER
 // returned to the client — only masked `••••last4` indicators are surfaced.
 // ─────────────────────────────────────────────────────────────────────────────
-import crypto from "crypto";
 import { query, queryOne, execute } from "./db";
 import { encryptSecret, isEncKeyConfigured, last4 } from "./wa-crypto";
 import {
+  API_VERSION_EXPIRY,
   DEFAULT_API_VERSION,
   MAX_TEXT_BODY_LENGTH,
   normalizeWaPhone,
   resolveCloudConfig,
   sendTextMessage,
-  submitTemplate,
-  syncTemplateStatus,
   verifyPhoneNumber,
 } from "./whatsapp-cloud";
-import {
-  countBodyPlaceholders,
-  expectedVarCount,
-  TEMPLATE_VAR_SPEC,
-  type AptNotifyKind,
-} from "./appointment-notify";
-
-// HIGH-1: video kinds are forced to WhatsApp Web always and may never be mapped
-// to an official template.
-const VIDEO_KINDS = ["videoLinkIssued", "videoLinkReissued"];
-const VALID_CATEGORIES = ["UTILITY", "MARKETING", "AUTHENTICATION"];
 
 // ── Config ───────────────────────────────────────────────────────────────────
+
+export interface ApiVersionInfo {
+  value: string;
+  source: "db" | "env" | "default";
+  expiresOn: string | null;
+  warning: string | null;
+}
+
+/** Days until a given ISO date; null when the date is null/invalid. */
+function daysUntil(iso: string | null): number | null {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return null;
+  return Math.ceil((then - Date.now()) / 86_400_000);
+}
+
+/** Builds the API-version expiry info + warning (DP-03). */
+function buildApiVersionInfo(row: any): ApiVersionInfo {
+  const dbVersion = row?.apiVersion ? String(row.apiVersion) : null;
+  const envVersion =
+    process.env.WA_CLOUD_API_VERSION && process.env.WA_CLOUD_API_VERSION !== ""
+      ? process.env.WA_CLOUD_API_VERSION
+      : null;
+  const value = dbVersion || envVersion || DEFAULT_API_VERSION;
+  const source: ApiVersionInfo["source"] = dbVersion ? "db" : envVersion ? "env" : "default";
+  const expiresOn = Object.prototype.hasOwnProperty.call(API_VERSION_EXPIRY, value)
+    ? API_VERSION_EXPIRY[value]
+    : null;
+  let warning: string | null = null;
+  if (!Object.prototype.hasOwnProperty.call(API_VERSION_EXPIRY, value)) {
+    warning = `API version ${value} is not recognised; verify it is still supported by Meta.`;
+  } else {
+    const days = daysUntil(expiresOn);
+    if (days != null && days <= 120) {
+      warning =
+        days <= 0
+          ? `API version ${value} has reached its Meta expiry (${expiresOn}); update it in Credentials.`
+          : `API version ${value} expires on ${expiresOn} (${days} days); plan to update it in Credentials.`;
+    }
+  }
+  return { value, source, expiresOn, warning };
+}
 
 /** Returns the masked central config (never the ciphertext/plaintext). */
 export async function getWaCloudConfig() {
@@ -44,6 +73,7 @@ export async function getWaCloudConfig() {
     phoneNumberId: row?.phoneNumberId ?? resolved?.phoneNumberId ?? null,
     wabaId: row?.wabaId ?? resolved?.wabaId ?? null,
     apiVersion: row?.apiVersion ?? resolved?.apiVersion ?? DEFAULT_API_VERSION,
+    apiVersionInfo: buildApiVersionInfo(row),
     isEnabled: row ? Number(row.isEnabled) === 1 : false,
     tokenConfigured: !!(row?.accessTokenEnc || process.env.WA_CLOUD_ACCESS_TOKEN),
     tokenLast4: row?.tokenLast4 ?? null,
@@ -257,210 +287,6 @@ export async function testWaCloudConfig(data: {
   return { ok: false, message: result.message };
 }
 
-// ── Templates ─────────────────────────────────────────────────────────────────
-
-export async function listWaCloudTemplates() {
-  const rows = await query<any>(
-    `SELECT id, name, language, category, bodyText, headerType, headerImageUrl,
-            status, notifyKind, varCount, metaTemplateId, rejectionReason, updatedAt
-       FROM WaCloudTemplate
-      ORDER BY updatedAt DESC`,
-  );
-  return rows || [];
-}
-
-export interface SaveWaCloudTemplateInput {
-  id?: string;
-  name: string;
-  language?: string;
-  category?: string;
-  bodyText: string;
-  headerType?: string | null;
-  headerImageUrl?: string | null;
-  notifyKind?: string | null;
-}
-
-/** Validates a template save/submit payload. Throws on bad input (400-style). */
-function validateTemplatePayload(data: SaveWaCloudTemplateInput): {
-  notifyKind: AptNotifyKind | null;
-  authoredCount: number;
-} {
-  if (!/^[a-z0-9_]{1,128}$/.test(data.name || "")) {
-    throw new Error("Invalid template name (use a-z, 0-9, _ only; max 128)");
-  }
-  if (data.language != null && data.language.length > 16) {
-    throw new Error("language too long");
-  }
-  const category = data.category || "UTILITY";
-  if (!VALID_CATEGORIES.includes(category)) {
-    throw new Error("Invalid category");
-  }
-  if (!data.bodyText || data.bodyText.length > 1024) {
-    throw new Error("bodyText is required and must be <= 1024 chars");
-  }
-  // Only NONE and IMAGE headers are supported. A TEXT header would be silently
-  // dropped from the Meta submission (buildTemplateComponents has no TEXT path),
-  // so reject it at validation rather than offer a no-op.
-  if (data.headerType != null && !["NONE", "IMAGE"].includes(data.headerType)) {
-    throw new Error("Unsupported headerType: only NONE and IMAGE are allowed");
-  }
-
-  const notifyKind = data.notifyKind ? (data.notifyKind as AptNotifyKind) : null;
-  if (notifyKind) {
-    // HIGH-1: video kinds may never be mapped to an official template.
-    if (VIDEO_KINDS.includes(notifyKind)) {
-      throw new Error(
-        "Video-link notifications are always sent via WhatsApp Web and cannot use an official template",
-      );
-    }
-    if (!(notifyKind in TEMPLATE_VAR_SPEC)) {
-      throw new Error("Unknown notifyKind");
-    }
-    const authoredCount = countBodyPlaceholders(data.bodyText);
-    const expected = expectedVarCount(notifyKind);
-    if (authoredCount !== expected) {
-      throw new Error(
-        `Variable count mismatch: template body has ${authoredCount} placeholders but ${notifyKind} requires ${expected}`,
-      );
-    }
-    return { notifyKind, authoredCount };
-  }
-  return { notifyKind: null, authoredCount: countBodyPlaceholders(data.bodyText) };
-}
-
-export async function saveWaCloudTemplate(
-  data: SaveWaCloudTemplateInput,
-): Promise<{ ok: true; id: string }> {
-  const { notifyKind, authoredCount } = validateTemplatePayload(data);
-  const language = data.language || "en_US";
-  const category = data.category || "UTILITY";
-  const id = data.id || crypto.randomUUID();
-  const variables = notifyKind
-    ? TEMPLATE_VAR_SPEC[notifyKind].map((f, i) => ({ index: i + 1, field: String(f) }))
-    : [];
-
-  const existing = data.id
-    ? await queryOne<any>("SELECT id FROM WaCloudTemplate WHERE id = ? LIMIT 1", [data.id])
-    : null;
-
-  if (existing) {
-    await execute(
-      `UPDATE WaCloudTemplate
-          SET name = ?, language = ?, category = ?, bodyText = ?, headerType = ?,
-              headerImageUrl = ?, notifyKind = ?, varCount = ?, variables = ?, updatedAt = NOW()
-        WHERE id = ?`,
-      [
-        data.name,
-        language,
-        category,
-        data.bodyText,
-        data.headerType ?? null,
-        data.headerImageUrl ?? null,
-        notifyKind,
-        authoredCount,
-        JSON.stringify(variables),
-        id,
-      ],
-    );
-  } else {
-    await execute(
-      `INSERT INTO WaCloudTemplate
-         (id, name, language, category, bodyText, headerType, headerImageUrl, notifyKind,
-          varCount, variables, status, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', NOW())`,
-      [
-        id,
-        data.name,
-        language,
-        category,
-        data.bodyText,
-        data.headerType ?? null,
-        data.headerImageUrl ?? null,
-        notifyKind,
-        authoredCount,
-        JSON.stringify(variables),
-      ],
-    );
-  }
-  return { ok: true, id };
-}
-
-/** Builds the Meta components payload for a template definition. */
-function buildTemplateComponents(data: SaveWaCloudTemplateInput): any[] {
-  const components: any[] = [];
-  // Only IMAGE headers are supported; TEXT is rejected at validation.
-  if (data.headerType === "IMAGE" && data.headerImageUrl) {
-    components.push({
-      type: "HEADER",
-      format: "IMAGE",
-      example: { header_handle: [data.headerImageUrl] },
-    });
-  }
-  components.push({ type: "BODY", text: data.bodyText });
-  return components;
-}
-
-export async function submitWaCloudTemplate(data: SaveWaCloudTemplateInput): Promise<{
-  ok: boolean;
-  code?: string;
-  message?: string;
-  metaTemplateId?: string;
-}> {
-  // Re-run the same video-kind + varCount guard before submitting to Meta.
-  validateTemplatePayload(data);
-  const language = data.language || "en_US";
-  const category = data.category || "UTILITY";
-
-  const result = await submitTemplate({
-    name: data.name,
-    language,
-    category,
-    components: buildTemplateComponents(data),
-  });
-
-  if (result.ok) {
-    const metaTemplateId = result.metaTemplateId || result.messageId;
-    if (data.id) {
-      await execute(
-        "UPDATE WaCloudTemplate SET status = 'PENDING', metaTemplateId = ?, updatedAt = NOW() WHERE id = ?",
-        [metaTemplateId, data.id],
-      );
-    }
-    return { ok: true, metaTemplateId };
-  }
-  if (result.kind === "meta_error")
-    return { ok: false, code: result.code, message: result.message };
-  return { ok: false, message: result.message };
-}
-
-export async function syncWaCloudTemplateStatus(data: {
-  id: string;
-}): Promise<{ ok: boolean; status?: string; message?: string }> {
-  const row = await queryOne<any>(
-    "SELECT id, name, language, metaTemplateId FROM WaCloudTemplate WHERE id = ? LIMIT 1",
-    [data.id],
-  );
-  if (!row) throw new Error("Template not found");
-
-  const result = await syncTemplateStatus({
-    name: row.name,
-    language: row.language,
-    metaTemplateId: row.metaTemplateId || undefined,
-  });
-
-  if (result.ok) {
-    await execute(
-      `UPDATE WaCloudTemplate
-          SET status = ?, rejectionReason = ?, metaTemplateId = COALESCE(?, metaTemplateId),
-              updatedAt = NOW()
-        WHERE id = ?`,
-      [result.status, result.reason ?? null, result.metaTemplateId ?? null, data.id],
-    );
-    return { ok: true, status: result.status };
-  }
-  return { ok: false, message: result.message };
-}
-
 // ── Monitoring (cross-tenant) ───────────────────────────────────────────────
 
 export async function getWaCloudLogs(data?: { limit?: number; offset?: number }) {
@@ -468,14 +294,15 @@ export async function getWaCloudLogs(data?: { limit?: number; offset?: number })
   const offset = Math.max(Number(data?.offset) || 0, 0);
 
   const recent = await query<any>(
-    `SELECT id, tenantId, recipient, kind, channel, status, metaMessageId,
-            officialAttempted, officialStatus,
-            COALESCE(officialErrorCode, errorCode) AS errorCode,
-            COALESCE(officialErrorMessage, errorMessage) AS errorMessage,
-            createdAt
-       FROM WaMessageLog
-      WHERE direction = 'out'
-      ORDER BY createdAt DESC
+    `SELECT l.id, l.tenantId, l.recipient, l.kind, l.channel, l.status, l.metaMessageId,
+            l.officialAttempted, l.officialStatus, l.templateId, t.name AS templateName,
+            COALESCE(l.officialErrorCode, l.errorCode) AS errorCode,
+            COALESCE(l.officialErrorMessage, l.errorMessage) AS errorMessage,
+            l.createdAt
+       FROM WaMessageLog l
+       LEFT JOIN WaCloudTemplate t ON t.id = l.templateId
+      WHERE l.direction = 'out'
+      ORDER BY l.createdAt DESC
       LIMIT ? OFFSET ?`,
     [limit, offset],
   );
@@ -499,13 +326,15 @@ export async function getWaCloudLogs(data?: { limit?: number; offset?: number })
   );
 
   const recentFailures = await query<any>(
-    `SELECT id, tenantId, recipient, kind, channel, status,
-            COALESCE(officialErrorCode, errorCode) AS errorCode,
-            COALESCE(officialErrorMessage, errorMessage) AS errorMessage,
-            createdAt
-       FROM WaMessageLog
-      WHERE direction = 'out' AND (status = 'failed' OR officialErrorCode IS NOT NULL)
-      ORDER BY createdAt DESC
+    `SELECT l.id, l.tenantId, l.recipient, l.kind, l.channel, l.status,
+            l.templateId, t.name AS templateName,
+            COALESCE(l.officialErrorCode, l.errorCode) AS errorCode,
+            COALESCE(l.officialErrorMessage, l.errorMessage) AS errorMessage,
+            l.createdAt
+       FROM WaMessageLog l
+       LEFT JOIN WaCloudTemplate t ON t.id = l.templateId
+      WHERE l.direction = 'out' AND (l.status = 'failed' OR l.officialErrorCode IS NOT NULL)
+      ORDER BY l.createdAt DESC
       LIMIT 20`,
   );
 

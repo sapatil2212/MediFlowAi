@@ -1160,49 +1160,6 @@ export const testWaCloudConfigServerFn = createServerFn({ method: "POST" })
     return await testWaCloudConfig(data);
   });
 
-export const listWaCloudTemplatesServerFn = createServerFn({ method: "GET" }).handler(async () => {
-  const admin = await verifyAdminSession();
-  if (!admin) throw new Error("Unauthorized");
-  const { listWaCloudTemplates } = await import("./wa-cloud-admin");
-  return await listWaCloudTemplates();
-});
-
-export const saveWaCloudTemplateServerFn = createServerFn({ method: "POST" })
-  .validator((data: import("./wa-cloud-admin").SaveWaCloudTemplateInput) => {
-    if (!data?.name || !data?.bodyText) throw new Error("name and bodyText are required");
-    return data;
-  })
-  .handler(async ({ data }) => {
-    const admin = await verifyAdminSession();
-    if (!admin) throw new Error("Unauthorized");
-    const { saveWaCloudTemplate } = await import("./wa-cloud-admin");
-    return await saveWaCloudTemplate(data);
-  });
-
-export const submitWaCloudTemplateServerFn = createServerFn({ method: "POST" })
-  .validator((data: import("./wa-cloud-admin").SaveWaCloudTemplateInput) => {
-    if (!data?.name || !data?.bodyText) throw new Error("name and bodyText are required");
-    return data;
-  })
-  .handler(async ({ data }) => {
-    const admin = await verifyAdminSession();
-    if (!admin) throw new Error("Unauthorized");
-    const { submitWaCloudTemplate } = await import("./wa-cloud-admin");
-    return await submitWaCloudTemplate(data);
-  });
-
-export const syncWaCloudTemplateStatusServerFn = createServerFn({ method: "POST" })
-  .validator((data: { id: string }) => {
-    if (!data?.id) throw new Error("Template id is required");
-    return data;
-  })
-  .handler(async ({ data }) => {
-    const admin = await verifyAdminSession();
-    if (!admin) throw new Error("Unauthorized");
-    const { syncWaCloudTemplateStatus } = await import("./wa-cloud-admin");
-    return await syncWaCloudTemplateStatus(data);
-  });
-
 export const getWaCloudLogsServerFn = createServerFn({ method: "GET" })
   .validator((data?: { limit?: number; offset?: number }) => data || {})
   .handler(async ({ data }) => {
@@ -1210,4 +1167,205 @@ export const getWaCloudLogsServerFn = createServerFn({ method: "GET" })
     if (!admin) throw new Error("Unauthorized");
     const { getWaCloudLogs } = await import("./wa-cloud-admin");
     return await getWaCloudLogs(data);
+  });
+
+// ──────────────────────────────────────────────
+// WhatsApp Utility Template Management (Super Admin) Server Functions
+//
+// Thin createServerFn wrappers over the wa-template-api.ts registry. Every
+// registry entry is adminOnly (verifyAdminSession() first; safe {ok:false,error}
+// on auth failure or bad input). GET for reads, POST for writes; each write
+// records a WaTemplateActivity row in the service layer.
+// ──────────────────────────────────────────────
+
+// The registry entries return typed service unions whose payloads include
+// `unknown` fields (dynamic summaries, rows, payloads); TanStack's serialization
+// constraint rejects `unknown` in a server-fn return, so each wrapper casts the
+// (JSON-safe at runtime) result. The gating/validation happens inside the
+// registry (verifyAdminSession first); these wrappers are a pass-through.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WaApiResult = any;
+
+// Reads (GET)
+export const waTemplateDashboardServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.dashboard(data)) as WaApiResult;
+  });
+
+export const waTemplateListServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.list(data)) as WaApiResult;
+  });
+
+export const waTemplateDetailsServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.details(data)) as WaApiResult;
+  });
+
+export const waTemplateRevisionsServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.revisions(data)) as WaApiResult;
+  });
+
+export const waTemplateActivityServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.activity(data)) as WaApiResult;
+  });
+
+export const waTemplateSyncRunsServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.syncRuns(data)) as WaApiResult;
+  });
+
+export const waAccountHealthServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.accountHealth(data)) as WaApiResult;
+  });
+
+export const waNotifyMappingsServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.notifyMappings(data)) as WaApiResult;
+  });
+
+// Writes (POST)
+export const waCreateDraftServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.createDraft(data)) as WaApiResult;
+  });
+
+export const waUpdateDraftServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.updateDraft(data)) as WaApiResult;
+  });
+
+export const waValidateDraftServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.validateDraft(data)) as WaApiResult;
+  });
+
+export const waInstallPresetsServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.installPresets(data)) as WaApiResult;
+  });
+
+export const waSubmitTemplateServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.submitTemplate(data)) as WaApiResult;
+  });
+
+export const waReconcileTemplateServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.reconcileTemplate(data)) as WaApiResult;
+  });
+
+export const waEditTemplateServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.editTemplate(data)) as WaApiResult;
+  });
+
+export const waCloneTemplateServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.cloneTemplate(data)) as WaApiResult;
+  });
+
+export const waArchiveDraftServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.archiveDraft(data)) as WaApiResult;
+  });
+
+export const waUnarchiveDraftServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.unarchiveDraft(data)) as WaApiResult;
+  });
+
+export const waDeleteDraftServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.deleteDraft(data)) as WaApiResult;
+  });
+
+export const waDeleteMetaTemplateServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.deleteMetaTemplate(data)) as WaApiResult;
+  });
+
+export const waSyncAllServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.syncAll(data)) as WaApiResult;
+  });
+
+export const waSyncOneServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.syncOne(data)) as WaApiResult;
+  });
+
+export const waRefreshHealthServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.refreshHealth(data)) as WaApiResult;
+  });
+
+export const waAssignMappingServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.assignMapping(data)) as WaApiResult;
+  });
+
+export const waSetMappingEnabledServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.setMappingEnabled(data)) as WaApiResult;
+  });
+
+export const waRemoveMappingServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { waTemplateApi } = await import("./wa-template-api");
+    return (await waTemplateApi.removeMapping(data)) as WaApiResult;
   });

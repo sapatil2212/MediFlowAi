@@ -18,13 +18,9 @@ import {
   getWaCloudConfigServerFn,
   saveWaCloudConfigServerFn,
   testWaCloudConfigServerFn,
-  listWaCloudTemplatesServerFn,
-  saveWaCloudTemplateServerFn,
-  submitWaCloudTemplateServerFn,
-  syncWaCloudTemplateStatusServerFn,
   getWaCloudLogsServerFn,
 } from "../../lib/admin";
-import { uploadWATemplateHeaderImageServerFn } from "../../lib/auth";
+import { TemplatesModule } from "./wa-templates/TemplatesModule";
 
 // notifyKind options exclude the two video kinds (HIGH-1 — always WhatsApp Web).
 const NOTIFY_KIND_OPTIONS = [
@@ -96,7 +92,7 @@ export function WaCloudAdminPanel() {
       </div>
 
       {subTab === "credentials" && <CredentialsTab />}
-      {subTab === "templates" && <TemplatesTab />}
+      {subTab === "templates" && <TemplatesModule />}
       {subTab === "monitoring" && <MonitoringTab />}
     </div>
   );
@@ -137,7 +133,7 @@ function CredentialsTab() {
         ...f,
         phoneNumberId: data.phoneNumberId || "",
         wabaId: data.wabaId || "",
-        apiVersion: data.apiVersion || "v21.0",
+        apiVersion: data.apiVersionInfo?.value || data.apiVersion || "v21.0",
         isEnabled: !!data.isEnabled,
         verifyToken: "",
         accessToken: "",
@@ -239,19 +235,31 @@ function CredentialsTab() {
             onChange={(e) => setForm({ ...form, phoneNumberId: e.target.value })}
           />
         </Field>
-        <Field label="WABA ID">
+        <Field label="Messaging Account ID (legacy WABA ID)">
           <input
             className="input"
+            placeholder="e.g. 102290129340398"
             value={form.wabaId}
             onChange={(e) => setForm({ ...form, wabaId: e.target.value })}
           />
+          <span className="mt-1 block text-xs text-zinc-400">
+            Your existing WABA ID is the Messaging Account ID. It owns templates, billing and
+            webhook subscriptions — do not enter the Phone Number ID here.
+          </span>
         </Field>
         <Field label="API Version">
           <input
             className="input"
+            placeholder="v26.0"
             value={form.apiVersion}
             onChange={(e) => setForm({ ...form, apiVersion: e.target.value })}
           />
+          {cfg?.apiVersionInfo?.warning && (
+            <span className="mt-1 flex items-start gap-1 text-xs text-amber-700">
+              <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+              {cfg.apiVersionInfo.warning}
+            </span>
+          )}
         </Field>
         <Field label={`Verify Token ${cfg?.verifyTokenConfigured ? "(configured)" : ""}`}>
           <input
@@ -342,7 +350,9 @@ function CredentialsTab() {
         </div>
         <p className="text-xs text-zinc-500">
           Paste this URL in Meta → WhatsApp → Configuration → Webhook, use your Verify Token, and
-          subscribe to the &quot;messages&quot; field. Verify the webhook and the App Secret before
+          subscribe to the &quot;messages&quot; field. For template management also subscribe to
+          message_template_status_update, message_template_quality_update, template_category_update
+          and message_template_components_update. Verify the webhook and the App Secret before
           enabling the Cloud API: Meta reports most delivery failures through it.
         </p>
       </div>
@@ -401,313 +411,6 @@ function CredentialsTab() {
           )}
         </div>
       </div>
-
-      <StyleTag />
-    </div>
-  );
-}
-
-// ── Templates ──────────────────────────────────────────────────────────────
-
-function TemplatesTab() {
-  const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<any[]>([]);
-  const [editing, setEditing] = useState<any | null>(null);
-  const [uploading, setUploading] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setRows((await listWaCloudTemplatesServerFn()) as any[]);
-    } catch (e: any) {
-      toast.error(e?.message || "Failed to load templates");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const blank = () => ({
-    name: "",
-    language: "en_US",
-    category: "UTILITY",
-    bodyText: "",
-    headerType: "NONE",
-    headerImageUrl: "",
-    notifyKind: "",
-  });
-
-  const save = async () => {
-    try {
-      await saveWaCloudTemplateServerFn({
-        data: {
-          id: editing.id,
-          name: editing.name,
-          language: editing.language,
-          category: editing.category,
-          bodyText: editing.bodyText,
-          headerType: editing.headerType,
-          headerImageUrl: editing.headerImageUrl || null,
-          notifyKind: editing.notifyKind || null,
-        },
-      });
-      toast.success("Template saved");
-      setEditing(null);
-      await load();
-    } catch (e: any) {
-      toast.error(e?.message || "Save failed");
-    }
-  };
-
-  const submit = async (row: any) => {
-    try {
-      const res = await submitWaCloudTemplateServerFn({
-        data: {
-          id: row.id,
-          name: row.name,
-          language: row.language,
-          category: row.category,
-          bodyText: row.bodyText,
-          headerType: row.headerType,
-          headerImageUrl: row.headerImageUrl || null,
-          notifyKind: row.notifyKind || null,
-        },
-      });
-      if (res.ok) toast.success("Submitted to Meta for review");
-      else toast.error(`Submit failed${res.code ? ` (${res.code})` : ""}: ${res.message || ""}`);
-      await load();
-    } catch (e: any) {
-      toast.error(e?.message || "Submit failed");
-    }
-  };
-
-  const sync = async (row: any) => {
-    try {
-      const res = await syncWaCloudTemplateStatusServerFn({ data: { id: row.id } });
-      if (res.ok) toast.success(`Status: ${res.status}`);
-      else toast.error(res.message || "Sync failed");
-      await load();
-    } catch (e: any) {
-      toast.error(e?.message || "Sync failed");
-    }
-  };
-
-  const onUpload = async (file: File) => {
-    setUploading(true);
-    try {
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const res = await uploadWATemplateHeaderImageServerFn({ data: { base64 } });
-      setEditing((e: any) => ({ ...e, headerImageUrl: res.url }));
-      toast.success("Image uploaded");
-    } catch (e: any) {
-      toast.error(e?.message || "Upload failed");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-zinc-500 py-8">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <button
-          onClick={() => setEditing(blank())}
-          className="inline-flex items-center gap-2 rounded-lg bg-[#0059C6] px-4 py-2 text-sm font-semibold text-white cursor-pointer"
-        >
-          <Plus className="h-4 w-4" /> New template
-        </button>
-      </div>
-
-      <div className="overflow-x-auto rounded-lg border border-zinc-200">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-zinc-500">
-            <tr>
-              <th className="text-left px-3 py-2 font-semibold">Name</th>
-              <th className="text-left px-3 py-2 font-semibold">Kind</th>
-              <th className="text-left px-3 py-2 font-semibold">Lang</th>
-              <th className="text-left px-3 py-2 font-semibold">Vars</th>
-              <th className="text-left px-3 py-2 font-semibold">Status</th>
-              <th className="text-right px-3 py-2 font-semibold">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-zinc-400">
-                  No templates yet.
-                </td>
-              </tr>
-            )}
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t border-zinc-100">
-                <td className="px-3 py-2 font-medium text-zinc-800">{r.name}</td>
-                <td className="px-3 py-2 text-zinc-600">{r.notifyKind || "—"}</td>
-                <td className="px-3 py-2 text-zinc-600">{r.language}</td>
-                <td className="px-3 py-2 text-zinc-600">{r.varCount}</td>
-                <td className="px-3 py-2">
-                  <span
-                    className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${
-                      STATUS_BADGE[r.status] || "bg-zinc-100 text-zinc-600"
-                    }`}
-                    title={r.rejectionReason || ""}
-                  >
-                    {r.status}
-                  </span>
-                  {r.status === "REJECTED" && r.rejectionReason && (
-                    <div className="text-xs text-red-500 mt-1">{r.rejectionReason}</div>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right space-x-2 whitespace-nowrap">
-                  <button
-                    onClick={() => setEditing({ ...r, headerType: r.headerType || "NONE" })}
-                    className="text-[#0059C6] hover:underline cursor-pointer"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => submit(r)}
-                    className="text-emerald-600 hover:underline cursor-pointer"
-                  >
-                    Submit
-                  </button>
-                  <button
-                    onClick={() => sync(r)}
-                    className="text-zinc-500 hover:underline cursor-pointer inline-flex items-center gap-1"
-                  >
-                    <RefreshCw className="h-3 w-3" /> Sync
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-xl bg-white p-5 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-zinc-900">
-                {editing.id ? "Edit template" : "New template"}
-              </h3>
-              <button onClick={() => setEditing(null)} className="text-zinc-400 cursor-pointer">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <Field label="Name (a-z, 0-9, _)">
-              <input
-                className="input"
-                value={editing.name}
-                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Language">
-                <input
-                  className="input"
-                  value={editing.language}
-                  onChange={(e) => setEditing({ ...editing, language: e.target.value })}
-                />
-              </Field>
-              <Field label="Category">
-                <select
-                  className="input"
-                  value={editing.category}
-                  onChange={(e) => setEditing({ ...editing, category: e.target.value })}
-                >
-                  <option>UTILITY</option>
-                  <option>MARKETING</option>
-                  <option>AUTHENTICATION</option>
-                </select>
-              </Field>
-            </div>
-            <Field label="Notify kind (maps this template to an event)">
-              <select
-                className="input"
-                value={editing.notifyKind || ""}
-                onChange={(e) => setEditing({ ...editing, notifyKind: e.target.value })}
-              >
-                {NOTIFY_KIND_OPTIONS.map((k) => (
-                  <option key={k} value={k}>
-                    {k || "— none —"}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Body text (use {{1}}, {{2}} … placeholders)">
-              <textarea
-                className="input min-h-[120px]"
-                value={editing.bodyText}
-                onChange={(e) => setEditing({ ...editing, bodyText: e.target.value })}
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Header type">
-                <select
-                  className="input"
-                  value={editing.headerType}
-                  onChange={(e) => setEditing({ ...editing, headerType: e.target.value })}
-                >
-                  <option>NONE</option>
-                  <option>IMAGE</option>
-                </select>
-              </Field>
-              {editing.headerType === "IMAGE" && (
-                <Field label="Header image">
-                  <label className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-3 py-2 text-sm cursor-pointer">
-                    {uploading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Upload className="h-4 w-4" />
-                    )}
-                    Upload
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])}
-                    />
-                  </label>
-                </Field>
-              )}
-            </div>
-            {editing.headerImageUrl && (
-              <div className="text-xs text-zinc-500 break-all">{editing.headerImageUrl}</div>
-            )}
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                onClick={() => setEditing(null)}
-                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={save}
-                className="inline-flex items-center gap-2 rounded-lg bg-[#0059C6] px-4 py-2 text-sm font-semibold text-white cursor-pointer"
-              >
-                <Save className="h-4 w-4" /> Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <StyleTag />
     </div>
@@ -801,7 +504,10 @@ export function LogRow({ r }: { r: any }) {
     <tr className="border-t border-zinc-100">
       <td className="px-3 py-2 text-zinc-600">{r.tenantId}</td>
       <td className="px-3 py-2 text-zinc-600">{r.recipient}</td>
-      <td className="px-3 py-2 text-zinc-600">{r.kind}</td>
+      <td className="px-3 py-2 text-zinc-600">
+        <div>{r.kind}</div>
+        {r.templateName && <div className="text-xs text-zinc-400">template: {r.templateName}</div>}
+      </td>
       <td className="px-3 py-2">
         <span
           className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${

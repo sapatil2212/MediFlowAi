@@ -169,6 +169,16 @@ async function runReminderCycle(): Promise<void> {
       console.error("[Reminder Scheduler] custom plan expiry sweep error:", cpErr?.message);
     }
 
+    // Kick the scheduled WhatsApp template sync (DP-12). Off by default; shares
+    // the DB lease lock with manual sync. Fire-and-forget — never blocks the
+    // reminder cycle and never throws out of it.
+    try {
+      const { maybeRunScheduledTemplateSync } = await import("./wa-template-sync");
+      void maybeRunScheduledTemplateSync();
+    } catch (syncErr: any) {
+      console.error("[Reminder Scheduler] template sync kick error:", syncErr?.message);
+    }
+
     const rows = await query<any>(
       `SELECT a.id, a.tenantId, a.name, a.phone, a.whatsapp, a.dateTime, a.timeSlot, a.tokenNo,
               a.doctorId, a.status, a.consultationMode,

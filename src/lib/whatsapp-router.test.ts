@@ -18,10 +18,18 @@ vi.mock("./db", () => ({
 
 const isCloudAvailableMock = vi.fn();
 const sendTextMessageMock = vi.fn();
+const sendTemplateMessageMock = vi.fn();
 vi.mock("./whatsapp-cloud", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./whatsapp-cloud")>()),
   isCloudAvailable: (...args: any[]) => isCloudAvailableMock(...args),
   sendTextMessage: (...args: any[]) => sendTextMessageMock(...args),
+  sendTemplateMessage: (...args: any[]) => sendTemplateMessageMock(...args),
+}));
+
+const resolveTemplatePlanMock = vi.fn();
+vi.mock("./wa-template-notify", () => ({
+  resolveTemplatePlan: (...args: any[]) => resolveTemplatePlanMock(...args),
+  invalidateMappingCache: vi.fn(),
 }));
 
 const isWhatsAppReadyMock = vi.fn();
@@ -72,11 +80,16 @@ function resetMocks() {
   executeMock.mockReset();
   isCloudAvailableMock.mockReset();
   sendTextMessageMock.mockReset();
+  sendTemplateMessageMock.mockReset();
+  resolveTemplatePlanMock.mockReset();
   isWhatsAppReadyMock.mockReset();
   enqueueWAMock.mockReset();
   executeMock.mockResolvedValue({ affectedRows: 1, insertId: null });
   isCloudAvailableMock.mockResolvedValue(true);
   sendTextMessageMock.mockResolvedValue({ ok: true, messageId: "wamid.OK" });
+  sendTemplateMessageMock.mockResolvedValue({ ok: true, messageId: "wamid.TPL" });
+  // Default: no template mapping → the byte-identical text path.
+  resolveTemplatePlanMock.mockResolvedValue(null);
   isWhatsAppReadyMock.mockResolvedValue(true);
   enqueueWAMock.mockResolvedValue({ success: true });
 }
@@ -173,6 +186,60 @@ describe("sendPatientMessage — official text send", () => {
       expect(sendTextMessageMock).toHaveBeenCalledTimes(1);
       expect(enqueueWAMock).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe("sendPatientMessage — template send when a plan resolves", () => {
+  const PLAN = {
+    templateId: "tpl-1",
+    templateName: "bmt_appointment_confirmed",
+    language: "en_US",
+    parameterFormat: "POSITIONAL" as const,
+    bodyParams: [{ text: "Asha" }, { text: "Sunrise Clinic" }],
+    headerParams: [],
+    urlButtons: [],
+  };
+
+  it("sends via sendTemplateMessage, sets WaMessageLog.templateId, and seals the SAME plain-text body", async () => {
+    resolveTemplatePlanMock.mockResolvedValue(PLAN);
+    const res = await sendPatientMessage(params());
+
+    expect(res).toMatchObject({ delivered: true, channel: "official" });
+    expect(sendTemplateMessageMock).toHaveBeenCalledTimes(1);
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    expect(sendTemplateMessageMock).toHaveBeenCalledWith({
+      to: "918830553868",
+      templateName: "bmt_appointment_confirmed",
+      language: "en_US",
+      parameterFormat: "POSITIONAL",
+      bodyParams: PLAN.bodyParams,
+      headerParams: [],
+      urlButtons: [],
+    });
+
+    // The provisional insert carries the templateId (not NULL).
+    const insert = sqlCalls("INSERT INTO WaMessageLog")[0];
+    expect(insert[1]).toEqual([res.logId, "t1", "918830553868", "booked", "tpl-1", "official"]);
+
+    // The sealed body is the plain text (buildMessage), so the async Web
+    // fallback re-sends readable text (DP-05).
+    const success = sqlCalls("metaMessageId = ?");
+    expect(success[0][1][0]).toBe("wamid.TPL");
+    expect(decryptSecret(success[0][1][1])).toBe(BODY);
+  });
+
+  it("falls through to Web exactly as the text path when the template send fails", async () => {
+    resolveTemplatePlanMock.mockResolvedValue(PLAN);
+    sendTemplateMessageMock.mockResolvedValueOnce({
+      ok: false,
+      kind: "meta_error",
+      code: "132001",
+      message: "Template not approved",
+    });
+    const res = await sendPatientMessage(params());
+    expect(res).toMatchObject({ delivered: true, channel: "web" });
+    expect(sqlCalls("officialStatus = 'failed'").length).toBe(1);
+    expect(enqueueWAMock).toHaveBeenCalledWith("t1", "8830553868", BODY);
   });
 });
 
@@ -368,6 +435,83 @@ describe("sendPatientMessage — Web fallback", () => {
       ),
       { numRuns: 200 },
     );
+  });
+});
+
+// ── FEAT-004: backward-compat incident guard (design §17) ────────────────────
+describe("backward-compat — the original-incident invariant", () => {
+  it("no enabled mapping ⇒ byte-identical text path and WaMessageLog.templateId NULL", async () => {
+    // The gate returns null (no mapping) exactly as production did before the
+    // feature. The send is plain text; the provisional row keeps templateId NULL.
+    resolveTemplatePlanMock.mockResolvedValue(null);
+    const res = await sendPatientMessage(params());
+
+    expect(res).toMatchObject({ delivered: true, channel: "official" });
+    expect(sendTextMessageMock).toHaveBeenCalledWith({ to: "918830553868", body: BODY });
+    expect(sendTemplateMessageMock).not.toHaveBeenCalled();
+
+    const insert = sqlCalls("INSERT INTO WaMessageLog")[0];
+    expect(insert[0]).toContain("templateId, channel, status, officialAttempted");
+    expect(insert[0]).toContain("NULL"); // templateId column literal NULL
+    // The provisional params carry no templateId value (the pre-feature shape).
+    expect(insert[1]).toEqual([res.logId, "t1", "918830553868", "booked", "official"]);
+    // No template table is ever touched on this path.
+    for (const call of executeMock.mock.calls) {
+      expect(String(call[0])).not.toContain("WaCloudTemplate");
+    }
+  });
+
+  it("a mapped template meta_error falls through to Web with the readable body", async () => {
+    resolveTemplatePlanMock.mockResolvedValue({
+      templateId: "tpl-1",
+      templateName: "bmt_appointment_confirmed",
+      language: "en_US",
+      parameterFormat: "POSITIONAL" as const,
+      bodyParams: [{ text: "Asha" }],
+      headerParams: [],
+      urlButtons: [],
+    });
+    sendTemplateMessageMock.mockResolvedValueOnce({
+      ok: false,
+      kind: "meta_error",
+      code: "132001",
+      message: "Template does not exist",
+    });
+    const res = await sendPatientMessage(params());
+    expect(res).toMatchObject({ delivered: true, channel: "web" });
+    // Web received the readable plain-text body (NOT a token/template payload).
+    expect(enqueueWAMock).toHaveBeenCalledWith("t1", "8830553868", BODY);
+    expect(sqlCalls("officialStatus = 'failed'").length).toBe(1);
+  });
+
+  it("a mapped template accepted-then-'failed' re-sends exactly once via Web with the readable body", async () => {
+    // Accepted official template send: the readable plain-text body is sealed.
+    resolveTemplatePlanMock.mockResolvedValue({
+      templateId: "tpl-1",
+      templateName: "bmt_appointment_confirmed",
+      language: "en_US",
+      parameterFormat: "POSITIONAL" as const,
+      bodyParams: [{ text: "Asha" }],
+      headerParams: [],
+      urlButtons: [],
+    });
+    const accepted = await sendPatientMessage(params());
+    expect(accepted.channel).toBe("official");
+    const success = sqlCalls("metaMessageId = ?")[0];
+    const sealed = success[1][1] as string;
+    expect(decryptSecret(sealed)).toBe(BODY); // readable, non-token body stored
+
+    // Later Meta reports 'failed'; the async Web fallback re-sends once.
+    resetMocks();
+    const out = await runAsyncWebFallback({
+      id: accepted.logId || "log1",
+      tenantId: "t1",
+      recipient: "918830553868",
+      body: sealed,
+    });
+    expect(out).toBe("fell_back");
+    expect(enqueueWAMock).toHaveBeenCalledTimes(1);
+    expect(enqueueWAMock).toHaveBeenCalledWith("t1", "918830553868", BODY);
   });
 });
 

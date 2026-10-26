@@ -35,8 +35,6 @@ vi.mock("./whatsapp-cloud", async (importOriginal) => ({
   resolveCloudConfig: (...args: any[]) => resolveCloudConfigMock(...args),
   verifyPhoneNumber: (...args: any[]) => verifyPhoneNumberMock(...args),
   sendTextMessage: (...args: any[]) => sendTextMessageMock(...args),
-  submitTemplate: vi.fn(),
-  syncTemplateStatus: vi.fn(),
 }));
 
 import { META_24H_HINT, saveWaCloudConfig, testWaCloudConfig } from "./wa-cloud-admin";

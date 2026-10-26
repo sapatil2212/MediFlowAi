@@ -350,6 +350,7 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
         dateTime: dateVal,
         timeSlot: tSlot,
         tokenNo,
+        appointmentId: id,
       });
     }
 

@@ -1354,6 +1354,7 @@ export async function notifyVideoLink(
     doctorName: appt.doctorName,
     dateTime,
     joinLink,
+    appointmentId,
   });
   if (appt.email) {
     try {

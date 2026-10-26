@@ -124,9 +124,15 @@ export function shouldApplyStatus(current: string | null | undefined, incoming: 
 
 /** Builds the idempotency key for a flattened entry. */
 export function buildEventKey(
-  entry: { type: "status"; id: string; status: string } | { type: "inbound"; id: string },
+  entry:
+    | { type: "status"; id: string; status: string }
+    | { type: "inbound"; id: string }
+    | { type: "template"; field: string; metaTemplateId: string | null; entryTime: number },
 ): string {
   if (entry.type === "status") return `wa:${entry.id}:${entry.status}`;
+  if (entry.type === "template") {
+    return `wa-tpl:${entry.field}:${entry.metaTemplateId ?? "?"}:${entry.entryTime}`;
+  }
   return `wa-in:${entry.id}`;
 }
 
@@ -152,7 +158,33 @@ interface InboundEntry {
   contextId: string | null;
 }
 
-type FlatEntry = StatusEntry | InboundEntry;
+/** A template-management field change (MV-13), routed by change.field. */
+interface TemplateEntry {
+  type: "template";
+  field:
+    | "message_template_status_update"
+    | "message_template_quality_update"
+    | "template_category_update"
+    | "message_template_components_update";
+  /** Meta's message_template_id (string form), when present. */
+  metaTemplateId: string | null;
+  name: string | null;
+  language: string | null;
+  /** entry.time (Unix seconds) — used for idempotency + the monotonic guard. */
+  entryTime: number;
+  /** The Messaging account (WABA) id = entry.id (MV-01). */
+  entryId: string | null;
+  value: any;
+}
+
+type FlatEntry = StatusEntry | InboundEntry | TemplateEntry;
+
+const TEMPLATE_FIELDS = new Set([
+  "message_template_status_update",
+  "message_template_quality_update",
+  "template_category_update",
+  "message_template_components_update",
+]);
 
 /** Flattens a Meta webhook payload into status + inbound entries. */
 function flattenPayload(payload: any): { raw: any; entries: FlatEntry[] }[] {
@@ -160,9 +192,36 @@ function flattenPayload(payload: any): { raw: any; entries: FlatEntry[] }[] {
   const topEntries: any[] = Array.isArray(payload?.entry) ? payload.entry : [];
   for (const entry of topEntries) {
     const flat: FlatEntry[] = [];
+    const entryTime = Number(entry?.time) || 0;
+    const entryId = entry?.id != null ? String(entry.id) : null;
     const changes: any[] = Array.isArray(entry?.changes) ? entry.changes : [];
     for (const change of changes) {
       const value = change?.value || {};
+      const field = change?.field != null ? String(change.field) : "";
+
+      // Template-management fields (MV-13). Routed AFTER messages/statuses so the
+      // existing message handling is untouched; a change carrying statuses or
+      // messages is never treated as a template change.
+      const statusesArr: any[] = Array.isArray(value?.statuses) ? value.statuses : [];
+      const messagesArr: any[] = Array.isArray(value?.messages) ? value.messages : [];
+      if (TEMPLATE_FIELDS.has(field) && statusesArr.length === 0 && messagesArr.length === 0) {
+        flat.push({
+          type: "template",
+          field: field as TemplateEntry["field"],
+          metaTemplateId:
+            value?.message_template_id != null ? String(value.message_template_id) : null,
+          name: value?.message_template_name != null ? String(value.message_template_name) : null,
+          language:
+            value?.message_template_language != null
+              ? String(value.message_template_language)
+              : null,
+          entryTime,
+          entryId,
+          value,
+        });
+        continue;
+      }
+
       const statuses: any[] = Array.isArray(value?.statuses) ? value.statuses : [];
       for (const s of statuses) {
         if (!s?.id || !s?.status) continue;
@@ -350,6 +409,39 @@ async function applyInboundEntry(entry: InboundEntry): Promise<string | null> {
   return tenantId;
 }
 
+/**
+ * Applies a template-field change (§14, MV-13): ignores a change whose entry.id
+ * is not the configured Messaging account ID (MV-01), delegates the state write
+ * to wa-template-sync.applyWebhookChange (match → monotonic guard → apply), and
+ * invalidates the runtime mapping cache when a mapped template became
+ * ineligible so the next send falls back to text. A DB failure throws so the
+ * caller marks the WebhookEvent 'error' (a Meta retry reprocesses it); 200.
+ */
+async function applyTemplateEntry(entry: TemplateEntry): Promise<void> {
+  // Ignore template changes for a different Messaging account (MV-01).
+  const cfg = await resolveCloudConfig();
+  if (cfg?.wabaId && entry.entryId && entry.entryId !== cfg.wabaId) {
+    return;
+  }
+  const { applyWebhookChange } = await import("./wa-template-sync");
+  const result = await applyWebhookChange({
+    field: entry.field,
+    metaTemplateId: entry.metaTemplateId,
+    name: entry.name,
+    language: entry.language,
+    entryTime: entry.entryTime,
+    value: entry.value,
+  });
+  if (result.applied && result.mappingInvalidated) {
+    try {
+      const { invalidateMappingCache } = await import("./wa-template-notify");
+      invalidateMappingCache();
+    } catch {
+      /* the gate may not be loaded; the TTL cache will refresh anyway */
+    }
+  }
+}
+
 async function handlePost(req: Request): Promise<Response> {
   const rawBody = await req.text();
   const cfg = await resolveCloudConfig();
@@ -373,13 +465,14 @@ async function handlePost(req: Request): Promise<Response> {
     const rawPayload = JSON.stringify(group.raw).slice(0, 60000);
     for (const entry of group.entries) {
       const eventKey = buildEventKey(entry);
+      const referenceId = entry.type === "template" ? (entry.metaTemplateId ?? eventKey) : entry.id;
       // Per-entry idempotency: attempt an independent insert; duplicate → skip.
       try {
         await execute(
           `INSERT INTO WebhookEvent
              (id, eventKey, eventType, referenceId, signatureValid, status, rawPayload, createdAt)
            VALUES (?, ?, 'whatsapp', ?, 1, 'received', ?, NOW())`,
-          [crypto.randomUUID(), eventKey, entry.id, rawPayload],
+          [crypto.randomUUID(), eventKey, referenceId, rawPayload],
         );
       } catch {
         continue; // duplicate eventKey — already processed
@@ -388,6 +481,8 @@ async function handlePost(req: Request): Promise<Response> {
       try {
         if (entry.type === "status") {
           await applyStatusEntry(entry);
+        } else if (entry.type === "template") {
+          await applyTemplateEntry(entry);
         } else {
           const tenantId = await applyInboundEntry(entry);
           if (shouldAutoReply(entry)) {

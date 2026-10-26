@@ -1907,6 +1907,204 @@ if (typeof window === "undefined") {
           console.error("[DB] ❌ Could not verify/add WaMessageLog recipient index:", err.message);
         }
 
+        // ───────────────────────────────────────────────────────────────────
+        // WhatsApp Utility Template Management (design §8). Additive, guarded,
+        // idempotent runtime DDL: extend WaCloudTemplate with the new columns
+        // and indexes, and create the five companion tables. No UPDATE/DELETE/
+        // backfill is run on existing rows (R-DB-01); legacy values are read
+        // lazily. The legacy `status VARCHAR(16)` column is kept and mirrored on
+        // every write (DP-14).
+        //
+        // ── Rollback SQL sketch (design §8.4) ────────────────────────────────
+        // The additive DDL leaves the schema working after a code rollback (the
+        // legacy `status` column keeps sensible values). To remove the additions
+        // entirely after reverting the code:
+        //
+        //   DROP TABLE IF EXISTS WaTemplateSyncRun;
+        //   DROP TABLE IF EXISTS WaNotifyMapping;
+        //   DROP TABLE IF EXISTS WaTemplateActivity;
+        //   DROP TABLE IF EXISTS WaTemplateRevision;
+        //   DROP TABLE IF EXISTS WaCloudRuntime;
+        //   ALTER TABLE WaCloudTemplate DROP INDEX uq_wct_meta_id;
+        //   ALTER TABLE WaCloudTemplate DROP INDEX idx_wct_source_state;
+        //   ALTER TABLE WaCloudTemplate DROP INDEX idx_wct_op;
+        //   ALTER TABLE WaCloudTemplate
+        //     DROP COLUMN displayTitle, DROP COLUMN description, DROP COLUMN purpose,
+        //     DROP COLUMN parameterFormat, DROP COLUMN footerText, DROP COLUMN headerText,
+        //     DROP COLUMN buttons, DROP COLUMN variableMappings, DROP COLUMN sampleValues,
+        //     DROP COLUMN source, DROP COLUMN localState, DROP COLUMN opState,
+        //     DROP COLUMN opKind, DROP COLUMN opClaimedAt, DROP COLUMN metaStatus,
+        //     DROP COLUMN metaCategory, DROP COLUMN qualityScore, DROP COLUMN rejectionDetail,
+        //     DROP COLUMN messagingAccountId, DROP COLUMN lastSubmittedAt, DROP COLUMN lastSyncedAt,
+        //     DROP COLUMN metaUpdatedAt, DROP COLUMN archivedAt, DROP COLUMN createdBy, DROP COLUMN updatedBy;
+        //
+        // The rollback never touches Appointment or any booking table (R-GEN-09).
+        // ─────────────────────────────────────────────────────────────────────
+        try {
+          const wctCols: any[] = await conn.query("SHOW COLUMNS FROM WaCloudTemplate");
+          const wctColNames = wctCols.map((c: any) => c.Field || c.field || "");
+          const addWctColumn = async (name: string, ddl: string) => {
+            if (!wctColNames.includes(name)) {
+              await conn.query(`ALTER TABLE WaCloudTemplate ADD COLUMN ${ddl}`);
+              console.log(`[DB] ✅ Added ${name} column to WaCloudTemplate table`);
+            }
+          };
+          await addWctColumn("displayTitle", "displayTitle VARCHAR(160) NULL");
+          await addWctColumn("description", "description VARCHAR(512) NULL");
+          await addWctColumn("purpose", "purpose VARCHAR(48) NULL");
+          await addWctColumn(
+            "parameterFormat",
+            "parameterFormat VARCHAR(12) NOT NULL DEFAULT 'POSITIONAL'",
+          );
+          await addWctColumn("footerText", "footerText VARCHAR(60) NULL");
+          await addWctColumn("headerText", "headerText VARCHAR(60) NULL");
+          await addWctColumn("buttons", "buttons JSON NULL");
+          await addWctColumn("variableMappings", "variableMappings JSON NULL");
+          await addWctColumn("sampleValues", "sampleValues JSON NULL");
+          await addWctColumn("source", "source VARCHAR(8) NOT NULL DEFAULT 'LOCAL'");
+          await addWctColumn("localState", "localState VARCHAR(16) NULL");
+          await addWctColumn("opState", "opState VARCHAR(12) NULL");
+          await addWctColumn("opKind", "opKind VARCHAR(8) NULL");
+          await addWctColumn("opClaimedAt", "opClaimedAt DATETIME NULL");
+          await addWctColumn("metaStatus", "metaStatus VARCHAR(64) NULL");
+          await addWctColumn("metaCategory", "metaCategory VARCHAR(32) NULL");
+          await addWctColumn("qualityScore", "qualityScore VARCHAR(16) NULL");
+          await addWctColumn("rejectionDetail", "rejectionDetail TEXT NULL");
+          await addWctColumn("messagingAccountId", "messagingAccountId VARCHAR(64) NULL");
+          await addWctColumn("lastSubmittedAt", "lastSubmittedAt DATETIME NULL");
+          await addWctColumn("lastSyncedAt", "lastSyncedAt DATETIME NULL");
+          await addWctColumn("metaUpdatedAt", "metaUpdatedAt DATETIME NULL");
+          await addWctColumn("archivedAt", "archivedAt DATETIME NULL");
+          await addWctColumn("createdBy", "createdBy VARCHAR(255) NULL");
+          await addWctColumn("updatedBy", "updatedBy VARCHAR(255) NULL");
+        } catch (err: any) {
+          console.error("[DB] ❌ Could not verify/add WaCloudTemplate columns:", err.message);
+        }
+
+        // New indexes on WaCloudTemplate (guarded SHOW INDEX). The existing
+        // uq_wa_cloud_template_name_lang and idx_wa_cloud_template_kind are kept.
+        try {
+          const addWctIndex = async (name: string, ddl: string) => {
+            const existing: any[] = await conn.query(
+              `SHOW INDEX FROM WaCloudTemplate WHERE Key_name = '${name}'`,
+            );
+            if (!existing || existing.length === 0) {
+              await conn.query(`ALTER TABLE WaCloudTemplate ADD ${ddl}`);
+              console.log(`[DB] ✅ Added ${name} index to WaCloudTemplate table`);
+            }
+          };
+          // NULL metaTemplateId values do not conflict in a MySQL unique key.
+          await addWctIndex("uq_wct_meta_id", "UNIQUE KEY uq_wct_meta_id (metaTemplateId)");
+          await addWctIndex(
+            "idx_wct_source_state",
+            "KEY idx_wct_source_state (source, localState, metaStatus)",
+          );
+          await addWctIndex("idx_wct_op", "KEY idx_wct_op (opState, opClaimedAt)");
+        } catch (err: any) {
+          console.error("[DB] ❌ Could not verify/add WaCloudTemplate indexes:", err.message);
+        }
+
+        // Companion tables (§8.2).
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS WaTemplateRevision (
+              id VARCHAR(255) PRIMARY KEY,
+              templateId VARCHAR(255) NOT NULL,
+              revisionNo INT NOT NULL,
+              snapshot JSON NOT NULL,
+              submittedPayload JSON NULL,
+              metaStatusAtSnapshot VARCHAR(64) NULL,
+              createdBy VARCHAR(255) NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_wtr_template_rev (templateId, revisionNo),
+              KEY idx_wtr_template (templateId, createdAt)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create WaTemplateRevision table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS WaTemplateActivity (
+              id VARCHAR(255) PRIMARY KEY,
+              templateId VARCHAR(255) NULL,
+              action VARCHAR(48) NOT NULL,
+              detail JSON NULL,
+              actorId VARCHAR(255) NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              KEY idx_wta_template (templateId, createdAt),
+              KEY idx_wta_action (action, createdAt)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create WaTemplateActivity table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS WaNotifyMapping (
+              id VARCHAR(255) PRIMARY KEY,
+              notifyKind VARCHAR(48) NOT NULL,
+              templateId VARCHAR(255) NOT NULL,
+              language VARCHAR(16) NOT NULL,
+              isEnabled TINYINT(1) NOT NULL DEFAULT 0,
+              optInAckAt DATETIME NULL,
+              optInAckBy VARCHAR(255) NULL,
+              optInAckVersion VARCHAR(16) NULL,
+              createdBy VARCHAR(255) NULL,
+              updatedBy VARCHAR(255) NULL,
+              createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uq_wnm_kind_enabled (notifyKind),
+              KEY idx_wnm_template (templateId)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create WaNotifyMapping table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS WaTemplateSyncRun (
+              id VARCHAR(255) PRIMARY KEY,
+              \`trigger\` VARCHAR(16) NOT NULL,
+              status VARCHAR(16) NOT NULL,
+              scanned INT NOT NULL DEFAULT 0,
+              updated INT NOT NULL DEFAULT 0,
+              created INT NOT NULL DEFAULT 0,
+              skipped INT NOT NULL DEFAULT 0,
+              errorCode VARCHAR(32) NULL,
+              errorMessage TEXT NULL,
+              startedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              finishedAt DATETIME NULL,
+              KEY idx_wtsr_started (startedAt)
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create WaTemplateSyncRun table:", err.message);
+        }
+
+        try {
+          await conn.query(`
+            CREATE TABLE IF NOT EXISTS WaCloudRuntime (
+              id VARCHAR(32) PRIMARY KEY,
+              syncLeaseHolder VARCHAR(64) NULL,
+              syncLeaseUntil DATETIME NULL,
+              lastSyncOkAt DATETIME NULL,
+              lastApiOkAt DATETIME NULL,
+              lastScheduledSyncAt DATETIME NULL,
+              healthSnapshot JSON NULL,
+              healthFetchedAt DATETIME NULL,
+              accountTypeOk TINYINT(1) NULL,
+              accountTypeCheckedAt DATETIME NULL,
+              updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          `);
+        } catch (err: any) {
+          console.error("[DB] ❌ Failed to create WaCloudRuntime table:", err.message);
+        }
+
         // Migrate: add aiEnabled column to WhatsAppConfig if missing
         try {
           await conn.query(`ALTER TABLE WhatsAppConfig ADD COLUMN aiEnabled TINYINT(1) DEFAULT 0`);
@@ -2238,6 +2436,11 @@ if (typeof window === "undefined") {
           "WaCloudConfig",
           "WaCloudTemplate",
           "WaMessageLog",
+          // WhatsApp Utility Template Management companion tables (design §8).
+          "WaTemplateRevision",
+          "WaTemplateActivity",
+          "WaNotifyMapping",
+          "WaTemplateSyncRun",
         ];
         for (const tbl of tablesToNormalize) {
           try {

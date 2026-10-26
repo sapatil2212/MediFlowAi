@@ -93,6 +93,8 @@ let routes: {
   prior?: any;
   /** Successive answers for the failed-status row lookup (overrides `prior`). */
   priorSeq?: any[];
+  /** The WaCloudTemplate row returned for a template-webhook lookup. */
+  template?: any;
 };
 /** affectedRows returned by the async-fallback claim UPDATE. */
 let claimAffectedRows = 1;
@@ -131,6 +133,7 @@ beforeEach(() => {
   queryMock.mockResolvedValue([]);
 
   queryOneMock.mockImplementation(async (sql: string) => {
+    if (sql.includes("FROM WaCloudTemplate")) return routes.template ?? null;
     if (sql.includes("kind = 'autoReply'")) return routes.cooldown ?? null;
     if (sql.includes("WHERE metaMessageId = ?")) {
       if (routes.priorSeq) return routes.priorSeq.shift() ?? null;
@@ -693,5 +696,106 @@ describe("async Web fallback", () => {
     expect(sqlCalls("FIELD(?, 'queued','sent','delivered','read')").length).toBe(1);
     expect(sqlCalls("SET webFallbackAttempted = 1").length).toBe(0);
     expect(enqueueWAMock).not.toHaveBeenCalled();
+  });
+});
+
+// ── Template-field routing (MV-13) ───────────────────────────────────────────
+
+describe("template webhook field routing", () => {
+  function tplPayload(opts: {
+    field?: string;
+    metaTemplateId?: string;
+    event?: string;
+    entryId?: string;
+    entryTime?: number;
+  }) {
+    return {
+      entry: [
+        {
+          id: opts.entryId ?? "456", // the configured Messaging account (WABA) id
+          time: opts.entryTime ?? Math.floor(Date.now() / 1000),
+          changes: [
+            {
+              field: opts.field ?? "message_template_status_update",
+              value: {
+                event: opts.event ?? "APPROVED",
+                message_template_id: opts.metaTemplateId ?? 500,
+                message_template_name: "a_tpl",
+                message_template_language: "en_US",
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  const TPL_ROW = {
+    id: "local-1",
+    name: "a_tpl",
+    language: "en_US",
+    metaTemplateId: "500",
+    metaStatus: "PENDING",
+    metaCategory: "UTILITY",
+    status: "PENDING",
+    parameterFormat: "POSITIONAL",
+    source: "LOCAL",
+    messagingAccountId: "456",
+  };
+
+  it("applies a status update and records it under a distinct idempotency key", async () => {
+    routes.template = { ...TPL_ROW };
+    const res = await post(tplPayload({ event: "APPROVED" }));
+    expect(res.status).toBe(200);
+    await drainWaBackgroundTasks();
+
+    // The template row's metaStatus is updated via applyMetaState.
+    const stateWrites = sqlCalls("UPDATE WaCloudTemplate");
+    expect(stateWrites.length).toBeGreaterThanOrEqual(1);
+
+    // The idempotency key is the template-specific one.
+    const eventInserts = sqlCalls("INSERT INTO WebhookEvent");
+    expect(eventInserts.length).toBe(1);
+    expect(String(eventInserts[0][1][1])).toMatch(/^wa-tpl:message_template_status_update:500:/);
+  });
+
+  it("ignores a template change for a different Messaging account (MV-01)", async () => {
+    routes.template = { ...TPL_ROW };
+    const res = await post(tplPayload({ entryId: "999", event: "REJECTED" }));
+    expect(res.status).toBe(200);
+    await drainWaBackgroundTasks();
+    // No WaCloudTemplate state write — the change was ignored.
+    expect(sqlCalls("UPDATE WaCloudTemplate").length).toBe(0);
+  });
+
+  it("does not reprocess a re-delivered template change (idempotency)", async () => {
+    routes.template = { ...TPL_ROW };
+    const payload = tplPayload({ entryTime: 1700000000 });
+    await post(payload);
+    await drainWaBackgroundTasks();
+    const firstWrites = sqlCalls("UPDATE WaCloudTemplate").length;
+    await post(payload);
+    await drainWaBackgroundTasks();
+    // The duplicate eventKey is skipped — no additional state write.
+    expect(sqlCalls("UPDATE WaCloudTemplate").length).toBe(firstWrites);
+  });
+
+  it("leaves the messages path untouched (a statuses change is never a template change)", async () => {
+    routes.template = { ...TPL_ROW };
+    await post({
+      entry: [
+        {
+          id: "456",
+          time: 1700000001,
+          changes: [
+            { field: "messages", value: { statuses: [{ id: "wamid.Z", status: "sent" }] } },
+          ],
+        },
+      ],
+    });
+    await drainWaBackgroundTasks();
+    // The status path ran, not the template path.
+    expect(sqlCalls("FIELD(?, 'queued','sent','delivered','read')").length).toBe(1);
+    expect(sqlCalls("UPDATE WaCloudTemplate").length).toBe(0);
   });
 });

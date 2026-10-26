@@ -36,6 +36,12 @@ export interface AptNotifyContext {
   tokenNo?: number | null;
   /** Absolute patient join link for video consultations (Req 13). */
   joinLink?: string | null;
+  /**
+   * The appointment id, threaded through for the template notification gate.
+   * Used to derive the patient-visible bookingCode (DP-08: first 8 chars,
+   * upper-cased). Optional; the plain-text path never reads it.
+   */
+  appointmentId?: string | null;
 }
 
 /**
@@ -80,10 +86,11 @@ function fmtTime(d: Date, slot?: string | null): string {
 // order of each spec is the POSITIONAL order of the {{n}} placeholders in the
 // approved Meta template body.
 //
-// Templates are DORMANT: the official send path is plain text (the same body as
-// WhatsApp Web, see whatsapp-router.ts). This spec is kept for the Templates
-// tab only. Video kinds (videoLinkIssued / videoLinkReissued) are present for
-// completeness/tests.
+// LEGACY: this fixed spec and expectedVarCount no longer gate template sends.
+// Per-template variableMappings (placeholder key → catalogue field) replace it
+// (DP-09). TEMPLATE_VAR_SPEC / buildTemplateVars stay exported because existing
+// tests reference them, and legacy `variables` rows are read as positional body
+// mappings. The runtime field resolver is resolveTemplateField() below.
 // ─────────────────────────────────────────────────────────────────────────────
 export const TEMPLATE_VAR_SPEC: Record<
   AptNotifyKind,
@@ -148,6 +155,43 @@ export function countBodyPlaceholders(bodyText: string): number {
     seen.add(m[1]);
   }
   return seen.size;
+}
+
+/**
+ * Resolves a single template catalogue field for this appointment/tenant (§15,
+ * DP-08/09). Reuses the private fmtDate/fmtTime so a template's date/time read
+ * identically to the plain-text body. Returns null when the field cannot be
+ * resolved for this context (→ the gate falls back to the text path, never
+ * sending a blank param). bookingCode = first 8 chars of appointmentId,
+ * upper-cased — the patient-visible Confirmation Code (DP-08).
+ */
+export function resolveTemplateField(
+  field: "name" | "clinicName" | "doctorName" | "date" | "time" | "bookingCode",
+  ctx: AptNotifyContext,
+): string | null {
+  switch (field) {
+    case "name":
+      return ctx.name && ctx.name.trim() !== "" ? ctx.name : null;
+    case "clinicName":
+      return ctx.clinicName && ctx.clinicName.trim() !== "" ? ctx.clinicName : null;
+    case "doctorName":
+      return ctx.doctorName && ctx.doctorName.trim() !== "" ? ctx.doctorName : null;
+    case "date":
+      return ctx.dateTime instanceof Date && !Number.isNaN(ctx.dateTime.getTime())
+        ? fmtDate(ctx.dateTime)
+        : null;
+    case "time":
+      return ctx.dateTime instanceof Date && !Number.isNaN(ctx.dateTime.getTime())
+        ? fmtTime(ctx.dateTime, ctx.timeSlot)
+        : null;
+    case "bookingCode": {
+      const id = ctx.appointmentId;
+      if (!id || String(id).trim() === "") return null;
+      return String(id).slice(0, 8).toUpperCase();
+    }
+    default:
+      return null;
+  }
 }
 
 /** Builds the WhatsApp message body for a given notification kind. */
@@ -221,11 +265,18 @@ export async function sendAppointmentNotification(
     const { sendPatientMessage } = await import("./whatsapp-router");
     const result = await sendPatientMessage({
       tenantId,
+      appointmentId: ctx.appointmentId ?? undefined,
       notifyKind: kind,
       recipientPhone: phone,
       ctx,
       buildMessage: () => buildAppointmentMessage(kind, ctx),
     });
+    if (!result.delivered) {
+      console.warn(
+        `[WhatsApp][${kind}] Notification not delivered for ${ctx.name} (tenant: ${tenantId}, logId: ${result.logId}).` +
+          (result.error ? ` Reason: ${result.error}` : ""),
+      );
+    }
     return result.delivered;
   } catch (err: any) {
     console.error(`[WhatsApp][${kind}] Failed to enqueue notification:`, err?.message);

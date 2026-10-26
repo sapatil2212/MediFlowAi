@@ -1214,6 +1214,7 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
         dateTime: dateVal,
         timeSlot: tSlot,
         tokenNo,
+        appointmentId: id,
       });
     }
 
@@ -1470,6 +1471,7 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
         dateTime: dateVal,
         timeSlot: data.timeSlot || null,
         tokenNo,
+        appointmentId: id,
       });
     }
 
@@ -1827,6 +1829,7 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
           dateTime: dateVal,
           timeSlot: tSlot,
           tokenNo,
+          appointmentId: data.id,
         });
       }
 

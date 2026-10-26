@@ -15,20 +15,42 @@ const getWaCloudConfigServerFn = vi.fn();
 const saveWaCloudConfigServerFn = vi.fn();
 const testWaCloudConfigServerFn = vi.fn();
 
-vi.mock("../../lib/admin", () => ({
-  getWaCloudConfigServerFn: (...args: any[]) => getWaCloudConfigServerFn(...args),
-  saveWaCloudConfigServerFn: (...args: any[]) => saveWaCloudConfigServerFn(...args),
-  testWaCloudConfigServerFn: (...args: any[]) => testWaCloudConfigServerFn(...args),
-  listWaCloudTemplatesServerFn: vi.fn(async () => []),
-  saveWaCloudTemplateServerFn: vi.fn(),
-  submitWaCloudTemplateServerFn: vi.fn(),
-  syncWaCloudTemplateStatusServerFn: vi.fn(),
-  getWaCloudLogsServerFn: vi.fn(async () => ({ recent: [], breakdown: {} })),
-}));
-
-vi.mock("../../lib/auth", () => ({
-  uploadWATemplateHeaderImageServerFn: vi.fn(),
-}));
+// The Templates sub-tab now mounts <TemplatesModule/>, which (with its child
+// views) imports the whole wa-template server-fn surface. Stub every one so no
+// auth/SQL/Meta call is made and the module can mount.
+vi.mock("../../lib/admin", () => {
+  const ok = (extra: any = {}) => vi.fn(async () => ({ ok: true, ...extra }));
+  return {
+    getWaCloudConfigServerFn: (...args: any[]) => getWaCloudConfigServerFn(...args),
+    saveWaCloudConfigServerFn: (...args: any[]) => saveWaCloudConfigServerFn(...args),
+    testWaCloudConfigServerFn: (...args: any[]) => testWaCloudConfigServerFn(...args),
+    getWaCloudLogsServerFn: vi.fn(async () => ({ recent: [], breakdown: {} })),
+    waTemplateDashboardServerFn: ok({
+      summary: { total: 0, byBucket: {}, byStatus: {}, lastSyncOkAt: null, lastApiOkAt: null },
+    }),
+    waSyncAllServerFn: ok(),
+    waTemplateListServerFn: ok({ rows: [], total: 0 }),
+    waTemplateDetailsServerFn: ok({ row: null }),
+    waTemplateRevisionsServerFn: ok({ rows: [] }),
+    waTemplateActivityServerFn: ok({ rows: [] }),
+    waTemplateSyncRunsServerFn: ok({ rows: [] }),
+    waAccountHealthServerFn: ok({ health: null }),
+    waRefreshHealthServerFn: ok(),
+    waNotifyMappingsServerFn: ok({ rows: [] }),
+    waCreateDraftServerFn: ok({ id: "x" }),
+    waUpdateDraftServerFn: ok({ id: "x" }),
+    waValidateDraftServerFn: ok({ payload: {}, warnings: [] }),
+    waSubmitTemplateServerFn: ok({ metaStatus: "PENDING" }),
+    waCloneTemplateServerFn: ok({ id: "x" }),
+    waArchiveDraftServerFn: ok(),
+    waDeleteDraftServerFn: ok(),
+    waDeleteMetaTemplateServerFn: ok(),
+    waReconcileTemplateServerFn: ok(),
+    waAssignMappingServerFn: ok({ mapping: {} }),
+    waSetMappingEnabledServerFn: ok({ mapping: {} }),
+    waRemoveMappingServerFn: ok(),
+  };
+});
 
 import { WaCloudAdminPanel } from "./WaCloudAdminPanel";
 
@@ -36,6 +58,12 @@ const CONFIG = {
   phoneNumberId: "123",
   wabaId: "456",
   apiVersion: "v21.0",
+  apiVersionInfo: {
+    value: "v21.0",
+    source: "db",
+    expiresOn: "2027-01-21",
+    warning: "API version v21.0 expires on 2027-01-21 (soon); plan to update it in Credentials.",
+  },
   isEnabled: true,
   tokenConfigured: true,
   tokenLast4: "AB12",
@@ -132,6 +160,13 @@ describe("WaCloudAdminPanel — Credentials", () => {
     ).toBeInTheDocument();
   });
 
+  it("labels the WABA field as the Messaging Account ID and shows the API version warning", async () => {
+    await renderPanel();
+    expect(screen.getByText("Messaging Account ID (legacy WABA ID)")).toBeInTheDocument();
+    expect(screen.getByText(/v21\.0 expires on 2027-01-21/)).toBeInTheDocument();
+    expect(screen.getByText(/message_template_status_update/)).toBeInTheDocument();
+  });
+
   it("shows the Meta-verified phone details after a save", async () => {
     saveWaCloudConfigServerFn.mockResolvedValue({
       ok: true,
@@ -149,5 +184,13 @@ describe("WaCloudAdminPanel — Credentials", () => {
     expect(box).toHaveTextContent("BookMyTime");
     expect(box).toHaveTextContent("+91 88305 53868");
     expect(box).toHaveTextContent("GREEN");
+  });
+});
+
+describe("WaCloudAdminPanel — Templates sub-tab", () => {
+  it("mounts the Utility Template Management module on the Templates tab", async () => {
+    render(<WaCloudAdminPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    expect(await screen.findByTestId("templates-module")).toBeInTheDocument();
   });
 });

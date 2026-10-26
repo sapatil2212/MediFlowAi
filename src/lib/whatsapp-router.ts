@@ -5,11 +5,15 @@
 // whether a message goes through the official Meta Cloud API (primary) or the
 // WhatsApp Web fallback, logs the attempt in WaMessageLog, and NEVER throws.
 //
-// TEXT MODE:
-//   The official channel sends exactly the same plain text as WhatsApp Web
-//   (params.buildMessage()) via sendTextMessage. No Meta template is involved,
-//   so every notify kind (video-link kinds included) routes 'official' whenever
-//   the Cloud API is available.
+// SEND MODE (text by default, template when mapped):
+//   The official channel sends the same plain text as WhatsApp Web
+//   (params.buildMessage()) via sendTextMessage UNLESS the Super Admin has
+//   mapped the notify kind to an APPROVED UTILITY template and enabled it. In
+//   that case resolveTemplatePlan() returns a plan and the official attempt
+//   uses sendTemplateMessage, recording WaMessageLog.templateId while storing
+//   the SAME AES-encrypted plain-text body (so the async Web fallback is
+//   unchanged). With no enabled mapping the gate returns null and this path is
+//   byte-identical to the text-only behaviour (templateId stays NULL).
 //
 // META 24-HOUR RULE:
 //   Free-form text is only allowed within 24h of the recipient's last message
@@ -44,7 +48,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import crypto from "crypto";
 import { execute } from "./db";
-import { isCloudAvailable, normalizeWaPhone, sendTextMessage } from "./whatsapp-cloud";
+import {
+  isCloudAvailable,
+  normalizeWaPhone,
+  sendTemplateMessage,
+  sendTextMessage,
+} from "./whatsapp-cloud";
 import { isWhatsAppReady, type AptNotifyKind, type AptNotifyContext } from "./appointment-notify";
 import { enqueueWA } from "./whatsapp";
 import { decryptSecret, encryptSecret, isEncKeyConfigured } from "./wa-crypto";
@@ -127,20 +136,59 @@ export async function sendPatientMessage(
 
     const route = params.channel === "web" ? "web" : decideRoute(params.notifyKind, { available });
 
-    // Insert the provisional log row (templateId stays NULL in text mode). No
-    // body here: it is stored, encrypted, only once Meta accepts the send.
+    // Resolve a template plan only on the official route. The gate returns null
+    // unless every gate passes (Cloud enabled, enabled+opt-in mapping, APPROVED
+    // UTILITY template, all variables resolvable); null ⇒ the byte-identical
+    // text path (templateId stays NULL — the original-incident invariant).
+    let plan: Awaited<ReturnType<typeof import("./wa-template-notify").resolveTemplatePlan>> = null;
+    if (route === "official") {
+      try {
+        const { resolveTemplatePlan } = await import("./wa-template-notify");
+        plan = await resolveTemplatePlan(params.notifyKind, {
+          ...params.ctx,
+          recipientPhone: params.recipientPhone,
+        });
+      } catch {
+        plan = null; // any gate error → text path
+      }
+    }
+
+    // Insert the provisional log row. templateId is NULL unless a plan resolved;
+    // no body here — it is stored, encrypted, only once Meta accepts the send.
     logId = crypto.randomUUID();
-    await execute(
-      `INSERT INTO WaMessageLog
-         (id, tenantId, direction, recipient, kind, templateId, channel, status, officialAttempted, createdAt)
-       VALUES (?, ?, 'out', ?, ?, NULL, ?, 'queued', 0, NOW())`,
-      [logId, params.tenantId, recipient, params.notifyKind, route],
-    );
+    if (plan) {
+      await execute(
+        `INSERT INTO WaMessageLog
+           (id, tenantId, direction, recipient, kind, templateId, channel, status, officialAttempted, createdAt)
+         VALUES (?, ?, 'out', ?, ?, ?, ?, 'queued', 0, NOW())`,
+        [logId, params.tenantId, recipient, params.notifyKind, plan.templateId, route],
+      );
+    } else {
+      await execute(
+        `INSERT INTO WaMessageLog
+           (id, tenantId, direction, recipient, kind, templateId, channel, status, officialAttempted, createdAt)
+         VALUES (?, ?, 'out', ?, ?, NULL, ?, 'queued', 0, NOW())`,
+        [logId, params.tenantId, recipient, params.notifyKind, route],
+      );
+    }
 
     // ── Official attempt ──
     if (route === "official") {
       await execute("UPDATE WaMessageLog SET officialAttempted = 1 WHERE id = ?", [logId]);
-      const result = await sendTextMessage({ to: recipient, body });
+      // When a plan resolved, send the approved template; otherwise send the
+      // same plain text as before. Either way the SAME plain-text body is
+      // sealed for the async Web fallback (DP-05).
+      const result = plan
+        ? await sendTemplateMessage({
+            to: recipient,
+            templateName: plan.templateName,
+            language: plan.language,
+            parameterFormat: plan.parameterFormat,
+            bodyParams: plan.bodyParams,
+            headerParams: plan.headerParams,
+            urlButtons: plan.urlButtons,
+          })
+        : await sendTextMessage({ to: recipient, body });
       if (result.ok) {
         // The wamid and the sealed body land in one UPDATE, so a 'failed'
         // status that finds the wamid also finds the body.
@@ -156,6 +204,10 @@ export async function sendPatientMessage(
       // Record the official failure (a synchronous 131047 outside the 24h
       // window, another Meta error, or transport), then fall through to web.
       const errCode = result.kind === "meta_error" ? result.code : "transport";
+      console.warn(
+        `[WaRouter] Official Cloud API send failed for ${params.notifyKind} (tenant: ${params.tenantId}): ` +
+          `${result.kind === "meta_error" ? `Meta error ${result.code}` : "transport error"} — ${result.message}`,
+      );
       await execute(
         `UPDATE WaMessageLog
             SET officialStatus = 'failed', officialErrorCode = ?, officialErrorMessage = ?,
@@ -179,6 +231,10 @@ export async function sendPatientMessage(
     await execute("UPDATE WaMessageLog SET status = 'failed', updatedAt = NOW() WHERE id = ?", [
       logId,
     ]);
+    console.error(
+      `[WaRouter] Both channels failed for ${params.notifyKind} (tenant: ${params.tenantId}): ` +
+        `Cloud unavailable or failed, WhatsApp Web not connected. Log ID: ${logId}`,
+    );
     return {
       delivered: false,
       channel: null,

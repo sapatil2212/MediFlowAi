@@ -49,7 +49,9 @@ export async function startWhatsAppServer() {
   const port = parseInt(process.env.WA_PORT || "3001");
   const alreadyRunning = await checkPortInUse(port);
   if (alreadyRunning) {
-    console.log(`[WA Launcher] WhatsApp microservice is already active on port ${port}. Skipping spawn.`);
+    console.log(
+      `[WA Launcher] WhatsApp microservice is already active on port ${port}. Skipping spawn.`,
+    );
     return;
   }
 
@@ -64,7 +66,9 @@ export async function startWhatsAppServer() {
   function spawnProcess() {
     checkPortInUse(port).then((inUse) => {
       if (inUse) {
-        console.log(`[WA Launcher] WhatsApp microservice is already active on port ${port}. Skipping spawn.`);
+        console.log(
+          `[WA Launcher] WhatsApp microservice is already active on port ${port}. Skipping spawn.`,
+        );
         return;
       }
 
@@ -103,14 +107,12 @@ export async function startWhatsAppServer() {
             }
             globalForWa.lastRestartTime = now;
             globalForWa.consecutiveRestarts = (globalForWa.consecutiveRestarts || 0) + 1;
-
             if (globalForWa.consecutiveRestarts > 3) {
               console.warn(
-                `[WA Launcher] ⚠️ WhatsApp server failed 3 times consecutively. Halting auto-restart to prevent crash loop. Check port ${port}.`,
+                `[WA Launcher] ⚠ WhatsApp server failed 3 times consecutively. Halting auto-restart to prevent crash loop. Check port ${port}.`,
               );
               return;
             }
-
             console.log(
               `[WA Launcher] Restarting WhatsApp server process in 5 seconds (attempt ${globalForWa.consecutiveRestarts}/3)...`,
             );

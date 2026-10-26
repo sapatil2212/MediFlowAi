@@ -80,16 +80,16 @@ describe("normalizeWaPhone", () => {
 });
 
 describe("sendTextMessage", () => {
-  it("POSTs a text payload to the v21.0 messages endpoint and returns the wamid", async () => {
+  it("POSTs a text payload to the v26.0 messages endpoint and returns the wamid", async () => {
     fetchMock.mockResolvedValueOnce(jsonRes(200, { messages: [{ id: "wamid.X" }] }));
 
     const res = await sendTextMessage({ to: "918830553868", body: "Hello there" });
 
-    expect(DEFAULT_API_VERSION).toBe("v21.0");
+    expect(DEFAULT_API_VERSION).toBe("v26.0");
     expect(res).toEqual({ ok: true, messageId: "wamid.X" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://graph.facebook.com/v21.0/123/messages");
+    expect(url).toBe("https://graph.facebook.com/v26.0/123/messages");
     expect(init.method).toBe("POST");
     expect(init.headers.Authorization).toBe(`Bearer ${TOKEN}`);
     expect(JSON.parse(init.body)).toEqual({

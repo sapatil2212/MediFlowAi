@@ -11,10 +11,18 @@
 // or a log line.
 //
 // PLAIN-TEXT MODE:
-//   The send path is sendTextMessage: the official channel sends exactly the
-//   same free-form text as the WhatsApp Web channel. The template helpers below
-//   (sendTemplateMessage, submitTemplate, syncTemplateStatus, sendTestTemplate)
-//   are dormant: kept for the Templates tab, not used for patient sends.
+//   The default patient send path is sendTextMessage: the official channel
+//   sends exactly the same free-form text as the WhatsApp Web channel. A send
+//   switches to sendTemplateMessage ONLY when the Super Admin has mapped the
+//   notify kind to an APPROVED UTILITY template and enabled it (see
+//   wa-template-notify.ts); otherwise the text path is byte-identical to today.
+//
+// TEMPLATE MANAGEMENT (v26.0):
+//   Every Meta management call (create/list/get/edit/delete templates, WABA /
+//   phone / health / subscribed-apps / debug_token reads) goes through the
+//   single typed graphRequest<T> helper below, which fixes the host, applies a
+//   10s timeout, maps errors to a GraphResult union (MV-16), and records
+//   lastApiOkAt via the template repo on any 2xx. No token is ever logged.
 //
 // META 24-HOUR RULE:
 //   Free-form text is only allowed within 24 hours of the recipient's last
@@ -33,9 +41,25 @@ import { decryptSecret } from "./wa-crypto";
 
 const GRAPH_HOST = "https://graph.facebook.com";
 const REQUEST_TIMEOUT_MS = 10000;
-export const DEFAULT_API_VERSION = "v21.0";
+export const DEFAULT_API_VERSION = "v26.0";
 /** Meta's maximum length for a text message body. */
 export const MAX_TEXT_BODY_LENGTH = 4096;
+
+/**
+ * Graph API version expiry dates (MV-02, source S16 — retrieved 25 Oct 2026).
+ * `null` means "released, expiry TBD". The Account Health panel warns when the
+ * effective version expires within 120 days or is unknown. The code default
+ * (v26.0) is intentionally not the saved production row (likely v21.0, which
+ * expires 21 Jan 2027); saved rows are left untouched (D2).
+ */
+export const API_VERSION_EXPIRY: Record<string, string | null> = {
+  "v26.0": null,
+  "v25.0": "2028-07-29",
+  "v24.0": "2028-02-18",
+  "v23.0": "2027-10-08",
+  "v22.0": "2027-05-20",
+  "v21.0": "2027-01-21",
+};
 
 /**
  * Normalizes a phone number exactly like wa-server.cjs: strip every non-digit,
@@ -284,16 +308,31 @@ export async function verifyPhoneNumber(args: {
   }
 }
 
-export interface SendTemplateArgs {
+// ─────────────────────────────────────────────────────────────────────────────
+// Template runtime send (MV-17). Rewritten to the documented runtime shape:
+//   POST /{phoneNumberId}/messages with template.language.code, body params
+//   {type:'text', text} (+ parameter_name when NAMED) in placeholder order, a
+//   header component for a TEXT-header parameter, and URL-button components
+//   {type:'button', sub_type:'url', index, parameters:[{type:'text', text}]}
+//   whose suffix value is percent-encoded. Composed from documented pieces; the
+//   exact TEXT-header send example is not in current docs (§5 item 18), so the
+//   failure mode is safe (Meta error → the router's Web fallback).
+// ─────────────────────────────────────────────────────────────────────────────
+export interface SendTemplateMessageArgs {
   to: string;
   templateName: string;
   language: string;
-  bodyParams?: string[];
-  headerImageUrl?: string | null;
+  parameterFormat?: "POSITIONAL" | "NAMED";
+  /** Ordered body params (placeholder order); `name` only for NAMED. */
+  bodyParams?: Array<{ text: string; name?: string }>;
+  /** Single TEXT-header param, if the template has a parameterised text header. */
+  headerParams?: Array<{ text: string; name?: string }>;
+  /** URL-button dynamic suffixes, keyed by the button index. */
+  urlButtons?: Array<{ index: number; suffix: string }>;
 }
 
-/** POST a template message to the Cloud API. */
-export async function sendTemplateMessage(args: SendTemplateArgs): Promise<CloudSendResult> {
+/** POST a template message to the Cloud API (documented runtime shape, MV-17). */
+export async function sendTemplateMessage(args: SendTemplateMessageArgs): Promise<CloudSendResult> {
   if (!isOfficialRecipientAllowed(args.to)) {
     return { ok: false, kind: "transport", message: TEST_RECIPIENT_BLOCKED };
   }
@@ -302,22 +341,31 @@ export async function sendTemplateMessage(args: SendTemplateArgs): Promise<Cloud
     return { ok: false, kind: "transport", message: "Cloud API not configured" };
   }
 
+  const named = args.parameterFormat === "NAMED";
+  const toParam = (p: { text: string; name?: string }) =>
+    named && p.name
+      ? { type: "text", parameter_name: p.name, text: p.text }
+      : { type: "text", text: p.text };
+
   const components: any[] = [];
-  if (args.headerImageUrl) {
-    components.push({
-      type: "header",
-      parameters: [{ type: "image", image: { link: args.headerImageUrl } }],
-    });
+  if (args.headerParams && args.headerParams.length > 0) {
+    components.push({ type: "header", parameters: args.headerParams.map(toParam) });
   }
   if (args.bodyParams && args.bodyParams.length > 0) {
+    components.push({ type: "body", parameters: args.bodyParams.map(toParam) });
+  }
+  for (const btn of args.urlButtons ?? []) {
     components.push({
-      type: "body",
-      parameters: args.bodyParams.map((text) => ({ type: "text", text })),
+      type: "button",
+      sub_type: "url",
+      index: String(btn.index),
+      parameters: [{ type: "text", text: encodeURIComponent(btn.suffix) }],
     });
   }
 
   const body = {
     messaging_product: "whatsapp",
+    recipient_type: "individual",
     to: args.to,
     type: "template",
     template: {
@@ -352,124 +400,346 @@ export async function sendTemplateMessage(args: SendTemplateArgs): Promise<Cloud
   }
 }
 
-export interface SubmitTemplateArgs {
-  name: string;
-  language: string;
-  category: string;
-  components: any[];
+// ─────────────────────────────────────────────────────────────────────────────
+// Typed Graph transport for template management + account health (design §9).
+//
+// graphRequest<T> is the single place every management call flows through. It
+// fixes the host, applies a 10s timeout, parses safely, maps data.error to a
+// meta_error (MV-16 fields) and 5xx/network/timeout to transport, records
+// lastApiOkAt via the repo on any 2xx, and logs ONLY {method,path,status,code,
+// fbtrace_id} — never a token or a full URL carrying one.
+// ─────────────────────────────────────────────────────────────────────────────
+export type GraphResult<T> =
+  | { ok: true; data: T }
+  | {
+      ok: false;
+      kind: "meta_error" | "transport";
+      code: string;
+      subcode?: string;
+      message: string;
+      userTitle?: string;
+      userMsg?: string;
+      isTransient?: boolean;
+      fbtraceId?: string;
+    };
+
+/** Records lastApiOkAt best-effort; never throws into the caller. */
+async function recordApiOk(): Promise<void> {
+  try {
+    const { getTemplateRepo } = await import("./wa-template-repo");
+    await getTemplateRepo().markApiOk();
+  } catch {
+    /* best effort — a missing repo/DB must never fail a Graph call */
+  }
 }
 
-/** POST a template definition to the WABA for Meta review. */
-export async function submitTemplate(
-  templateData: SubmitTemplateArgs,
-): Promise<CloudSendResult & { metaTemplateId?: string }> {
-  const cfg = await resolveCloudConfig();
-  if (!cfg || !cfg.wabaId || !cfg.accessToken) {
-    return { ok: false, kind: "transport", message: "Cloud API not configured" };
-  }
-
-  const body = {
-    name: templateData.name,
-    language: templateData.language,
-    category: templateData.category,
-    components: templateData.components,
-  };
-
+export async function graphRequest<T>(args: {
+  method: "GET" | "POST" | "DELETE";
+  path: string;
+  query?: Record<string, string>;
+  body?: unknown;
+  accessToken: string;
+  apiVersion: string;
+}): Promise<GraphResult<T>> {
+  const qs = args.query
+    ? "?" +
+      Object.entries(args.query)
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        .join("&")
+    : "";
+  const url = `${GRAPH_HOST}/${args.apiVersion}/${args.path}${qs}`;
   try {
-    const res = await fetch(`${GRAPH_HOST}/${cfg.apiVersion}/${cfg.wabaId}/message_templates`, {
-      method: "POST",
+    const res = await fetch(url, {
+      method: args.method,
       headers: {
-        Authorization: `Bearer ${cfg.accessToken}`,
-        "Content-Type": "application/json",
+        Authorization: `Bearer ${args.accessToken}`,
+        ...(args.body != null ? { "Content-Type": "application/json" } : {}),
       },
-      body: JSON.stringify(body),
+      ...(args.body != null ? { body: JSON.stringify(args.body) } : {}),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     const data = await parseJsonSafe(res);
-    if (res.ok && data?.id) {
-      return { ok: true, messageId: String(data.id), metaTemplateId: String(data.id) };
+    if (res.ok) {
+      void recordApiOk();
+      return { ok: true, data: data as T };
     }
-    if (res.status >= 400 && res.status < 500 && data?.error) {
-      return metaErrorResult(data);
-    }
-    return { ok: false, kind: "transport", message: `Graph API returned ${res.status}` };
-  } catch (err: any) {
-    return { ok: false, kind: "transport", message: err?.message || "network error" };
-  }
-}
-
-export type TemplateStatus = "APPROVED" | "PENDING" | "REJECTED" | "DRAFT";
-
-export type SyncTemplateResult =
-  | { ok: true; status: TemplateStatus; reason?: string; metaTemplateId?: string }
-  | { ok: false; code: string; message: string };
-
-/** GET template review status from the WABA, filtered by name. */
-export async function syncTemplateStatus(args: {
-  name?: string;
-  language?: string;
-  metaTemplateId?: string;
-}): Promise<SyncTemplateResult> {
-  const cfg = await resolveCloudConfig();
-  if (!cfg || !cfg.wabaId || !cfg.accessToken) {
-    return { ok: false, code: "unconfigured", message: "Cloud API not configured" };
-  }
-
-  const params = new URLSearchParams();
-  if (args.name) params.set("name", args.name);
-  params.set("fields", "name,status,category,language,rejected_reason,id");
-
-  try {
-    const res = await fetch(
-      `${GRAPH_HOST}/${cfg.apiVersion}/${cfg.wabaId}/message_templates?${params.toString()}`,
-      {
-        method: "GET",
-        headers: { Authorization: `Bearer ${cfg.accessToken}` },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      },
-    );
-    const data = await parseJsonSafe(res);
-    if (!res.ok) {
-      const error = data?.error || {};
+    const error = data?.error;
+    if (error && res.status >= 400 && res.status < 500) {
+      console.warn(
+        `[WaCloud] graph ${args.method} ${args.path} status=${res.status} code=${
+          error.code ?? "?"
+        } fbtrace=${error.fbtrace_id ?? "?"}`,
+      );
       return {
         ok: false,
-        code: error.code != null ? String(error.code) : String(res.status),
-        message: error.message || `Graph API returned ${res.status}`,
+        kind: "meta_error",
+        code: error.code != null ? String(error.code) : "unknown",
+        subcode: error.error_subcode != null ? String(error.error_subcode) : undefined,
+        message: error.message || "Meta API error",
+        userTitle: error.error_user_title != null ? String(error.error_user_title) : undefined,
+        userMsg: error.error_user_msg != null ? String(error.error_user_msg) : undefined,
+        isTransient: error.is_transient === true,
+        fbtraceId: error.fbtrace_id != null ? String(error.fbtrace_id) : undefined,
       };
     }
-    const list: any[] = Array.isArray(data?.data) ? data.data : [];
-    const match =
-      (args.language ? list.find((t) => t.language === args.language) : null) ||
-      (args.metaTemplateId ? list.find((t) => String(t.id) === args.metaTemplateId) : null) ||
-      list[0];
-    if (!match) {
-      return { ok: false, code: "not_found", message: "Template not found on Meta" };
-    }
-    const rawStatus = String(match.status || "").toUpperCase();
-    const status: TemplateStatus =
-      rawStatus === "APPROVED"
-        ? "APPROVED"
-        : rawStatus === "REJECTED"
-          ? "REJECTED"
-          : rawStatus === "PENDING" || rawStatus === "IN_APPEAL" || rawStatus === "PENDING_DELETION"
-            ? "PENDING"
-            : "DRAFT";
+    console.warn(`[WaCloud] graph ${args.method} ${args.path} status=${res.status}`);
     return {
-      ok: true,
-      status,
-      reason: match.rejected_reason || undefined,
-      metaTemplateId: match.id ? String(match.id) : undefined,
+      ok: false,
+      kind: "transport",
+      code: String(res.status),
+      message: `Graph API returned ${res.status}`,
     };
   } catch (err: any) {
-    return { ok: false, code: "transport", message: err?.message || "network error" };
+    console.warn(`[WaCloud] graph ${args.method} ${args.path} transport error`);
+    return {
+      ok: false,
+      kind: "transport",
+      code: "transport",
+      message: err?.message || "network error",
+    };
   }
 }
 
-/** Thin wrapper over sendTemplateMessage for the admin Test action. */
-export async function sendTestTemplate(
-  toPhone: string,
-  templateName: string,
-  language: string,
-): Promise<CloudSendResult> {
-  return sendTemplateMessage({ to: toPhone, templateName, language });
+/** Resolves {accessToken, apiVersion, wabaId, phoneNumberId} or an error result. */
+async function graphCreds(): Promise<
+  | {
+      ok: true;
+      accessToken: string;
+      apiVersion: string;
+      wabaId: string | null;
+      phoneNumberId: string | null;
+    }
+  | { ok: false; kind: "transport"; code: string; message: string }
+> {
+  const cfg = await resolveCloudConfig();
+  if (!cfg || !cfg.accessToken) {
+    return {
+      ok: false,
+      kind: "transport",
+      code: "unconfigured",
+      message: "Cloud API not configured",
+    };
+  }
+  return {
+    ok: true,
+    accessToken: cfg.accessToken,
+    apiVersion: cfg.apiVersion,
+    wabaId: cfg.wabaId,
+    phoneNumberId: cfg.phoneNumberId,
+  };
+}
+
+const TEMPLATE_LIST_FIELDS =
+  "id,name,language,category,parameter_format,status,components,quality_score,rejected_reason,correct_category,previous_category,last_updated_time";
+
+export interface MetaTemplateCreateResult {
+  id: string;
+  status?: string;
+  category?: string;
+}
+
+/** Create: POST /{wabaId}/message_templates (MV-09). */
+export async function createMessageTemplate(payload: {
+  name: string;
+  language: string;
+  category: string;
+  parameter_format?: string;
+  components: unknown[];
+}): Promise<GraphResult<MetaTemplateCreateResult>> {
+  const creds = await graphCreds();
+  if (!creds.ok) return creds;
+  if (!creds.wabaId) {
+    return {
+      ok: false,
+      kind: "transport",
+      code: "unconfigured",
+      message: "Messaging account ID not configured",
+    };
+  }
+  return graphRequest<MetaTemplateCreateResult>({
+    method: "POST",
+    path: `${creds.wabaId}/message_templates`,
+    body: payload,
+    accessToken: creds.accessToken,
+    apiVersion: creds.apiVersion,
+  });
+}
+
+export interface MetaTemplateListResult {
+  data: any[];
+  paging?: { cursors?: { before?: string; after?: string }; next?: string };
+}
+
+/** List: GET /{wabaId}/message_templates (cursor paging; no undocumented name filter, MV-09). */
+export async function listMessageTemplates(args?: {
+  after?: string;
+  limit?: number;
+}): Promise<GraphResult<MetaTemplateListResult>> {
+  const creds = await graphCreds();
+  if (!creds.ok) return creds;
+  if (!creds.wabaId) {
+    return {
+      ok: false,
+      kind: "transport",
+      code: "unconfigured",
+      message: "Messaging account ID not configured",
+    };
+  }
+  const query: Record<string, string> = {
+    fields: TEMPLATE_LIST_FIELDS,
+    limit: String(Math.min(Math.max(args?.limit ?? 100, 1), 100)),
+  };
+  if (args?.after) query.after = args.after;
+  return graphRequest<MetaTemplateListResult>({
+    method: "GET",
+    path: `${creds.wabaId}/message_templates`,
+    query,
+    accessToken: creds.accessToken,
+    apiVersion: creds.apiVersion,
+  });
+}
+
+/** Get one: GET /{templateId}?fields=... (MV-09). */
+export async function getMessageTemplate(id: string): Promise<GraphResult<any>> {
+  const creds = await graphCreds();
+  if (!creds.ok) return creds;
+  return graphRequest<any>({
+    method: "GET",
+    path: encodeURIComponent(id),
+    query: { fields: TEMPLATE_LIST_FIELDS },
+    accessToken: creds.accessToken,
+    apiVersion: creds.apiVersion,
+  });
+}
+
+/** Edit: POST /{templateId} body {components} (components replaced wholesale, MV-10). */
+export async function editMessageTemplate(
+  id: string,
+  body: { components: unknown[] },
+): Promise<GraphResult<{ success?: boolean }>> {
+  const creds = await graphCreds();
+  if (!creds.ok) return creds;
+  return graphRequest<{ success?: boolean }>({
+    method: "POST",
+    path: encodeURIComponent(id),
+    body,
+    accessToken: creds.accessToken,
+    apiVersion: creds.apiVersion,
+  });
+}
+
+/** Delete: DELETE /{wabaId}/message_templates?name=X&hsm_id=Y (single language, MV-11). */
+export async function deleteMessageTemplate(args: {
+  name: string;
+  hsmId: string;
+}): Promise<GraphResult<{ success?: boolean }>> {
+  const creds = await graphCreds();
+  if (!creds.ok) return creds;
+  if (!creds.wabaId) {
+    return {
+      ok: false,
+      kind: "transport",
+      code: "unconfigured",
+      message: "Messaging account ID not configured",
+    };
+  }
+  return graphRequest<{ success?: boolean }>({
+    method: "DELETE",
+    path: `${creds.wabaId}/message_templates`,
+    query: { name: args.name, hsm_id: args.hsmId },
+    accessToken: creds.accessToken,
+    apiVersion: creds.apiVersion,
+  });
+}
+
+/** WABA node: GET /{wabaId}?fields=... (MV-01, MV-15). */
+export async function getWabaNode(): Promise<GraphResult<any>> {
+  const creds = await graphCreds();
+  if (!creds.ok) return creds;
+  if (!creds.wabaId) {
+    return {
+      ok: false,
+      kind: "transport",
+      code: "unconfigured",
+      message: "Messaging account ID not configured",
+    };
+  }
+  return graphRequest<any>({
+    method: "GET",
+    path: encodeURIComponent(creds.wabaId),
+    query: {
+      fields: "id,name,account_review_status,business_verification_status,country,ownership_type",
+    },
+    accessToken: creds.accessToken,
+    apiVersion: creds.apiVersion,
+  });
+}
+
+/** Phone node: GET /{phoneNumberId}?fields=... (MV-15). */
+export async function getPhoneNode(): Promise<GraphResult<any>> {
+  const creds = await graphCreds();
+  if (!creds.ok) return creds;
+  if (!creds.phoneNumberId) {
+    return {
+      ok: false,
+      kind: "transport",
+      code: "unconfigured",
+      message: "Phone number ID not configured",
+    };
+  }
+  return graphRequest<any>({
+    method: "GET",
+    path: encodeURIComponent(creds.phoneNumberId),
+    query: {
+      fields: "display_phone_number,verified_name,quality_rating,code_verification_status,status",
+    },
+    accessToken: creds.accessToken,
+    apiVersion: creds.apiVersion,
+  });
+}
+
+/** Health status: GET /{node}?fields=health_status (MV-15). */
+export async function getHealthStatus(node: string): Promise<GraphResult<any>> {
+  const creds = await graphCreds();
+  if (!creds.ok) return creds;
+  return graphRequest<any>({
+    method: "GET",
+    path: encodeURIComponent(node),
+    query: { fields: "health_status" },
+    accessToken: creds.accessToken,
+    apiVersion: creds.apiVersion,
+  });
+}
+
+/** Subscribed apps: GET /{wabaId}/subscribed_apps (MV-15). */
+export async function getSubscribedApps(): Promise<GraphResult<any>> {
+  const creds = await graphCreds();
+  if (!creds.ok) return creds;
+  if (!creds.wabaId) {
+    return {
+      ok: false,
+      kind: "transport",
+      code: "unconfigured",
+      message: "Messaging account ID not configured",
+    };
+  }
+  return graphRequest<any>({
+    method: "GET",
+    path: `${creds.wabaId}/subscribed_apps`,
+    accessToken: creds.accessToken,
+    apiVersion: creds.apiVersion,
+  });
+}
+
+/** Token scopes: GET /debug_token?input_token={token} (MV-15, DP-16). */
+export async function debugToken(): Promise<GraphResult<any>> {
+  const creds = await graphCreds();
+  if (!creds.ok) return creds;
+  return graphRequest<any>({
+    method: "GET",
+    path: "debug_token",
+    query: { input_token: creds.accessToken },
+    accessToken: creds.accessToken,
+    apiVersion: creds.apiVersion,
+  });
 }
