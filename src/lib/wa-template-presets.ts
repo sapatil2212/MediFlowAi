@@ -22,6 +22,62 @@ export interface TemplatePreset {
   suggestedKind: AptNotifyKind | null;
 }
 
+/**
+ * Runtime metadata for templates that already exist in Meta. These contracts
+ * are deliberately separate from TEMPLATE_PRESETS so Sync adopts the existing
+ * template instead of offering to submit a duplicate.
+ */
+export interface PublishedTemplateSpec {
+  name: string;
+  language: string;
+  parameterFormat: "POSITIONAL";
+  headerType: "NONE";
+  bodyText: string;
+  footerText: string | null;
+  variableMappings: Record<string, CatalogueField>;
+  sampleValues: Record<string, string>;
+  notifyKind: AptNotifyKind;
+}
+
+export const PUBLISHED_TEMPLATE_SPECS: readonly PublishedTemplateSpec[] = [
+  {
+    name: "appointment_booked",
+    language: "en_US",
+    parameterFormat: "POSITIONAL",
+    headerType: "NONE",
+    bodyText:
+      "Hello {{1}},\n\nYour appointment at {{2}} with {{3}} is booked for {{4}} at {{5}}. Your queue number at the clinic is {{6}}.\n\nThank you for choosing us!",
+    footerText: "This is an automated notification message.",
+    variableMappings: {
+      "body.1": "name",
+      "body.2": "clinicName",
+      "body.3": "doctorName",
+      "body.4": "date",
+      "body.5": "time",
+      "body.6": "tokenNo",
+    },
+    sampleValues: {
+      "body.1": "Priya Sharma",
+      "body.2": "CityCare Clinic",
+      "body.3": "Dr. Rohan Mehta",
+      "body.4": "Tuesday, October 20, 2026",
+      "body.5": "10:30 AM",
+      "body.6": "7",
+    },
+    notifyKind: "booked",
+  },
+];
+
+export function findPublishedTemplateSpec(
+  name: string,
+  language: string,
+): PublishedTemplateSpec | null {
+  return (
+    PUBLISHED_TEMPLATE_SPECS.find((spec) => spec.name === name && spec.language === language) ??
+    null
+  );
+}
+
 /** Small helper so each preset reads clearly and stays type-checked. */
 function preset(
   name: string,

@@ -6,7 +6,7 @@
 - Wording used here: session, institute, teacher or instructor (the `{{3}}` value), student record, queue number. These terms come from the dashboard ("Teachers & Instructors", "Students Record", "Academy Profile", "Bookings") and the public booking page ("Session Booked!", "Teacher / Instructor", "Student Name").
 - Templates: 9, all new.
 
-Education tenants book and update through the same server functions as healthcare: `createAppointmentServerFn` / `updateAppointmentServerFn` from `src/routes/dashboards/education.tsx:1830` / `:1797`, and `createAppointmentPublicServerFn` from the public page. They also get the same reminders. Today they receive the medical plain-text wording from `buildAppointmentMessage`. The templates below keep the `TEMPLATE_VAR_SPEC` variable order of each kind. Video links and doctor leave notices are not sent to this category.
+Education tenants book and update through the same server functions as healthcare: `createAppointmentServerFn` / `updateAppointmentServerFn` from `src/routes/dashboards/education.tsx:1830` / `:1797`, and `createAppointmentPublicServerFn` from the public page. They also get the same reminders. Outbound notifications are template-only; map an approved education template or the event fails closed with `template_not_ready`. The templates below keep the `TEMPLATE_VAR_SPEC` variable order of each kind. Video links and doctor leave notices are not sent to this category.
 
 Education specifics in the code:
 

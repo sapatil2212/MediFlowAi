@@ -38,8 +38,6 @@ import {
   disconnectWA,
   resetWASession,
   initializeWA,
-  enqueueWABulk,
-  sendWAMedia,
   pauseWACampaign,
 } from "./whatsapp";
 import {
@@ -1199,23 +1197,27 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
       console.error("[Tokens] Daily renumber failed (booking still succeeds):", tokErr?.message);
     }
 
-    // Queue the "appointment booked" WhatsApp notification (server-side only).
+    // Await the official appointment-booked template after persistence.
     if (typeof window === "undefined") {
-      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
-        await import("./appointment-notify");
-      const [clinicName, doctorName] = await Promise.all([
-        resolveClinicName(data.tenantId),
-        resolveDoctorName(docId),
-      ]);
-      await sendAppointmentNotification(data.tenantId, data.phone, "booked", {
-        name: data.name,
-        clinicName,
-        doctorName,
-        dateTime: dateVal,
-        timeSlot: tSlot,
-        tokenNo,
-        appointmentId: id,
-      });
+      try {
+        const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
+          await import("./appointment-notify");
+        const [clinicName, doctorName] = await Promise.all([
+          resolveClinicName(data.tenantId),
+          resolveDoctorName(docId),
+        ]);
+        await sendAppointmentNotification(data.tenantId, data.phone, "booked", {
+          name: data.name,
+          clinicName,
+          doctorName,
+          dateTime: dateVal,
+          timeSlot: tSlot,
+          tokenNo,
+          appointmentId: id,
+        });
+      } catch {
+        console.error("[WhatsApp][booked] Notification failed after appointment was created.");
+      }
     }
 
     // Create the video room + join link when booked as a video consultation (Req 3.3).
@@ -1456,23 +1458,29 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
       console.error("[Tokens] Daily renumber failed (booking still succeeds):", tokErr?.message);
     }
 
-    // Queue the "appointment booked" WhatsApp notification.
+    // Await the official appointment-booked template after persistence.
     if (typeof window === "undefined" && data.phone) {
-      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
-        await import("./appointment-notify");
-      const [clinicName, doctorName] = await Promise.all([
-        resolveClinicName(user.tenantId),
-        resolveDoctorName(data.doctorId),
-      ]);
-      await sendAppointmentNotification(user.tenantId, data.phone, "booked", {
-        name: data.name,
-        clinicName,
-        doctorName,
-        dateTime: dateVal,
-        timeSlot: data.timeSlot || null,
-        tokenNo,
-        appointmentId: id,
-      });
+      try {
+        const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
+          await import("./appointment-notify");
+        const [clinicName, doctorName] = await Promise.all([
+          resolveClinicName(user.tenantId),
+          resolveDoctorName(data.doctorId),
+        ]);
+        await sendAppointmentNotification(user.tenantId, data.phone, "booked", {
+          name: data.name,
+          clinicName,
+          doctorName,
+          dateTime: dateVal,
+          timeSlot: data.timeSlot || null,
+          tokenNo,
+          appointmentId: id,
+        });
+      } catch {
+        console.error(
+          "[WhatsApp][booked] Notification failed after sub-location booking was created.",
+        );
+      }
     }
 
     return { success: true, id, tokenNo };
@@ -1805,7 +1813,7 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
       console.error("[Tokens] Daily renumber failed (update still succeeds):", tokErr?.message);
     }
 
-    // Queue WhatsApp notification for status change (confirmed / cancelled / completed).
+    // Await the mapped official template for the appointment status change.
     if (typeof window === "undefined") {
       const kindMap: Record<string, "confirmed" | "cancelled" | "completed" | undefined> = {
         Confirmed: "confirmed",
@@ -2725,9 +2733,8 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
     const user = await verifySession();
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     assertCanPerform(user.role, "manage_doctor_availability");
-    // Front desk records the leave AND notifies the booked patients. Messages go
-    // through the clinic's own session (enqueueWA by tenantId) — the number the
-    // owner connected — so reception needs no WhatsApp admin rights for this.
+    // Front desk records the leave and submits approved Cloud API templates for
+    // the affected appointments. No whatsapp-web.js notification is sent.
     const canSendWA = canPerform(user.role, "send_patient_notices");
     data.leaveDates = data.leaveDates.map((d) => String(d).slice(0, 10)).filter(isIsoDate);
     if (data.leaveDates.length === 0) throw new Error("Please select valid leave dates");
@@ -2786,11 +2793,8 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
       ? appts.filter((a: any) => data.selectedAppointmentIds!.includes(a.id))
       : appts;
 
-    // 5. Send personalized WhatsApp messages
-    const template =
-      data.customMessage ||
-      `Hello *{{patient_name}}*,\n\nWe regret to inform you that *Dr. ${doc.name}* at *${clinicName}* has an unexpected emergency (${data.reason || "Urgent Absence"}) and will be unavailable on *{{appointment_date}}*.\n\nYour appointment scheduled at *{{appointment_time}}* has been placed on priority reschedule. We sincerely apologize for this inconvenience.\n\nOur team will reach out with priority slots, or you can reply to this message to reschedule.\n\nWarm regards,\n*${clinicName}*`;
-
+    // 5. Submit the mapped, approved reschedule-needed utility template. Staff
+    // free-form/AI wording is intentionally not used for outbound delivery.
     const notifiedPatients: Array<{
       id: string;
       name: string;
@@ -2815,24 +2819,25 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
           minute: "2-digit",
         });
 
-      const personalizedMessage = template
-        .replace(/{{patient_name}}/g, apt.name || "Patient")
-        .replace(/{{doctor_name}}/g, doc.name)
-        .replace(/{{appointment_date}}/g, dateFormatted)
-        .replace(/{{appointment_time}}/g, timeFormatted)
-        .replace(/{{reason}}/g, data.reason || "Emergency Absence")
-        .replace(/{{clinic_name}}/g, clinicName);
-
       let sendStatus: "sent" | "failed" | "skipped" = "skipped";
 
       if (apt.phone && canSendWA) {
-        try {
-          const res = await enqueueWA(user.tenantId, apt.phone, personalizedMessage);
-          sendStatus = res.success ? "sent" : "failed";
-        } catch (err: any) {
-          console.error(`[Emergency Leave WA] Failed for ${apt.phone}:`, err?.message);
-          sendStatus = "failed";
-        }
+        const { sendAppointmentNotification } = await import("./appointment-notify");
+        const accepted = await sendAppointmentNotification(
+          user.tenantId,
+          apt.phone,
+          "rescheduleNeeded",
+          {
+            name: apt.name || "Patient",
+            clinicName,
+            doctorName: doc.name,
+            dateTime: aptDate,
+            timeSlot: apt.timeSlot,
+            tokenNo: apt.tokenNo,
+            appointmentId: apt.id,
+          },
+        );
+        sendStatus = accepted ? "sent" : "failed";
       }
 
       // Mark appointment as 'Reschedule Needed'
@@ -3067,10 +3072,6 @@ export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn(
     }> = [];
 
     if (canSendWA && data.sendWhatsAppNotice !== false && targetAppts.length > 0) {
-      const template =
-        data.customMessage ||
-        `Hello *{{patient_name}}*,\n\nGood news! We are pleased to inform you that *Dr. ${doc.name}* at *${clinicName}* has resumed availability and will be consulting on *{{appointment_date}}*.\n\nYour scheduled appointment at *{{appointment_time}}* has been *reinstated and confirmed*. You do not need to reschedule, and your slot is reserved for you.\n\nWe look forward to seeing you. If you have any questions, feel free to reply directly to this WhatsApp message.\n\nWarm regards,\n*${clinicName}*`;
-
       for (const apt of targetAppts) {
         const aptDate = apt.dateTime instanceof Date ? apt.dateTime : new Date(apt.dateTime);
         const dateFormatted = aptDate.toLocaleDateString("en-IN", {
@@ -3086,23 +3087,25 @@ export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn(
             minute: "2-digit",
           });
 
-        const personalizedMessage = template
-          .replace(/{{patient_name}}/g, apt.name || "Patient")
-          .replace(/{{doctor_name}}/g, doc.name)
-          .replace(/{{appointment_date}}/g, dateFormatted)
-          .replace(/{{appointment_time}}/g, timeFormatted)
-          .replace(/{{clinic_name}}/g, clinicName);
-
         let sendStatus: "sent" | "failed" | "skipped" = "skipped";
 
         if (apt.phone) {
-          try {
-            const res = await enqueueWA(user.tenantId, apt.phone, personalizedMessage);
-            sendStatus = res.success ? "sent" : "failed";
-          } catch (err: any) {
-            console.error(`[Reinstatement WA] Failed for ${apt.phone}:`, err?.message);
-            sendStatus = "failed";
-          }
+          const { sendAppointmentNotification } = await import("./appointment-notify");
+          const accepted = await sendAppointmentNotification(
+            user.tenantId,
+            apt.phone,
+            "reinstated",
+            {
+              name: apt.name || "Patient",
+              clinicName,
+              doctorName: doc.name,
+              dateTime: aptDate,
+              timeSlot: apt.timeSlot,
+              tokenNo: apt.tokenNo,
+              appointmentId: apt.id,
+            },
+          );
+          sendStatus = accepted ? "sent" : "failed";
         }
 
         notifiedPatients.push({
@@ -5416,106 +5419,14 @@ export const startWACampaignServerFn = createServerFn({ method: "POST" })
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     assertCanPerform(user.role, "whatsapp_operate");
 
-    const campaign = await queryOne<any>("SELECT * FROM WACampaign WHERE id = ? AND tenantId = ?", [
-      campaignId,
-      user.tenantId,
-    ]);
+    const campaign = await queryOne<any>(
+      "SELECT id FROM WACampaign WHERE id = ? AND tenantId = ? LIMIT 1",
+      [campaignId, user.tenantId],
+    );
     if (!campaign) throw new Error("Campaign not found");
-
-    let template: any = null;
-    if (campaign.templateId) {
-      template = await queryOne<any>("SELECT * FROM WATemplate WHERE id = ? AND tenantId = ?", [
-        campaign.templateId,
-        user.tenantId,
-      ]);
-    }
-
-    const recipients = await query<any>(
-      "SELECT * FROM WACampaignRecipient WHERE campaignId = ? AND status = 'pending'",
-      [campaignId],
+    throw new Error(
+      "Campaign delivery is disabled until it uses a mapped Meta-approved template through the official WhatsApp Cloud API.",
     );
-
-    if (recipients.length === 0) {
-      throw new Error("No pending recipients in this campaign");
-    }
-
-    const messages = [];
-    for (const r of recipients) {
-      let body = template ? template.bodyText : "Hello";
-
-      if (r.variables) {
-        const variablesObj =
-          typeof r.variables === "string" ? JSON.parse(r.variables) : r.variables;
-        if (variablesObj && typeof variablesObj === "object") {
-          for (const key of Object.keys(variablesObj)) {
-            const replacement = String(variablesObj[key]);
-            body = body.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), replacement);
-          }
-        }
-      }
-
-      if (template && template.headerType === "text" && template.headerText) {
-        body = `*${template.headerText}*\n\n` + body;
-      }
-
-      if (template && template.footerText) {
-        body = body + `\n\n_${template.footerText}_`;
-      }
-
-      if (template && template.ctaButtons) {
-        try {
-          const ctas =
-            typeof template.ctaButtons === "string"
-              ? JSON.parse(template.ctaButtons)
-              : template.ctaButtons;
-          if (Array.isArray(ctas) && ctas.length > 0) {
-            body += "\n\n-------------------";
-            for (const btn of ctas) {
-              if (btn.type === "url") {
-                body += `\n🔗 *${btn.label}*: ${btn.value}`;
-              } else if (btn.type === "phone") {
-                body += `\n📞 *${btn.label}*: ${btn.value}`;
-              }
-            }
-          }
-        } catch (e) {
-          console.error("Failed to parse ctaButtons in campaign send:", e);
-        }
-      }
-
-      if (template && template.quickReplyButtons) {
-        try {
-          const qrs =
-            typeof template.quickReplyButtons === "string"
-              ? JSON.parse(template.quickReplyButtons)
-              : template.quickReplyButtons;
-          if (Array.isArray(qrs) && qrs.length > 0) {
-            body += `\n\n💡 *Replies*: ` + qrs.map((q: string) => `"${q}"`).join(" | ");
-          }
-        } catch (e) {
-          console.error("Failed to parse quickReplyButtons in campaign send:", e);
-        }
-      }
-
-      const headerUrl = template?.headerImageUrl || null;
-
-      messages.push({
-        recipientId: r.id,
-        phone: r.phone,
-        body,
-        mediaUrl: headerUrl,
-      });
-    }
-
-    await enqueueWABulk(
-      user.tenantId,
-      campaignId,
-      messages,
-      campaign.minDelaySec,
-      campaign.maxDelaySec,
-    );
-
-    return { success: true };
   });
 
 export const pauseWACampaignServerFn = createServerFn({ method: "POST" })
@@ -5647,14 +5558,9 @@ export const sendBulkWAServerFn = createServerFn({ method: "POST" })
     if (!user || !user.tenantId) throw new Error("Unauthorized");
     assertCanPerform(user.role, "whatsapp_operate");
 
-    const formattedMessages = data.numbers.map((num) => ({
-      recipientId: crypto.randomUUID(),
-      phone: num,
-      body: data.message,
-    }));
-
-    await enqueueWABulk(user.tenantId, null, formattedMessages, data.minDelay, data.maxDelay);
-    return { success: true, count: formattedMessages.length };
+    throw new Error(
+      "Bulk delivery is disabled until it uses a mapped Meta-approved template through the official WhatsApp Cloud API.",
+    );
   });
 
 export const getWACampaignStatsServerFn = createServerFn({ method: "GET" }).handler(async () => {

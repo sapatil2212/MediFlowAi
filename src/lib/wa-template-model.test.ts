@@ -23,7 +23,7 @@ import {
   validateVariableMappings,
   type TemplateDraft,
 } from "./wa-template-model";
-import { TEMPLATE_PRESETS } from "./wa-template-presets";
+import { PUBLISHED_TEMPLATE_SPECS, TEMPLATE_PRESETS } from "./wa-template-presets";
 
 function draft(overrides: Partial<TemplateDraft> = {}): TemplateDraft {
   return {
@@ -418,6 +418,35 @@ describe("mapping eligibility", () => {
       kind: "confirmed",
     });
     expect(e.eligible).toBe(false);
+  });
+});
+
+describe("published template contract", () => {
+  it("defines appointment_booked/en_US separately with tokenNo in position 6", () => {
+    expect(PUBLISHED_TEMPLATE_SPECS).toHaveLength(1);
+    const spec = PUBLISHED_TEMPLATE_SPECS[0];
+    expect(spec.name).toBe("appointment_booked");
+    expect(spec.language).toBe("en_US");
+    expect(spec.notifyKind).toBe("booked");
+    expect(spec.variableMappings).toEqual({
+      "body.1": "name",
+      "body.2": "clinicName",
+      "body.3": "doctorName",
+      "body.4": "date",
+      "body.5": "time",
+      "body.6": "tokenNo",
+    });
+    expect(
+      validateDraft(
+        {
+          ...spec,
+          category: "UTILITY",
+          buttons: [],
+        },
+        "booked",
+      ).ok,
+    ).toBe(true);
+    expect(TEMPLATE_PRESETS.some((preset) => preset.draft.name === spec.name)).toBe(false);
   });
 });
 

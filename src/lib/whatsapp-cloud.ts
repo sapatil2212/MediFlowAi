@@ -10,12 +10,12 @@
 // secrets are decrypted via wa-crypto. No secret ever appears in a return value
 // or a log line.
 //
-// PLAIN-TEXT MODE:
-//   The default patient send path is sendTextMessage: the official channel
-//   sends exactly the same free-form text as the WhatsApp Web channel. A send
-//   switches to sendTemplateMessage ONLY when the Super Admin has mapped the
-//   notify kind to an APPROVED UTILITY template and enabled it (see
-//   wa-template-notify.ts); otherwise the text path is byte-identical to today.
+// OUTBOUND MESSAGING POLICY:
+//   Business notifications fail closed and use only mapped, enabled,
+//   opt-in-acknowledged, Meta-approved UTILITY templates through the official
+//   Cloud API. There is no WhatsApp Web or free-form fallback. The remaining
+//   sendTextMessage callers are the customer-window inbound auto-reply and the
+//   explicit super-admin Cloud connection test.
 //
 // TEMPLATE MANAGEMENT (v26.0):
 //   Every Meta management call (create/list/get/edit/delete templates, WABA /
@@ -25,13 +25,13 @@
 //   lastApiOkAt via the template repo on any 2xx. No token is ever logged.
 //
 // META 24-HOUR RULE:
-//   Free-form text is only allowed within 24 hours of the recipient's last
-//   inbound message to the business number. Outside that window Meta usually
-//   ACCEPTS the send (returns a wamid) and reports error 131047 later in a
-//   'failed' status webhook (it can also reject synchronously). Either way the
-//   router falls back to WhatsApp Web when the tenant's Web session is
-//   connected. Expected, not a bug. The webhook handshake and app secret must
-//   be verified before the config is enabled, or the async failures are missed.
+//   Free-form text is limited to customer-window auto-replies and explicit
+//   super-admin connection tests. Outside 24 hours of the recipient's last
+//   inbound message, Meta may reject synchronously or report error 131047 in a
+//   later status webhook. Business notifications do not use this path: their
+//   approved-template gate fails closed without a Web or free-form fallback.
+//   The webhook handshake and app secret must be verified before the config is
+//   enabled, or asynchronous status updates are missed.
 //
 // A 2xx from Meta means "accepted", not "delivered". A send can still fail
 // later; that arrives as a 'failed' status webhook (see whatsapp-webhook.ts).
@@ -73,8 +73,8 @@ export function normalizeWaPhone(raw: string | null | undefined): string {
 /**
  * Local-testing safety net. When WA_CLOUD_TEST_RECIPIENTS is set (comma-separated
  * phone numbers), the official API only sends to those numbers. Every other
- * recipient is refused before any network call, so the router treats it as a
- * failed official send and falls back to WhatsApp Web exactly as before.
+ * recipient is refused before any network call. Business notifications record
+ * that refusal as a failed official send and do not use another transport.
  * Leave it UNSET in production: unset or blank means no restriction.
  */
 export function isOfficialRecipientAllowed(to: string | null | undefined): boolean {
@@ -102,8 +102,19 @@ export interface ResolvedCloudConfig {
 
 export type CloudSendResult =
   | { ok: true; messageId: string }
-  | { ok: false; kind: "meta_error"; code: string; subcode?: string; message: string }
-  | { ok: false; kind: "transport"; message: string };
+  | {
+      ok: false;
+      kind: "meta_error";
+      httpStatus: number;
+      code: string;
+      subcode?: string;
+      message: string;
+      userTitle?: string;
+      userMessage?: string;
+      isTransient?: boolean;
+      fbtraceId?: string;
+    }
+  | { ok: false; kind: "transport"; message: string; httpStatus?: number };
 
 /** Safe JSON parse mirroring cashfree.ts parseJsonSafe. */
 async function parseJsonSafe(res: Response): Promise<any> {
@@ -182,14 +193,20 @@ export async function isCloudAvailable(): Promise<boolean> {
   return !!cfg.phoneNumberId && !!cfg.accessToken && cfg.isEnabled;
 }
 
-function metaErrorResult(data: any): CloudSendResult {
+function metaErrorResult(data: any, httpStatus: number): CloudSendResult {
   const error = data?.error || {};
   return {
     ok: false,
     kind: "meta_error",
+    httpStatus,
     code: error.code != null ? String(error.code) : "unknown",
     subcode: error.error_subcode != null ? String(error.error_subcode) : undefined,
     message: error.message || "Meta API error",
+    userTitle: error.error_user_title != null ? String(error.error_user_title) : undefined,
+    userMessage: error.error_user_msg != null ? String(error.error_user_msg) : undefined,
+    isTransient:
+      error.is_transient != null ? String(error.is_transient).toLowerCase() === "true" : undefined,
+    fbtraceId: error.fbtrace_id != null ? String(error.fbtrace_id) : undefined,
   };
 }
 
@@ -251,9 +268,14 @@ export async function sendTextMessage(args: {
       return { ok: false, kind: "transport", message: "No message id in response" };
     }
     if (res.status >= 400 && res.status < 500 && data?.error) {
-      return metaErrorResult(data);
+      return metaErrorResult(data, res.status);
     }
-    return { ok: false, kind: "transport", message: `Graph API returned ${res.status}` };
+    return {
+      ok: false,
+      kind: "transport",
+      message: `Graph API returned ${res.status}`,
+      httpStatus: res.status,
+    };
   } catch (err: any) {
     return { ok: false, kind: "transport", message: err?.message || "network error" };
   }
@@ -314,9 +336,8 @@ export async function verifyPhoneNumber(args: {
 //   {type:'text', text} (+ parameter_name when NAMED) in placeholder order, a
 //   header component for a TEXT-header parameter, and URL-button components
 //   {type:'button', sub_type:'url', index, parameters:[{type:'text', text}]}
-//   whose suffix value is percent-encoded. Composed from documented pieces; the
-//   exact TEXT-header send example is not in current docs (§5 item 18), so the
-//   failure mode is safe (Meta error → the router's Web fallback).
+//   whose suffix value is percent-encoded. A Meta rejection is returned to the
+//   template-only router for sanitized logging; no alternate transport runs.
 // ─────────────────────────────────────────────────────────────────────────────
 export interface SendTemplateMessageArgs {
   to: string;
@@ -392,9 +413,14 @@ export async function sendTemplateMessage(args: SendTemplateMessageArgs): Promis
       return { ok: false, kind: "transport", message: "No message id in response" };
     }
     if (res.status >= 400 && res.status < 500 && data?.error) {
-      return metaErrorResult(data);
+      return metaErrorResult(data, res.status);
     }
-    return { ok: false, kind: "transport", message: `Graph API returned ${res.status}` };
+    return {
+      ok: false,
+      kind: "transport",
+      message: `Graph API returned ${res.status}`,
+      httpStatus: res.status,
+    };
   } catch (err: any) {
     return { ok: false, kind: "transport", message: err?.message || "network error" };
   }

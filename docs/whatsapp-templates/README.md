@@ -83,11 +83,20 @@ Submit these in WhatsApp Manager, not from the in-app Super Admin Templates tab.
 
 ## Known gaps
 
-1. Templates are not sent yet. The official channel sends plain text (`src/lib/whatsapp-router.ts:143`). `sendTemplateMessage` (`src/lib/whatsapp-cloud.ts:296`) is not used for notifications. Approving these templates changes nothing until the app is wired to send them.
-2. There is one template per notify kind. The template mapping (`WaCloudTemplate.notifyKind`) picks a single template per kind. Choosing the beauty, gym, advisory or edu version needs a code change that selects by tenant profession or prefix.
-3. Today's plain text uses medical wording for every non-restaurant category. `buildAppointmentMessage` has no profession branch, so it says "consultation", "prescription", "speedy recovery" and "Token No: #". The `buildTemplateVars` fallbacks are also medical: `our clinic`, `our doctor`, and `—` when there is no token. Gym and education public bookings can have no trainer or teacher, which would show "with our doctor".
-4. Video templates need a code change. The app must pass the join token as the URL button parameter, but `sendTemplateMessage` only builds header and body parameters. The Templates tab also refuses to map video kinds (`src/lib/wa-cloud-admin.ts:311`). Video reminders share their notify kind with in-person reminders, so the app must also choose the video template when `consultationMode = 'video'`. The button URL assumes `APP_ORIGIN` is `https://bookmytime.tech` (`src/lib/video.server.ts:94`).
-5. Restaurant notices and doctor leave notices go through WhatsApp Web only. They are sent by `enqueueWA` directly (`src/lib/restaurant.ts:472`, `src/lib/auth.ts:2827` / `:3097`), not through the official router. The leave text can be edited by staff or written by AI and includes the reason. A template is fixed text without the reason.
-6. Restaurant reminders. Restaurant bookings live in `Appointment`, so the scheduler sends them medical-worded reminders. A booking that spans several tables has one row per table, so the guest can get one reminder per table. Restaurant reminder templates drop `doctorName`, so they need their own variable order when wired.
-7. Language. The app defaults to `en_US` (`src/lib/wa-cloud-admin.ts:335`). If the 9 submitted healthcare templates were created as "English" (`en`), either add an English (US) version with the same body, or set the language to `en` on their Templates-tab rows.
-8. Education time. Education bookings never store a slot, so the time variable comes from the stored date and time. For public bookings that time is not a real session time.
+1. There is one template per notify kind. The template mapping (`WaNotifyMapping`)
+   is global, so choosing healthcare, beauty, gym, advisory, education, or
+   restaurant wording for shared appointment/reminder kinds is not yet
+   tenant-profession aware. Use a generic approved utility template where kinds
+   are shared, or leave the mapping disabled until that selection is designed.
+2. Restaurant bookings that span several tables have one `Appointment` row per
+   table, so the guest can still receive one reminder per table.
+3. Language defaults to `en_US`. If an existing Meta template was created as
+   English (`en`), create/sync the intended language version and map that exact
+   approved row.
+4. Education bookings do not store a separate slot, so the time variable comes
+   from the stored date/time.
+
+Outbound business notifications no longer use the legacy display strings from
+`buildAppointmentMessage`, free-form Cloud text, or whatsapp-web.js. If a
+corresponding approved template is absent or not mapped, the attempt fails
+closed and is visible as `template_not_ready`.

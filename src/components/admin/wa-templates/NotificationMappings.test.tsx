@@ -7,6 +7,7 @@ const waTemplateListServerFn = vi.fn();
 const waAssignMappingServerFn = vi.fn();
 const waSetMappingEnabledServerFn = vi.fn();
 const waRemoveMappingServerFn = vi.fn();
+const getWaCloudConfigServerFn = vi.fn();
 
 vi.mock("../../../lib/admin", () => ({
   waNotifyMappingsServerFn: (...a: any[]) => waNotifyMappingsServerFn(...a),
@@ -14,6 +15,7 @@ vi.mock("../../../lib/admin", () => ({
   waAssignMappingServerFn: (...a: any[]) => waAssignMappingServerFn(...a),
   waSetMappingEnabledServerFn: (...a: any[]) => waSetMappingEnabledServerFn(...a),
   waRemoveMappingServerFn: (...a: any[]) => waRemoveMappingServerFn(...a),
+  getWaCloudConfigServerFn: () => getWaCloudConfigServerFn(),
 }));
 
 import { NotificationMappings } from "./NotificationMappings";
@@ -22,11 +24,27 @@ beforeEach(() => {
   waNotifyMappingsServerFn.mockReset();
   waTemplateListServerFn.mockReset();
   waSetMappingEnabledServerFn.mockReset();
+  getWaCloudConfigServerFn.mockReset();
   waTemplateListServerFn.mockResolvedValue({ ok: true, rows: [] });
+  getWaCloudConfigServerFn.mockResolvedValue({ bookedRouteReady: true });
 });
 afterEach(() => cleanup());
 
 describe("NotificationMappings", () => {
+  it("warns when booked cannot use the required utility template", async () => {
+    waNotifyMappingsServerFn.mockResolvedValue({ ok: true, rows: [] });
+    getWaCloudConfigServerFn.mockResolvedValue({ bookedRouteReady: false });
+
+    render(<NotificationMappings />);
+
+    const warning = await screen.findByRole("alert");
+    expect(warning).toHaveTextContent(/Appointment Booked is not template-ready/i);
+    expect(warning).toHaveTextContent(/appointment_booked/i);
+    expect(screen.getByTestId("notification-mappings")).toHaveTextContent(
+      /no free-form or WhatsApp Web fallback/i,
+    );
+  });
+
   it("disables the enable button until the opt-in acknowledgement is ticked (DP-01)", async () => {
     waNotifyMappingsServerFn.mockResolvedValue({
       ok: true,

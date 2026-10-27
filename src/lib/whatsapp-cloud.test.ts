@@ -16,6 +16,7 @@ import {
   DEFAULT_API_VERSION,
   isOfficialRecipientAllowed,
   normalizeWaPhone,
+  sendTemplateMessage,
   sendTextMessage,
   verifyPhoneNumber,
 } from "./whatsapp-cloud";
@@ -109,9 +110,14 @@ describe("sendTextMessage", () => {
     expect(res).toEqual({
       ok: false,
       kind: "meta_error",
+      httpStatus: 400,
       code: "131047",
       subcode: undefined,
       message: "Re-engagement message",
+      userTitle: undefined,
+      userMessage: undefined,
+      isTransient: undefined,
+      fbtraceId: undefined,
     });
   });
 
@@ -122,7 +128,12 @@ describe("sendTextMessage", () => {
 
     fetchMock.mockResolvedValueOnce(jsonRes(500, { error: { message: "boom" } }));
     const b = await sendTextMessage({ to: "918830553868", body: "Hi" });
-    expect(b).toEqual({ ok: false, kind: "transport", message: "Graph API returned 500" });
+    expect(b).toEqual({
+      ok: false,
+      kind: "transport",
+      message: "Graph API returned 500",
+      httpStatus: 500,
+    });
   });
 
   it("rejects an empty or oversized body without calling fetch or throwing", async () => {
@@ -165,6 +176,91 @@ describe("sendTextMessage", () => {
         expect(JSON.stringify(call)).not.toContain(TOKEN);
       }
     }
+  });
+});
+
+describe("sendTemplateMessage", () => {
+  it("POSTs the exact appointment_booked/en_US six-parameter payload", async () => {
+    fetchMock.mockResolvedValueOnce(jsonRes(200, { messages: [{ id: "wamid.BOOKED" }] }));
+
+    const res = await sendTemplateMessage({
+      to: "918830553868",
+      templateName: "appointment_booked",
+      language: "en_US",
+      parameterFormat: "POSITIONAL",
+      bodyParams: [
+        { text: "Priya Sharma" },
+        { text: "CityCare Clinic" },
+        { text: "Dr. Rohan Mehta" },
+        { text: "Tuesday, October 20, 2026" },
+        { text: "10:30 AM" },
+        { text: "7" },
+      ],
+    });
+
+    expect(res).toEqual({ ok: true, messageId: "wamid.BOOKED" });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://graph.facebook.com/v26.0/123/messages");
+    expect(init.headers.Authorization).toBe(`Bearer ${TOKEN}`);
+    expect(JSON.parse(init.body)).toEqual({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: "918830553868",
+      type: "template",
+      template: {
+        name: "appointment_booked",
+        language: { code: "en_US" },
+        components: [
+          {
+            type: "body",
+            parameters: [
+              { type: "text", text: "Priya Sharma" },
+              { type: "text", text: "CityCare Clinic" },
+              { type: "text", text: "Dr. Rohan Mehta" },
+              { type: "text", text: "Tuesday, October 20, 2026" },
+              { type: "text", text: "10:30 AM" },
+              { type: "text", text: "7" },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it("returns HTTP status and safe Meta error fields on rejection", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonRes(400, {
+        error: {
+          code: 132000,
+          error_subcode: 2494073,
+          message: "Parameter count mismatch",
+          error_user_title: "Template parameter error",
+          error_user_msg: "Check the template parameters.",
+          is_transient: false,
+          fbtrace_id: "safe-trace-id",
+        },
+      }),
+    );
+
+    const res = await sendTemplateMessage({
+      to: "918830553868",
+      templateName: "appointment_booked",
+      language: "en_US",
+      bodyParams: [{ text: "Priya" }],
+    });
+
+    expect(res).toEqual({
+      ok: false,
+      kind: "meta_error",
+      httpStatus: 400,
+      code: "132000",
+      subcode: "2494073",
+      message: "Parameter count mismatch",
+      userTitle: "Template parameter error",
+      userMessage: "Check the template parameters.",
+      isTransient: false,
+      fbtraceId: "safe-trace-id",
+    });
   });
 });
 

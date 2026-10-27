@@ -104,7 +104,6 @@ import {
   type RestaurantOverviewAnalytics,
   type TenantProfile,
 } from "./restaurant.server";
-import { enqueueWA, getWAStatus } from "./whatsapp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Messages this boundary owns
@@ -377,18 +376,15 @@ export const getRestaurantAvailabilityServerFn = createServerFn({ method: "GET" 
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5.1 Public booking creation, with the fire-and-forget notification
+// 5.1 Public booking creation, with an awaited non-fatal notification
 // (Req 7.1-7.12, 8.1-8.6, 10.1-10.6)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Queues the Table_Booking notification (Req 8.1-8.6).
- *
- * Called WITHOUT `await` from the response path, so a slow or dead WhatsApp
- * microservice cannot delay the committed booking's response (Req 8.5). Every
- * failure inside is caught and logged, and the booking — already committed — is
- * returned regardless (Req 8.2, 8.4, 8.6). A guest without a phone is skipped
- * with a logged omission (Req 8.6).
+ * Submits the Table_Booking notification through the mapped, approved Cloud
+ * API utility template (Req 8.1-8.6). Callers await this function so deployed
+ * runtimes keep the request alive, while every failure remains non-fatal after
+ * the booking write. No free-form Cloud or whatsapp-web.js path is used.
  */
 async function queueBookingNotification(
   profile: TenantProfile,
@@ -423,55 +419,36 @@ async function queueBookingNotification(
       return;
     }
 
-    // Req 8.1/8.3 — a message is queued if and only if the WhatsApp feature is
-    // available for the tenant AND the connection state is connected. These are
-    // the only two conditions, matching the pure booking model.
-    //
-    // Deliberately NOT gated on WhatsAppConfig.isEnabled: that column defaults
-    // to 0 and pairing a session never sets it, so gating on it silently
-    // suppressed every booking notification even for a connected tenant. A
-    // connected session is the tenant's opt-in; to stop notifications they
-    // disconnect the session. This matches the clinic booking path.
     if (!canUseFeature(contextFromTenant(profile), "whatsapp")) {
       console.log(
         `[Restaurant] Booking ${booking.bookingId}: notification omitted — the WhatsApp feature is not available for this tenant`,
       );
       return;
     }
-    const status = await getWAStatus(profile.tenantId);
-    if (status.state !== "CONNECTED") {
-      console.log(
-        `[Restaurant] Booking ${booking.bookingId}: notification omitted — WhatsApp is ${status.state}`,
+
+    const { sendAppointmentNotification } = await import("./appointment-notify");
+    const accepted = await sendAppointmentNotification(
+      profile.tenantId,
+      phone,
+      kind === "tableChanged" ? "restaurantTableChanged" : "restaurantBooked",
+      {
+        name: booking.guestName,
+        clinicName: profile.businessName,
+        dateTime: new Date(`${booking.date}T00:00:00`),
+        timeSlot: booking.slotLabel,
+        partySize: booking.partySize,
+        tableName: booking.tableName,
+        tokenNo: booking.tokenNo,
+        appointmentId: booking.bookingId,
+      },
+    );
+    if (!accepted) {
+      console.warn(
+        `[Restaurant] Booking notification was not submitted (kind=${kind}, bookingId=${booking.bookingId}).`,
       );
-      return;
     }
-
-    // Req 8.1 — restaurant name, booking date, Booking_Slot, Party_Size, the
-    // assigned Table_Group and the Booking_Token.
-    const tableLabel = booking.tableCount > 1 ? "Tables" : "Table";
-    const body =
-      kind === "tableChanged"
-        ? `Hello *${booking.guestName}*,\n\n` +
-          `Your ${tableLabel.toLowerCase()} at *${profile.businessName}* has been changed.\n\n` +
-          `📅 *Date:* ${booking.date}\n` +
-          `🕒 *Time:* ${booking.slotLabel}\n` +
-          `👥 *Party size:* ${booking.partySize}\n` +
-          `🍽️ *New ${tableLabel}:* ${booking.tableName}\n` +
-          `🎫 *Your Token No: #${booking.tokenNo}*\n\n` +
-          `Your date and time are unchanged — only the ${tableLabel.toLowerCase()}. ` +
-          `See you soon!\n\n_This is an automated notification message._`
-        : `Hello *${booking.guestName}*,\n\n` +
-          `Your table at *${profile.businessName}* is booked.\n\n` +
-          `📅 *Date:* ${booking.date}\n` +
-          `🕒 *Time:* ${booking.slotLabel}\n` +
-          `👥 *Party size:* ${booking.partySize}\n` +
-          `🍽️ *${tableLabel}:* ${booking.tableName}\n` +
-          `🎫 *Your Token No: #${booking.tokenNo}*\n\n` +
-          `We look forward to seeing you!\n\n_This is an automated notification message._`;
-
-    await enqueueWA(profile.tenantId, phone, body);
-  } catch (err: any) {
-    console.error("[Restaurant] Failed to queue the booking notification:", err?.message ?? err);
+  } catch {
+    console.error("[Restaurant] Booking notification failed because of an internal error.");
   }
 }
 
@@ -568,8 +545,9 @@ export const createRestaurantBookingPublicServerFn = createServerFn({ method: "P
       status: created.status,
     };
 
-    // Fire and forget — deliberately not awaited, and it cannot reject.
-    void queueBookingNotification(profile, {
+    // Await the non-fatal template submission so serverless/deployed runtimes do
+    // not terminate it after returning the already-created booking.
+    await queueBookingNotification(profile, {
       bookingId: created.bookingId,
       guestName: request.guestName,
       phone: request.phone,
@@ -872,13 +850,13 @@ export const reassignRestaurantBookingServerFn = createServerFn({ method: "POST"
       tableName: write.tableName,
     };
 
-    // Tell the guest their table moved. Fire and forget, exactly like the create
-    // path: the reassignment stands even if the notification cannot be queued.
+    // Tell the guest their table moved. The reassignment remains committed if
+    // the awaited, non-fatal template submission fails.
     const tableActuallyChanged = !!before && before.tableName !== write.tableName;
     if (tableActuallyChanged) {
       const notifyProfile = await getTenantProfile(tenantId);
       if (notifyProfile) {
-        void queueBookingNotification(
+        await queueBookingNotification(
           notifyProfile,
           {
             bookingId: write.bookingId,
@@ -988,7 +966,7 @@ export const createWalkInBookingServerFn = createServerFn({ method: "POST" })
     // optional on walk-ins, and the notifier already omits when it is blank.
     const notifyProfile = await getTenantProfile(tenantId);
     if (notifyProfile) {
-      void queueBookingNotification(notifyProfile, {
+      await queueBookingNotification(notifyProfile, {
         bookingId: created.bookingId,
         guestName: request.guestName,
         phone: request.phone,
@@ -1067,7 +1045,9 @@ export const createRestaurantReservationServerFn = createServerFn({ method: "POS
       slotStartMinutes: request.slotStartMinutes,
       tableIds: request.tableIds,
       specialRequests: request.specialRequests,
-      status: (data.status && isBookingStatus(data.status) ? data.status : "Confirmed") as BookingStatus,
+      status: (data.status && isBookingStatus(data.status)
+        ? data.status
+        : "Confirmed") as BookingStatus,
       locationId,
     });
     if (!created.ok) throw new Error(created.message);
@@ -1088,10 +1068,11 @@ export const createRestaurantReservationServerFn = createServerFn({ method: "POS
     // Req 8.1 — the Booking_Service notifies on every Table_Booking it creates,
     // not only the ones made from the public form. A reservation taken over the
     // phone by staff confirms to the guest exactly like a self-service booking.
-    // Fire and forget: it cannot reject, and the response never waits on it.
+    // The mapped template submission is awaited but non-fatal; the saved
+    // reservation is returned even when messaging is unavailable.
     const notifyProfile = await getTenantProfile(tenantId);
     if (notifyProfile) {
-      void queueBookingNotification(notifyProfile, {
+      await queueBookingNotification(notifyProfile, {
         bookingId: created.bookingId,
         guestName: request.guestName,
         phone: request.phone,
@@ -1254,8 +1235,8 @@ export const getRestaurantOverviewServerFn = createServerFn({ method: "GET" })
       data.locationId === undefined
         ? undefined
         : data.locationId === null
-        ? null
-        : scopeLocation(data.locationId);
+          ? null
+          : scopeLocation(data.locationId);
 
     const requested = String(data.date ?? "").trim();
     const selectedDate = isValidDateStr(requested) ? requested : now.dateStr;
@@ -1341,7 +1322,8 @@ export const updateRestaurantGuestServerFn = createServerFn({ method: "POST" })
         phone: data.phone !== undefined ? (data.phone ? data.phone.trim() : null) : undefined,
         email: data.email !== undefined ? (data.email ? data.email.trim() : null) : undefined,
         notes: data.notes !== undefined ? (data.notes ? data.notes.trim() : null) : undefined,
-        address: data.address !== undefined ? (data.address ? data.address.trim() : null) : undefined,
+        address:
+          data.address !== undefined ? (data.address ? data.address.trim() : null) : undefined,
       };
     },
   )
@@ -1361,4 +1343,3 @@ export const deleteRestaurantGuestServerFn = createServerFn({ method: "POST" })
     await deleteRestaurantGuest(tenantId, data.id);
     return { permission, success: true };
   });
-

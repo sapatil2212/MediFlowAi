@@ -13,7 +13,14 @@
 import crypto from "crypto";
 import { getMessageTemplate, listMessageTemplates, resolveCloudConfig } from "./whatsapp-cloud";
 import { getTemplateRepo } from "./wa-template-repo";
-import { normalizeStatus } from "./wa-template-model";
+import {
+  metaNodeToLocal,
+  normalizeStatus,
+  parsePlaceholders,
+  type MetaTemplateNode,
+} from "./wa-template-model";
+import { findPublishedTemplateSpec } from "./wa-template-presets";
+import type { PublishedTemplateSpec } from "./wa-template-presets";
 import type { SyncRunRow } from "./wa-template-repo";
 
 /** Local name cap (MV-03 / §5 item 5): Meta allows 512, we cap at 128. */
@@ -48,6 +55,59 @@ function rejectionOf(node: any): string | undefined {
   return undefined;
 }
 
+interface PublishedNodeMetadata {
+  spec: PublishedTemplateSpec;
+  bodyText: string;
+  footerText: string | null;
+}
+
+interface SyncMetaTemplateNode extends MetaTemplateNode {
+  id?: string | number;
+  quality_score?: unknown;
+  rejected_reason?: unknown;
+}
+
+/**
+ * Returns curated runtime metadata only when the Meta node is the exact known
+ * template identity and has the supported six-variable body-only shape.
+ */
+function publishedMetadataForNode(node: SyncMetaTemplateNode): PublishedNodeMetadata | null {
+  const name = String(node?.name ?? "");
+  const language = normLang(node?.language);
+  const spec = findPublishedTemplateSpec(name, language);
+  if (!spec) return null;
+
+  const components = Array.isArray(node?.components) ? node.components : [];
+  const componentTypes = components.map((component) => String(component?.type ?? "").toUpperCase());
+  if (
+    componentTypes.filter((type: string) => type === "BODY").length !== 1 ||
+    componentTypes.some((type: string) => !["BODY", "FOOTER"].includes(type))
+  ) {
+    return null;
+  }
+
+  const local = metaNodeToLocal(node);
+  if (
+    local.parameterFormat !== spec.parameterFormat ||
+    local.headerType !== spec.headerType ||
+    local.buttons.length > 0
+  ) {
+    return null;
+  }
+
+  const parsed = parsePlaceholders(local.bodyText, "POSITIONAL", "body");
+  const expectedKeys = Object.keys(spec.variableMappings);
+  if (
+    parsed.errors.length > 0 ||
+    parsed.placeholders.length !== expectedKeys.length ||
+    parsed.placeholders.some((placeholder, index) => placeholder.key !== expectedKeys[index])
+  ) {
+    return null;
+  }
+
+  return { spec, bodyText: local.bodyText, footerText: local.footerText };
+}
+
 /**
  * Reconciles one Meta node onto a local row (match by metaTemplateId, then
  * name+language). Returns 'updated' | 'created' | 'skipped'.
@@ -73,6 +133,7 @@ async function applyNode(
     metaUpdatedAt: new Date(),
   };
 
+  const metadata = publishedMetadataForNode(node);
   let row =
     (node?.id != null ? await repo.getByMetaTemplateId(String(node.id)) : null) ||
     (await repo.getByNameLanguage(name, language));
@@ -86,21 +147,52 @@ async function applyNode(
     ) {
       return "skipped";
     }
+
+    // Meta-imported rows were historically created without mappings. Repair
+    // only the exact known contract; local drafts and shape mismatches stay
+    // untouched and therefore ineligible.
+    if (metadata && row.source === "META" && Object.keys(row.variableMappings ?? {}).length === 0) {
+      await repo.updateDraft(row.id, {
+        name: row.name,
+        language: row.language,
+        category: row.category,
+        parameterFormat: metadata.spec.parameterFormat,
+        headerType: metadata.spec.headerType,
+        headerText: null,
+        bodyText: metadata.bodyText,
+        footerText: metadata.footerText,
+        buttons: [],
+        variableMappings: { ...metadata.spec.variableMappings },
+        sampleValues: { ...metadata.spec.sampleValues },
+        displayTitle: row.displayTitle,
+        description: row.description,
+        purpose: row.purpose,
+        notifyKind: metadata.spec.notifyKind,
+        actorId: "sync",
+      });
+    }
+
     await repo.applyMetaState(row.id, { ...patch, localState: "SUBMITTED" });
     return "updated";
   }
 
-  // Import as a META-source row.
+  // Import as a META-source row. Exact known published templates receive only
+  // local runtime metadata; sync never creates or re-submits them in Meta.
   row = await repo.createDraft({
     name,
     language,
     category: node?.category ? String(node.category).toUpperCase() : "UTILITY",
-    parameterFormat: node?.parameter_format === "named" ? "NAMED" : "POSITIONAL",
-    headerType: "NONE",
-    bodyText: extractBody(node),
+    parameterFormat:
+      metadata?.spec.parameterFormat ??
+      (String(node?.parameter_format ?? "").toLowerCase() === "named" ? "NAMED" : "POSITIONAL"),
+    headerType: metadata?.spec.headerType ?? "NONE",
+    headerText: null,
+    bodyText: metadata?.bodyText ?? extractBody(node),
+    footerText: metadata?.footerText ?? null,
     buttons: [],
-    variableMappings: {},
-    sampleValues: {},
+    variableMappings: metadata ? { ...metadata.spec.variableMappings } : {},
+    sampleValues: metadata ? { ...metadata.spec.sampleValues } : {},
+    notifyKind: metadata?.spec.notifyKind ?? null,
     source: "META",
     actorId: "sync",
   });

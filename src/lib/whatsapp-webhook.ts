@@ -13,7 +13,7 @@
 //   • Each flattened entry is idempotent via the shared WebhookEvent table
 //     (eventType='whatsapp', UNIQUE eventKey). Duplicate entries are skipped,
 //     so a re-delivered inbound message never triggers a second auto-reply and
-//     a re-delivered 'failed' status never triggers a second Web fallback.
+//     a re-delivered status never applies twice.
 //
 // Inbound messages:
 //   • Stored with the tenantId of the business whose message the sender is
@@ -24,17 +24,16 @@
 //     (see wa-auto-reply.ts).
 //
 // Status callbacks:
-//   • A 2xx from Meta on send means "accepted", not "delivered". A later
-//     'failed' status for an official tenant send (typically 131047, Meta's
-//     24-hour rule, which Meta reports asynchronously) triggers a one-time
-//     async Web fallback (whatsapp-router.ts runAsyncWebFallback).
+//   • A 2xx from Meta on send means "accepted", not "delivered". Signed status
+//     webhooks are authoritative for delivered/read/failed state. Outbound
+//     notifications never fall back to whatsapp-web.js after any Cloud result.
 //   • A 'failed' status whose wamid is not in WaMessageLog yet (the router's
 //     wamid UPDATE may not have committed) is re-checked ONCE after
 //     FAILED_STATUS_RECHECK_MS, in the background.
 //   • delivered/read NULL the stored (encrypted) body of a tenant send: the
-//     patient has the message, so it can never fall back.
+//     patient has the message, so any stale legacy body can be discarded.
 //
-// Background work (auto-reply, async fallback, failed-status re-check) is
+// Background work (auto-reply and failed-status re-check) is fire-and-forget:
 // fire-and-forget: it is never awaited inside the request, so Meta always gets
 // a fast 200.
 //
@@ -45,7 +44,6 @@ import crypto from "crypto";
 import { execute, queryOne } from "./db";
 import { normalizeWaPhone, resolveCloudConfig } from "./whatsapp-cloud";
 import { dispatchAutoReply, resolveInboundTenant, shouldAutoReply } from "./wa-auto-reply";
-import { isAsyncFallbackEligible, runAsyncWebFallback } from "./whatsapp-router";
 
 export const WA_WEBHOOK_PATH = "/api/whatsapp/webhook";
 
@@ -295,14 +293,9 @@ async function handleGet(req: Request): Promise<Response> {
   return new Response("", { status: 403 });
 }
 
-/** Reads the row a status refers to (before the status UPDATE). Throws on DB error. */
+/** Reads whether a status wamid already exists. Throws on DB error. */
 async function lookupStatusRow(wamid: string): Promise<any> {
-  return queryOne<any>(
-    `SELECT id, tenantId, direction, recipient, kind, channel, body, officialStatus,
-            webFallbackAttempted
-       FROM WaMessageLog WHERE metaMessageId = ? LIMIT 1`,
-    [wamid],
-  );
+  return queryOne<any>("SELECT id FROM WaMessageLog WHERE metaMessageId = ? LIMIT 1", [wamid]);
 }
 
 /**
@@ -341,15 +334,6 @@ async function applyStatusUpdate(entry: StatusEntry): Promise<void> {
   );
 }
 
-function toFallbackRow(prior: any) {
-  return {
-    id: String(prior.id),
-    tenantId: String(prior.tenantId),
-    recipient: String(prior.recipient),
-    body: String(prior.body),
-  };
-}
-
 /**
  * One-time delayed re-check of a 'failed' status whose wamid was not found:
  * the router writes the wamid only after Meta's response, so a very fast
@@ -360,12 +344,11 @@ async function recheckFailedStatus(entry: StatusEntry): Promise<void> {
   const row = await lookupStatusRow(entry.id);
   if (!row) return;
   await applyStatusUpdate(entry);
-  if (isAsyncFallbackEligible(row)) await runAsyncWebFallback(toFallbackRow(row));
 }
 
 async function applyStatusEntry(entry: StatusEntry): Promise<void> {
-  // For 'failed', read the row BEFORE the status UPDATE so the async Web
-  // fallback can tell whether the patient ever received it (delivered/read).
+  // For 'failed', check whether the wamid exists before the status UPDATE so a
+  // very fast callback can be re-applied once after the router stores it.
   let prior: any = null;
   let lookedUp = false;
   if (entry.status === "failed") {
@@ -380,10 +363,7 @@ async function applyStatusEntry(entry: StatusEntry): Promise<void> {
 
   await applyStatusUpdate(entry);
 
-  if (prior && isAsyncFallbackEligible(prior)) {
-    const row = toFallbackRow(prior);
-    runInBackground("async web fallback", () => runAsyncWebFallback(row));
-  } else if (lookedUp && !prior) {
+  if (lookedUp && !prior) {
     // Unknown wamid: maybe the router's wamid UPDATE hasn't committed yet.
     runInBackground("failed-status recheck", () => recheckFailedStatus(entry));
   }

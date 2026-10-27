@@ -709,14 +709,14 @@ function listGuests(store: Store, tenantId: string): GuestProjection[] {
 function queueBookingNotification(
   store: Store,
   booking: BookingRow,
-  ctx: { restaurantName: string; featureAvailable: boolean; connected: boolean },
+  ctx: { restaurantName: string; featureAvailable: boolean; templateReady: boolean },
 ): boolean {
   if (normalisePhone(booking.phone).length === 0) {
     store.log.push(`notification omitted, no guest phone: ${booking.id}`);
     return false;
   }
-  if (!ctx.featureAvailable || !ctx.connected) {
-    store.log.push(`notification skipped, feature unavailable or disconnected: ${booking.id}`);
+  if (!ctx.featureAvailable || !ctx.templateReady) {
+    store.log.push(`notification skipped, feature or approved template unavailable: ${booking.id}`);
     return false;
   }
   store.notifications.push({
@@ -2168,8 +2168,8 @@ describe("Property 26: Dining_Tables are scoped to exactly one Location and avai
 });
 
 describe("Property 36: A queued booking notification carries the booking's facts, and only when the feature permits", () => {
-  // Feature: restaurant-table-booking, Property 36: For any created Table_Booking carrying a Guest phone, the message the Notification_Service queues contains the restaurant name, the booking date, the Booking_Slot, the Party_Size, the assigned Table_Name, and the Booking_Token; for any combination of WhatsApp feature availability and connection state, a message is queued if and only if the feature is available for the Tenant and the connection state is connected, and the Table_Booking is created either way.
-  it("queues a fact-carrying message exactly when the feature is available and connected, and books either way", () => {
+  // Feature: restaurant-table-booking, Property 36: a saved booking with a guest phone submits its fact-carrying approved utility template only when the feature and template mapping are ready; booking persistence is independent of notification outcome.
+  it("queues template facts exactly when the feature and approved mapping are ready", () => {
     fc.assert(
       fc.property(
         arbFixture,
@@ -2179,7 +2179,7 @@ describe("Property 36: A queued booking notification carries the booking's facts
         arbPhone,
         fc.nat({ max: 24 }),
         fc.constantFrom("Spice Route", "Café Noir", "The Green Fork"),
-        (fx, featureAvailable, connected, phoneLess, phone, slotIdx, restaurantName) => {
+        (fx, featureAvailable, templateReady, phoneLess, phone, slotIdx, restaurantName) => {
           const { store, now, date } = fx;
           const availability = availabilityFor(store, TENANT_A, {
             date,
@@ -2212,10 +2212,10 @@ describe("Property 36: A queued booking notification carries the booking's facts
           const queued = queueBookingNotification(store, booking, {
             restaurantName,
             featureAvailable,
-            connected,
+            templateReady,
           });
           const hasPhone = normalisePhone(phoneLess ? "" : phone).length > 0;
-          expect(queued).toBe(featureAvailable && connected && hasPhone);
+          expect(queued).toBe(featureAvailable && templateReady && hasPhone);
 
           if (queued) {
             expect(store.notifications.length).toBe(1);

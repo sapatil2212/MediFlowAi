@@ -11,12 +11,12 @@
 // reminder per cycle (the most urgent applicable stage), deduped by per-row
 // boolean columns so a customer never receives the same reminder twice.
 //
-// Gated per-tenant via appointment-notify.isWhatsAppReady (enabled + CONNECTED).
+// Gated by an enabled, mapped, approved official Cloud utility template.
 // Never throws out of the cycle — a failure for one appointment/tenant does not
 // affect the others.
 // ─────────────────────────────────────────────────────────────────────────────
 import { query, execute } from "./db";
-import { buildAppointmentMessage, type AptNotifyKind } from "./appointment-notify";
+import type { AptNotifyKind } from "./appointment-notify";
 import { sendPatientMessage } from "./whatsapp-router";
 import { isCloudAvailable } from "./whatsapp-cloud";
 
@@ -112,7 +112,6 @@ async function runTokenCorrections(): Promise<void> {
         recipientPhone: phone,
         cloudAvailable,
         ctx,
-        buildMessage: () => buildAppointmentMessage("tokenUpdated", ctx),
       });
 
       if (result.delivered) {
@@ -267,14 +266,12 @@ async function runReminderCycle(): Promise<void> {
           recipientPhone: phone,
           cloudAvailable,
           ctx,
-          buildMessage: () => buildAppointmentMessage(kind, ctx),
         });
 
         if (result.delivered) {
-          // Mark this reminder as sent so it never repeats. A Meta-accepted
-          // official send counts as delivered; if Meta later reports it failed
-          // and the async Web fallback finds Web disconnected, it is not
-          // retried (known and accepted; see whatsapp-router.ts).
+          // Mark this reminder as submitted so it never repeats. Meta acceptance
+          // is distinct from delivery; the signed webhook records final state.
+          // Failed template submissions leave the flag unset for a later cycle.
           await execute(`UPDATE Appointment SET ${column} = 1 WHERE id = ?`, [apt.id]);
           console.log(
             `[Reminder Scheduler] Sent ${kind} for appointment ${apt.id} (${apt.tenantId})`,

@@ -10,6 +10,7 @@ import {
   expectedVarCount,
   buildTemplateVars,
   countBodyPlaceholders,
+  resolveTemplateField,
   type AptNotifyKind,
   type AptNotifyContext,
 } from "./appointment-notify";
@@ -23,6 +24,8 @@ const baseCtx: AptNotifyContext = {
   dateTime: new Date("2026-02-01T09:30:00Z"),
   timeSlot: "9:30 AM",
   tokenNo: 7,
+  partySize: 4,
+  tableName: "T1 + T2",
 };
 
 // A context with every optional field empty, to exercise the non-empty fallbacks.
@@ -49,6 +52,20 @@ describe("buildTemplateVars", () => {
         expect(v.length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe("resolveTemplateField", () => {
+  it("resolves tokenNo exactly and fails closed when it is missing", () => {
+    expect(resolveTemplateField("tokenNo", baseCtx)).toBe("7");
+    expect(resolveTemplateField("tokenNo", sparseCtx)).toBeNull();
+  });
+
+  it("resolves restaurant fields exactly and fails closed when missing", () => {
+    expect(resolveTemplateField("partySize", baseCtx)).toBe("4");
+    expect(resolveTemplateField("tableName", baseCtx)).toBe("T1 + T2");
+    expect(resolveTemplateField("partySize", sparseCtx)).toBeNull();
+    expect(resolveTemplateField("tableName", sparseCtx)).toBeNull();
   });
 });
 

@@ -331,27 +331,28 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
       console.error("[Tokens] Daily renumber failed (booking still succeeds):", tokErr?.message);
     }
 
-    // Queue the "appointment booked" WhatsApp notification. Gated ONLY on a
-    // live (CONNECTED) session — the same rule the dashboard booking path uses.
-    // We intentionally do NOT require WhatsAppConfig.isEnabled here: that column
-    // defaults to 0 and connecting the session never sets it, which previously
-    // caused public bookings to silently skip WhatsApp even when connected.
+    // Submit the "appointment booked" approved utility template after the
+    // appointment exists. The awaited notification remains non-fatal.
     if (typeof window === "undefined") {
-      const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
-        await import("./appointment-notify");
-      const [clinicName, doctorName] = await Promise.all([
-        resolveClinicName(data.tenantId),
-        resolveDoctorName(docId),
-      ]);
-      await sendAppointmentNotification(data.tenantId, data.whatsapp || data.phone, "booked", {
-        name: data.name,
-        clinicName,
-        doctorName,
-        dateTime: dateVal,
-        timeSlot: tSlot,
-        tokenNo,
-        appointmentId: id,
-      });
+      try {
+        const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
+          await import("./appointment-notify");
+        const [clinicName, doctorName] = await Promise.all([
+          resolveClinicName(data.tenantId),
+          resolveDoctorName(docId),
+        ]);
+        await sendAppointmentNotification(data.tenantId, data.whatsapp || data.phone, "booked", {
+          name: data.name,
+          clinicName,
+          doctorName,
+          dateTime: dateVal,
+          timeSlot: tSlot,
+          tokenNo,
+          appointmentId: id,
+        });
+      } catch {
+        console.error("[WhatsApp][booked] Notification failed after public booking was created.");
+      }
     }
 
     // Create the video room + patient join link when booked as a video visit.

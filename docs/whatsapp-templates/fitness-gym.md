@@ -6,7 +6,7 @@
 - Wording used here: training session, gym, trainer or coach (the `{{3}}` value), client record, workout plan, queue number. These terms come from the dashboard ("Book Session", "Trainer / Coach", "Session Date", "Workout Plans", "Gym Profile") and the public booking page ("Training Session Scheduled!", "Coach / Trainer").
 - Templates: 9, all new.
 
-Gym tenants book and update through the same server functions as healthcare: `createAppointmentServerFn` / `updateAppointmentServerFn` from `src/routes/dashboards/gym.tsx:1874` / `:1841`, and `createAppointmentPublicServerFn` from the public page. They also get the same reminders. Today they receive the medical plain-text wording from `buildAppointmentMessage`. The templates below keep the `TEMPLATE_VAR_SPEC` variable order of each kind. Video links and doctor leave notices are not sent to this category.
+Gym tenants book and update through the same server functions as healthcare: `createAppointmentServerFn` / `updateAppointmentServerFn` from `src/routes/dashboards/gym.tsx:1874` / `:1841`, and `createAppointmentPublicServerFn` from the public page. They also get the same reminders. Outbound notifications are template-only; map an approved template from this catalogue or the event fails closed with `template_not_ready`. The templates below keep the `TEMPLATE_VAR_SPEC` variable order of each kind. Video links and doctor leave notices are not sent to this category.
 
 Gym specifics in the code:
 

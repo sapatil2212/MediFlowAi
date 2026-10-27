@@ -20,6 +20,9 @@ import {
   sendTextMessage,
   verifyPhoneNumber,
 } from "./whatsapp-cloud";
+import { getTemplateRepo } from "./wa-template-repo";
+import { findPublishedTemplateSpec } from "./wa-template-presets";
+import { parsePlaceholders } from "./wa-template-model";
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -65,10 +68,96 @@ function buildApiVersionInfo(row: any): ApiVersionInfo {
   return { value, source, expiresOn, warning };
 }
 
+export interface BookedRouteReadiness {
+  mappingExists: boolean;
+  mappingEnabled: boolean;
+  optInAcknowledged: boolean;
+  templateApproved: boolean;
+  templateUtility: boolean;
+  languageCompatible: boolean;
+  accountCompatible: boolean;
+  templateContractCompatible: boolean;
+  ready: boolean;
+}
+
+const EMPTY_BOOKED_READINESS: BookedRouteReadiness = {
+  mappingExists: false,
+  mappingEnabled: false,
+  optInAcknowledged: false,
+  templateApproved: false,
+  templateUtility: false,
+  languageCompatible: false,
+  accountCompatible: false,
+  templateContractCompatible: false,
+  ready: false,
+};
+
+/** Computes booked-template readiness without returning any secret or patient data. */
+async function getBookedRouteReadiness(
+  resolved: Awaited<ReturnType<typeof resolveCloudConfig>>,
+): Promise<BookedRouteReadiness> {
+  try {
+    const spec = findPublishedTemplateSpec("appointment_booked", "en_US");
+    if (!spec) return { ...EMPTY_BOOKED_READINESS };
+
+    const repo = getTemplateRepo();
+    const mapping = await repo.getMapping("booked");
+    const template = mapping ? await repo.getById(mapping.templateId) : null;
+    const parsed = template
+      ? parsePlaceholders(template.bodyText, template.parameterFormat, "body")
+      : null;
+    const expectedKeys = Object.keys(spec.variableMappings);
+    const templateContractCompatible = !!(
+      template &&
+      template.name === spec.name &&
+      template.language === spec.language &&
+      template.parameterFormat === spec.parameterFormat &&
+      (template.headerType ?? "NONE") === spec.headerType &&
+      (template.buttons?.length ?? 0) === 0 &&
+      parsed &&
+      parsed.errors.length === 0 &&
+      parsed.placeholders.length === expectedKeys.length &&
+      parsed.placeholders.every(
+        (placeholder, index) =>
+          placeholder.key === expectedKeys[index] &&
+          template.variableMappings?.[placeholder.key] === spec.variableMappings[placeholder.key],
+      )
+    );
+
+    const readiness: BookedRouteReadiness = {
+      mappingExists: !!mapping,
+      mappingEnabled: mapping?.isEnabled === true,
+      optInAcknowledged: !!mapping?.optInAckAt,
+      templateApproved: (template?.metaStatus ?? "").toUpperCase() === "APPROVED",
+      templateUtility: (template?.metaCategory ?? "").toUpperCase() === "UTILITY",
+      languageCompatible: !!(
+        mapping &&
+        template &&
+        mapping.language === spec.language &&
+        template.language === spec.language
+      ),
+      accountCompatible: !!(
+        template?.messagingAccountId &&
+        resolved?.wabaId &&
+        template.messagingAccountId === resolved.wabaId
+      ),
+      templateContractCompatible,
+      ready: false,
+    };
+    readiness.ready = Object.entries(readiness)
+      .filter(([key]) => key !== "ready")
+      .every(([, value]) => value === true);
+    return readiness;
+  } catch {
+    return { ...EMPTY_BOOKED_READINESS };
+  }
+}
+
 /** Returns the masked central config (never the ciphertext/plaintext). */
 export async function getWaCloudConfig() {
   const row = await queryOne<any>("SELECT * FROM WaCloudConfig WHERE id = 'central' LIMIT 1");
   const resolved = await resolveCloudConfig();
+  const bookedRoute = await getBookedRouteReadiness(resolved);
   return {
     phoneNumberId: row?.phoneNumberId ?? resolved?.phoneNumberId ?? null,
     wabaId: row?.wabaId ?? resolved?.wabaId ?? null,
@@ -81,6 +170,9 @@ export async function getWaCloudConfig() {
     appSecretLast4: row?.appSecretLast4 ?? null,
     verifyTokenConfigured: !!(row?.verifyToken || process.env.WA_CLOUD_VERIFY_TOKEN),
     encKeyConfigured: isEncKeyConfigured(),
+    recipientAllowlistActive: !!process.env.WA_CLOUD_TEST_RECIPIENTS?.trim(),
+    bookedRouteReady: bookedRoute.ready,
+    bookedRouteChecks: bookedRoute,
     source: resolved?.source ?? "none",
   };
 }

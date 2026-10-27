@@ -3,13 +3,12 @@
 // Tests for whatsapp-webhook.ts. The pure pieces — signature verification,
 // event-key building, and the monotonic status decision — are tested directly.
 // The GET handshake, POST signature enforcement, inbound tenant resolution +
-// auto-reply, and the async 'failed'-status Web fallback are tested through
-// handleWaWebhook with the DB, the Cloud API client and the Web channel mocked,
-// so no real network, database or Meta Graph API call is made.
+// auto-reply, and official-only failed-status handling are tested through
+// handleWaWebhook with the DB and Cloud API client mocked, so no real network,
+// database, Meta Graph API, or whatsapp-web.js call is made.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import crypto from "crypto";
-import { encryptSecret } from "./wa-crypto";
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -33,12 +32,6 @@ vi.mock("./db", () => ({
   queryOne: (...args: any[]) => queryOneMock(...args),
 }));
 
-const isWhatsAppReadyMock = vi.fn();
-vi.mock("./appointment-notify", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./appointment-notify")>()),
-  isWhatsAppReady: (...args: any[]) => isWhatsAppReadyMock(...args),
-}));
-
 const enqueueWAMock = vi.fn();
 vi.mock("./whatsapp", () => ({
   enqueueWA: (...args: any[]) => enqueueWAMock(...args),
@@ -55,9 +48,6 @@ import {
   WA_WEBHOOK_PATH,
 } from "./whatsapp-webhook";
 
-/** Test-only AES key (hex, 32 bytes) for WA_CLOUD_ENC_KEY. */
-const TEST_KEY_HEX = "b2".repeat(32);
-const seal = (plain: string) => encryptSecret(plain, Buffer.from(TEST_KEY_HEX, "hex"));
 const APP_SECRET = "test-app-secret-value";
 const VERIFY_TOKEN = "my-verify-token";
 const OUR_NUMBER = "15550001111";
@@ -96,9 +86,6 @@ let routes: {
   /** The WaCloudTemplate row returned for a template-webhook lookup. */
   template?: any;
 };
-/** affectedRows returned by the async-fallback claim UPDATE. */
-let claimAffectedRows = 1;
-
 function sqlCalls(fragment: string) {
   return executeMock.mock.calls.filter((c) => typeof c[0] === "string" && c[0].includes(fragment));
 }
@@ -110,11 +97,9 @@ beforeEach(() => {
   executeMock.mockReset();
   queryMock.mockReset();
   queryOneMock.mockReset();
-  isWhatsAppReadyMock.mockReset();
   enqueueWAMock.mockReset();
   insertedKeys.clear();
   routes = {};
-  claimAffectedRows = 1;
 
   resolveCloudConfigMock.mockResolvedValue({
     phoneNumberId: "123",
@@ -128,7 +113,6 @@ beforeEach(() => {
   });
   isCloudAvailableMock.mockResolvedValue(true);
   sendTextMessageMock.mockResolvedValue({ ok: true, messageId: "wamid.REPLY" });
-  isWhatsAppReadyMock.mockResolvedValue(true);
   enqueueWAMock.mockResolvedValue({ success: true });
   queryMock.mockResolvedValue([]);
 
@@ -157,13 +141,8 @@ beforeEach(() => {
       if (insertedKeys.has(key)) throw new Error("duplicate");
       insertedKeys.add(key);
     }
-    if (typeof sql === "string" && sql.includes("SET webFallbackAttempted = 1")) {
-      return { affectedRows: claimAffectedRows, insertId: null };
-    }
     return { affectedRows: 1, insertId: null };
   });
-
-  vi.stubEnv("WA_CLOUD_ENC_KEY", TEST_KEY_HEX);
 });
 
 afterEach(() => {
@@ -550,19 +529,17 @@ describe("inbound messages", () => {
   });
 });
 
-// ── Async Web fallback on a 'failed' status ──────────────────────────────────
+// ── Official-only handling of a 'failed' status ──────────────────────────────
 
-describe("async Web fallback", () => {
-  const JOIN_BODY = "Join your video consultation:\nhttps://app.test/consult/TOKEN_abc123";
-  // WaMessageLog.body holds the ENCRYPTED body (see whatsapp-router.ts).
+describe("failed status handling", () => {
   const PRIOR = {
     id: "log1",
     tenantId: "t1",
     direction: "out",
     recipient: "918830553868",
-    kind: "booked",
+    kind: "confirmed",
     channel: "official",
-    body: seal(JOIN_BODY),
+    body: null,
     officialStatus: "sent",
     webFallbackAttempted: 0,
   };
@@ -593,96 +570,39 @@ describe("async Web fallback", () => {
     };
   }
 
-  it("sends the decrypted stored body via Web once and keeps the monotonic status UPDATE", async () => {
+  it("records an official failure without attempting WhatsApp Web", async () => {
     routes.prior = { ...PRIOR };
+
     const res = await post(failedPayload());
     expect(res.status).toBe(200);
     await drainWaBackgroundTasks();
 
-    expect(sqlCalls("FIELD(?, 'queued','sent','delivered','read')").length).toBe(1);
-    const claim = sqlCalls("SET webFallbackAttempted = 1");
-    expect(claim.length).toBe(1);
-    expect(claim[0][0]).toContain("body = NULL"); // body cleared when the claim is taken
-    expect(enqueueWAMock).toHaveBeenCalledTimes(1);
-    expect(enqueueWAMock).toHaveBeenCalledWith("t1", "918830553868", JOIN_BODY);
-    expect(sqlCalls("SET channel = 'web', status = 'sent'").length).toBe(1);
-
-    // The plaintext join link never goes to the DB.
-    for (const c of executeMock.mock.calls) {
-      for (const p of Array.isArray(c[1]) ? c[1] : []) {
-        if (typeof p === "string") expect(p).not.toContain("/consult/");
-      }
-    }
-  });
-
-  it("does not fall back twice for a re-delivered 'failed' webhook", async () => {
-    routes.prior = { ...PRIOR };
-    const payload = failedPayload();
-    await post(payload);
-    await drainWaBackgroundTasks();
-    await post(payload);
-    await drainWaBackgroundTasks();
-    expect(enqueueWAMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not send when the atomic claim loses (affectedRows 0)", async () => {
-    routes.prior = { ...PRIOR };
-    claimAffectedRows = 0;
-    await post(failedPayload("wamid.OUT2"));
-    await drainWaBackgroundTasks();
-    expect(sqlCalls("SET webFallbackAttempted = 1").length).toBe(1);
+    expect(sqlCalls("FIELD(?, 'queued','sent','delivered','read')")).toHaveLength(1);
+    expect(sqlCalls("webFallbackAttempted = 1")).toHaveLength(0);
     expect(enqueueWAMock).not.toHaveBeenCalled();
+    expect(sqlCalls("SET channel = 'web'")).toHaveLength(0);
   });
 
-  it("never falls back for an auto-reply row", async () => {
-    routes.prior = { ...PRIOR, kind: "autoReply" };
-    await post(failedPayload("wamid.OUT3"));
-    await drainWaBackgroundTasks();
-    expect(sqlCalls("SET webFallbackAttempted = 1").length).toBe(0);
-    expect(enqueueWAMock).not.toHaveBeenCalled();
-  });
-
-  it("does not send or mark sent when Web is not connected", async () => {
-    routes.prior = { ...PRIOR };
-    isWhatsAppReadyMock.mockResolvedValue(false);
-    await post(failedPayload("wamid.OUT4"));
-    await drainWaBackgroundTasks();
-    expect(enqueueWAMock).not.toHaveBeenCalled();
-    expect(sqlCalls("status = 'sent'").length).toBe(0);
-  });
-
-  it("does not fall back when the message was already delivered", async () => {
-    routes.prior = { ...PRIOR, officialStatus: "delivered" };
-    await post(failedPayload("wamid.OUT5"));
-    await drainWaBackgroundTasks();
-    expect(sqlCalls("SET webFallbackAttempted = 1").length).toBe(0);
-    expect(enqueueWAMock).not.toHaveBeenCalled();
-  });
-
-  it("re-checks an unknown-wamid 'failed' once after a delay and falls back if the row appeared", async () => {
+  it("re-checks an unknown wamid once and applies failure without Web fallback", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
-    // 1st lookup: the router's wamid UPDATE hasn't committed yet. 2nd: it has.
     routes.priorSeq = [null, { ...PRIOR }];
 
     const res = await post(failedPayload("wamid.RACE"));
     expect(res.status).toBe(200);
-    expect(statusLookups().length).toBe(1);
-    expect(enqueueWAMock).not.toHaveBeenCalled();
-    expect(vi.getTimerCount()).toBe(1); // the re-check is scheduled, not awaited
+    expect(statusLookups()).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(1);
 
     await vi.advanceTimersByTimeAsync(FAILED_STATUS_RECHECK_MS);
     await drainWaBackgroundTasks();
     vi.useRealTimers();
 
-    expect(statusLookups().length).toBe(2);
-    // Status UPDATE re-applied now that the wamid exists.
-    expect(sqlCalls("FIELD(?, 'queued','sent','delivered','read')").length).toBe(2);
-    expect(sqlCalls("SET webFallbackAttempted = 1").length).toBe(1);
-    expect(enqueueWAMock).toHaveBeenCalledTimes(1);
-    expect(enqueueWAMock).toHaveBeenCalledWith("t1", "918830553868", JOIN_BODY);
+    expect(statusLookups()).toHaveLength(2);
+    expect(sqlCalls("FIELD(?, 'queued','sent','delivered','read')")).toHaveLength(2);
+    expect(sqlCalls("webFallbackAttempted = 1")).toHaveLength(0);
+    expect(enqueueWAMock).not.toHaveBeenCalled();
   });
 
-  it("re-checks an unknown-wamid 'failed' only once and does nothing if it is still unknown", async () => {
+  it("re-checks an unknown wamid only once when it remains unknown", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     routes.priorSeq = [null, null];
 
@@ -692,9 +612,8 @@ describe("async Web fallback", () => {
     expect(vi.getTimerCount()).toBe(0);
     vi.useRealTimers();
 
-    expect(statusLookups().length).toBe(2);
-    expect(sqlCalls("FIELD(?, 'queued','sent','delivered','read')").length).toBe(1);
-    expect(sqlCalls("SET webFallbackAttempted = 1").length).toBe(0);
+    expect(statusLookups()).toHaveLength(2);
+    expect(sqlCalls("FIELD(?, 'queued','sent','delivered','read')")).toHaveLength(1);
     expect(enqueueWAMock).not.toHaveBeenCalled();
   });
 });

@@ -227,6 +227,16 @@ function CredentialsTab() {
         </div>
       )}
 
+      {cfg?.recipientAllowlistActive && (
+        <div className="flex items-start gap-2 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-800">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" aria-hidden="true" />
+          <span>
+            <code>WA_CLOUD_TEST_RECIPIENTS</code> is active. Unset it and restart the production
+            service, or official sends to patients outside the test allow-list will be blocked.
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Phone Number ID">
           <input

@@ -16,6 +16,14 @@ Variable samples use the app's real formats. The date comes from `fmtDate` (`src
 
 ### 1. appointment_booked
 
+> **Deployment recovery:** This template already exists in Meta. Run **Sync all**
+> to import it; do not create or submit a duplicate. Meta must report
+> `APPROVED`, `UTILITY`, `en_US`. Then assign it to **Appointment Booked** in
+> Notification mappings, acknowledge opt-in, and enable it. Also remove
+> `WA_CLOUD_TEST_RECIPIENTS` from production and restart the service; preserve
+> `WA_CLOUD_ENC_KEY` across deployments. A saved API version such as `v21.0`
+> overrides the code's `v26.0` default until the saved value is changed.
+
 - Status: Submitted
 - App trigger: `booked`, sent by `sendAppointmentNotification` from `src/lib/auth.ts:1210` (dashboard booking, `createAppointmentServerFn`), `src/lib/auth.ts:1466` (`createSubLocationBookingServerFn`) and `src/lib/booking.ts:346` (public booking page, `createAppointmentPublicServerFn`)
 - Name: `appointment_booked`
@@ -251,7 +259,7 @@ Please start heading over. See you soon!
 ### 10. appointment_reschedule_needed
 
 - Status: New — not yet submitted
-- App trigger: doctor emergency leave. `processDoctorEmergencyLeaveServerFn` (`src/lib/auth.ts:2706`) is called from the Emergency Leave modal (`src/components/medical/DoctorEmergencyLeaveModal.tsx:527`, medical dashboard, Doctor Directory). It sets each affected appointment to `Reschedule Needed` and sends the notice by `enqueueWA` at `src/lib/auth.ts:2827`. Default wording is at `src/lib/auth.ts:2790`.
+- App trigger: doctor emergency leave. `processDoctorEmergencyLeaveServerFn` is called from the Emergency Leave modal, sets each affected appointment to `Reschedule Needed`, and awaits `sendAppointmentNotification(..., "rescheduleNeeded")`. The saved leave/appointment update remains successful if the mapped template is unavailable.
 - Name: `appointment_reschedule_needed`
 - Category: Utility
 - Language: English (US)
@@ -269,16 +277,16 @@ The clinic will contact you with other available times. You can also call the cl
 ```
 
 - Variable samples: {{1}} `Priya Sharma` · {{2}} `CityCare Clinic` · {{3}} `Dr. Rohan Mehta` · {{4}} `Tue, 20 Oct, 2026` · {{5}} `10:30 AM`
-- Variable mapping: {{1}} = appointment name (fallback `Patient`), {{2}} = clinicName (`ClinicProfile.clinicName`, else the account's clinic name), {{3}} = doctor name, {{4}} = appointment date (this path formats it en-IN, for example `Tue, 20 Oct, 2026`), {{5}} = appointment timeSlot (or the en-IN time). There is no `TEMPLATE_VAR_SPEC` entry for this message. The order follows the appointment-notify convention.
+- Variable mapping: {{1}} = name, {{2}} = clinicName, {{3}} = doctorName, {{4}} = date, {{5}} = time. The runtime event is `rescheduleNeeded` and resolves these values from the affected appointment context.
 - Footer: `This is an automated notification message.`
 - Buttons: None
 - Message validity period: 12 hours (pick the closest option offered)
-- Note: today's text can be edited by staff or written by AI, and it includes the leave reason and invites a reply. The template is fixed text. It leaves out the free-text reason and does not ask for a reply, because the central number cannot receive replies.
+- Note: outbound delivery uses only this approved template. Staff-edited or AI-written free-form text is not sent; while this template is unapproved or unmapped, the event logs `template_not_ready`.
 
 ### 11. appointment_reinstated
 
 - Status: New — not yet submitted
-- App trigger: doctor leave cancelled. `cancelDoctorLeaveAndReinstateAppointmentsServerFn` (`src/lib/auth.ts:2979`) is called from the Cancel Leave modal (`src/components/medical/DoctorCancelLeaveModal.tsx:266`). It sets the selected appointments back to `Confirmed` and sends the notice by `enqueueWA` at `src/lib/auth.ts:3097`. Default wording is at `src/lib/auth.ts:3070`.
+- App trigger: doctor leave cancelled. `cancelDoctorLeaveAndReinstateAppointmentsServerFn` sets selected appointments back to `Confirmed` and awaits `sendAppointmentNotification(..., "reinstated")`. The status update remains successful if the mapped template is unavailable.
 - Name: `appointment_reinstated`
 - Category: Utility
 - Language: English (US)
@@ -296,11 +304,11 @@ You do not need to reschedule. We look forward to seeing you.
 ```
 
 - Variable samples: {{1}} `Priya Sharma` · {{2}} `CityCare Clinic` · {{3}} `Dr. Rohan Mehta` · {{4}} `Tue, 20 Oct, 2026` · {{5}} `10:30 AM`
-- Variable mapping: {{1}} = appointment name (fallback `Patient`), {{2}} = clinicName, {{3}} = doctor name, {{4}} = appointment date (en-IN on this path), {{5}} = appointment timeSlot (or the en-IN time). There is no `TEMPLATE_VAR_SPEC` entry for this message.
+- Variable mapping: {{1}} = name, {{2}} = clinicName, {{3}} = doctorName, {{4}} = date, {{5}} = time. The runtime event is `reinstated` and resolves these values from the affected appointment context.
 - Footer: `This is an automated notification message.`
 - Buttons: None
 - Message validity period: 12 hours (pick the closest option offered)
-- Note: same as template 10. Staff-edited or AI-written text cannot be carried, and the template does not invite a reply.
+- Note: outbound delivery uses only this approved template. Staff-edited or AI-written free-form text is not sent; while this template is unapproved or unmapped, the event logs `template_not_ready`.
 
 ### 12. appointment_video_link_issued
 

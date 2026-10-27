@@ -9,7 +9,7 @@
 // acknowledgement and re-checks eligibility.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   waNotifyMappingsServerFn,
@@ -17,6 +17,7 @@ import {
   waAssignMappingServerFn,
   waSetMappingEnabledServerFn,
   waRemoveMappingServerFn,
+  getWaCloudConfigServerFn,
 } from "../../../lib/admin";
 import { NOTIFY_KIND_LABELS, NOTIFY_KINDS } from "../../../lib/wa-template-model";
 import { DisabledReason } from "./shared";
@@ -49,11 +50,12 @@ export function NotificationMappings() {
   const [options, setOptions] = useState<TemplateOption[]>([]);
   const [ack, setAck] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [bookedRouteReady, setBookedRouteReady] = useState<boolean | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [mapRes, listRes] = await Promise.all([
+      const [mapRes, listRes, configRes] = await Promise.all([
         waNotifyMappingsServerFn({ data: {} }) as Promise<{
           ok: boolean;
           rows?: MappingRow[];
@@ -65,7 +67,9 @@ export function NotificationMappings() {
           ok: boolean;
           rows?: TemplateOption[];
         }>,
+        getWaCloudConfigServerFn() as Promise<{ bookedRouteReady?: boolean }>,
       ]);
+      setBookedRouteReady(configRes.bookedRouteReady === true);
       if (mapRes.ok && mapRes.rows) {
         const byKind: Record<string, MappingRow> = {};
         for (const m of mapRes.rows) byKind[m.notifyKind] = m;
@@ -158,9 +162,24 @@ export function NotificationMappings() {
     <div className="space-y-3" data-testid="notification-mappings">
       <h3 className="text-sm font-semibold text-zinc-700">Notification mappings</h3>
       <p className="text-xs text-zinc-500">
-        Assign an approved UTILITY template to a notification event. Sends stay off until you enable
-        the mapping and confirm the opt-in acknowledgement.
+        Assign an approved UTILITY template to each notification event. Outbound notifications use
+        only the official Cloud API and fail closed until you enable the mapping and confirm the
+        opt-in acknowledgement; there is no free-form or WhatsApp Web fallback.
       </p>
+      {bookedRouteReady === false && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            Appointment Booked is not template-ready. Booking notifications will be logged as failed
+            rather than sent as free-form text. Sync
+            <code className="mx-1">appointment_booked</code> from Meta, verify it is Approved,
+            Utility and en_US, then assign it, acknowledge opt-in and enable the mapping.
+          </span>
+        </div>
+      )}
       <div className="space-y-3">
         {NOTIFY_KINDS.map((kind) => {
           const mapping = mappings[kind];

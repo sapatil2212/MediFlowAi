@@ -2,8 +2,8 @@
 //
 // Tests for the runtime notification gate (wa-template-notify.ts). The repo is
 // the in-memory double; isCloudAvailable/resolveCloudConfig are stubbed. No DB,
-// no Meta call. The core invariant: with no enabled mapping resolveTemplatePlan
-// returns null (→ the router's byte-identical text path).
+// no Meta call. Expected gate failures return structured reasons to the router;
+// unexpected repository failures propagate for separate sanitized handling.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -17,7 +17,11 @@ vi.mock("./whatsapp-cloud", async (importOriginal) => ({
 
 import { createInMemoryTemplateRepo, InMemoryTemplateRepo } from "./wa-template-repo.memory";
 import { __setTemplateRepoForTests } from "./wa-template-repo";
-import { invalidateMappingCache, resolveTemplatePlan } from "./wa-template-notify";
+import {
+  invalidateMappingCache,
+  resolveTemplatePlan,
+  resolveTemplatePlanResult,
+} from "./wa-template-notify";
 import type { AptNotifyContext } from "./appointment-notify";
 
 let repo: InMemoryTemplateRepo;
@@ -27,6 +31,7 @@ const CTX: AptNotifyContext & { recipientPhone?: string | null } = {
   clinicName: "Sunrise Clinic",
   doctorName: "Dr. Mehta",
   dateTime: new Date("2026-01-12T10:30:00Z"),
+  tokenNo: 7,
   appointmentId: "a1b2c3d4e5f6",
   recipientPhone: "8830553868",
 };
@@ -86,6 +91,44 @@ async function seedApprovedMapping(overrides?: {
   return tpl;
 }
 
+async function seedPublishedBookedMapping() {
+  const tpl = await repo.createDraft({
+    name: "appointment_booked",
+    language: "en_US",
+    category: "UTILITY",
+    parameterFormat: "POSITIONAL",
+    headerType: "NONE",
+    bodyText: "Hello {{1}}, appointment at {{2}} with {{3}} on {{4}} at {{5}}, queue {{6}}.",
+    buttons: [],
+    variableMappings: {
+      "body.1": "name",
+      "body.2": "clinicName",
+      "body.3": "doctorName",
+      "body.4": "date",
+      "body.5": "time",
+      "body.6": "tokenNo",
+    },
+    sampleValues: {},
+    source: "META",
+    actorId: "sync",
+  });
+  await repo.applyMetaState(tpl.id, {
+    metaStatus: "APPROVED",
+    metaCategory: "UTILITY",
+    metaTemplateId: "booked-meta-1",
+    messagingAccountId: "222",
+    localState: "SUBMITTED",
+  });
+  await repo.upsertMapping({
+    notifyKind: "booked",
+    templateId: tpl.id,
+    language: "en_US",
+    actorId: "admin1",
+  });
+  await repo.setMappingEnabled("booked", true, { version: "v1", actorId: "admin1" });
+  return tpl;
+}
+
 beforeEach(() => {
   repo = createInMemoryTemplateRepo();
   __setTemplateRepoForTests(repo);
@@ -102,7 +145,14 @@ afterEach(() => {
 });
 
 describe("resolveTemplatePlan — gates", () => {
-  it("returns null when there is NO mapping (byte-identical text path, the incident fix)", async () => {
+  it("returns a structured expected reason when there is no mapping", async () => {
+    await expect(resolveTemplatePlanResult("booked", CTX)).resolves.toEqual({
+      status: "not_ready",
+      reason: "mapping_missing",
+    });
+  });
+
+  it("returns null when there is NO mapping", async () => {
     const plan = await resolveTemplatePlan("confirmed", CTX);
     expect(plan).toBeNull();
   });
@@ -123,6 +173,34 @@ describe("resolveTemplatePlan — gates", () => {
       expect.any(String),
       "A1B2C3D4", // bookingCode = first 8 chars upper-cased (DP-08)
     ]);
+  });
+
+  it("builds the exact appointment_booked parameters with tokenNo in position 6", async () => {
+    await seedPublishedBookedMapping();
+    invalidateMappingCache();
+
+    const plan = await resolveTemplatePlan("booked", CTX);
+
+    expect(plan).toMatchObject({
+      templateName: "appointment_booked",
+      language: "en_US",
+      parameterFormat: "POSITIONAL",
+    });
+    expect(plan?.bodyParams.map((param) => param.text)).toEqual([
+      "Asha Patel",
+      "Sunrise Clinic",
+      "Dr. Mehta",
+      expect.any(String),
+      expect.any(String),
+      "7",
+    ]);
+  });
+
+  it("fails the booked template closed when tokenNo is missing", async () => {
+    await seedPublishedBookedMapping();
+    invalidateMappingCache();
+
+    expect(await resolveTemplatePlan("booked", { ...CTX, tokenNo: null })).toBeNull();
   });
 
   it("returns null when Cloud is unavailable", async () => {
@@ -167,6 +245,13 @@ describe("resolveTemplatePlan — gates", () => {
     await seedApprovedMapping({ messagingAccountId: "999" });
     invalidateMappingCache();
     expect(await resolveTemplatePlan("confirmed", CTX)).toBeNull();
+  });
+
+  it("propagates unexpected repository failures instead of reporting not ready", async () => {
+    vi.spyOn(repo, "listMappings").mockRejectedValueOnce(new Error("database unavailable"));
+    invalidateMappingCache();
+
+    await expect(resolveTemplatePlan("booked", CTX)).rejects.toThrow("database unavailable");
   });
 });
 

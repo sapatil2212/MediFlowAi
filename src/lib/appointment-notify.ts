@@ -5,14 +5,13 @@
 //   • booked / confirmed / cancelled / completed (event-driven, from server fns)
 //   • reminders: 1 day before, day-of, 2 hours before, 1 hour before (scheduler)
 //
-// Every send is gated the same way a clinic's other WhatsApp notifications are:
-//   1. WhatsAppConfig.isEnabled = 1 for the tenant
-//   2. the tenant's WhatsApp session state is CONNECTED
-// If either check fails the notification is silently skipped (never throws, so
-// it can never block the booking/consultation flow).
+// Every send routes through the official Cloud API template router. A mapped,
+// enabled, approved utility template is required for every kind; no outbound
+// notification uses free-form Cloud text or whatsapp-web.js. All failures are
+// non-throwing to booking callers so an already-created appointment is never
+// rolled back.
 // ─────────────────────────────────────────────────────────────────────────────
 import { queryOne } from "./db";
-import { getWAStatus } from "./whatsapp";
 
 export type AptNotifyKind =
   | "booked"
@@ -25,7 +24,11 @@ export type AptNotifyKind =
   | "reminder1h"
   | "tokenUpdated"
   | "videoLinkIssued"
-  | "videoLinkReissued";
+  | "videoLinkReissued"
+  | "rescheduleNeeded"
+  | "reinstated"
+  | "restaurantBooked"
+  | "restaurantTableChanged";
 
 export interface AptNotifyContext {
   name: string;
@@ -34,34 +37,17 @@ export interface AptNotifyContext {
   dateTime: Date;
   timeSlot?: string | null;
   tokenNo?: number | null;
+  /** Restaurant-only template values. */
+  partySize?: number | null;
+  tableName?: string | null;
   /** Absolute patient join link for video consultations (Req 13). */
   joinLink?: string | null;
   /**
    * The appointment id, threaded through for the template notification gate.
    * Used to derive the patient-visible bookingCode (DP-08: first 8 chars,
-   * upper-cased). Optional; the plain-text path never reads it.
+   * upper-cased). Optional; template mappings may use it.
    */
   appointmentId?: string | null;
-}
-
-/**
- * True when the tenant's WhatsApp session is live (CONNECTED).
- *
- * A connected session IS the clinic's opt-in — scanning the QR to connect means
- * they want automated notifications sent. We deliberately do NOT require the
- * WhatsAppConfig.isEnabled flag here: that column defaults to 0 and connecting
- * the session never sets it, which previously caused notifications to be
- * silently skipped even though WhatsApp was connected. To turn notifications
- * off, a clinic simply disconnects their WhatsApp session.
- */
-export async function isWhatsAppReady(tenantId: string): Promise<boolean> {
-  try {
-    const status = await getWAStatus(tenantId);
-    return status.state === "CONNECTED";
-  } catch (err: any) {
-    console.error("[WhatsApp] readiness check failed:", err?.message);
-    return false;
-  }
 }
 
 function fmtDate(d: Date): string {
@@ -81,9 +67,8 @@ function fmtTime(d: Date, slot?: string | null): string {
 // ─────────────────────────────────────────────────────────────────────────────
 // Official (Meta Cloud API) template variable mapping.
 //
-// Co-located here so buildTemplateVars reuses the module-private fmtDate/fmtTime,
-// keeping the official date/time params byte-identical to the Web body. The
-// order of each spec is the POSITIONAL order of the {{n}} placeholders in the
+// Co-located here so buildTemplateVars reuses the module-private fmtDate/fmtTime.
+// The order of each spec is the POSITIONAL order of the placeholders in the
 // approved Meta template body.
 //
 // LEGACY: this fixed spec and expectedVarCount no longer gate template sends.
@@ -107,6 +92,18 @@ export const TEMPLATE_VAR_SPEC: Record<
   reminder1h: ["name", "clinicName", "doctorName", "time", "tokenNo"],
   videoLinkIssued: ["name", "clinicName", "doctorName", "date", "time"],
   videoLinkReissued: ["name", "clinicName", "doctorName", "date", "time"],
+  rescheduleNeeded: ["name", "clinicName", "doctorName", "date", "time"],
+  reinstated: ["name", "clinicName", "doctorName", "date", "time"],
+  restaurantBooked: ["name", "clinicName", "date", "time", "partySize", "tableName", "tokenNo"],
+  restaurantTableChanged: [
+    "name",
+    "clinicName",
+    "date",
+    "time",
+    "partySize",
+    "tableName",
+    "tokenNo",
+  ],
 };
 
 /** Number of positional body variables an approved template for `kind` must carry. */
@@ -116,9 +113,8 @@ export function expectedVarCount(kind: AptNotifyKind): number {
 
 /**
  * Builds the ordered, non-empty body parameter strings for an official template
- * message. Uses the same fmtDate/fmtTime as the Web body so date/time read
- * identically on both channels. Documented fallbacks guarantee no slot is empty
- * (Meta rejects empty body params).
+ * message. Documented display fallbacks keep this legacy helper non-empty; the
+ * runtime gate uses resolveTemplateField and fails closed on missing values.
  */
 export function buildTemplateVars(kind: AptNotifyKind, ctx: AptNotifyContext): string[] {
   const dateStr = fmtDate(ctx.dateTime);
@@ -160,13 +156,22 @@ export function countBodyPlaceholders(bodyText: string): number {
 /**
  * Resolves a single template catalogue field for this appointment/tenant (§15,
  * DP-08/09). Reuses the private fmtDate/fmtTime so a template's date/time read
- * identically to the plain-text body. Returns null when the field cannot be
- * resolved for this context (→ the gate falls back to the text path, never
- * sending a blank param). bookingCode = first 8 chars of appointmentId,
+ * identically to the legacy display body. Returns null when the field cannot
+ * be resolved for this context, so the template-only gate fails closed rather
+ * than sending a blank parameter. bookingCode = first 8 chars of appointmentId,
  * upper-cased — the patient-visible Confirmation Code (DP-08).
  */
 export function resolveTemplateField(
-  field: "name" | "clinicName" | "doctorName" | "date" | "time" | "bookingCode",
+  field:
+    | "name"
+    | "clinicName"
+    | "doctorName"
+    | "date"
+    | "time"
+    | "bookingCode"
+    | "tokenNo"
+    | "partySize"
+    | "tableName",
   ctx: AptNotifyContext,
 ): string | null {
   switch (field) {
@@ -184,6 +189,12 @@ export function resolveTemplateField(
       return ctx.dateTime instanceof Date && !Number.isNaN(ctx.dateTime.getTime())
         ? fmtTime(ctx.dateTime, ctx.timeSlot)
         : null;
+    case "tokenNo":
+      return ctx.tokenNo != null ? String(ctx.tokenNo) : null;
+    case "partySize":
+      return ctx.partySize != null ? String(ctx.partySize) : null;
+    case "tableName":
+      return ctx.tableName && ctx.tableName.trim() !== "" ? ctx.tableName : null;
     case "bookingCode": {
       const id = ctx.appointmentId;
       if (!id || String(id).trim() === "") return null;
@@ -245,9 +256,9 @@ export function buildAppointmentMessage(kind: AptNotifyKind, ctx: AptNotifyConte
 }
 
 /**
- * Sends an appointment WhatsApp notification if (and only if) the tenant has
- * WhatsApp enabled and connected. Returns true when a message was queued.
- * Never throws — safe to call from any booking/consultation flow.
+ * Submits an appointment/business WhatsApp notification through its mapped
+ * official Cloud template. Returns true when Meta accepted the request. Never
+ * throws, so callers can await it after persistence without rolling work back.
  */
 export async function sendAppointmentNotification(
   tenantId: string,
@@ -257,11 +268,11 @@ export async function sendAppointmentNotification(
 ): Promise<boolean> {
   try {
     if (!phone) {
-      console.warn(`[WhatsApp][${kind}] Skipped — no phone number for ${ctx.name} (${tenantId}).`);
+      console.warn(`[WhatsApp][${kind}] Skipped — no recipient phone number.`);
       return false;
     }
-    // Route through the central channel router (official Cloud API primary,
-    // WhatsApp Web fallback). The router logs the attempt and never throws.
+    // Route through the official Cloud template router. It logs the attempt and
+    // never falls back to free-form Cloud text or whatsapp-web.js.
     const { sendPatientMessage } = await import("./whatsapp-router");
     const result = await sendPatientMessage({
       tenantId,
@@ -269,17 +280,15 @@ export async function sendAppointmentNotification(
       notifyKind: kind,
       recipientPhone: phone,
       ctx,
-      buildMessage: () => buildAppointmentMessage(kind, ctx),
     });
     if (!result.delivered) {
       console.warn(
-        `[WhatsApp][${kind}] Notification not delivered for ${ctx.name} (tenant: ${tenantId}, logId: ${result.logId}).` +
-          (result.error ? ` Reason: ${result.error}` : ""),
+        `[WhatsApp][${kind}] Notification was not submitted (logId: ${result.logId || "none"}).`,
       );
     }
     return result.delivered;
-  } catch (err: any) {
-    console.error(`[WhatsApp][${kind}] Failed to enqueue notification:`, err?.message);
+  } catch {
+    console.error(`[WhatsApp][${kind}] Failed to submit notification.`);
     return false;
   }
 }

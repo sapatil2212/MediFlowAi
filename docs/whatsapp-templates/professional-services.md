@@ -6,7 +6,7 @@
 - Wording used here: consultation, firm or office, advisor or consultant (the `{{3}}` value), client file, queue number. These terms come from the dashboard ("Firm Profile", "Client Records", "Consultant", "Advisor") and the public booking page ("Consultation Scheduled!", "Select Advisor / Consultant", "Consultation Date").
 - Templates: 9, all new.
 
-Professional-services tenants book and update through the same server functions as healthcare: `createAppointmentServerFn` / `updateAppointmentServerFn` from `src/routes/dashboards/professional.tsx:1845` / `:1812`, and `createAppointmentPublicServerFn` from the public page. They also get the same reminders. Today they receive the medical plain-text wording from `buildAppointmentMessage`. The templates below keep the `TEMPLATE_VAR_SPEC` variable order of each kind. Video links and doctor leave notices are not sent to this category.
+Professional-services tenants book and update through the same server functions as healthcare: `createAppointmentServerFn` / `updateAppointmentServerFn` from `src/routes/dashboards/professional.tsx:1845` / `:1812`, and `createAppointmentPublicServerFn` from the public page. They also get the same reminders. Outbound notifications are template-only; map an approved professional-services template or the event fails closed with `template_not_ready`. The templates below keep the `TEMPLATE_VAR_SPEC` variable order of each kind. Video links and doctor leave notices are not sent to this category.
 
 Samples use the app's formats: `fmtDate` gives `Tuesday, October 20, 2026`, and the time is the booked slot, for example `03:00 PM`.
 

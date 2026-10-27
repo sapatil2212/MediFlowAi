@@ -71,6 +71,8 @@ const CONFIG = {
   appSecretLast4: "CD34",
   verifyTokenConfigured: true,
   encKeyConfigured: true,
+  recipientAllowlistActive: false,
+  bookedRouteReady: true,
   source: "db",
 };
 
@@ -165,6 +167,22 @@ describe("WaCloudAdminPanel — Credentials", () => {
     expect(screen.getByText("Messaging Account ID (legacy WABA ID)")).toBeInTheDocument();
     expect(screen.getByText(/v21\.0 expires on 2027-01-21/)).toBeInTheDocument();
     expect(screen.getByText(/message_template_status_update/)).toBeInTheDocument();
+  });
+
+  it("warns when the production recipient allow-list is active without exposing its values", async () => {
+    const sentinel = "919999999999";
+    getWaCloudConfigServerFn.mockResolvedValue({
+      ...CONFIG,
+      recipientAllowlistActive: true,
+    });
+
+    await renderPanel();
+
+    expect(screen.getByText(/WA_CLOUD_TEST_RECIPIENTS/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/official sends to patients outside the test allow-list/),
+    ).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(sentinel);
   });
 
   it("shows the Meta-verified phone details after a save", async () => {

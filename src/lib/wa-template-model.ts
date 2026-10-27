@@ -107,6 +107,10 @@ export const NOTIFY_KIND_LABELS: Record<AptNotifyKind, string> = {
   tokenUpdated: "Token / Booking Updated",
   videoLinkIssued: "Video Link Issued",
   videoLinkReissued: "Video Link Reissued",
+  rescheduleNeeded: "Appointment Reschedule Needed",
+  reinstated: "Appointment Reinstated",
+  restaurantBooked: "Restaurant Table Booked",
+  restaurantTableChanged: "Restaurant Table Changed",
 };
 
 export const NOTIFY_KINDS: readonly AptNotifyKind[] = Object.keys(
@@ -121,9 +125,19 @@ export function isNotifyKind(value: string): value is AptNotifyKind {
 // Variable catalogue (DP-08/09). Only fields derivable from existing data
 // already shown to patients are offered. Service name and a booking-management
 // URL are intentionally NOT offered (DP-08). `bookingCode` = first 8 chars of
-// the appointment id, upper-cased, shown to patients as the Confirmation Code.
+// the appointment id, upper-cased, shown to patients as the Confirmation Code;
+// `tokenNo` is the appointment's final queue number.
 // ─────────────────────────────────────────────────────────────────────────────
-export type CatalogueField = "name" | "clinicName" | "doctorName" | "date" | "time" | "bookingCode";
+export type CatalogueField =
+  | "name"
+  | "clinicName"
+  | "doctorName"
+  | "date"
+  | "time"
+  | "bookingCode"
+  | "tokenNo"
+  | "partySize"
+  | "tableName";
 
 export interface CatalogueEntry {
   field: CatalogueField;
@@ -142,6 +156,21 @@ export const VARIABLE_CATALOGUE: readonly CatalogueEntry[] = [
     label: "Confirmation Code",
     description: "First 8 characters of the appointment id, upper-cased.",
   },
+  {
+    field: "tokenNo",
+    label: "Queue Number",
+    description: "The appointment's final queue number.",
+  },
+  {
+    field: "partySize",
+    label: "Party Size",
+    description: "The number of guests in a restaurant booking.",
+  },
+  {
+    field: "tableName",
+    label: "Table Name",
+    description: "The assigned restaurant table or table group.",
+  },
 ];
 
 const CATALOGUE_FIELD_SET: ReadonlySet<string> = new Set(VARIABLE_CATALOGUE.map((c) => c.field));
@@ -152,22 +181,44 @@ export function isCatalogueField(value: string): value is CatalogueField {
 
 /**
  * Which catalogue fields are resolvable for a given notify kind. Mirrors the
- * data the Web body uses per kind (TEMPLATE_VAR_SPEC), expressed in catalogue
- * terms. `bookingCode` is available for every kind (derived from the
- * appointment id). Resolvability is enforced at assign/enable/send (DP-09).
+ * runtime context exposed by TEMPLATE_VAR_SPEC, expressed in catalogue terms.
+ * `bookingCode` is available for every kind from the appointment/booking id.
+ * Resolvability is enforced at assign, enable, and send time (DP-09).
  */
 export const KIND_RESOLVABLE_FIELDS: Record<AptNotifyKind, readonly CatalogueField[]> = {
-  booked: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
-  confirmed: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
+  booked: ["name", "clinicName", "doctorName", "date", "time", "bookingCode", "tokenNo"],
+  confirmed: ["name", "clinicName", "doctorName", "date", "time", "bookingCode", "tokenNo"],
   cancelled: ["name", "clinicName", "date", "time", "bookingCode"],
   completed: ["name", "clinicName", "doctorName", "bookingCode"],
-  reminderDayBefore: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
-  reminderDayOf: ["name", "clinicName", "doctorName", "time", "bookingCode"],
-  reminder2h: ["name", "clinicName", "doctorName", "time", "bookingCode"],
-  reminder1h: ["name", "clinicName", "doctorName", "time", "bookingCode"],
-  tokenUpdated: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
+  reminderDayBefore: ["name", "clinicName", "doctorName", "date", "time", "bookingCode", "tokenNo"],
+  reminderDayOf: ["name", "clinicName", "doctorName", "time", "bookingCode", "tokenNo"],
+  reminder2h: ["name", "clinicName", "doctorName", "time", "bookingCode", "tokenNo"],
+  reminder1h: ["name", "clinicName", "doctorName", "time", "bookingCode", "tokenNo"],
+  tokenUpdated: ["name", "clinicName", "doctorName", "date", "time", "bookingCode", "tokenNo"],
   videoLinkIssued: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
   videoLinkReissued: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
+  rescheduleNeeded: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
+  reinstated: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
+  restaurantBooked: [
+    "name",
+    "clinicName",
+    "date",
+    "time",
+    "partySize",
+    "tableName",
+    "bookingCode",
+    "tokenNo",
+  ],
+  restaurantTableChanged: [
+    "name",
+    "clinicName",
+    "date",
+    "time",
+    "partySize",
+    "tableName",
+    "bookingCode",
+    "tokenNo",
+  ],
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

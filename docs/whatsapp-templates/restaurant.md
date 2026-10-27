@@ -8,8 +8,15 @@
 
 Restaurant guests receive two kinds of message from the app today:
 
-1. Booking and table-change notices from `queueBookingNotification` (`src/lib/restaurant.ts:393`). These are sent by `enqueueWA` at `src/lib/restaurant.ts:472`, so they go through WhatsApp Web only and are not covered by `TEMPLATE_VAR_SPEC`. The variable order below follows the fields of today's message.
-2. The four appointment reminders. Restaurant bookings are stored in the `Appointment` table (`src/lib/restaurant.server.ts:2257`, with `doctorId` set to NULL). The reminder scheduler does not filter by profession, so it sends restaurant guests the same reminders at `src/lib/reminder-scheduler.ts:253`, using today's medical wording ("Your appointment at ..."). `TEMPLATE_VAR_SPEC.reminder*` puts `doctorName` at `{{3}}`, but restaurants have no doctor. These templates leave that variable out, so wiring them needs a restaurant-specific variable order. See README "Known gaps".
+1. Booking and table-change notices from `queueBookingNotification`. The helper
+   awaits `sendAppointmentNotification` with `restaurantBooked` or
+   `restaurantTableChanged`, so only a mapped, approved official Cloud utility
+   template can be submitted. The booking write remains successful when the
+   template is unavailable.
+2. The four appointment reminders. Restaurant bookings are stored in the
+   `Appointment` table with no doctor. Each reminder is also template-only; map
+   a restaurant-specific approved template whose variables do not require
+   `doctorName`, otherwise the event fails closed with `template_not_ready`.
 
 Restaurant booking status changes (`setRestaurantBookingStatusServerFn`, `src/lib/restaurant.ts:832`) send no message, so there are no cancelled, confirmed or completed templates for this category. The restaurant settings test message (`src/lib/restaurant-settings.ts:3438`) is excluded.
 
@@ -20,7 +27,7 @@ Sample formats: booking and table-change notices use `booking.date` exactly as s
 ### 1. restaurant_table_booked
 
 - Status: New — not yet submitted
-- App trigger: `queueBookingNotification(..., "booked")` (`src/lib/restaurant.ts:393`, sent at `:472`). It is called from `createRestaurantBookingPublicServerFn` (`src/lib/restaurant.ts:572`, public booking), `createWalkInBookingServerFn` (`:991`, walk-in) and `createRestaurantReservationServerFn` (`:1094`, staff reservation).
+- App trigger: `queueBookingNotification(..., "booked")`, called by public, walk-in, and staff reservation creation. The helper awaits the `restaurantBooked` template attempt after persistence.
 - Name: `restaurant_table_booked`
 - Category: Utility
 - Language: English (US)
@@ -44,7 +51,7 @@ Please mention your booking number when you arrive. We look forward to seeing yo
 ```
 
 - Variable samples: {{1}} `Karan Malhotra` · {{2}} `Spice Garden` · {{3}} `2026-10-20` · {{4}} `07:30 PM` · {{5}} `4` · {{6}} `T1 + T2` · {{7}} `12`
-- Variable mapping: {{1}} = booking.guestName, {{2}} = profile.businessName (`ClinicProfile.clinicName`, else the owner's `User.clinicName`), {{3}} = booking.date, {{4}} = booking.slotLabel, {{5}} = booking.partySize, {{6}} = booking.tableName (the table group, for example `T1 + T2`), {{7}} = booking.tokenNo
+- Variable mapping: {{1}} = name, {{2}} = clinicName, {{3}} = date, {{4}} = time, {{5}} = partySize, {{6}} = tableName, {{7}} = tokenNo (`restaurantBooked`).
 - Footer: `This is an automated notification message.`
 - Buttons: None
 - Message validity period: 12 hours (pick the closest option offered)
@@ -52,7 +59,7 @@ Please mention your booking number when you arrive. We look forward to seeing yo
 ### 2. restaurant_table_changed
 
 - Status: New — not yet submitted
-- App trigger: `queueBookingNotification(..., "tableChanged")` from `reassignRestaurantBookingServerFn` (`src/lib/restaurant.ts:849`, queued at `:881`). It is sent only when the table name actually changes.
+- App trigger: `queueBookingNotification(..., "tableChanged")` after a genuine table reassignment. The helper awaits the `restaurantTableChanged` template attempt after persistence.
 - Name: `restaurant_table_changed`
 - Category: Utility
 - Language: English (US)
@@ -76,7 +83,7 @@ Your date and time are the same, only the table has changed. See you soon!
 ```
 
 - Variable samples: {{1}} `Karan Malhotra` · {{2}} `Spice Garden` · {{3}} `2026-10-20` · {{4}} `07:30 PM` · {{5}} `4` · {{6}} `T5` · {{7}} `12`
-- Variable mapping: {{1}} = before.guestName, {{2}} = profile.businessName, {{3}} = before.date, {{4}} = before.slotLabel, {{5}} = before.partySize, {{6}} = write.tableName (new table), {{7}} = before.tokenNo
+- Variable mapping: {{1}} = name, {{2}} = clinicName, {{3}} = date, {{4}} = time, {{5}} = partySize, {{6}} = tableName, {{7}} = tokenNo (`restaurantTableChanged`).
 - Footer: `This is an automated notification message.`
 - Buttons: None
 - Message validity period: 12 hours (pick the closest option offered)

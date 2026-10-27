@@ -37,7 +37,14 @@ vi.mock("./whatsapp-cloud", async (importOriginal) => ({
   sendTextMessage: (...args: any[]) => sendTextMessageMock(...args),
 }));
 
-import { META_24H_HINT, saveWaCloudConfig, testWaCloudConfig } from "./wa-cloud-admin";
+import {
+  META_24H_HINT,
+  getWaCloudConfig,
+  saveWaCloudConfig,
+  testWaCloudConfig,
+} from "./wa-cloud-admin";
+import { createInMemoryTemplateRepo, InMemoryTemplateRepo } from "./wa-template-repo.memory";
+import { __setTemplateRepoForTests } from "./wa-template-repo";
 
 const SAVED_ROW = {
   id: "central",
@@ -55,11 +62,14 @@ const SAVED_ROW = {
 // Each test runs a minute after the previous one so the module-scoped 30s
 // test-send cooldown never leaks between tests.
 let clock = Date.UTC(2026, 0, 1, 0, 0, 0);
+let repo: InMemoryTemplateRepo;
 
 beforeEach(() => {
   vi.useFakeTimers();
   clock += 60_000;
   vi.setSystemTime(clock);
+  repo = createInMemoryTemplateRepo();
+  __setTemplateRepoForTests(repo);
   queryOneMock.mockReset();
   executeMock.mockReset();
   resolveCloudConfigMock.mockReset();
@@ -80,7 +90,74 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  __setTemplateRepoForTests(null);
+  vi.unstubAllEnvs();
   vi.useRealTimers();
+});
+
+describe("getWaCloudConfig — safe production readiness", () => {
+  it("reports only a boolean when the recipient allow-list is active", async () => {
+    const sentinel = "919999999999";
+    vi.stubEnv("WA_CLOUD_TEST_RECIPIENTS", sentinel);
+
+    const result = await getWaCloudConfig();
+
+    expect(result.recipientAllowlistActive).toBe(true);
+    expect(JSON.stringify(result)).not.toContain(sentinel);
+  });
+
+  it("reports booked ready only for the approved mapped published contract", async () => {
+    const template = await repo.createDraft({
+      name: "appointment_booked",
+      language: "en_US",
+      category: "UTILITY",
+      parameterFormat: "POSITIONAL",
+      headerType: "NONE",
+      bodyText: "Hello {{1}}, appointment at {{2}} with {{3}} on {{4}} at {{5}}, queue {{6}}.",
+      buttons: [],
+      variableMappings: {
+        "body.1": "name",
+        "body.2": "clinicName",
+        "body.3": "doctorName",
+        "body.4": "date",
+        "body.5": "time",
+        "body.6": "tokenNo",
+      },
+      sampleValues: {},
+      source: "META",
+      actorId: "sync",
+    });
+    await repo.applyMetaState(template.id, {
+      metaTemplateId: "meta-booked",
+      metaStatus: "APPROVED",
+      metaCategory: "UTILITY",
+      messagingAccountId: "222",
+      localState: "SUBMITTED",
+    });
+    await repo.upsertMapping({
+      notifyKind: "booked",
+      templateId: template.id,
+      language: "en_US",
+      actorId: "admin",
+    });
+    await repo.setMappingEnabled("booked", true, { version: "v1", actorId: "admin" });
+
+    const result = await getWaCloudConfig();
+
+    expect(result.bookedRouteReady).toBe(true);
+    expect(result.bookedRouteChecks).toMatchObject({
+      mappingExists: true,
+      mappingEnabled: true,
+      optInAcknowledged: true,
+      templateApproved: true,
+      templateUtility: true,
+      languageCompatible: true,
+      accountCompatible: true,
+      templateContractCompatible: true,
+      ready: true,
+    });
+    expect(JSON.stringify(result)).not.toContain("saved-token");
+  });
 });
 
 describe("saveWaCloudConfig — pre-flight validation", () => {

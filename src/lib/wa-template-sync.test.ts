@@ -22,6 +22,25 @@ import { applyWebhookChange, runFullSync, scheduledSyncMinutes } from "./wa-temp
 
 let repo: InMemoryTemplateRepo;
 
+function appointmentBookedNode(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "booked-meta-1",
+    name: "appointment_booked",
+    language: "en_US",
+    status: "APPROVED",
+    category: "UTILITY",
+    parameter_format: "POSITIONAL",
+    components: [
+      {
+        type: "BODY",
+        text: "Hello {{1}}, appointment at {{2}} with {{3}} on {{4}} at {{5}}, queue {{6}}.",
+      },
+      { type: "FOOTER", text: "This is an automated notification message." },
+    ],
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   repo = createInMemoryTemplateRepo();
   __setTemplateRepoForTests(repo);
@@ -63,6 +82,94 @@ describe("runFullSync", () => {
     const runs = await repo.listSyncRuns();
     expect(runs[0].status).toBe("ok");
     expect(listMessageTemplatesMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("hydrates the exact appointment_booked/en_US Meta import with runtime mappings", async () => {
+    listMessageTemplatesMock.mockResolvedValue({
+      ok: true,
+      data: { data: [appointmentBookedNode()], paging: {} },
+    });
+
+    const res = await runFullSync("manual");
+
+    expect(res).toMatchObject({ ok: true, created: 1 });
+    const row = await repo.getByMetaTemplateId("booked-meta-1");
+    expect(row).toMatchObject({
+      source: "META",
+      notifyKind: "booked",
+      metaStatus: "APPROVED",
+      metaCategory: "UTILITY",
+      messagingAccountId: "222",
+      variableMappings: {
+        "body.1": "name",
+        "body.2": "clinicName",
+        "body.3": "doctorName",
+        "body.4": "date",
+        "body.5": "time",
+        "body.6": "tokenNo",
+      },
+    });
+  });
+
+  it("repairs an existing blank META import of appointment_booked", async () => {
+    const existing = await repo.createDraft({
+      name: "appointment_booked",
+      language: "en_US",
+      category: "UTILITY",
+      parameterFormat: "POSITIONAL",
+      headerType: "NONE",
+      bodyText: "",
+      buttons: [],
+      variableMappings: {},
+      sampleValues: {},
+      source: "META",
+      actorId: "sync",
+    });
+    await repo.applyMetaState(existing.id, {
+      metaTemplateId: "booked-meta-1",
+      messagingAccountId: "222",
+      localState: "SUBMITTED",
+    });
+    listMessageTemplatesMock.mockResolvedValue({
+      ok: true,
+      data: { data: [appointmentBookedNode()], paging: {} },
+    });
+
+    const res = await runFullSync("manual");
+
+    expect(res).toMatchObject({ ok: true, updated: 1 });
+    const repaired = await repo.getById(existing.id);
+    expect(repaired?.notifyKind).toBe("booked");
+    expect(repaired?.variableMappings?.["body.6"]).toBe("tokenNo");
+    expect(repaired?.sampleValues?.["body.6"]).toBe("7");
+  });
+
+  it.each([
+    ["wrong language", { language: "en" }],
+    [
+      "unsupported header",
+      {
+        components: [
+          { type: "HEADER", format: "TEXT", text: "Appointment" },
+          { type: "BODY", text: "Hello {{1}} {{2}} {{3}} {{4}} {{5}} {{6}} done." },
+        ],
+      },
+    ],
+    [
+      "wrong parameter count",
+      { components: [{ type: "BODY", text: "Hello {{1}} {{2}} {{3}} {{4}} {{5}} done." }] },
+    ],
+  ])("does not hydrate a shape-mismatched published template: %s", async (_label, overrides) => {
+    listMessageTemplatesMock.mockResolvedValue({
+      ok: true,
+      data: { data: [appointmentBookedNode(overrides)], paging: {} },
+    });
+
+    await runFullSync("manual");
+
+    const row = await repo.getByMetaTemplateId("booked-meta-1");
+    expect(row?.notifyKind).toBeNull();
+    expect(row?.variableMappings).toEqual({});
   });
 
   it("imports approved/rejected/paused/disabled statuses from the list (normalized)", async () => {

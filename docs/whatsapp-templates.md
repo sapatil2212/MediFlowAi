@@ -2,9 +2,9 @@
 
 This guide covers configuring and operating the WhatsApp **Cloud API utility
 template** feature in the Super Admin dashboard: how official template messages
-are authored, submitted to Meta, kept in sync, mapped to appointment
-notifications, and how the whole feature degrades safely to the existing
-plain-text + WhatsApp Web path.
+are authored, submitted to Meta, kept in sync, and mapped to business
+notifications. Outbound notifications use only approved Cloud API templates;
+they never degrade to free-form Cloud text or whatsapp-web.js.
 
 The feature lives entirely inside the existing **WhatsApp Cloud** panel
 (Super Admin → WhatsApp Cloud → **Templates**). It adds no new top-level
@@ -15,23 +15,25 @@ transport and every server action requires a Super Admin session.
 
 ## 1. What this feature does (and the incident it fixes)
 
-Before this feature, appointment notifications were only ever sent as plain
-text — over the official Cloud API inside Meta's 24-hour service window, and
-over WhatsApp Web otherwise. Outside the 24-hour window Meta silently refuses
-free-form text, which is why some booking confirmations never arrived.
+Before this feature, some appointment notifications were sent as free-form
+Cloud API text or through WhatsApp Web. Free-form Cloud text cannot initiate a
+conversation outside Meta's 24-hour customer-service window, which is why some
+booking confirmations never arrived.
 
 Approved **utility templates** can be delivered outside the 24-hour window. This
 feature lets a Super Admin author a template, submit it to Meta for review,
-track its status, and map an **approved** template to an appointment
-notification kind. When a notification is sent and a mapping is enabled, the
-official channel sends the template instead of plain text.
+track its status, and map an **approved** template to a business notification
+kind.
 
-**Safety invariant (the original incident guard):** when no enabled mapping
-applies, the system behaves exactly as before — the official channel sends the
-same plain text, the message log keeps `templateId = NULL`, and nothing about
-the WhatsApp Web fallback changes. A template is only ever used when every gate
-passes. If a template send fails, the message falls back to WhatsApp Web with
-the readable (non-token) body, exactly as the plain-text path does.
+**Safety invariant:** every business-initiated notification is official Cloud
+API and template-only. If its enabled, acknowledged, approved utility mapping is
+not ready, the app records an actionable `template_not_ready` failure while
+leaving the appointment or booking intact. Unexpected template-resolution
+faults are recorded separately as `template_gate_error`. No notification falls
+back to free-form Cloud text or whatsapp-web.js after any gate or Graph result.
+Legacy bulk/campaign delivery is disabled until it is rebuilt on approved Meta
+templates. Inbound replies and explicit connection test tools are outside this
+notification path.
 
 ---
 
@@ -53,6 +55,13 @@ or log line.
 | `WA_CLOUD_ENC_KEY`               | 32-byte key (hex) used to encrypt stored secrets and stored message bodies.     |
 | `WA_CLOUD_TEMPLATE_SYNC_MINUTES` | Optional scheduled full-sync interval. Off by default; valid range is 30–1440.  |
 | `WA_CLOUD_TEST_RECIPIENTS`       | Optional local-test allow-list; the official API only sends to these numbers.   |
+
+- `WA_CLOUD_TEST_RECIPIENTS` must be **unset in production**. When set, every
+  recipient outside that local-test allow-list is refused before a Graph API
+  request is made. The Credentials tab shows a warning without exposing the
+  allow-list values.
+- Preserve the same `WA_CLOUD_ENC_KEY` across deployments. Changing or removing
+  it makes saved Cloud credentials unreadable.
 
 ### Scheduled sync interval
 
@@ -120,8 +129,8 @@ Account are ignored.
 If Meta restricts the account, the send health status reports `BLOCKED` or
 `LIMITED` rather than `AVAILABLE`. The Account health view explains the
 restricted state and links to WhatsApp Manager so an operator can act. While an
-account is restricted, template sends will fail and the router falls back to
-WhatsApp Web; no patient notification depends solely on the official channel.
+account is restricted, notification template sends fail visibly; they do not
+switch transport.
 
 ---
 
@@ -138,8 +147,8 @@ WhatsApp Web; no patient notification depends solely on the official channel.
    shown **disabled** with an explanation — they require Meta's Resumable Upload
    flow and are out of scope.
 4. Map each `{{n}}` (or named) placeholder to a booking field
-   (name, clinic name, doctor name, date, time, booking code) and provide sample
-   values.
+   (name, clinic name, doctor name, date, time, booking code, or queue number)
+   and provide sample values.
 5. Use the **Preview** — it substitutes your sample values, is HTML-escaped,
    is labelled "Preview — not sent", and never calls Meta.
 
@@ -171,32 +180,66 @@ returns to an editable state.
    acknowledgement, then enable. The acknowledgement and its version are
    recorded.
 4. If the mapped template later stops being approved/utility (via webhook or
-   sync), the mapping is invalidated and sends fall back to plain text.
+   sync), the mapping is invalidated and subsequent notifications fail closed
+   with `template_not_ready`.
 
 > Note: the acknowledgement is a per-mapping Super Admin confirmation. There is
-> no per-patient opt-in column; the plain-text path itself is not opt-in gated.
+> no per-patient opt-in column. Outbound notifications have no free-form route.
 
 ---
 
 ## 8. Runtime gate (how a send is decided)
 
-For each appointment notification, the official channel uses a template **only**
-when all of these hold, otherwise it sends plain text:
+For every business notification, the official Cloud route submits a template
+only when all of the following hold. Any expected gate failure records
+`template_not_ready`; an unexpected database/runtime resolution fault records
+`template_gate_error`. Neither outcome sends free-form Cloud or Web text.
 
 1. The Cloud API is enabled and a recipient phone number is present.
 2. An **enabled** mapping with a current opt-in acknowledgement exists for the
    notification kind.
 3. The mapped template is owned by the configured Messaging Account, its Meta
    status is `APPROVED`, and its category is `UTILITY`.
-4. Every placeholder's mapped field resolves for this specific appointment. A
-   single unresolved field sends plain text instead (never a blank parameter).
+4. Every placeholder's mapped field resolves for this specific notification. A
+   single unresolved field fails closed rather than sending a blank parameter.
 
 Variable resolution reads only the current appointment's context, so one
 tenant's data can never leak into another tenant's message.
 
 ---
 
-## 9. Rollback
+## 9. Recovering appointment-booked delivery after deployment
+
+The healthcare template `appointment_booked` has already been submitted in
+WhatsApp Manager. **Do not create or submit it again.** Recover the route as
+follows:
+
+1. Open **WhatsApp Cloud → Templates** and run **Sync all**. The sync recognizes
+   the exact `appointment_booked` / `en_US` six-parameter body and attaches the
+   local runtime mappings without changing Meta's status or category.
+2. Confirm Meta reports the template as **APPROVED** (not Submitted/PENDING),
+   category **UTILITY**, language **en_US**, and owned by the configured
+   Messaging Account ID.
+3. Open **Notification mappings**, assign it to **Appointment Booked**, tick the
+   opt-in acknowledgement, and enable the mapping. The app intentionally does
+   not grant approval, record consent, or enable this mapping automatically.
+4. Unset `WA_CLOUD_TEST_RECIPIENTS` in the production service and restart the
+   Node/Nitro process. Keep `WA_CLOUD_ENC_KEY` unchanged.
+5. Check the effective API version shown in Credentials. A saved DB value (for
+   example `v21.0`) overrides the code default (`v26.0`) until it is updated.
+6. Make a test booking with an opted-in non-patient test number. Monitoring
+   should show a non-null template, `appointment_booked`, and Meta status moving
+   from accepted/sent to delivered or read. A Graph acceptance is not proof of
+   delivery; final delivery comes from the signed webhook.
+
+If Appointment Booked is not ready, the admin UI shows an actionable warning
+and the send log records `template_not_ready`; the appointment itself still
+succeeds. The router never sends this event as free-form Cloud or WhatsApp Web
+text because that would depend on the 24-hour customer-service window.
+
+---
+
+## 10. Rollback
 
 Runtime DDL is additive and idempotent, and the legacy `status` column is
 mirrored on every write, so the default rollback is **"revert the code, leave
@@ -238,11 +281,11 @@ The rollback never touches `Appointment` or any booking table.
 
 ---
 
-## 10. Production deployment checklist
+## 11. Production deployment checklist
 
-- [ ] Set `WA_CLOUD_ENC_KEY` (32-byte hex) so secrets and stored bodies are
-      encrypted. Without it, nothing sensitive is persisted in plain text — the
-      message body is simply stored as `NULL`.
+- [ ] Set `WA_CLOUD_ENC_KEY` (32-byte hex) so saved credentials remain
+      decryptable. Notification bodies and resolved template values are not
+      stored for fallback delivery.
 - [ ] Configure the Cloud credentials (DB row or env): phone number ID,
       Messaging Account ID, access token, app secret, verify token.
 - [ ] Confirm the access token scopes in **Account health**
@@ -254,9 +297,19 @@ The rollback never touches `Appointment` or any booking table.
 - [ ] Decide whether to enable scheduled sync
       (`WA_CLOUD_TEMPLATE_SYNC_MINUTES`); leave unset to rely on webhooks plus
       manual sync.
-- [ ] Author or install templates, submit for review, and wait for the
-      **Approved** webhook/sync before mapping. Never assume approval on submit.
-- [ ] Map approved utility templates to notification kinds and enable each
-      mapping only after ticking the opt-in acknowledgement.
-- [ ] Confirm the fallback invariant: with no enabled mapping, notifications
-      still send as plain text and fall back to WhatsApp Web unchanged.
+- [ ] Ensure `WA_CLOUD_TEST_RECIPIENTS` is unset in production and restart the
+      service after removing it. This variable is only a local-test safety net.
+- [ ] Preserve the existing `WA_CLOUD_ENC_KEY` across deployments.
+- [ ] For healthcare booking recovery, use **Sync all** to import the existing
+      `appointment_booked` template; do not submit a duplicate. Confirm
+      `APPROVED`, `UTILITY`, `en_US`, assign it to **Appointment Booked**,
+      acknowledge opt-in, and enable it.
+- [ ] Map an approved utility template to every enabled business notification
+      kind (appointment lifecycle, reminders/video links, doctor leave/reinstate,
+      and restaurant booking/table changes), then acknowledge opt-in and enable
+      each mapping. If Meta has not approved a corresponding template, that
+      notification intentionally remains off and logs `template_not_ready`.
+- [ ] Confirm the official-only invariant: with no ready mapping, the message log
+      records `template_not_ready`; with an internal gate fault it records
+      `template_gate_error`; neither free-form Cloud text nor WhatsApp Web is
+      attempted, and the underlying appointment/booking remains created.

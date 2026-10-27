@@ -1,9 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // wa-template-notify.ts  (server)
 //
-// The runtime notification gate wired into whatsapp-router.ts. resolveTemplatePlan
-// returns null (→ unchanged plain-text + Web fallback path) UNLESS every gate
-// passes (§15, DP-05, DP-08):
+// The runtime notification gate wired into whatsapp-router.ts. It returns a
+// structured expected-readiness result for every outbound notification kind;
+// unexpected repository/runtime errors propagate so the router can record a
+// separate sanitized internal failure. The gates are:
 //   1. Cloud enabled (isCloudAvailable) AND ctx.recipientPhone present.
 //   2. An enabled WaNotifyMapping for the kind with a current opt-in ack.
 //   3. The mapped template is owned by the configured Messaging account,
@@ -16,8 +17,9 @@
 // button whose static prefix is the join origin + /consult/ and whose single
 // variable is the base64url token, so no plaintext token is stored (DP-05).
 //
-// CRITICAL (the original incident): with no enabled mapping this returns null
-// and the router's text path stays byte-identical, WaMessageLog.templateId NULL.
+// CRITICAL (the original incident): no notification may become free-form Cloud
+// text or a whatsapp-web.js fallback when a template gate fails. The router
+// records template_not_ready and leaves the underlying business write intact.
 // ─────────────────────────────────────────────────────────────────────────────
 import { isCloudAvailable, resolveCloudConfig } from "./whatsapp-cloud";
 import { getTemplateRepo } from "./wa-template-repo";
@@ -39,6 +41,22 @@ export interface TemplatePlan {
   headerParams: Array<{ text: string; name?: string }>;
   urlButtons: Array<{ index: number; suffix: string }>;
 }
+
+export type TemplateNotReadyReason =
+  | "recipient_missing"
+  | "cloud_unavailable"
+  | "mapping_missing"
+  | "mapping_disabled"
+  | "opt_in_missing"
+  | "template_missing"
+  | "template_not_approved"
+  | "template_not_utility"
+  | "account_mismatch"
+  | "variables_unresolved";
+
+export type TemplatePlanResolution =
+  | { status: "ready"; plan: TemplatePlan }
+  | { status: "not_ready"; reason: TemplateNotReadyReason };
 
 // ── Mapping cache ────────────────────────────────────────────────────────────
 interface CacheEntry {
@@ -62,7 +80,7 @@ async function loadMappings(): Promise<NotifyMappingRow[]> {
 
 /**
  * Resolves a catalogue field for this appointment/tenant. Returns null when the
- * field cannot be resolved (→ the whole plan falls back to text). Reuses the
+ * field cannot be resolved (the whole template plan fails closed). Reuses the
  * date/time formatting of appointment-notify via resolveTemplateField there.
  */
 async function resolveField(field: CatalogueField, ctx: AptNotifyContext): Promise<string | null> {
@@ -71,37 +89,49 @@ async function resolveField(field: CatalogueField, ctx: AptNotifyContext): Promi
 }
 
 /**
- * The runtime gate. Returns a send plan when every gate passes, else null.
- * Never throws (any error → null → text path).
+ * Resolves the runtime gate with an explicit reason for expected readiness
+ * failures. Unexpected repository/runtime errors propagate to the router.
  */
+export async function resolveTemplatePlanResult(
+  kind: AptNotifyKind,
+  ctx: AptNotifyContext & { recipientPhone?: string | null },
+  options: { cloudAvailable?: boolean } = {},
+): Promise<TemplatePlanResolution> {
+  if (!ctx.recipientPhone) return { status: "not_ready", reason: "recipient_missing" };
+  const cloudAvailable = options.cloudAvailable ?? (await isCloudAvailable());
+  if (!cloudAvailable) return { status: "not_ready", reason: "cloud_unavailable" };
+
+  const mappings = await loadMappings();
+  const mapping = mappings.find((candidate) => candidate.notifyKind === kind);
+  if (!mapping) return { status: "not_ready", reason: "mapping_missing" };
+  if (!mapping.isEnabled) return { status: "not_ready", reason: "mapping_disabled" };
+  if (!mapping.optInAckAt) return { status: "not_ready", reason: "opt_in_missing" };
+
+  const repo = getTemplateRepo();
+  const row = await repo.getById(mapping.templateId);
+  if (!row) return { status: "not_ready", reason: "template_missing" };
+  if (normalizeStatus(row.metaStatus).normalized !== "APPROVED") {
+    return { status: "not_ready", reason: "template_not_approved" };
+  }
+  if ((row.metaCategory || "").toUpperCase() !== "UTILITY") {
+    return { status: "not_ready", reason: "template_not_utility" };
+  }
+  const cfg = await resolveCloudConfig();
+  if (!row.messagingAccountId || !cfg?.wabaId || row.messagingAccountId !== cfg.wabaId) {
+    return { status: "not_ready", reason: "account_mismatch" };
+  }
+
+  const plan = await buildPlan(row, mapping, ctx);
+  return plan ? { status: "ready", plan } : { status: "not_ready", reason: "variables_unresolved" };
+}
+
+/** Compatibility helper for callers that only need plan-or-null semantics. */
 export async function resolveTemplatePlan(
   kind: AptNotifyKind,
   ctx: AptNotifyContext & { recipientPhone?: string | null },
 ): Promise<TemplatePlan | null> {
-  try {
-    // Gate 1: Cloud enabled + a recipient phone.
-    if (!ctx.recipientPhone) return null;
-    if (!(await isCloudAvailable())) return null;
-
-    // Gate 2: an enabled mapping with a current opt-in ack.
-    const mappings = await loadMappings();
-    const mapping = mappings.find((m) => m.notifyKind === kind);
-    if (!mapping || !mapping.isEnabled || !mapping.optInAckAt) return null;
-
-    // Gate 3: APPROVED + UTILITY + owned by the configured account.
-    const repo = getTemplateRepo();
-    const row = await repo.getById(mapping.templateId);
-    if (!row) return null;
-    if (normalizeStatus(row.metaStatus).normalized !== "APPROVED") return null;
-    if ((row.metaCategory || "").toUpperCase() !== "UTILITY") return null;
-    const cfg = await resolveCloudConfig();
-    if (row.messagingAccountId && cfg?.wabaId && row.messagingAccountId !== cfg.wabaId) return null;
-
-    // Gate 4: every placeholder resolves.
-    return await buildPlan(row, mapping, ctx);
-  } catch {
-    return null;
-  }
+  const result = await resolveTemplatePlanResult(kind, ctx);
+  return result.status === "ready" ? result.plan : null;
 }
 
 /** Builds the send plan from a row's placeholder keys + variable mappings. */
@@ -134,9 +164,9 @@ async function buildPlan(
     // URL-button placeholders are handled separately (join-link suffix below).
     if (key.startsWith("button.")) continue;
     const field = mappings[key];
-    if (!field) return null; // unmapped placeholder → fall back to text
+    if (!field) return null; // unmapped placeholder → fail closed
     const value = await resolveField(field, ctx);
-    if (value == null || value === "") return null; // unresolved → text path
+    if (value == null || value === "") return null; // unresolved → fail closed
     const token = key.split(".").slice(1).join(".");
     const param = named ? { text: value, name: token } : { text: value };
     if (key.startsWith("header.")) headerParams.push(param);
@@ -152,7 +182,7 @@ async function buildPlan(
       if (suffix) urlButtons.push({ index: idx, suffix });
     }
   });
-  // A URL button that needs a suffix but has no token → fall back to text.
+  // A URL button that needs a suffix but has no token fails closed.
   const dynamicUrlButtons = (draft.buttons as any[]).filter(
     (b) =>
       b?.type === "URL" && typeof b.url === "string" && /\{\{\s*[a-z0-9_]+\s*\}\}/i.test(b.url),
