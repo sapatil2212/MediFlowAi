@@ -49,8 +49,89 @@ vi.mock("../../lib/admin", () => {
     waAssignMappingServerFn: ok({ mapping: {} }),
     waSetMappingEnabledServerFn: ok({ mapping: {} }),
     waRemoveMappingServerFn: ok(),
+    notifyOverviewServerFn: (...args: any[]) => notifyOverviewServerFn(...args),
+    notifyResolveAlertServerFn: ok(),
+    notifyLogsServerFn: (...args: any[]) => notifyLogsServerFn(...args),
+    notifyEventDetailServerFn: ok({ event: null, timeline: [], attempts: [] }),
+    notifyRetryServerFn: ok(),
+    notifySettingsGetServerFn: ok({
+      settings: {
+        engineEnabled: true,
+        consentMode: "implied_by_booking",
+        autoActivateCatalog: true,
+        categoryEnabled: { clinic: true },
+      },
+      testModeProcess: false,
+    }),
+    notifySettingsSaveServerFn: ok({ settings: {} }),
+    notifyRoutesServerFn: ok({ rows: [] }),
+    notifyRouteSetServerFn: ok(),
+    notifyCatalogPlanServerFn: (...args: any[]) => notifyCatalogPlanServerFn(...args),
+    notifyCatalogSubmitServerFn: ok({ results: [] }),
+    notifyCatalogActivateServerFn: ok({ changes: [] }),
+    notifyTestSendServerFn: ok({ messageId: "wamid.X" }),
   };
 });
+
+const notifyOverviewServerFn = vi.fn();
+const notifyLogsServerFn = vi.fn();
+const notifyCatalogPlanServerFn = vi.fn();
+
+const OVERVIEW = {
+  ok: true,
+  provider: {
+    configured: true,
+    enabled: true,
+    wabaId: "456",
+    idsDistinct: true,
+    apiVersion: "v21.0",
+    apiVersionExpiresOn: "2027-01-21",
+    senderNumber: "+91 81850 51355",
+    verifiedName: "Bookmytime",
+    qualityRating: "GREEN",
+    phoneStatus: "CONNECTED",
+    codeVerification: "VERIFIED",
+    canSendMessage: "AVAILABLE",
+    tokenValid: true,
+    tokenScopesOk: true,
+    lastApiOkAt: null,
+  },
+  templates: { total: 5, byStatus: { APPROVED: 5 }, lastSyncOkAt: null, lastSyncRun: null },
+  queue: {
+    engineEnabled: true,
+    last24h: {
+      byStatus: { delivered: 3, failed: 1 },
+      byCategory: {},
+      dueBacklog: 0,
+      oldestDueMs: null,
+      retries: 0,
+      avgDispatchLatencyMs: 900,
+      avgDeliveryLatencyMs: 2000,
+    },
+    lastHour: { byStatus: {}, byCategory: {}, dueBacklog: 0, oldestDueMs: null, retries: 0 },
+  },
+  webhook: { received24h: 12, errors24h: 0, lastReceivedAt: null },
+  byCategory: [
+    {
+      category: "clinic",
+      label: "Clinics & healthcare",
+      enabled: true,
+      total: 4,
+      delivered: 3,
+      failed: 1,
+    },
+  ],
+  recentFailures: [],
+  alerts: [
+    {
+      key: "queue:backlog",
+      severity: "warning",
+      title: "Notification queue backlog",
+      detail: null,
+      occurrences: 1,
+    },
+  ],
+};
 
 import { WaCloudAdminPanel } from "./WaCloudAdminPanel";
 
@@ -81,6 +162,17 @@ beforeEach(() => {
   saveWaCloudConfigServerFn.mockReset();
   testWaCloudConfigServerFn.mockReset();
   getWaCloudConfigServerFn.mockResolvedValue(CONFIG);
+  notifyOverviewServerFn.mockReset();
+  notifyOverviewServerFn.mockResolvedValue(OVERVIEW);
+  notifyLogsServerFn.mockReset();
+  notifyLogsServerFn.mockResolvedValue({ ok: true, total: 0, rows: [] });
+  notifyCatalogPlanServerFn.mockReset();
+  notifyCatalogPlanServerFn.mockResolvedValue({
+    ok: true,
+    rows: [],
+    excluded: [],
+    summary: { total: 0, approved: 0, pending: 0, rejected: 0, missing: 0, submittable: 0 },
+  });
 });
 
 afterEach(() => {
@@ -88,8 +180,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** Opens the Credentials tab (the panel now opens on Overview). */
 async function renderPanel() {
   render(<WaCloudAdminPanel />);
+  fireEvent.click(screen.getByRole("button", { name: "Credentials" }));
   return await screen.findByLabelText("To phone (with country code)");
 }
 
@@ -206,9 +300,39 @@ describe("WaCloudAdminPanel — Credentials", () => {
 });
 
 describe("WaCloudAdminPanel — Templates sub-tab", () => {
-  it("mounts the Utility Template Management module on the Templates tab", async () => {
+  it("opens the industry catalog and mounts the full template module on demand", async () => {
     render(<WaCloudAdminPanel />);
     fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    expect(await screen.findByTestId("template-catalog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "All templates & editor" }));
     expect(await screen.findByTestId("templates-module")).toBeInTheDocument();
+  });
+});
+
+describe("WaCloudAdminPanel — Overview, logs and automation", () => {
+  it("opens on the Overview with provider, queue, webhook and alert health", async () => {
+    render(<WaCloudAdminPanel />);
+    expect(await screen.findByTestId("notify-overview")).toBeInTheDocument();
+    expect(screen.getByText("+91 81850 51355")).toBeInTheDocument();
+    expect(screen.getByText("Notification queue backlog")).toBeInTheDocument();
+    expect(screen.getByText("Clinics & healthcare")).toBeInTheDocument();
+    // Non-secret identifiers only.
+    expect(document.body.textContent).not.toMatch(/EAA[A-Za-z0-9]{10,}/);
+  });
+
+  it("loads notification logs with server-side filters", async () => {
+    render(<WaCloudAdminPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Notification Logs" }));
+    expect(await screen.findByTestId("notify-logs")).toBeInTheDocument();
+    await waitFor(() => expect(notifyLogsServerFn).toHaveBeenCalled());
+    expect(screen.getByText("No notifications match these filters.")).toBeInTheDocument();
+  });
+
+  it("shows the automation policy and routing controls", async () => {
+    render(<WaCloudAdminPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Automation" }));
+    expect(await screen.findByTestId("notify-automation")).toBeInTheDocument();
+    expect(screen.getByText("Notification engine enabled")).toBeInTheDocument();
+    expect(screen.getByText("Event → template routing")).toBeInTheDocument();
   });
 });

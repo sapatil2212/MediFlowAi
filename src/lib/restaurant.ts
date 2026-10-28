@@ -407,6 +407,7 @@ async function queueBookingNotification(
    * queued by the reassign path only when the table actually differs.
    */
   kind: "booked" | "tableChanged" = "booked",
+  consent: { optedIn: boolean; source: "public_restaurant_form" } | null = null,
 ): Promise<void> {
   if (typeof window !== "undefined") return;
 
@@ -426,29 +427,80 @@ async function queueBookingNotification(
       return;
     }
 
-    const { sendAppointmentNotification } = await import("./appointment-notify");
-    const accepted = await sendAppointmentNotification(
-      profile.tenantId,
-      phone,
-      kind === "tableChanged" ? "restaurantTableChanged" : "restaurantBooked",
-      {
-        name: booking.guestName,
-        clinicName: profile.businessName,
-        dateTime: new Date(`${booking.date}T00:00:00`),
-        timeSlot: booking.slotLabel,
-        partySize: booking.partySize,
-        tableName: booking.tableName,
-        tokenNo: booking.tokenNo,
-        appointmentId: booking.bookingId,
-      },
-    );
-    if (!accepted) {
+    // Durable notification event (approved restaurant template, dispatched
+    // immediately and retried by the worker if needed). Values are re-read
+    // from the booking at send time.
+    const { emitBookingEvent, dispatchSoon } = await import("./notify-engine");
+    const r = await emitBookingEvent({
+      tenantId: profile.tenantId,
+      appointmentId: booking.bookingId,
+      type: kind === "tableChanged" ? "booking.table_changed" : "booking.created",
+      source: kind === "tableChanged" ? "restaurant_reassign" : "restaurant_booking",
+      consent,
+    });
+    if (r.ok && r.inserted) dispatchSoon(r.eventId);
+    if (!r.ok) {
       console.warn(
-        `[Restaurant] Booking notification was not submitted (kind=${kind}, bookingId=${booking.bookingId}).`,
+        `[Restaurant] Booking notification could not be recorded (kind=${kind}, bookingId=${booking.bookingId}).`,
       );
     }
   } catch {
     console.error("[Restaurant] Booking notification failed because of an internal error.");
+  }
+}
+
+/**
+ * Emits the lifecycle notification for a restaurant status change that was
+ * actually persisted (cancelled / completed). Never throws.
+ */
+async function notifyRestaurantStatusChange(
+  tenantId: string,
+  bookingId: string,
+  previousStatus: string | null,
+  nextStatus: string,
+): Promise<void> {
+  if (typeof window !== "undefined") return;
+  if (!previousStatus || previousStatus === nextStatus) return;
+  const type =
+    nextStatus === "Cancelled"
+      ? ("booking.cancelled" as const)
+      : nextStatus === "Completed"
+        ? ("booking.completed" as const)
+        : null;
+  try {
+    const { emitBookingEvent, dispatchSoon, scheduleReminders } = await import("./notify-engine");
+    if (!type) {
+      // Back to an active status (e.g. un-cancelled): restore its reminders.
+      if (nextStatus === "Pending" || nextStatus === "Confirmed") {
+        await scheduleReminders({ tenantId, appointmentId: bookingId, mode: "event" });
+      }
+      return;
+    }
+    const profile = await getTenantProfile(tenantId);
+    if (!profile || !canUseFeature(contextFromTenant(profile), "whatsapp")) return;
+    const r = await emitBookingEvent({
+      tenantId,
+      appointmentId: bookingId,
+      type,
+      source: "restaurant_staff",
+    });
+    if (r.ok && r.inserted) dispatchSoon(r.eventId);
+  } catch {
+    console.error("[Restaurant] Status notification failed because of an internal error.");
+  }
+}
+
+/** Current status of a reservation (group-aware), or null. */
+async function readBookingStatus(tenantId: string, bookingId: string): Promise<string | null> {
+  try {
+    const { queryOne } = await import("./db");
+    const row = await queryOne<any>(
+      "SELECT status FROM Appointment WHERE tenantId = ? AND id = ? LIMIT 1",
+      [tenantId, bookingId],
+    );
+    return row?.status != null ? String(row.status) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -470,8 +522,13 @@ export const createRestaurantBookingPublicServerFn = createServerFn({ method: "P
       tableIds?: string[] | string | null;
       specialRequests?: string;
       locationId?: string | null;
+      /** Guest's choice on the WhatsApp booking-updates checkbox. */
+      whatsappConsent?: boolean;
     }) => {
       if (!data?.tenantId) throw new Error("Tenant ID is required");
+      if (data.whatsappConsent !== undefined && typeof data.whatsappConsent !== "boolean") {
+        throw new Error("Invalid WhatsApp consent value");
+      }
       return data;
     },
   )
@@ -545,19 +602,25 @@ export const createRestaurantBookingPublicServerFn = createServerFn({ method: "P
       status: created.status,
     };
 
-    // Await the non-fatal template submission so serverless/deployed runtimes do
-    // not terminate it after returning the already-created booking.
-    await queueBookingNotification(profile, {
-      bookingId: created.bookingId,
-      guestName: request.guestName,
-      phone: request.phone,
-      date: created.date,
-      slotLabel: created.slotLabel,
-      partySize: created.partySize,
-      tableName: created.tableName,
-      tableCount: created.tables.length,
-      tokenNo: created.tokenNo,
-    });
+    // Record the confirmation event (durable, non-fatal) before responding.
+    await queueBookingNotification(
+      profile,
+      {
+        bookingId: created.bookingId,
+        guestName: request.guestName,
+        phone: request.phone,
+        date: created.date,
+        slotLabel: created.slotLabel,
+        partySize: created.partySize,
+        tableName: created.tableName,
+        tableCount: created.tables.length,
+        tokenNo: created.tokenNo,
+      },
+      "booked",
+      typeof data.whatsappConsent === "boolean"
+        ? { optedIn: data.whatsappConsent, source: "public_restaurant_form" }
+        : null,
+    );
 
     return result;
   });
@@ -816,10 +879,14 @@ export const setRestaurantBookingStatusServerFn = createServerFn({ method: "POST
   .handler(async ({ data }) => {
     const { tenantId } = await requireRestaurant("restaurant_bookings", "operate");
 
+    const previousStatus = await readBookingStatus(tenantId, data.bookingId);
     // Req 9.4, 9.5 — and, for a Releasing_Status → Blocking_Status transition,
     // the Req 7.8 re-check under the `RestaurantTable` row lock.
     const write = await setBookingStatus(tenantId, data.bookingId, data.status);
     if (!write.ok) throw new Error(write.message);
+
+    // Only a persisted transition notifies (a repeated cancel is a no-op).
+    await notifyRestaurantStatusChange(tenantId, data.bookingId, previousStatus, data.status);
 
     return { success: true as const, bookingId: data.bookingId, status: data.status };
   });
@@ -1109,8 +1176,12 @@ export const updateRestaurantBookingServerFn = createServerFn({ method: "POST" }
   )
   .handler(async ({ data }) => {
     const { tenantId } = await requireRestaurant("restaurant_bookings", "operate");
+    const previousStatus = data.status ? await readBookingStatus(tenantId, data.bookingId) : null;
     const res = await updateBookingAtomic(tenantId, data);
     if (!res.ok) throw new Error(res.message || "Failed to update booking");
+    if (data.status) {
+      await notifyRestaurantStatusChange(tenantId, data.bookingId, previousStatus, data.status);
+    }
     return { success: true as const, bookingId: data.bookingId };
   });
 

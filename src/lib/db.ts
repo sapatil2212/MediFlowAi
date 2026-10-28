@@ -2105,6 +2105,17 @@ if (typeof window === "undefined") {
           console.error("[DB] ❌ Failed to create WaCloudRuntime table:", err.message);
         }
 
+        // WhatsApp notification engine schema (notify-ddl.ts): durable event
+        // outbox, consent, tenant/platform settings, audit trail, alerts, plus
+        // additive WaNotifyMapping / WaMessageLog columns. Shares one memoized,
+        // idempotent run with the engine's lazy readiness gate.
+        try {
+          const { ensureNotifySchema } = await import("./notify-ddl");
+          await ensureNotifySchema();
+        } catch (err: any) {
+          console.error("[DB] ❌ Notification schema setup failed:", err.message);
+        }
+
         // Migrate: add aiEnabled column to WhatsAppConfig if missing
         try {
           await conn.query(`ALTER TABLE WhatsAppConfig ADD COLUMN aiEnabled TINYINT(1) DEFAULT 0`);

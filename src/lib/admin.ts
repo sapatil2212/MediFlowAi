@@ -1369,3 +1369,100 @@ export const waRemoveMappingServerFn = createServerFn({ method: "POST" })
     const { waTemplateApi } = await import("./wa-template-api");
     return (await waTemplateApi.removeMapping(data)) as WaApiResult;
   });
+
+// ──────────────────────────────────────────────
+// WhatsApp notification engine (Super Admin → WhatsApp → Overview / Templates /
+// Notification Logs / Automation). Thin wrappers over notifyAdminApi; every
+// entry is adminOnly (verifyAdminSession first, safe {ok:false,error} on auth
+// failure). GET for reads, POST for writes.
+// ──────────────────────────────────────────────
+export const notifyOverviewServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.overview(data)) as WaApiResult;
+  });
+
+export const notifyLogsServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.logs(data)) as WaApiResult;
+  });
+
+export const notifyEventDetailServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.eventDetail(data)) as WaApiResult;
+  });
+
+export const notifyRetryServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.retry(data)) as WaApiResult;
+  });
+
+export const notifySettingsGetServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.settingsGet(data)) as WaApiResult;
+  });
+
+export const notifySettingsSaveServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.settingsSave(data)) as WaApiResult;
+  });
+
+export const notifyRoutesServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.routes(data)) as WaApiResult;
+  });
+
+export const notifyRouteSetServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.routeSet(data)) as WaApiResult;
+  });
+
+export const notifyCatalogPlanServerFn = createServerFn({ method: "GET" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.catalogPlan(data)) as WaApiResult;
+  });
+
+export const notifyCatalogSubmitServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.catalogSubmit(data)) as WaApiResult;
+  });
+
+export const notifyCatalogActivateServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.catalogActivate(data)) as WaApiResult;
+  });
+
+export const notifyTestSendServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.testSend(data)) as WaApiResult;
+  });
+
+export const notifyResolveAlertServerFn = createServerFn({ method: "POST" })
+  .validator((data?: unknown) => (data ?? {}) as WaApiResult)
+  .handler(async ({ data }): Promise<WaApiResult> => {
+    const { notifyAdminApi } = await import("./wa-template-api");
+    return (await notifyAdminApi.resolveAlert(data)) as WaApiResult;
+  });

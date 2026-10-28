@@ -386,13 +386,19 @@ export class InMemoryTemplateRepo implements TemplateRepo {
       .map((r) => ({ ...r }));
   }
 
+  private mappingKey(notifyKind: string, businessCategory?: string): string {
+    return `${notifyKind}|${businessCategory || "*"}`;
+  }
+
   async upsertMapping(input: {
     notifyKind: string;
+    businessCategory?: string;
     templateId: string;
     language: string;
     actorId: string | null;
   }): Promise<NotifyMappingRow> {
-    const existing = this.mappings.get(input.notifyKind);
+    const key = this.mappingKey(input.notifyKind, input.businessCategory);
+    const existing = this.mappings.get(key);
     const t = new Date(this.now());
     if (existing) {
       existing.templateId = input.templateId;
@@ -408,6 +414,7 @@ export class InMemoryTemplateRepo implements TemplateRepo {
     const row: NotifyMappingRow = {
       id: newId(),
       notifyKind: input.notifyKind,
+      businessCategory: input.businessCategory || "*",
       templateId: input.templateId,
       language: input.language,
       isEnabled: false,
@@ -419,7 +426,7 @@ export class InMemoryTemplateRepo implements TemplateRepo {
       createdAt: t,
       updatedAt: t,
     };
-    this.mappings.set(input.notifyKind, row);
+    this.mappings.set(key, row);
     return { ...row };
   }
 
@@ -427,8 +434,9 @@ export class InMemoryTemplateRepo implements TemplateRepo {
     notifyKind: string,
     enabled: boolean,
     optIn: { version: string; actorId: string | null } | null,
+    businessCategory?: string,
   ): Promise<NotifyMappingRow | null> {
-    const row = this.mappings.get(notifyKind);
+    const row = this.mappings.get(this.mappingKey(notifyKind, businessCategory));
     if (!row) return null;
     if (enabled) {
       if (!optIn) return null;
@@ -444,18 +452,25 @@ export class InMemoryTemplateRepo implements TemplateRepo {
     return { ...row };
   }
 
-  async removeMapping(notifyKind: string): Promise<boolean> {
-    return this.mappings.delete(notifyKind);
+  async removeMapping(notifyKind: string, businessCategory?: string): Promise<boolean> {
+    return this.mappings.delete(this.mappingKey(notifyKind, businessCategory));
   }
 
-  async getMapping(notifyKind: string): Promise<NotifyMappingRow | null> {
-    const r = this.mappings.get(notifyKind);
+  async getMapping(
+    notifyKind: string,
+    businessCategory?: string,
+  ): Promise<NotifyMappingRow | null> {
+    const r = this.mappings.get(this.mappingKey(notifyKind, businessCategory));
     return r ? { ...r } : null;
   }
 
   async listMappings(): Promise<NotifyMappingRow[]> {
     return [...this.mappings.values()]
-      .sort((a, b) => a.notifyKind.localeCompare(b.notifyKind))
+      .sort(
+        (a, b) =>
+          a.notifyKind.localeCompare(b.notifyKind) ||
+          a.businessCategory.localeCompare(b.businessCategory),
+      )
       .map((r) => ({ ...r }));
   }
 }

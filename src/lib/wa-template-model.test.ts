@@ -142,9 +142,9 @@ describe("sample-data + mapping rules", () => {
   });
   it("validates mappings against the kind catalogue", () => {
     const d = draft({ variableMappings: { "body.1": "name", "body.2": "doctorName" } });
-    // completed does not resolve date/time but doctorName is fine; use a field
-    // not allowed for the kind to force a failure.
-    const bad = draft({ variableMappings: { "body.1": "name", "body.2": "date" } });
+    // completed has no queue number (the visit is over); use a field not
+    // allowed for the kind to force a failure.
+    const bad = draft({ variableMappings: { "body.1": "name", "body.2": "tokenNo" } });
     expect(validateVariableMappings(d, "confirmed").ok).toBe(true);
     expect(validateVariableMappings(bad, "completed").ok).toBe(false);
   });
@@ -423,11 +423,11 @@ describe("mapping eligibility", () => {
 
 describe("published template contract", () => {
   it("defines appointment_booked/en_US separately with tokenNo in position 6", () => {
-    expect(PUBLISHED_TEMPLATE_SPECS).toHaveLength(1);
-    const spec = PUBLISHED_TEMPLATE_SPECS[0];
+    const spec = PUBLISHED_TEMPLATE_SPECS.find((s) => s.name === "appointment_booked")!;
     expect(spec.name).toBe("appointment_booked");
     expect(spec.language).toBe("en_US");
     expect(spec.notifyKind).toBe("booked");
+    expect(spec.footerText).toBeNull();
     expect(spec.variableMappings).toEqual({
       "body.1": "name",
       "body.2": "clinicName",
@@ -447,6 +447,38 @@ describe("published template contract", () => {
       ).ok,
     ).toBe(true);
     expect(TEMPLATE_PRESETS.some((preset) => preset.draft.name === spec.name)).toBe(false);
+  });
+
+  it("pins the exact language codes of all four approved templates", () => {
+    expect(PUBLISHED_TEMPLATE_SPECS.map((s) => [s.name, s.language, s.notifyKind])).toEqual([
+      ["appointment_booked", "en_US", "booked"],
+      ["appointment_cancelled", "en_US", "cancelled"],
+      ["appointment_completed", "en", "completed"],
+      ["appointment_reminder_day_before", "en", "reminderDayBefore"],
+    ]);
+  });
+
+  it("maps every placeholder of every approved template in positional order", () => {
+    const expected: Record<string, string[]> = {
+      appointment_booked: ["name", "clinicName", "doctorName", "date", "time", "tokenNo"],
+      appointment_cancelled: ["name", "clinicName", "date", "time"],
+      appointment_completed: ["name", "clinicName", "doctorName"],
+      appointment_reminder_day_before: [
+        "name",
+        "clinicName",
+        "doctorName",
+        "date",
+        "time",
+        "tokenNo",
+      ],
+    };
+    for (const spec of PUBLISHED_TEMPLATE_SPECS) {
+      const keys = Object.keys(spec.variableMappings);
+      expect(keys).toEqual(expected[spec.name].map((_, i) => `body.${i + 1}`));
+      expect(Object.values(spec.variableMappings)).toEqual(expected[spec.name]);
+      const draft = { ...spec, category: "UTILITY" as const, buttons: [], headerText: null };
+      expect(validateDraft(draft, spec.notifyKind).ok).toBe(true);
+    }
   });
 });
 

@@ -60,6 +60,7 @@ import {
   getWAConversationHistoryServerFn,
   getTenantWaLogsServerFn,
 } from "../lib/auth";
+import TenantNotificationSettings from "./TenantNotificationSettings";
 
 interface WhatsAppHubProps {
   user: any;
@@ -77,7 +78,13 @@ export default function WhatsAppHub({
   canOperate = true,
 }: WhatsAppHubProps) {
   const [activeSubTab, setActiveSubTab] = useState<
-    "dashboard" | "templates" | "campaigns" | "auto-reply" | "connection" | "official-status"
+    | "dashboard"
+    | "templates"
+    | "campaigns"
+    | "auto-reply"
+    | "connection"
+    | "official-status"
+    | "notifications"
   >("dashboard");
 
   // Official (Meta Cloud API) delivery log for this tenant.
@@ -487,6 +494,7 @@ export default function WhatsAppHub({
             { id: "auto-reply", label: "Auto-Replies", icon: RotateCcw },
             { id: "connection", label: "Device Link", icon: Wifi },
             { id: "official-status", label: "Official API Status", icon: Check },
+            { id: "notifications", label: "Notifications", icon: Send },
           ].map((t) => {
             const Icon = t.icon;
             return (
@@ -1691,6 +1699,18 @@ export default function WhatsAppHub({
                 )}
               </div>
             </div>
+          </motion.div>
+        )}
+
+        {/* AUTOMATIC NOTIFICATIONS TAB */}
+        {activeSubTab === "notifications" && (
+          <motion.div
+            key="notifications"
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -5 }}
+          >
+            <TenantNotificationSettings showToast={showToast} />
           </motion.div>
         )}
 

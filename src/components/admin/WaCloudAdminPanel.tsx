@@ -21,6 +21,10 @@ import {
   getWaCloudLogsServerFn,
 } from "../../lib/admin";
 import { TemplatesModule } from "./wa-templates/TemplatesModule";
+import { NotifyOverview } from "./wa-notify/NotifyOverview";
+import { NotifyLogs } from "./wa-notify/NotifyLogs";
+import { NotifyAutomation } from "./wa-notify/NotifyAutomation";
+import { TemplateCatalogPanel } from "./wa-notify/TemplateCatalogPanel";
 
 // notifyKind options exclude the two video kinds (HIGH-1 — always WhatsApp Web).
 const NOTIFY_KIND_OPTIONS = [
@@ -43,7 +47,7 @@ const STATUS_BADGE: Record<string, string> = {
   REJECTED: "bg-red-100 text-red-700",
 };
 
-type SubTab = "credentials" | "templates" | "monitoring";
+type SubTab = "overview" | "templates" | "logs" | "automation" | "credentials" | "monitoring";
 
 // Same path the server mounts in src/server.ts. Kept local: lib/whatsapp-webhook
 // is server-only (crypto/db) and must not be imported into the client bundle.
@@ -65,16 +69,21 @@ interface TestResult {
 }
 
 export function WaCloudAdminPanel() {
-  const [subTab, setSubTab] = useState<SubTab>("credentials");
+  const [subTab, setSubTab] = useState<SubTab>("overview");
+  const [logEventId, setLogEventId] = useState<string | null>(null);
+  const [advancedTemplates, setAdvancedTemplates] = useState(false);
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-2 border-b border-zinc-200">
+      <div className="flex flex-wrap gap-2 border-b border-zinc-200">
         {(
           [
-            ["credentials", "Credentials"],
+            ["overview", "Overview"],
             ["templates", "Templates"],
-            ["monitoring", "Monitoring"],
+            ["logs", "Notification Logs"],
+            ["automation", "Automation"],
+            ["credentials", "Credentials"],
+            ["monitoring", "Message Log"],
           ] as [SubTab, string][]
         ).map(([id, label]) => (
           <button
@@ -91,9 +100,40 @@ export function WaCloudAdminPanel() {
         ))}
       </div>
 
+      {subTab === "overview" && (
+        <NotifyOverview
+          onOpenEvent={(id) => {
+            setLogEventId(id);
+            setSubTab("logs");
+          }}
+        />
+      )}
+      {subTab === "templates" && (
+        <div className="space-y-4">
+          <div className="flex gap-2 text-sm">
+            <button
+              type="button"
+              onClick={() => setAdvancedTemplates(false)}
+              className={`rounded-full px-3 py-1 font-semibold cursor-pointer ${!advancedTemplates ? "bg-[#0059C6] text-white" : "bg-zinc-100 text-zinc-600"}`}
+            >
+              Industry catalog
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdvancedTemplates(true)}
+              className={`rounded-full px-3 py-1 font-semibold cursor-pointer ${advancedTemplates ? "bg-[#0059C6] text-white" : "bg-zinc-100 text-zinc-600"}`}
+            >
+              All templates & editor
+            </button>
+          </div>
+          {advancedTemplates ? <TemplatesModule /> : <TemplateCatalogPanel />}
+        </div>
+      )}
+      {subTab === "logs" && <NotifyLogs initialEventId={logEventId} />}
+      {subTab === "automation" && <NotifyAutomation />}
       {subTab === "credentials" && <CredentialsTab />}
-      {subTab === "templates" && <TemplatesModule />}
       {subTab === "monitoring" && <MonitoringTab />}
+      <StyleTag />
     </div>
   );
 }

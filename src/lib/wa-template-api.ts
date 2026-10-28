@@ -159,7 +159,11 @@ export const waTemplateApi = {
       const o = asObject(raw);
       if (typeof o.notifyKind !== "string") throw new Error("notifyKind is required");
       if (typeof o.templateId !== "string") throw new Error("templateId is required");
-      return { notifyKind: o.notifyKind, templateId: o.templateId };
+      return {
+        notifyKind: o.notifyKind,
+        templateId: o.templateId,
+        businessCategory: optCategory(o.businessCategory),
+      };
     },
     (input, actor) => svc.waAssignMapping(input, actor.id),
   ),
@@ -171,6 +175,7 @@ export const waTemplateApi = {
         notifyKind: o.notifyKind,
         enabled: o.enabled === true,
         optInAck: o.optInAck === true,
+        businessCategory: optCategory(o.businessCategory),
       };
     },
     (input, actor) => svc.waSetMappingEnabled(input, actor.id),
@@ -179,8 +184,120 @@ export const waTemplateApi = {
     (raw) => {
       const o = asObject(raw);
       if (typeof o.notifyKind !== "string") throw new Error("notifyKind is required");
-      return { notifyKind: o.notifyKind };
+      return { notifyKind: o.notifyKind, businessCategory: optCategory(o.businessCategory) };
     },
     (input, actor) => svc.waRemoveMapping(input, actor.id),
   ),
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notification engine administration (Overview, Logs, Automation, Catalog).
+// ─────────────────────────────────────────────────────────────────────────────
+const str = (v: unknown, max = 200): string | undefined =>
+  typeof v === "string" && v.trim() !== "" ? v.trim().slice(0, max) : undefined;
+
+export const notifyAdminApi = {
+  overview: adminOnly(
+    () => ({}),
+    async () => (await import("./notify-admin")).notifyOverview(),
+  ),
+  logs: adminOnly(
+    (raw) => {
+      const o = asObject(raw);
+      return {
+        tenantId: str(o.tenantId),
+        businessCategory: str(o.businessCategory),
+        appointmentId: str(o.appointmentId),
+        eventType: str(o.eventType),
+        notifyKind: str(o.notifyKind),
+        templateName: str(o.templateName),
+        status: str(o.status),
+        errorClass: str(o.errorClass),
+        from: str(o.from),
+        to: str(o.to),
+        search: str(o.search, 100),
+        limit: Number(o.limit) || 50,
+        offset: Number(o.offset) || 0,
+      };
+    },
+    async (input) => (await import("./notify-admin")).notifyLogs(input),
+  ),
+  eventDetail: adminOnly(reqId, async (input) =>
+    (await import("./notify-admin")).notifyEventDetail(input.id),
+  ),
+  retry: adminOnly(reqId, async (input, actor) =>
+    (await import("./notify-admin")).notifyRetry(input.id, actor.id),
+  ),
+  settingsGet: adminOnly(
+    () => ({}),
+    async () => (await import("./notify-admin")).notifySettingsGet(),
+  ),
+  settingsSave: adminOnly(
+    (raw) => asObject(asObject(raw).settings),
+    async (input, actor) => (await import("./notify-admin")).notifySettingsSave(input, actor.id),
+  ),
+  routes: adminOnly(
+    () => ({}),
+    async () => (await import("./notify-admin")).notifyRoutes(),
+  ),
+  routeSet: adminOnly(
+    (raw) => {
+      const o = asObject(raw);
+      const businessCategory = str(o.businessCategory);
+      const kind = str(o.kind);
+      if (!businessCategory || !kind) throw new Error("businessCategory and kind are required");
+      return {
+        businessCategory,
+        kind,
+        templateId: str(o.templateId) ?? null,
+        enabled: typeof o.enabled === "boolean" ? o.enabled : undefined,
+        optInAck: o.optInAck === true,
+        remove: o.remove === true,
+      };
+    },
+    async (input, actor) => (await import("./notify-admin")).notifyRouteSet(input, actor.id),
+  ),
+  catalogPlan: adminOnly(
+    () => ({}),
+    async () => (await import("./notify-admin")).notifyCatalogPlan(),
+  ),
+  catalogSubmit: adminOnly(
+    (raw) => {
+      const o = asObject(raw);
+      const names = Array.isArray(o.names)
+        ? o.names.filter((n): n is string => typeof n === "string" && /^[a-z0-9_]{1,128}$/.test(n))
+        : null;
+      return { names, confirm: o.confirm === true };
+    },
+    async (input, actor) => (await import("./notify-admin")).notifyCatalogSubmit(input, actor.id),
+  ),
+  catalogActivate: adminOnly(
+    () => ({}),
+    async (_input, actor) => (await import("./notify-admin")).notifyCatalogActivate(actor.id),
+  ),
+  testSend: adminOnly(
+    (raw) => {
+      const o = asObject(raw);
+      const templateId = str(o.templateId);
+      const phone = str(o.phone, 32);
+      if (!templateId || !phone) throw new Error("templateId and phone are required");
+      return { templateId, phone };
+    },
+    async (input, actor) => (await import("./notify-admin")).notifyTestSend(input, actor.id),
+  ),
+  resolveAlert: adminOnly(
+    (raw) => {
+      const key = str(asObject(raw).key, 191);
+      if (!key) throw new Error("key is required");
+      return { key };
+    },
+    async (input) => (await import("./notify-admin")).notifyResolveAlert(input.key),
+  ),
+};
+
+/** Optional business category for mapping writes ('*' when omitted). */
+function optCategory(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  if (typeof value !== "string") throw new Error("businessCategory must be a string");
+  return value;
+}

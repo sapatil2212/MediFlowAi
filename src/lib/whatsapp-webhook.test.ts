@@ -26,6 +26,7 @@ const executeMock = vi.fn();
 const queryMock = vi.fn();
 const queryOneMock = vi.fn();
 const insertedKeys = new Set<string>();
+const webhookStatus = new Map<string, string>();
 vi.mock("./db", () => ({
   execute: (...args: any[]) => executeMock(...args),
   query: (...args: any[]) => queryMock(...args),
@@ -99,6 +100,7 @@ beforeEach(() => {
   queryOneMock.mockReset();
   enqueueWAMock.mockReset();
   insertedKeys.clear();
+  webhookStatus.clear();
   routes = {};
 
   resolveCloudConfigMock.mockResolvedValue({
@@ -134,12 +136,33 @@ beforeEach(() => {
   });
 
   // Default execute: simulate the WebhookEvent idempotency insert succeeding
-  // once per eventKey, and throwing on a duplicate.
+  // once per eventKey and failing with MySQL's duplicate-key error after that.
+  // A duplicate is only re-claimed when its earlier processing errored.
   executeMock.mockImplementation(async (sql: string, params: any[]) => {
     if (typeof sql === "string" && sql.includes("INSERT INTO WebhookEvent")) {
       const key = params[1];
-      if (insertedKeys.has(key)) throw new Error("duplicate");
+      if (insertedKeys.has(key)) {
+        const dup: any = new Error(`Duplicate entry '${key}' for key 'uniq_webhook_event'`);
+        dup.errno = 1062;
+        dup.code = "ER_DUP_ENTRY";
+        throw dup;
+      }
       insertedKeys.add(key);
+      webhookStatus.set(key, "received");
+    }
+    if (typeof sql === "string" && sql.startsWith("UPDATE WebhookEvent SET status = 'received'")) {
+      const key = params[0];
+      if (webhookStatus.get(key) === "error") {
+        webhookStatus.set(key, "received");
+        return { affectedRows: 1, insertId: null };
+      }
+      return { affectedRows: 0, insertId: null };
+    }
+    if (typeof sql === "string" && sql.includes("UPDATE WebhookEvent SET status = 'processed'")) {
+      webhookStatus.set(params[0], "processed");
+    }
+    if (typeof sql === "string" && sql.includes("UPDATE WebhookEvent SET status = 'error'")) {
+      webhookStatus.set(params[0], "error");
     }
     return { affectedRows: 1, insertId: null };
   });
@@ -268,14 +291,36 @@ describe("per-entry idempotency", () => {
     expect(res.status).toBe(200);
     expect(insertedKeys.has("wa:wamid.B:delivered")).toBe(true);
 
-    // The duplicate 'wamid.A:sent' insert throws and is skipped: no status
-    // UPDATE should run for it. The new one does run its UPDATE.
-    const statusUpdates = sqlCalls("UPDATE WaMessageLog");
+    // The duplicate 'wamid.A:sent' insert fails with ER_DUP_ENTRY and is
+    // skipped: no status UPDATE runs for it. The new one runs its UPDATE.
+    const statusUpdates = sqlCalls("SET officialStatus = ?");
     expect(statusUpdates.length).toBe(1);
-    // Non-failed statuses never read the row.
-    expect(
-      queryOneMock.mock.calls.filter((c) => String(c[0]).includes("WHERE metaMessageId = ?")),
-    ).toEqual([]);
+    expect(statusUpdates[0][1]).toContain("wamid.B");
+  });
+
+  it("re-processes a duplicate whose earlier processing errored", async () => {
+    await post(statusPayload("wamid.E", "delivered"));
+    webhookStatus.set("wa:wamid.E:delivered", "error");
+    executeMock.mockClear();
+
+    const res = await post(statusPayload("wamid.E", "delivered"));
+
+    expect(res.status).toBe(200);
+    expect(sqlCalls("SET officialStatus = ?").length).toBe(1);
+    expect(webhookStatus.get("wa:wamid.E:delivered")).toBe("processed");
+  });
+
+  it("asks Meta to redeliver when the idempotency record cannot be stored", async () => {
+    executeMock.mockImplementation(async (sql: string) => {
+      if (sql.includes("INSERT INTO WebhookEvent")) throw new Error("connect ECONNREFUSED");
+      return { affectedRows: 1, insertId: null };
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await post(statusPayload("wamid.F", "delivered"));
+
+    expect(res.status).toBe(503);
+    expect(sqlCalls("SET officialStatus = ?").length).toBe(0);
   });
 });
 
@@ -716,5 +761,130 @@ describe("template webhook field routing", () => {
     // The status path ran, not the template path.
     expect(sqlCalls("FIELD(?, 'queued','sent','delivered','read')").length).toBe(1);
     expect(sqlCalls("UPDATE WaCloudTemplate").length).toBe(0);
+  });
+});
+
+// ── NotificationEvent delivery progression ──────────────────────────────────
+
+describe("NotificationEvent webhook progression", () => {
+  it("advances sent → delivered → read and ignores duplicates, regressions and failed-after-read", async () => {
+    const { createInMemoryNotifyRepo } = await import("./notify-repo.memory");
+    const { __setNotifyRepoForTests } = await import("./notify-repo");
+    const repo = createInMemoryNotifyRepo();
+    __setNotifyRepoForTests(repo);
+
+    const submitEvent = async (eventKey: string, appointmentId: string, wamid: string) => {
+      const inserted = await repo.insertEvent({
+        eventKey,
+        tenantId: "tenant-event",
+        businessCategory: "clinic",
+        eventType: "booking.created",
+        notifyKind: "booked",
+        appointmentId,
+        recipient: "919876543210",
+        source: "test",
+        scheduledForMs: 1,
+        createdAtMs: 1,
+      });
+      const claimed = await repo.claimById({
+        id: inserted.id,
+        workerId: "sender",
+        nowMs: 1,
+        leaseMs: 60_000,
+      });
+      expect(claimed).not.toBeNull();
+      await repo.finishClaimed(inserted.id, claimed!.claimToken!, {
+        status: "submitted",
+        providerMessageId: wamid,
+        submittedAtMs: 10,
+      });
+      return inserted.id;
+    };
+
+    const statusPayload = (id: string, status: string, timestamp: number, code?: number) => ({
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                statuses: [
+                  {
+                    id,
+                    status,
+                    timestamp: String(timestamp),
+                    ...(code ? { errors: [{ code, title: `Error ${code}` }] } : {}),
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    try {
+      routes.prior = {
+        id: "log-event",
+        tenantId: "tenant-event",
+        direction: "out",
+        recipient: "919876543210",
+        kind: "booked",
+        channel: "official",
+        body: null,
+        officialStatus: "sent",
+        webFallbackAttempted: 0,
+      };
+
+      const firstId = await submitEvent("event:first", "appt-event-1", "wamid.EVENT.1");
+      await post(statusPayload("wamid.EVENT.1", "sent", 100));
+      expect(await repo.getEvent(firstId)).toMatchObject({ status: "sent" });
+
+      await post(statusPayload("wamid.EVENT.1", "delivered", 200));
+      expect(await repo.getEvent(firstId)).toMatchObject({
+        status: "delivered",
+        deliveredAtMs: 200_000,
+      });
+
+      const read = statusPayload("wamid.EVENT.1", "read", 300);
+      await post(read);
+      await post(read); // duplicate delivery from Meta: idempotency key skips it
+      expect(await repo.getEvent(firstId)).toMatchObject({
+        status: "read",
+        deliveredAtMs: 200_000,
+        readAtMs: 300_000,
+      });
+
+      await post(statusPayload("wamid.EVENT.1", "failed", 400, 131026));
+      expect(await repo.getEvent(firstId)).toMatchObject({
+        status: "read",
+        failedAtMs: null,
+        errorCode: null,
+      });
+
+      // A fresh event receiving callbacks out of order also cannot regress.
+      const secondId = await submitEvent("event:second", "appt-event-2", "wamid.EVENT.2");
+      await post(statusPayload("wamid.EVENT.2", "read", 500));
+      await post(statusPayload("wamid.EVENT.2", "delivered", 450));
+      await post(statusPayload("wamid.EVENT.2", "delivered", 450)); // duplicate
+      expect(await repo.getEvent(secondId)).toMatchObject({
+        status: "read",
+        deliveredAtMs: 500_000,
+        readAtMs: 500_000,
+        failedAtMs: null,
+      });
+
+      expect(repo.audit.map((row) => row.action)).toEqual(
+        expect.arrayContaining([
+          "webhook_sent",
+          "webhook_delivered",
+          "webhook_read",
+          "webhook_failed_ignored",
+          "webhook_delivered_ignored",
+        ]),
+      );
+      expect(repo.audit.filter((row) => row.action === "webhook_read")).toHaveLength(2);
+    } finally {
+      __setNotifyRepoForTests(null);
+    }
   });
 });

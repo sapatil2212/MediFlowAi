@@ -16,6 +16,7 @@ import { queryOne } from "./db";
 export type AptNotifyKind =
   | "booked"
   | "confirmed"
+  | "rescheduled"
   | "cancelled"
   | "completed"
   | "reminderDayBefore"
@@ -48,6 +49,59 @@ export interface AptNotifyContext {
    * upper-cased). Optional; template mappings may use it.
    */
   appointmentId?: string | null;
+  /**
+   * Service / session / consultation type shown to non-clinic customers
+   * (Appointment.appointmentType, or the category's neutral default).
+   */
+  serviceName?: string | null;
+  /**
+   * Pre-formatted local date/time text computed by the notification engine
+   * from the stored wall-clock value and the tenant timezone. When present they
+   * take precedence over formatting `dateTime` in the process timezone.
+   */
+  dateText?: string | null;
+  timeText?: string | null;
+}
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/** Template date text, e.g. "28 October 2026" (process-local calendar day). */
+function fmtTemplateDate(d: Date): string {
+  return `${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** Template time text, e.g. "10:30 AM"; a stored slot label wins when parseable. */
+function fmtTemplateTime(d: Date, slot?: string | null): string {
+  if (slot) {
+    const m = /^\s*(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*[Mm]\.?\s*$/.exec(slot);
+    if (m) return `${Number(m[1])}:${m[2]} ${m[3].toUpperCase()}M`;
+    return slot.trim();
+  }
+  const h = d.getHours();
+  const suffix = h >= 12 ? "PM" : "AM";
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(d.getMinutes()).padStart(2, "0")} ${suffix}`;
+}
+
+/** Template-safe single-line text: no newlines/tabs, no runs of >3 spaces, capped. */
+export function sanitizeTemplateParam(value: string, max = 120): string {
+  return String(value)
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/ {4,}/g, "   ")
+    .trim()
+    .slice(0, max);
 }
 
 function fmtDate(d: Date): string {
@@ -83,6 +137,7 @@ export const TEMPLATE_VAR_SPEC: Record<
 > = {
   booked: ["name", "clinicName", "doctorName", "date", "time", "tokenNo"],
   confirmed: ["name", "clinicName", "doctorName", "date", "time", "tokenNo"],
+  rescheduled: ["name", "clinicName", "doctorName", "date", "time", "tokenNo"],
   tokenUpdated: ["name", "clinicName", "doctorName", "date", "time", "tokenNo"],
   reminderDayBefore: ["name", "clinicName", "doctorName", "date", "time", "tokenNo"],
   cancelled: ["name", "clinicName", "date", "time"],
@@ -171,34 +226,50 @@ export function resolveTemplateField(
     | "bookingCode"
     | "tokenNo"
     | "partySize"
-    | "tableName",
+    | "tableName"
+    | "serviceName"
+    | "joinToken",
   ctx: AptNotifyContext,
 ): string | null {
+  const text = (value: string | null | undefined): string | null => {
+    if (value == null) return null;
+    const safe = sanitizeTemplateParam(value);
+    return safe === "" ? null : safe;
+  };
+  const validDate = ctx.dateTime instanceof Date && !Number.isNaN(ctx.dateTime.getTime());
   switch (field) {
     case "name":
-      return ctx.name && ctx.name.trim() !== "" ? ctx.name : null;
+      return text(ctx.name);
     case "clinicName":
-      return ctx.clinicName && ctx.clinicName.trim() !== "" ? ctx.clinicName : null;
+      return text(ctx.clinicName);
     case "doctorName":
-      return ctx.doctorName && ctx.doctorName.trim() !== "" ? ctx.doctorName : null;
+      return text(ctx.doctorName);
+    case "serviceName":
+      return text(ctx.serviceName);
     case "date":
-      return ctx.dateTime instanceof Date && !Number.isNaN(ctx.dateTime.getTime())
-        ? fmtDate(ctx.dateTime)
-        : null;
+      // Engine-built contexts always carry dateText/timeText (possibly null for
+      // a date-only booking); only legacy callers fall back to dateTime.
+      if (ctx.dateText !== undefined) return text(ctx.dateText);
+      return validDate ? fmtTemplateDate(ctx.dateTime) : null;
     case "time":
-      return ctx.dateTime instanceof Date && !Number.isNaN(ctx.dateTime.getTime())
-        ? fmtTime(ctx.dateTime, ctx.timeSlot)
-        : null;
+      if (ctx.timeText !== undefined) return text(ctx.timeText);
+      return validDate ? fmtTemplateTime(ctx.dateTime, ctx.timeSlot) : null;
     case "tokenNo":
-      return ctx.tokenNo != null ? String(ctx.tokenNo) : null;
+      return ctx.tokenNo != null && Number.isFinite(Number(ctx.tokenNo))
+        ? String(ctx.tokenNo)
+        : null;
     case "partySize":
-      return ctx.partySize != null ? String(ctx.partySize) : null;
+      return ctx.partySize != null && Number(ctx.partySize) > 0 ? String(ctx.partySize) : null;
     case "tableName":
-      return ctx.tableName && ctx.tableName.trim() !== "" ? ctx.tableName : null;
+      return text(ctx.tableName);
     case "bookingCode": {
       const id = ctx.appointmentId;
       if (!id || String(id).trim() === "") return null;
       return String(id).slice(0, 8).toUpperCase();
+    }
+    case "joinToken": {
+      const m = ctx.joinLink ? /\/consult\/([A-Za-z0-9_-]+)/.exec(ctx.joinLink) : null;
+      return m ? m[1] : null;
     }
     default:
       return null;
@@ -272,14 +343,23 @@ export async function sendAppointmentNotification(
       return false;
     }
     // Route through the official Cloud template router. It logs the attempt and
-    // never falls back to free-form Cloud text or whatsapp-web.js.
+    // never falls back to free-form Cloud text or whatsapp-web.js. Routing is
+    // category-aware so industry-specific wording reaches the right tenants.
     const { sendPatientMessage } = await import("./whatsapp-router");
+    let businessCategory: import("./notify-catalog").BusinessCategory | null = null;
+    try {
+      const { loadTenantSnapshot } = await import("./notify-context");
+      businessCategory = (await loadTenantSnapshot(tenantId))?.category ?? null;
+    } catch {
+      businessCategory = null;
+    }
     const result = await sendPatientMessage({
       tenantId,
       appointmentId: ctx.appointmentId ?? undefined,
       notifyKind: kind,
       recipientPhone: phone,
       ctx,
+      businessCategory,
     });
     if (!result.delivered) {
       console.warn(

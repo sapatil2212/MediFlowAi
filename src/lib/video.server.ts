@@ -1346,16 +1346,27 @@ export async function notifyVideoLink(
 ): Promise<void> {
   const appt = await loadAppointmentForVideo(appointmentId, tenantId);
   if (!appt) return;
-  const { sendAppointmentNotification, sendVideoLinkEmail } = await import("./appointment-notify");
+  const { sendVideoLinkEmail } = await import("./appointment-notify");
   const dateTime = appt.dateTime instanceof Date ? appt.dateTime : new Date(appt.dateTime);
-  await sendAppointmentNotification(tenantId, appt.phone, kind, {
-    name: appt.name,
-    clinicName: appt.clinicName,
-    doctorName: appt.doctorName,
-    dateTime,
-    joinLink,
-    appointmentId,
-  });
+  // WhatsApp delivery goes through the durable engine with an approved
+  // template (URL button). The join link is stored only encrypted.
+  try {
+    const { encryptSecret } = await import("./wa-crypto");
+    const crypto = await import("crypto");
+    const { emitBookingEvent, dispatchSoon } = await import("./notify-engine");
+    const r = await emitBookingEvent({
+      tenantId,
+      appointmentId,
+      type: "video.link_issued",
+      source: "video",
+      payload: { reissued: kind === "videoLinkReissued", joinLinkEnc: encryptSecret(joinLink) },
+      dedupeKey: crypto.createHash("sha256").update(joinLink).digest("hex").slice(0, 16),
+      skipReminders: true,
+    });
+    if (r.ok && r.inserted) dispatchSoon(r.eventId);
+  } catch (e: any) {
+    console.error("[Video][notify] WhatsApp event failed:", e?.message);
+  }
   if (appt.email) {
     try {
       await sendVideoLinkEmail(appt.email, {
@@ -1597,13 +1608,13 @@ export async function notifyInstantMeetingLink(
   const clinicName = await resolveClinicNameSafe(tenantId);
   const doctorName = room.doctorId ? await resolveDoctorNameSafe(room.doctorId) : "";
   const when = scheduledAt ?? new Date();
-  const kind = scheduledAt ? "videoLinkIssued" : "videoLinkIssued";
-
   try {
     const { sendAppointmentNotification, sendVideoLinkEmail } =
       await import("./appointment-notify");
+    // Ad-hoc meetings have no booking row, so they use the direct (non-durable)
+    // approved-template path; it is category-aware and never free-form.
     if (guest.phone) {
-      await sendAppointmentNotification(tenantId, guest.phone, kind as any, {
+      await sendAppointmentNotification(tenantId, guest.phone, "videoLinkIssued", {
         name: guest.name || "there",
         clinicName,
         doctorName,

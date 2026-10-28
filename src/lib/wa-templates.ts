@@ -37,6 +37,7 @@ import {
   type TemplateDraft,
 } from "./wa-template-model";
 import type { AptNotifyKind } from "./appointment-notify";
+import { isBusinessCategory } from "./notify-catalog";
 
 /** The current opt-in acknowledgement text version (DP-01). */
 export const OPT_IN_ACK_VERSION = "v1";
@@ -168,6 +169,12 @@ export function rowToDraft(row: TemplateRow): TemplateDraft {
     sampleValues: row.sampleValues ?? {},
     variableMappings: row.variableMappings ?? {},
   };
+}
+
+/** '*' (all categories) or one of the six business categories; null when invalid. */
+function validateCategory(category?: string | null): string | null {
+  if (category == null || category === "" || category === "*") return "*";
+  return isBusinessCategory(category) ? category : null;
 }
 
 function validateKind(kind?: string | null): AptNotifyKind | null {
@@ -692,12 +699,14 @@ export async function waNotifyMappings(): Promise<ServiceResult<{ rows: NotifyMa
 }
 
 export async function waAssignMapping(
-  input: { notifyKind: string; templateId: string },
+  input: { notifyKind: string; templateId: string; businessCategory?: string | null },
   actorId: string | null,
 ): Promise<ServiceResult<{ mapping: NotifyMappingRow }>> {
   try {
     const kind = validateKind(input.notifyKind);
     if (!kind) return err("Unknown notification kind.");
+    const category = validateCategory(input.businessCategory);
+    if (!category) return err("Unknown business category.");
     const repo = getTemplateRepo();
     const tpl = await repo.getById(input.templateId);
     if (!tpl) return err("Template not found.");
@@ -714,11 +723,17 @@ export async function waAssignMapping(
     }
     const mapping = await repo.upsertMapping({
       notifyKind: kind,
+      businessCategory: category,
       templateId: input.templateId,
       language: tpl.language,
       actorId,
     });
-    await repo.addActivity(input.templateId, "MAPPING_ASSIGNED", { notifyKind: kind }, actorId);
+    await repo.addActivity(
+      input.templateId,
+      "MAPPING_ASSIGNED",
+      { notifyKind: kind, businessCategory: category },
+      actorId,
+    );
     await invalidateNotifyCache();
     return { ok: true, mapping };
   } catch (e: any) {
@@ -727,19 +742,26 @@ export async function waAssignMapping(
 }
 
 export async function waSetMappingEnabled(
-  input: { notifyKind: string; enabled: boolean; optInAck?: boolean },
+  input: {
+    notifyKind: string;
+    enabled: boolean;
+    optInAck?: boolean;
+    businessCategory?: string | null;
+  },
   actorId: string | null,
 ): Promise<ServiceResult<{ mapping: NotifyMappingRow }>> {
   try {
     const kind = validateKind(input.notifyKind);
     if (!kind) return err("Unknown notification kind.");
+    const category = validateCategory(input.businessCategory);
+    if (!category) return err("Unknown business category.");
     const repo = getTemplateRepo();
     if (input.enabled) {
       if (input.optInAck !== true) {
         return err("Enabling a template send requires the opt-in acknowledgement.");
       }
       // Re-check eligibility at enable time (Meta state can change via webhook).
-      const mapping = await repo.getMapping(kind);
+      const mapping = await repo.getMapping(kind, category);
       if (!mapping) return err("No mapping exists for this kind.");
       const tpl = await repo.getById(mapping.templateId);
       if (!tpl) return err("Mapped template not found.");
@@ -757,13 +779,14 @@ export async function waSetMappingEnabled(
       kind,
       input.enabled,
       input.enabled ? { version: OPT_IN_ACK_VERSION, actorId } : null,
+      category,
     );
     if (!updated) return err("Could not update the mapping (opt-in acknowledgement required).");
-    const mappingRow = await repo.getMapping(kind);
+    const mappingRow = await repo.getMapping(kind, category);
     await repo.addActivity(
       mappingRow?.templateId ?? null,
       input.enabled ? "MAPPING_ENABLED" : "MAPPING_DISABLED",
-      { notifyKind: kind },
+      { notifyKind: kind, businessCategory: category },
       actorId,
     );
     if (input.enabled) {
@@ -782,16 +805,23 @@ export async function waSetMappingEnabled(
 }
 
 export async function waRemoveMapping(
-  input: { notifyKind: string },
+  input: { notifyKind: string; businessCategory?: string | null },
   actorId: string | null,
 ): Promise<ServiceResult<EmptyOk>> {
   try {
     const kind = validateKind(input.notifyKind);
     if (!kind) return err("Unknown notification kind.");
+    const category = validateCategory(input.businessCategory);
+    if (!category) return err("Unknown business category.");
     const repo = getTemplateRepo();
-    const ok = await repo.removeMapping(kind);
+    const ok = await repo.removeMapping(kind, category);
     if (!ok) return err("No mapping exists for this kind.");
-    await repo.addActivity(null, "MAPPING_REMOVED", { notifyKind: kind }, actorId);
+    await repo.addActivity(
+      null,
+      "MAPPING_REMOVED",
+      { notifyKind: kind, businessCategory: category },
+      actorId,
+    );
     await invalidateNotifyCache();
     return { ok: true };
   } catch (e: any) {

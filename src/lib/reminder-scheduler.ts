@@ -1,24 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // reminder-scheduler.ts  (server-only)
 //
-// Background scheduler that sends WhatsApp appointment reminders at four points:
-//   • ~1 day before   (remDayBefore)
-//   • the day of       (remDayOf, after 8am, morning-of)
-//   • ~2 hours before  (rem2h)
-//   • ~1 hour before   (rem1h)
+// The 5-minute background cycle. WhatsApp reminders and queue-number updates
+// are no longer sent from here directly: they are durable NotificationEvent
+// jobs (notify-engine.ts) dispatched by notify-dispatcher.ts, which claims each
+// job atomically, re-checks the booking, and records Meta's result. This cycle
+// runs the engine's maintenance pass (token-correction events, reminder
+// backfill after restarts, template sync, catalog activation, alerts,
+// retention) plus the platform's other sweeps.
 //
-// Runs every 5 minutes. For each upcoming appointment it fires AT MOST ONE
-// reminder per cycle (the most urgent applicable stage), deduped by per-row
-// boolean columns so a customer never receives the same reminder twice.
-//
-// Gated by an enabled, mapped, approved official Cloud utility template.
-// Never throws out of the cycle — a failure for one appointment/tenant does not
-// affect the others.
+// Never throws out of the cycle — a failure in one step does not affect the
+// others.
 // ─────────────────────────────────────────────────────────────────────────────
-import { query, execute } from "./db";
-import type { AptNotifyKind } from "./appointment-notify";
-import { sendPatientMessage } from "./whatsapp-router";
-import { isCloudAvailable } from "./whatsapp-cloud";
 
 const globalForScheduler = globalThis as unknown as {
   reminderSchedulerStarted?: boolean;
@@ -33,7 +26,7 @@ export function startReminderScheduler() {
   if (globalForScheduler.reminderSchedulerStarted) return;
   globalForScheduler.reminderSchedulerStarted = true;
 
-  console.log("[Reminder Scheduler] Started — WhatsApp appointment reminders every 5 min.");
+  console.log("[Reminder Scheduler] Started — notification maintenance and sweeps every 5 min.");
   setTimeout(() => {
     void runReminderCycle();
   }, FIRST_RUN_DELAY_MS);
@@ -42,105 +35,21 @@ export function startReminderScheduler() {
   }, CYCLE_MS);
 }
 
-function isSameLocalDay(a: number, b: number): boolean {
-  const da = new Date(a);
-  const db = new Date(b);
-  return (
-    da.getFullYear() === db.getFullYear() &&
-    da.getMonth() === db.getMonth() &&
-    da.getDate() === db.getDate()
-  );
-}
-
-/**
- * Sends corrected token numbers to patients whose token shifted after they were
- * already notified (see renumberDailyTokens). Running this on the scheduler's
- * cycle is what debounces a burst of bookings: however many times a patient's
- * token moved in the last few minutes, they receive ONE message carrying the
- * current value. The flag is cleared only after a successful enqueue so a
- * transient WhatsApp outage retries on the next cycle.
- */
-async function runTokenCorrections(): Promise<void> {
-  const rows = await query<any>(
-    `SELECT a.id, a.tenantId, a.name, a.phone, a.whatsapp, a.dateTime, a.timeSlot, a.tokenNo,
-            u.clinicName, d.name AS doctorName
-       FROM Appointment a
-       LEFT JOIN User u ON u.tenantId = a.tenantId
-       LEFT JOIN Doctor d ON d.id = a.doctorId
-      WHERE a.tokenNotifyPending = 1
-        AND a.dateTime >= NOW()
-        AND a.status NOT IN ('Cancelled', 'Completed')`,
-  );
-
-  if (!rows || rows.length === 0) {
-    // Clear stale flags on rows we will never message (past or closed) so they
-    // do not accumulate.
-    await execute(
-      `UPDATE Appointment SET tokenNotifyPending = 0
-        WHERE tokenNotifyPending = 1
-          AND (dateTime < NOW() OR status IN ('Cancelled', 'Completed'))`,
-    );
-    return;
-  }
-
-  // tokenNotifyPending has OPPOSITE polarity to the reminder flags: 1 means
-  // "still needs sending", cleared to 0 ONLY on successful delivery (MEDIUM-2).
-  const cloudAvailable = await isCloudAvailable();
-
-  for (const apt of rows) {
-    try {
-      const phone = apt.whatsapp || apt.phone;
-      if (!phone) {
-        // Nothing we can do for this row — clear it so it stops being scanned.
-        await execute("UPDATE Appointment SET tokenNotifyPending = 0 WHERE id = ?", [apt.id]);
-        continue;
-      }
-
-      const ctx = {
-        name: apt.name,
-        clinicName: apt.clinicName,
-        doctorName: apt.doctorName,
-        dateTime: new Date(apt.dateTime),
-        timeSlot: apt.timeSlot,
-        tokenNo: apt.tokenNo,
-      };
-
-      const result = await sendPatientMessage({
-        tenantId: apt.tenantId,
-        appointmentId: apt.id,
-        notifyKind: "tokenUpdated",
-        recipientPhone: phone,
-        cloudAvailable,
-        ctx,
-      });
-
-      if (result.delivered) {
-        await execute("UPDATE Appointment SET tokenNotifyPending = 0 WHERE id = ?", [apt.id]);
-        console.log(
-          `[Reminder Scheduler] Sent corrected token #${apt.tokenNo} for appointment ${apt.id} (${apt.tenantId})`,
-        );
-      }
-    } catch (rowErr: any) {
-      console.error("[Reminder Scheduler] token correction error:", rowErr?.message);
-    }
-  }
-}
-
 async function runReminderCycle(): Promise<void> {
   // Prevent overlapping runs (a slow cycle shouldn't stack).
   if (globalForScheduler.reminderSchedulerRunning) return;
   globalForScheduler.reminderSchedulerRunning = true;
 
   try {
-    // Correct any tokens that shifted since the patient was last told, before
-    // the reminders below go out carrying token numbers.
+    // Notification engine upkeep: queue-number corrections, reminder jobs for
+    // upcoming bookings, template sync + catalog activation, alerts, retention.
     try {
-      await runTokenCorrections();
-    } catch (tokErr: any) {
-      console.error("[Reminder Scheduler] token correction pass error:", tokErr?.message);
+      const { runNotificationMaintenance } = await import("./notify-maintenance");
+      await runNotificationMaintenance();
+    } catch (notifyErr: any) {
+      console.error("[Reminder Scheduler] notification maintenance error:", notifyErr?.message);
     }
 
-    // Pull appointments in the next ~26h that are still upcoming.
     // Expire video rooms whose join window has closed, and prune stale signal
     // rows. Runs once per cycle on the existing timer — no new infrastructure.
     try {
@@ -166,120 +75,6 @@ async function runReminderCycle(): Promise<void> {
       await sweepExpiredCustomPlans();
     } catch (cpErr: any) {
       console.error("[Reminder Scheduler] custom plan expiry sweep error:", cpErr?.message);
-    }
-
-    // Kick the scheduled WhatsApp template sync (DP-12). Off by default; shares
-    // the DB lease lock with manual sync. Fire-and-forget — never blocks the
-    // reminder cycle and never throws out of it.
-    try {
-      const { maybeRunScheduledTemplateSync } = await import("./wa-template-sync");
-      void maybeRunScheduledTemplateSync();
-    } catch (syncErr: any) {
-      console.error("[Reminder Scheduler] template sync kick error:", syncErr?.message);
-    }
-
-    const rows = await query<any>(
-      `SELECT a.id, a.tenantId, a.name, a.phone, a.whatsapp, a.dateTime, a.timeSlot, a.tokenNo,
-              a.doctorId, a.status, a.consultationMode,
-              a.remDayBefore, a.remDayOf, a.rem2h, a.rem1h,
-              u.clinicName, d.name AS doctorName
-       FROM Appointment a
-       LEFT JOIN User u ON u.tenantId = a.tenantId
-       LEFT JOIN Doctor d ON d.id = a.doctorId
-       WHERE a.dateTime BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 26 HOUR)
-         AND a.status NOT IN ('Cancelled', 'Completed')`,
-    );
-
-    if (!rows || rows.length === 0) return;
-
-    // Compute Cloud API availability once per cycle (REL-3) and pass it on
-    // every send so the router does not re-resolve the central config per row.
-    const cloudAvailable = await isCloudAvailable();
-
-    const now = Date.now();
-
-    for (const apt of rows) {
-      try {
-        const t = new Date(apt.dateTime).getTime();
-        if (Number.isNaN(t)) continue;
-        const mins = Math.round((t - now) / 60000);
-        if (mins <= 0) continue; // already started
-
-        const sameDay = isSameLocalDay(t, now);
-        const hour = new Date(now).getHours();
-
-        // Decide the single most-urgent unsent stage for this appointment.
-        let kind: AptNotifyKind | null = null;
-        let column: string | null = null;
-
-        if (mins <= 75 && !Number(apt.rem1h)) {
-          kind = "reminder1h";
-          column = "rem1h";
-        } else if (mins <= 135 && !Number(apt.rem2h)) {
-          kind = "reminder2h";
-          column = "rem2h";
-        } else if (sameDay && hour >= 8 && mins > 150 && !Number(apt.remDayOf)) {
-          kind = "reminderDayOf";
-          column = "remDayOf";
-        } else if (!sameDay && mins <= 1500 && !Number(apt.remDayBefore)) {
-          kind = "reminderDayBefore";
-          column = "remDayBefore";
-        }
-
-        if (!kind || !column) continue;
-
-        const phone = apt.whatsapp || apt.phone;
-        if (!phone) continue;
-
-        // For a video consultation, mint a fresh join link to carry in the
-        // reminder. Tokens are stored only as hashes, so a reminder cannot
-        // re-send a prior link; this issues an additional room-scoped token that
-        // sits alongside any previously issued ones (Req 13.3).
-        let joinLink: string | null = null;
-        if (apt.consultationMode === "video") {
-          try {
-            const { loadRoomByAppointment, issueJoinToken, ensureVideoRoom } =
-              await import("./video.server");
-            let room = await loadRoomByAppointment(apt.id, apt.tenantId);
-            if (!room) room = await ensureVideoRoom(apt.id, apt.tenantId);
-            const issued = await issueJoinToken(room.id, apt.tenantId, "reminder");
-            joinLink = issued.link;
-          } catch (linkErr: any) {
-            console.error("[Reminder Scheduler] join link mint failed:", linkErr?.message);
-          }
-        }
-
-        const ctx = {
-          name: apt.name,
-          clinicName: apt.clinicName,
-          doctorName: apt.doctorName,
-          dateTime: new Date(apt.dateTime),
-          timeSlot: apt.timeSlot,
-          tokenNo: apt.tokenNo,
-          joinLink,
-        };
-
-        const result = await sendPatientMessage({
-          tenantId: apt.tenantId,
-          appointmentId: apt.id,
-          notifyKind: kind,
-          recipientPhone: phone,
-          cloudAvailable,
-          ctx,
-        });
-
-        if (result.delivered) {
-          // Mark this reminder as submitted so it never repeats. Meta acceptance
-          // is distinct from delivery; the signed webhook records final state.
-          // Failed template submissions leave the flag unset for a later cycle.
-          await execute(`UPDATE Appointment SET ${column} = 1 WHERE id = ?`, [apt.id]);
-          console.log(
-            `[Reminder Scheduler] Sent ${kind} for appointment ${apt.id} (${apt.tenantId})`,
-          );
-        }
-      } catch (rowErr: any) {
-        console.error("[Reminder Scheduler] row error:", rowErr?.message);
-      }
     }
   } catch (err: any) {
     console.error("[Reminder Scheduler] cycle error:", err?.message);

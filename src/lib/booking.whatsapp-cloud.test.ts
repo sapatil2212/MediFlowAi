@@ -1,18 +1,28 @@
 // @vitest-environment node
 //
-// Regression coverage for the public booking → awaited WhatsApp notification
-// path. All database and messaging boundaries are mocked; no live patient
-// message or Meta Graph request is made.
+// Public booking → transactional notification outbox. The appointment INSERT
+// and its booking.created event are written on the SAME transaction
+// connection; dispatch is released only after the daily queue renumber, so the
+// confirmation carries the final queue number. All database and messaging
+// boundaries are mocked; no live patient message or Meta request is made.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { executeMock, queryOneMock, renumberDailyTokensMock, sendAppointmentNotificationMock } =
-  vi.hoisted(() => ({
-    executeMock: vi.fn(),
-    queryOneMock: vi.fn(),
-    renumberDailyTokensMock: vi.fn(),
-    sendAppointmentNotificationMock: vi.fn(),
-  }));
+const {
+  connQueryMock,
+  queryOneMock,
+  renumberDailyTokensMock,
+  emitBookingEventMock,
+  dispatchSoonMock,
+  order,
+} = vi.hoisted(() => ({
+  connQueryMock: vi.fn(),
+  queryOneMock: vi.fn(),
+  renumberDailyTokensMock: vi.fn(),
+  emitBookingEventMock: vi.fn(),
+  dispatchSoonMock: vi.fn(),
+  order: [] as string[],
+}));
 
 type ServerFnValidator = (data: unknown) => unknown | Promise<unknown>;
 type ServerFnHandler = (payload: {
@@ -50,10 +60,17 @@ vi.mock("@tanstack/react-start", async (importOriginal) => {
   return { ...actual, createServerFn };
 });
 
+const conn = { query: connQueryMock };
 vi.mock("./db", () => ({
-  execute: executeMock,
+  execute: vi.fn(async () => ({ affectedRows: 1, insertId: null })),
   query: vi.fn(async () => []),
   queryOne: queryOneMock,
+  withTransaction: vi.fn(async (fn: (c: unknown) => Promise<unknown>) => {
+    order.push("tx:begin");
+    const result = await fn(conn);
+    order.push("tx:commit");
+    return result;
+  }),
 }));
 
 vi.mock("./token.server", () => ({
@@ -64,22 +81,46 @@ vi.mock("./video-consultation", () => ({
   normalizeConsultationMode: () => ({ ok: true, mode: "in_person" }),
 }));
 
-vi.mock("./appointment-notify", () => ({
-  resolveClinicName: vi.fn(async () => "Example Clinic"),
-  resolveDoctorName: vi.fn(async () => "Dr. Example"),
-  sendAppointmentNotification: sendAppointmentNotificationMock,
+vi.mock("./notify-engine", () => ({
+  emitBookingEvent: emitBookingEventMock,
+  dispatchSoon: dispatchSoonMock,
+  POST_COMMIT_HOLD_MS: 30_000,
 }));
 
 import { createAppointmentPublicServerFn } from "./booking";
 
+const BASE = {
+  tenantId: "clinic-example",
+  name: "Example Patient",
+  phone: "9876543210",
+  dateTime: "2027-01-12T10:30:00.000Z",
+  reason: "Consultation",
+  doctorId: "doctor-example",
+  timeSlot: "10:30 AM",
+};
+
 beforeEach(() => {
-  executeMock.mockReset();
+  order.length = 0;
+  connQueryMock.mockReset();
   queryOneMock.mockReset();
   renumberDailyTokensMock.mockReset();
-  sendAppointmentNotificationMock.mockReset();
+  emitBookingEventMock.mockReset();
+  dispatchSoonMock.mockReset();
 
-  executeMock.mockResolvedValue({ affectedRows: 1, insertId: null });
-  renumberDailyTokensMock.mockResolvedValue(undefined);
+  connQueryMock.mockImplementation(async (sql: string) => {
+    if (sql.includes("INSERT INTO Appointment")) order.push("insert");
+    return { affectedRows: 1 };
+  });
+  renumberDailyTokensMock.mockImplementation(async () => {
+    order.push("renumber");
+  });
+  emitBookingEventMock.mockImplementation(async () => {
+    order.push("emit");
+    return { ok: true, eventId: "evt-1", inserted: true, kind: "booked" };
+  });
+  dispatchSoonMock.mockImplementation(() => {
+    order.push("dispatch");
+  });
   queryOneMock.mockImplementation(async (sql: string) => {
     if (sql.includes("MAX(tokenNo)")) return { maxToken: 6 };
     if (sql.includes("SELECT tokenNo FROM Appointment")) return { tokenNo: 7 };
@@ -87,66 +128,65 @@ beforeEach(() => {
   });
 });
 
-describe("createAppointmentPublicServerFn WhatsApp Cloud notification", () => {
-  it("creates the appointment and awaits booked notification with final token context", async () => {
-    let finishSend: ((value: boolean) => void) | undefined;
-    sendAppointmentNotificationMock.mockImplementation(
-      () => new Promise<boolean>((resolve) => (finishSend = resolve)),
-    );
-
-    let settled = false;
-    const bookingPromise = createAppointmentPublicServerFn({
-      data: {
-        tenantId: "clinic-example",
-        name: "Example Patient",
-        phone: "9876543210",
-        dateTime: "2027-01-12T10:30:00.000Z",
-        reason: "Consultation",
-        doctorId: "doctor-example",
-        timeSlot: "10:30 AM",
-      },
-    }).then((result) => {
-      settled = true;
-      return result;
-    });
-
-    await vi.waitFor(() => expect(sendAppointmentNotificationMock).toHaveBeenCalledTimes(1));
-    expect(settled).toBe(false);
-    expect(
-      executeMock.mock.calls.some((call) => String(call[0]).includes("INSERT INTO Appointment")),
-    ).toBe(true);
-
-    const [tenantId, phone, kind, ctx] = sendAppointmentNotificationMock.mock.calls[0];
-    expect(tenantId).toBe("clinic-example");
-    expect(phone).toBe("9876543210");
-    expect(kind).toBe("booked");
-    expect(ctx).toMatchObject({
-      name: "Example Patient",
-      clinicName: "Example Clinic",
-      doctorName: "Dr. Example",
-      tokenNo: 7,
-      appointmentId: expect.any(String),
-    });
-
-    finishSend?.(true);
-    await expect(bookingPromise).resolves.toMatchObject({ success: true, tokenNo: 7 });
-  });
-
-  it("keeps the created appointment successful when messaging throws", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    sendAppointmentNotificationMock.mockRejectedValue(new Error("mock messaging failure"));
-
+describe("createAppointmentPublicServerFn → notification outbox", () => {
+  it("writes the appointment and booking.created event in one transaction, dispatching after renumber", async () => {
     const result = await createAppointmentPublicServerFn({
-      data: {
-        tenantId: "clinic-example",
-        name: "Example Patient",
-        phone: "9876543210",
-        dateTime: "2027-01-12T10:30:00.000Z",
-        reason: "Consultation",
-      },
+      data: { ...BASE, whatsappConsent: true },
     });
 
     expect(result).toMatchObject({ success: true, tokenNo: 7 });
-    expect(sendAppointmentNotificationMock).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["tx:begin", "insert", "emit", "tx:commit", "renumber", "dispatch"]);
+
+    const [input] = emitBookingEventMock.mock.calls[0];
+    expect(input).toMatchObject({
+      tenantId: "clinic-example",
+      type: "booking.created",
+      source: "public_booking",
+      consent: { optedIn: true, source: "public_booking_form" },
+      conn,
+    });
+    expect(input.delayMs).toBeGreaterThan(0);
+    expect(input.appointmentId).toBe((result as any).appointmentId);
+    expect(dispatchSoonMock).toHaveBeenCalledWith("evt-1");
+  });
+
+  it("records an explicit opt-out from the booking form", async () => {
+    await createAppointmentPublicServerFn({ data: { ...BASE, whatsappConsent: false } });
+    expect(emitBookingEventMock.mock.calls[0][0].consent).toEqual({
+      optedIn: false,
+      source: "public_booking_form",
+    });
+  });
+
+  it("does not invent consent when an older client sends no choice", async () => {
+    await createAppointmentPublicServerFn({ data: { ...BASE } });
+    expect(emitBookingEventMock.mock.calls[0][0].consent).toBeNull();
+  });
+
+  it("rejects a non-boolean consent value", async () => {
+    await expect(
+      createAppointmentPublicServerFn({ data: { ...BASE, whatsappConsent: "yes" as any } }),
+    ).rejects.toThrow(/consent/);
+  });
+
+  it("keeps the booking when the notification event cannot be recorded", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    emitBookingEventMock.mockResolvedValue({ ok: false, error: "schema unavailable" });
+
+    const result = await createAppointmentPublicServerFn({ data: { ...BASE } });
+
+    expect(result).toMatchObject({ success: true, tokenNo: 7 });
+    expect(order).toContain("tx:commit");
+    expect(dispatchSoonMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the booking even if the notification engine throws unexpectedly", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    emitBookingEventMock.mockRejectedValue(new Error("unexpected"));
+
+    const result = await createAppointmentPublicServerFn({ data: { ...BASE } });
+
+    expect(result).toMatchObject({ success: true });
+    expect(order).toContain("tx:commit");
   });
 });

@@ -111,6 +111,9 @@ function PatientBookingPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const whatsapp = phone; // Use same value for both phone and whatsapp
+  // Transactional WhatsApp booking updates (never marketing). The customer can
+  // untick it; booking works either way. Recorded with the notice version.
+  const [whatsappConsent, setWhatsappConsent] = useState(true);
   const [appointmentType, setAppointmentType] = useState("");
   const [dateTime, setDateTime] = useState("");
   const [reason, setReason] = useState("");
@@ -264,7 +267,8 @@ function PatientBookingPage() {
     // Construct local date time YYYY-MM-DDTHH:MM
     const dateObj = new Date(selectedDate);
     const [time, modifier] = slot.split(" ");
-    let [hours, minutes] = time.split(":").map(Number);
+    const [rawHours, minutes] = time.split(":").map(Number);
+    let hours = rawHours;
     if (modifier === "PM" && hours < 12) {
       hours += 12;
     }
@@ -386,6 +390,7 @@ function PatientBookingPage() {
               ? selectedLocationId
               : undefined,
           consultationMode: videoAvailable ? consultationMode : undefined,
+          whatsappConsent,
         },
       });
 
@@ -794,6 +799,23 @@ function PatientBookingPage() {
                     )}
                   </div>
                 </div>
+
+                <label className="flex items-start gap-2 rounded-2xl border border-zinc-100 bg-zinc-50/60 px-3 py-2 text-[10px] sm:text-[11px] text-zinc-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-3.5 w-3.5 accent-brand"
+                    checked={whatsappConsent}
+                    onChange={(e) => setWhatsappConsent(e.target.checked)}
+                    disabled={loading}
+                    data-testid="whatsapp-consent"
+                  />
+                  <span>
+                    Send me booking updates on WhatsApp from{" "}
+                    <strong>{clinicName || "this business"}</strong> (confirmation, reminders and
+                    changes to this booking). Reply STOP at any time to opt out. Optional — you can
+                    book without it.
+                  </span>
+                </label>
 
                 <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
                   {/* Appointment Type Custom Dropdown — hidden for education */}
@@ -1724,6 +1746,8 @@ export type CreateRestaurantBooking = (opts: {
     /** The Table_Group; `[TABLE_SELECTION_ANY]` means `Any available table`. */
     tableIds: string[];
     specialRequests?: string;
+    /** Guest's choice on the WhatsApp booking-updates checkbox. */
+    whatsappConsent?: boolean;
   };
 }) => Promise<RestaurantBookingResponse>;
 
@@ -2020,6 +2044,7 @@ export function RestaurantBookingForm({
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [specialRequests, setSpecialRequests] = useState("");
+  const [whatsappConsent, setWhatsappConsent] = useState(true);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -2133,6 +2158,7 @@ export function RestaurantBookingForm({
               ? [...state.selection.selectedTableIds]
               : [TABLE_SELECTION_ANY],
           specialRequests,
+          whatsappConsent,
         },
       });
       if (result?.success) setBooking(result);
@@ -2284,6 +2310,23 @@ export function RestaurantBookingForm({
               </div>
             </div>
           </div>
+
+          <label className="flex items-start gap-2 rounded-2xl border border-zinc-100 bg-zinc-50/60 px-3 py-2 text-[10px] sm:text-[11px] text-zinc-600 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-3.5 w-3.5 accent-brand"
+              checked={whatsappConsent}
+              onChange={(e) => setWhatsappConsent(e.target.checked)}
+              disabled={submitting}
+              data-testid="whatsapp-consent"
+            />
+            <span>
+              Send me reservation updates on WhatsApp from{" "}
+              <strong>{restaurantName || "this restaurant"}</strong> (confirmation, reminders and
+              changes to this booking). Reply STOP at any time to opt out. Optional — you can book
+              without it.
+            </span>
+          </label>
 
           <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
             {/* Party size — Req 6.2 */}

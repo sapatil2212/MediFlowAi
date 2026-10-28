@@ -44,6 +44,7 @@ import crypto from "crypto";
 import { execute, queryOne } from "./db";
 import { normalizeWaPhone, resolveCloudConfig } from "./whatsapp-cloud";
 import { dispatchAutoReply, resolveInboundTenant, shouldAutoReply } from "./wa-auto-reply";
+import { applyConsentKeyword, parseConsentKeyword } from "./notify-consent";
 
 export const WA_WEBHOOK_PATH = "/api/whatsapp/webhook";
 
@@ -140,6 +141,8 @@ interface StatusEntry {
   status: string;
   errorCode: string | null;
   errorMessage: string | null;
+  /** Meta's status timestamp (statuses[].timestamp, Unix seconds) in ms. */
+  timestampMs: number | null;
 }
 
 interface InboundEntry {
@@ -224,12 +227,14 @@ function flattenPayload(payload: any): { raw: any; entries: FlatEntry[] }[] {
       for (const s of statuses) {
         if (!s?.id || !s?.status) continue;
         const err = Array.isArray(s?.errors) ? s.errors[0] : null;
+        const ts = Number(s?.timestamp);
         flat.push({
           type: "status",
           id: String(s.id),
           status: String(s.status).toLowerCase(),
           errorCode: err?.code != null ? String(err.code) : null,
           errorMessage: err?.title || err?.message || null,
+          timestampMs: Number.isFinite(ts) && ts > 0 ? ts * 1000 : null,
         });
       }
       const messages: any[] = Array.isArray(value?.messages) ? value.messages : [];
@@ -332,6 +337,78 @@ async function applyStatusUpdate(entry: StatusEntry): Promise<void> {
       entry.status,
     ],
   );
+  await applyStatusTimestamps(entry);
+  await applyEventStatus(entry);
+}
+
+const STATUS_TIMESTAMP_COLUMN: Record<string, string> = {
+  sent: "sentAtMs",
+  delivered: "deliveredAtMs",
+  read: "readAtMs",
+  failed: "failedAtMs",
+};
+
+/** Provider-reported status time on the message log (first report wins). */
+async function applyStatusTimestamps(entry: StatusEntry): Promise<void> {
+  const column = STATUS_TIMESTAMP_COLUMN[entry.status];
+  if (!column) return;
+  try {
+    await execute(
+      `UPDATE WaMessageLog SET ${column} = COALESCE(${column}, ?) WHERE metaMessageId = ?`,
+      [entry.timestampMs ?? Date.now(), entry.id],
+    );
+  } catch {
+    /* columns are added by notify-ddl; older schemas simply skip this */
+  }
+}
+
+/**
+ * Advances the notification event linked to this wamid. Monotonic (sent <
+ * delivered < read; failed only before delivery), so out-of-order and duplicate
+ * callbacks can never regress the state.
+ */
+async function applyEventStatus(entry: StatusEntry): Promise<boolean> {
+  if (!["sent", "delivered", "read", "failed"].includes(entry.status)) return false;
+  try {
+    const { getNotifyRepo } = await import("./notify-repo");
+    const repo = getNotifyRepo();
+    const ev = await repo.findByProviderMessageId(entry.id);
+    if (!ev) return false;
+    let errorClass: any = null;
+    let errorMessage: string | null = null;
+    if (entry.status === "failed") {
+      const { classifyMetaError } = await import("./wa-error-classify");
+      const c = classifyMetaError({ code: entry.errorCode });
+      errorClass = c.errorClass;
+      errorMessage = `${c.hint}${entry.errorMessage ? ` (${entry.errorMessage})` : ""}`.slice(
+        0,
+        500,
+      );
+    }
+    const atMs = entry.timestampMs ?? Date.now();
+    const applied = await repo.applyDeliveryStatus({
+      id: ev.id,
+      status: entry.status as "sent" | "delivered" | "read" | "failed",
+      atMs,
+      errorCode: entry.errorCode,
+      errorMessage,
+      errorClass,
+    });
+    await repo.addAudit({
+      tenantId: ev.tenantId,
+      eventId: ev.id,
+      action: applied ? `webhook_${entry.status}` : `webhook_${entry.status}_ignored`,
+      actor: "meta_webhook",
+      detail: applied
+        ? { errorCode: entry.errorCode ?? null }
+        : { reason: "out_of_order_or_duplicate", current: ev.status },
+      atMs,
+    });
+    return true;
+  } catch (err: any) {
+    console.error("[WaWebhook] event status update failed:", err?.message);
+    return false;
+  }
 }
 
 /**
@@ -347,25 +424,23 @@ async function recheckFailedStatus(entry: StatusEntry): Promise<void> {
 }
 
 async function applyStatusEntry(entry: StatusEntry): Promise<void> {
-  // For 'failed', check whether the wamid exists before the status UPDATE so a
-  // very fast callback can be re-applied once after the router stores it.
+  // Check whether the wamid exists before the status UPDATE: a very fast
+  // callback (any status) can arrive before the sender stored the wamid, so it
+  // is re-applied once in the background after a short delay.
   let prior: any = null;
   let lookedUp = false;
-  if (entry.status === "failed") {
-    try {
-      prior = await lookupStatusRow(entry.id);
-      lookedUp = true;
-    } catch (err: any) {
-      console.error("[WaWebhook] failed-status row lookup error:", err?.message);
-      prior = null;
-    }
+  try {
+    prior = await lookupStatusRow(entry.id);
+    lookedUp = true;
+  } catch (err: any) {
+    console.error("[WaWebhook] status row lookup error:", err?.message);
+    prior = null;
   }
 
   await applyStatusUpdate(entry);
 
   if (lookedUp && !prior) {
-    // Unknown wamid: maybe the router's wamid UPDATE hasn't committed yet.
-    runInBackground("failed-status recheck", () => recheckFailedStatus(entry));
+    runInBackground("status recheck", () => recheckFailedStatus(entry));
   }
 }
 
@@ -441,21 +516,20 @@ async function handlePost(req: Request): Promise<Response> {
   }
 
   const groups = flattenPayload(payload);
+  let storageFailed = false;
   for (const group of groups) {
     const rawPayload = JSON.stringify(group.raw).slice(0, 60000);
     for (const entry of group.entries) {
       const eventKey = buildEventKey(entry);
       const referenceId = entry.type === "template" ? (entry.metaTemplateId ?? eventKey) : entry.id;
-      // Per-entry idempotency: attempt an independent insert; duplicate → skip.
-      try {
-        await execute(
-          `INSERT INTO WebhookEvent
-             (id, eventKey, eventType, referenceId, signatureValid, status, rawPayload, createdAt)
-           VALUES (?, ?, 'whatsapp', ?, 1, 'received', ?, NOW())`,
-          [crypto.randomUUID(), eventKey, referenceId, rawPayload],
-        );
-      } catch {
-        continue; // duplicate eventKey — already processed
+      // Per-entry idempotency: an independent insert. A duplicate is skipped
+      // unless its earlier processing errored (then it is claimed and retried);
+      // any other storage error makes Meta redeliver the payload later.
+      const claim = await claimWebhookEvent(eventKey, referenceId, rawPayload);
+      if (claim === "duplicate") continue;
+      if (claim === "storage_error") {
+        storageFailed = true;
+        continue;
       }
 
       try {
@@ -465,7 +539,12 @@ async function handlePost(req: Request): Promise<Response> {
           await applyTemplateEntry(entry);
         } else {
           const tenantId = await applyInboundEntry(entry);
-          if (shouldAutoReply(entry)) {
+          const keyword = entry.msgType === "text" ? parseConsentKeyword(entry.text) : null;
+          if (keyword && shouldAutoReply(entry)) {
+            const from = entry.from;
+            // STOP / START: record the platform-wide choice and confirm it once.
+            runInBackground("consent keyword", () => handleConsentKeyword(from, keyword, tenantId));
+          } else if (shouldAutoReply(entry)) {
             const from = entry.from;
             // Fire-and-forget: never awaited, so the 200 goes back immediately.
             runInBackground("auto-reply", () => dispatchAutoReply({ from, tenantId }));
@@ -483,7 +562,85 @@ async function handlePost(req: Request): Promise<Response> {
     }
   }
 
+  if (storageFailed) {
+    // Nothing for these entries was recorded: ask Meta to redeliver.
+    return jsonResponse(503, { ok: false, error: "temporarily unable to store webhook" });
+  }
   return jsonResponse(200, { ok: true });
+}
+
+/** Age after which a 'received' (never finished) webhook entry may be retried. */
+const STUCK_WEBHOOK_MS = 5 * 60_000;
+
+/**
+ * Records a webhook entry exactly once. Returns "new" to process it, "retry"
+ * when an earlier attempt errored (or stalled) and this delivery claimed it,
+ * "duplicate" to skip, or "storage_error" when the database is unavailable.
+ */
+async function claimWebhookEvent(
+  eventKey: string,
+  referenceId: string,
+  rawPayload: string,
+): Promise<"new" | "retry" | "duplicate" | "storage_error"> {
+  try {
+    await execute(
+      `INSERT INTO WebhookEvent
+         (id, eventKey, eventType, referenceId, signatureValid, status, rawPayload, createdAt)
+       VALUES (?, ?, 'whatsapp', ?, 1, 'received', ?, NOW())`,
+      [crypto.randomUUID(), eventKey, referenceId, rawPayload],
+    );
+    return "new";
+  } catch (err: any) {
+    if (!(err?.errno === 1062 || err?.code === "ER_DUP_ENTRY")) {
+      console.error("[WaWebhook] could not record webhook entry:", err?.message);
+      return "storage_error";
+    }
+  }
+  try {
+    const res = await execute(
+      `UPDATE WebhookEvent SET status = 'received'
+        WHERE eventKey = ?
+          AND (status = 'error'
+               OR (status = 'received' AND createdAt < NOW() - INTERVAL ? SECOND))`,
+      [eventKey, Math.round(STUCK_WEBHOOK_MS / 1000)],
+    );
+    return res.affectedRows > 0 ? "retry" : "duplicate";
+  } catch {
+    return "duplicate";
+  }
+}
+
+/** Applies a STOP/START keyword and sends one in-window confirmation. */
+async function handleConsentKeyword(
+  from: string,
+  keyword: "stop" | "start",
+  tenantId: string | null,
+): Promise<void> {
+  const reply = await applyConsentKeyword({ from, keyword });
+  if (!reply) return;
+  const phone = normalizeWaPhone(from);
+  const { isCloudAvailable, isOfficialRecipientAllowed, sendTextMessage } =
+    await import("./whatsapp-cloud");
+  if (!(await isCloudAvailable()) || !isOfficialRecipientAllowed(phone)) return;
+  // The customer just messaged us, so the 24-hour service window is open and a
+  // free-form reply is permitted for this one confirmation.
+  const logId = crypto.randomUUID();
+  await execute(
+    `INSERT INTO WaMessageLog
+       (id, tenantId, direction, recipient, kind, channel, status, officialAttempted, body, createdAt)
+     VALUES (?, ?, 'out', ?, 'consentReply', 'official', 'queued', 1, ?, NOW())`,
+    [logId, tenantId || "global", phone, reply],
+  );
+  const result = await sendTextMessage({ to: phone, body: reply });
+  await execute(
+    result.ok
+      ? "UPDATE WaMessageLog SET status = 'sent', officialStatus = 'sent', metaMessageId = ?, updatedAt = NOW() WHERE id = ?"
+      : "UPDATE WaMessageLog SET status = 'failed', officialStatus = 'failed', errorCode = ?, updatedAt = NOW() WHERE id = ?",
+    [
+      result.ok ? result.messageId : result.kind === "meta_error" ? result.code : "transport",
+      logId,
+    ],
+  );
 }
 
 /** Routes the WhatsApp webhook by HTTP method. */

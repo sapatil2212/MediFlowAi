@@ -137,7 +137,7 @@ describe("sendPatientMessage — official template-only routing", () => {
     expect(resolveTemplatePlanResultMock).toHaveBeenCalledWith(
       "booked",
       expect.objectContaining({ recipientPhone: "9876543210" }),
-      { cloudAvailable: false },
+      { cloudAvailable: false, businessCategory: null },
     );
     expect(sendTemplateMessageMock).not.toHaveBeenCalled();
     expect(sendTextMessageMock).not.toHaveBeenCalled();

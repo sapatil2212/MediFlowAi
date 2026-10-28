@@ -105,7 +105,25 @@ function publishedMetadataForNode(node: SyncMetaTemplateNode): PublishedNodeMeta
     return null;
   }
 
+  // The curated variable mapping is only valid for the exact approved wording.
+  // A template edited on Meta's side (different body/footer) stays unmapped and
+  // ineligible until an operator reviews it.
+  if (
+    normalizeTemplateText(local.bodyText) !== normalizeTemplateText(spec.bodyText) ||
+    normalizeTemplateText(local.footerText) !== normalizeTemplateText(spec.footerText)
+  ) {
+    return null;
+  }
+
   return { spec, bodyText: local.bodyText, footerText: local.footerText };
+}
+
+/** Whitespace-insensitive comparison key for template component text. */
+function normalizeTemplateText(text: string | null | undefined): string {
+  return String(text ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .trim();
 }
 
 /**

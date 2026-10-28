@@ -27,6 +27,11 @@ export default defineConfig({
       noExternal: [],
     },
     server: {
+      // Allow tunnelled hosts (ngrok/cloudflared/localtunnel) to reach the dev
+      // server. Vite otherwise rejects any request whose Host header is not the
+      // bound host with a 403 "host not allowed", which is what blocks Meta's
+      // webhook verification handshake when testing through a tunnel. Dev-only.
+      allowedHosts: [".ngrok-free.app", ".ngrok.app", ".ngrok.io", ".trycloudflare.com", ".loca.lt"],
       // The dashboard routes are very large single-file modules (several thousand
       // lines each, pulling in recharts/jspdf/xlsx). Transforming one on first
       // request can take long enough to exceed Vite's 60s module-runner RPC

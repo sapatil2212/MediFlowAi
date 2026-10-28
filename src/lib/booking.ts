@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import crypto from "crypto";
-import { query, queryOne, execute } from "./db";
+import { query, queryOne, withTransaction } from "./db";
 import { overlapsBreak, resolveBreaks, type NormalizedBreak } from "./doctor-schedule-breaks";
 
 // ──────────────────────────────────────────────
@@ -244,9 +244,14 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
       appointmentType?: string;
       locationId?: string;
       consultationMode?: string;
+      /** Customer's choice on the WhatsApp booking-updates checkbox. */
+      whatsappConsent?: boolean;
     }) => {
       if (!data.tenantId || !data.name || !data.dateTime || !data.reason) {
         throw new Error("Required booking fields missing");
+      }
+      if (data.whatsappConsent !== undefined && typeof data.whatsappConsent !== "boolean") {
+        throw new Error("Invalid WhatsApp consent value");
       }
       return data;
     },
@@ -294,26 +299,56 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
     );
     let tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
 
-    await execute(
-      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, locationId, consultationMode, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [
-        id,
-        data.tenantId,
-        data.name,
-        data.email || "",
-        data.phone || "",
-        dateVal,
-        data.reason,
-        docId,
-        tSlot,
-        data.whatsapp || null,
-        data.appointmentType || null,
-        tokenNo,
-        locId,
-        consultationMode,
-      ],
-    );
+    // Transactional outbox: the appointment and its "booking.created"
+    // notification event commit together, so a confirmation can never be lost
+    // between the booking write and dispatch. The notification engine never
+    // throws, so a notification problem cannot fail the booking.
+    let notifyEventId: string | null = null;
+    await withTransaction(async (conn) => {
+      await conn.query(
+        `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, locationId, consultationMode, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          id,
+          data.tenantId,
+          data.name,
+          data.email || "",
+          data.phone || "",
+          dateVal,
+          data.reason,
+          docId,
+          tSlot,
+          data.whatsapp || null,
+          data.appointmentType || null,
+          tokenNo,
+          locId,
+          consultationMode,
+        ],
+      );
+      if (typeof window === "undefined") {
+        try {
+          const { emitBookingEvent } = await import("./notify-engine");
+          const emitted = await emitBookingEvent({
+            tenantId: data.tenantId,
+            appointmentId: id,
+            type: "booking.created",
+            source: "public_booking",
+            consent:
+              typeof data.whatsappConsent === "boolean"
+                ? { optedIn: data.whatsappConsent, source: "public_booking_form" }
+                : null,
+            conn,
+            // Held until the daily queue renumber below has run (released by
+            // dispatchSoon); if this process stops first, the hold simply expires.
+            delayMs: 30_000,
+          });
+          if (emitted.ok) notifyEventId = emitted.eventId;
+        } catch {
+          // A notification problem must never roll back the booking.
+          console.error("[Notify] booking.created could not be recorded (booking kept).");
+        }
+      }
+    });
 
     // Reorder the day's tokens by slot time, then read back this booking's token
     // so the confirmation/WhatsApp message shows the correct number. Token
@@ -331,28 +366,12 @@ export const createAppointmentPublicServerFn = createServerFn({ method: "POST" }
       console.error("[Tokens] Daily renumber failed (booking still succeeds):", tokErr?.message);
     }
 
-    // Submit the "appointment booked" approved utility template after the
-    // appointment exists. The awaited notification remains non-fatal.
-    if (typeof window === "undefined") {
-      try {
-        const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
-          await import("./appointment-notify");
-        const [clinicName, doctorName] = await Promise.all([
-          resolveClinicName(data.tenantId),
-          resolveDoctorName(docId),
-        ]);
-        await sendAppointmentNotification(data.tenantId, data.whatsapp || data.phone, "booked", {
-          name: data.name,
-          clinicName,
-          doctorName,
-          dateTime: dateVal,
-          timeSlot: tSlot,
-          tokenNo,
-          appointmentId: id,
-        });
-      } catch {
-        console.error("[WhatsApp][booked] Notification failed after public booking was created.");
-      }
+    // Dispatch the approved booking-confirmation template now that the final
+    // queue number is in place (the durable worker retries if this process
+    // stops). Business-initiated: no prior customer message is required.
+    if (typeof window === "undefined" && notifyEventId) {
+      const { dispatchSoon } = await import("./notify-engine");
+      dispatchSoon(notifyEventId);
     }
 
     // Create the video room + patient join link when booked as a video visit.

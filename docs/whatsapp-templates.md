@@ -1,315 +1,197 @@
-# WhatsApp Utility Template Management — Admin Guide
+# WhatsApp Utility Templates and Notification Automation — Operator Guide
 
-This guide covers configuring and operating the WhatsApp **Cloud API utility
-template** feature in the Super Admin dashboard: how official template messages
-are authored, submitted to Meta, kept in sync, and mapped to business
-notifications. Outbound notifications use only approved Cloud API templates;
-they never degrade to free-form Cloud text or whatsapp-web.js.
+BookMyTime sends business-initiated booking notifications only through the official Meta WhatsApp Cloud API and only with an approved **UTILITY** template. A failed template gate never falls back to free-form Cloud text or `whatsapp-web.js`. This removes the 24-hour customer-service-window dependency from confirmations, reminders, and lifecycle updates.
 
-The feature lives entirely inside the existing **WhatsApp Cloud** panel
-(Super Admin → WhatsApp Cloud → **Templates**). It adds no new top-level
-navigation and no second backend; every Meta call flows through the one Cloud
-transport and every server action requires a Super Admin session.
+Super Admin controls are under **Super Admin → WhatsApp Cloud**:
 
----
+- **Overview** — delivery health, backlog, retry and alert metrics.
+- **Logs** — per-event timeline and safe retry controls.
+- **Automation** — platform/category switches, retry/rate/retention settings, and route matrix.
+- **Template Catalog** — catalog-vs-Meta state, submission, approval, and activation.
+- **Templates / Credentials / Account health** — low-level template and Cloud account operations.
 
-## 1. What this feature does (and the incident it fixes)
+Tenant owners configure their own notification switches, timezone, logs, and customer opt-outs under the WhatsApp area. Staff may view where their plan permits but cannot mutate these settings.
 
-Before this feature, some appointment notifications were sent as free-form
-Cloud API text or through WhatsApp Web. Free-form Cloud text cannot initiate a
-conversation outside Meta's 24-hour customer-service window, which is why some
-booking confirmations never arrived.
+## 1. Incident fixed by this system
 
-Approved **utility templates** can be delivered outside the 24-hour window. This
-feature lets a Super Admin author a template, submit it to Meta for review,
-track its status, and map an **approved** template to a business notification
-kind.
+The original booking route sent free-form `type: "text"` messages when no template mapping existed. Meta could accept the HTTP request and then fail it asynchronously with error `131047` (“Re-engagement message”) when the customer had not messaged within 24 hours. Removing that fallback alone was not sufficient: if approved templates had never been synchronized and mapped, every message failed closed with `template_not_ready (mapping_missing)`.
 
-**Safety invariant:** every business-initiated notification is official Cloud
-API and template-only. If its enabled, acknowledged, approved utility mapping is
-not ready, the app records an actionable `template_not_ready` failure while
-leaving the appointment or booking intact. Unexpected template-resolution
-faults are recorded separately as `template_gate_error`. No notification falls
-back to free-form Cloud text or whatsapp-web.js after any gate or Graph result.
-Legacy bulk/campaign delivery is disabled until it is rebuilt on approved Meta
-templates. Inbound replies and explicit connection test tools are outside this
-notification path.
+The repaired flow is:
 
----
+1. A booking transaction records a durable `NotificationEvent` outbox row.
+2. The dispatcher re-reads the current tenant and booking state.
+3. Category switches, tenant switches, recipient validity, consent, and current event truth are checked.
+4. The route must resolve to an enabled, acknowledged template that belongs to the configured WABA and is currently `APPROVED` + `UTILITY` in its exact language.
+5. The router sends `type: "template"`; no inbound-window lookup is performed.
+6. Meta acceptance stores the `wamid`; signed status webhooks advance `sent → delivered → read` or record failure without allowing out-of-order regression.
 
-## 2. Configuration
+A booking always survives a notification failure. The event and failure reason remain visible to operators.
 
-Cloud credentials are read from the `WaCloudConfig` row first, then from
-environment variables as a fallback. Secrets are stored AES-256-GCM encrypted
-and are never returned in any API response, activity record, health snapshot,
-or log line.
+## 2. Environment and account configuration
 
-| Variable                         | Purpose                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------- |
-| `WA_CLOUD_PHONE_NUMBER_ID`       | The Cloud API phone number ID used to send messages.                            |
-| `WA_CLOUD_WABA_ID`               | The Messaging Account ID (the WABA node). **Not** the Phone Number ID (see §4). |
-| `WA_CLOUD_ACCESS_TOKEN`          | System-user access token with the required scopes (see §3).                     |
-| `WA_CLOUD_APP_SECRET`            | App secret used to verify inbound webhook signatures (HMAC-SHA256).             |
-| `WA_CLOUD_VERIFY_TOKEN`          | The verify token echoed during the webhook GET handshake.                       |
-| `WA_CLOUD_API_VERSION`           | Graph API version override. Defaults to the current pinned version if unset.    |
-| `WA_CLOUD_ENC_KEY`               | 32-byte key (hex) used to encrypt stored secrets and stored message bodies.     |
-| `WA_CLOUD_TEMPLATE_SYNC_MINUTES` | Optional scheduled full-sync interval. Off by default; valid range is 30–1440.  |
-| `WA_CLOUD_TEST_RECIPIENTS`       | Optional local-test allow-list; the official API only sends to these numbers.   |
+Cloud configuration is read from the central `WaCloudConfig` row first, with environment variables as per-field fallback. Stored secrets use AES-256-GCM and are never returned by admin APIs.
 
-- `WA_CLOUD_TEST_RECIPIENTS` must be **unset in production**. When set, every
-  recipient outside that local-test allow-list is refused before a Graph API
-  request is made. The Credentials tab shows a warning without exposing the
-  allow-list values.
-- Preserve the same `WA_CLOUD_ENC_KEY` across deployments. Changing or removing
-  it makes saved Cloud credentials unreadable.
+| Variable                   | Purpose                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| `WA_CLOUD_PHONE_NUMBER_ID` | Cloud API sender phone-number node ID.                                                      |
+| `WA_CLOUD_WABA_ID`         | WhatsApp Business Account / Messaging Account ID. This is not the Phone Number ID.          |
+| `WA_CLOUD_ACCESS_TOKEN`    | System-user token with management and messaging scopes.                                     |
+| `WA_CLOUD_APP_SECRET`      | App secret used to verify webhook HMAC signatures.                                          |
+| `WA_CLOUD_VERIFY_TOKEN`    | Token used for the webhook GET challenge.                                                   |
+| `WA_CLOUD_API_VERSION`     | Optional Graph version override. The effective DB value may take precedence.                |
+| `WA_CLOUD_ENC_KEY`         | Stable 32-byte hex encryption key for stored credentials. Never rotate without a migration. |
+| `WA_CLOUD_TEST_RECIPIENTS` | Comma-separated local-test allow-list. Must be **unset** in production.                     |
+| `APP_ORIGIN`               | Public HTTPS origin used in the static prefix of video-consultation template buttons.       |
+| `SUPER_ADMIN_EMAIL`        | Recipient for critical notification-engine alert email.                                     |
+| `EMAIL_USERNAME`           | Configured mail sender; alert email is skipped when absent.                                 |
 
-### Scheduled sync interval
+`WA_CLOUD_TEST_RECIPIENTS` is a safety boundary, not only a UI hint. A process with this value set claims only allow-listed recipients. Events created by that process are marked test-mode and skipped by unrestricted production workers. Maintenance and catalog automation are disabled in a test-mode process. Do not set this variable to an empty placeholder in a production service definition; remove it.
 
-`WA_CLOUD_TEMPLATE_SYNC_MINUTES` controls the background full sync that
-reconciles local template state with Meta. It is **off by default**. Leave it
-unset (or `0`) to rely on webhooks plus manual "Sync all". A value between 30
-and 1440 enables a periodic sync kicked from the reminder cycle; anything
-outside that range is treated as off and logs a single warning.
+The current API version must remain explicit and monitored. Upgrade it through a separately verified change before Meta’s displayed expiry date; do not silently change a production version while repairing delivery.
 
----
+### Meta prerequisites
 
-## 3. Meta prerequisites
+- WABA approved and business verified as required by Meta.
+- Sender phone connected, registered, live, and able to send.
+- System-user token with `whatsapp_business_management` and `whatsapp_business_messaging`.
+- App subscribed to the configured WABA.
+- Callback URL and verify token configured.
+- Webhook fields subscribed: `messages`, `message_template_status_update`, `message_template_quality_update`, `template_category_update`, and `message_template_components_update`.
 
-Before authoring templates, confirm the following in the Meta Business /
-WhatsApp Manager setup:
+Use **Account health** to verify these facts. HTTP acceptance is not delivery proof; a signed `delivered` or `read` webhook is.
 
-- A **WhatsApp Business Account (WABA)** with a registered phone number.
-- A **system-user access token** that carries both
-  `whatsapp_business_management` (to create / list / edit / delete templates
-  and read account health) and `whatsapp_business_messaging` (to send).
-- The **app secret** configured so inbound webhook signatures can be verified.
-- The webhook callback URL and verify token registered for the app (see §5).
+## 3. Approved clinic templates
 
-The **Account health** view surfaces the token's scopes (never the token
-itself), the WABA and phone nodes, the send health status, subscribed apps, and
-an API-version expiry warning. Use it to confirm the prerequisites above.
+These existing live templates are imported and reused; never submit duplicates or change their language during routing.
 
----
+| Template                          | Language | Variables in order                             | Use                        |
+| --------------------------------- | -------- | ---------------------------------------------- | -------------------------- |
+| `appointment_booked`              | `en_US`  | name, clinic, doctor, date, time, queue number | Clinic booking created     |
+| `appointment_cancelled`           | `en_US`  | name, clinic, date, time                       | Clinic booking cancelled   |
+| `appointment_completed`           | `en`     | name, clinic, doctor                           | Clinic visit completed     |
+| `appointment_reminder_day_before` | `en`     | name, clinic, doctor, date, time, queue number | Clinic day-before reminder |
 
-## 4. Messaging Account ID vs Phone Number ID
+The `en` and `en_US` values are exact Meta identifiers and are not interchangeable. These templates are clinic-only because their approved wording explicitly refers to a clinic, consultation, prescription, or queue at the clinic. The runtime gate returns `category_mismatch` if a wildcard mapping could otherwise route one to another industry.
 
-A common misconfiguration is entering the **Phone Number ID** where the
-**Messaging Account ID (WABA ID)** is expected. The Credentials tab labels this
-field **"Messaging Account ID (legacy WABA ID)"** and the Account health check
-verifies that the configured ID resolves to a WABA node. If it cannot, the
-health view shows a note asking you to confirm it is not a Phone Number ID.
+The catalog adds category-specific UTILITY templates for salon, gym, coaching, restaurant, and professional-service events. It intentionally excludes payment/refund messages where BookMyTime has no customer payment event, and other candidates that have no corresponding product workflow.
 
-Template operations and the webhook `entry.id` match against this Messaging
-Account ID; a template change for any other account is ignored.
+## 4. Durable engine behavior
 
----
+### Event and job model
 
-## 5. Webhook field subscriptions
+`NotificationEvent` is both the transactional outbox and durable dispatch job. `eventKey` is unique, so repeated application requests do not create duplicate sends. `WaMessageLog` records each actual Cloud attempt and links back through `eventId`.
 
-In addition to the message/status webhooks already used for delivery receipts,
-subscribe the app to these four **template** webhook fields so template state
-updates in near-real time:
+The worker uses atomic claims, claim tokens, and two-minute leases. An expired lease is requeued only if sending had not started. If a worker disappears after marking send-started, the event becomes `ambiguous` and is never automatically retried because Meta may already have accepted it.
 
-- `message_template_status_update` — approval / rejection / pause / disable, and
-  reinstatement events.
-- `message_template_quality_update` — quality-rating changes.
-- `template_category_update` — category recategorization by Meta.
-- `message_template_components_update` — component changes on Meta's side.
+Retryable Meta/network errors use exponential backoff with full jitter and the configured attempt cap. Permanent recipient errors, template/configuration failures, provider restrictions, and ambiguous transport outcomes are not blindly retried. Super Admin can retry only safe terminal rows that have no provider message ID.
 
-All webhook deliveries are verified by HMAC-SHA256 **before** the body is
-parsed; an invalid signature is rejected with `401` and changes no state. Each
-entry is processed at most once (idempotency key), out-of-order deliveries are
-dropped by a monotonic guard, and template changes for a different Messaging
-Account are ignored.
+### Reminder timing
 
----
+- Day-before reminders target T−24h, clamped to 08:00–21:00 on the previous day in the tenant timezone.
+- Same-day reminders target T−2h and are off by default per tenant.
+- Restaurant timezone comes from restaurant settings unless the tenant notification timezone overrides it.
+- Booking wall-clock values are converted to UTC instants in application code; scheduling does not depend on the database or server timezone.
+- Rescheduling supersedes reminders for the old wall clock. Cancellation, completion, or provider-unavailable status cancels jobs that are no longer true.
 
-## 6. Account restrictions
+### Consent
 
-If Meta restricts the account, the send health status reports `BLOCKED` or
-`LIMITED` rather than `AVAILABLE`. The Account health view explains the
-restricted state and links to WhatsApp Manager so an operator can act. While an
-account is restricted, notification template sends fail visibly; they do not
-switch transport.
+The platform default is `implied_by_booking`: a customer who gives a WhatsApp number for their booking may receive transactional UTILITY updates for that booking unless they opt out. The public checkbox is currently checked by default; changing that default is a product/legal decision, not an implementation detail. `explicit_only` can be selected by Super Admin when a recorded opt-in must exist.
 
----
+A booking-form choice is stored per tenant. Tenant owners can record an opt-out or renewed opt-in. A whole-message `STOP` reply creates a platform-wide opt-out that blocks every tenant; `START` lifts it. Opt-outs always win over implied consent. This system does not grant marketing consent.
 
-## 7. Authoring, submit, sync, and mapping workflows
+## 5. Catalog submission and activation
 
-### 7.1 Authoring a template
+### Inspect before submitting
 
-1. Open **WhatsApp Cloud → Templates → New template** (or install the built-in
-   presets).
-2. Enter the basic details: a lowercase name (`^[a-z0-9_]{1,128}$`), a language,
-   and the category (utility on create).
-3. Build the components: an optional **TEXT** header, the body, an optional
-   footer (no variables), and optional buttons. Media and location headers are
-   shown **disabled** with an explanation — they require Meta's Resumable Upload
-   flow and are out of scope.
-4. Map each `{{n}}` (or named) placeholder to a booking field
-   (name, clinic name, doctor name, date, time, booking code, or queue number)
-   and provide sample values.
-5. Use the **Preview** — it substitutes your sample values, is HTML-escaped,
-   is labelled "Preview — not sent", and never calls Meta.
+1. Open **Template Catalog** and run **Sync all**.
+2. Confirm the WABA ID, sender health, and token scopes in **Account health**.
+3. Review every row’s exact name, language, body, footer, sample values, and intended routes.
+4. Existing name+language rows are never overwritten or recreated. `content_mismatch`, `reclassified`, `rejected`, `paused`, and `uncertain` require operator review.
 
-### 7.2 Submitting for review
+### Submit missing catalog templates
 
-Open **Submit for review**. The dialog shows the exact payload that will be sent
-to Meta and requires an explicit confirmation. On success the template becomes
-**Pending** — never "Approved". Approval only happens later, when Meta's signed
-`message_template_status_update` webhook arrives (or a sync picks it up).
+1. Select missing `catalog_new` rows and confirm submission.
+2. BookMyTime creates a validated local draft and posts category `UTILITY` with examples.
+3. A successful create is recorded as Meta’s returned status, normally `PENDING`; it is never labeled approved locally.
+4. If Meta returns an authentication, permission, rate-limit, or account-restriction stop code, batch submission stops rather than generating repeated failures.
+5. If a transport outcome is uncertain, use **Check with Meta** or **Sync all** before any retry.
 
-If a submission result is **uncertain** (a timeout or transport error), the
-template is not auto-retried. Use **Check with Meta** to reconcile by name: if a
-matching template is found on Meta it is adopted, otherwise the local draft
-returns to an editable state.
+### Activate routes
 
-### 7.3 Keeping templates in sync
+Only exact-content `APPROVED` + `UTILITY` rows are eligible. Activation creates category-specific mappings, records the opt-in acknowledgement, and enables the route. It narrows legacy `*` mappings for industry-specific templates so the approved clinic text cannot leak into another category. An administrator’s enabled mapping to another sendable template, or an explicitly disabled mapping, is not silently replaced.
 
-- **Webhooks** apply status / quality / category / component changes as they
-  happen.
-- **Sync all** pages the full Meta template list and reconciles every row.
-- **Single sync** refreshes one template from its Meta node.
-- Optional **scheduled sync** runs a full sync on the configured interval (§2).
+After deployment, run activation from the new code only. Do not pre-create category rows while an older production build still selects `LIMIT 1` by notification kind, because that build cannot deterministically choose among category mappings.
 
-### 7.4 Mapping to appointment notifications
+## 6. Webhooks and delivery state
 
-1. Open **Notification mappings**.
-2. Assign an **approved, UTILITY** template to a notification kind.
-3. Enabling the mapping is gated behind an **opt-in acknowledgement**: tick the
-   acknowledgement, then enable. The acknowledgement and its version are
-   recorded.
-4. If the mapped template later stops being approved/utility (via webhook or
-   sync), the mapping is invalidated and subsequent notifications fail closed
-   with `template_not_ready`.
+The callback verifies `X-Hub-Signature-256` over the raw body before parsing. Invalid signatures return `401`. Each flattened entry has an idempotency key; duplicates are skipped, previously errored entries can be reclaimed, and an inability to store the idempotency row returns `503` so Meta retries.
 
-> Note: the acknowledgement is a per-mapping Super Admin confirmation. There is
-> no per-patient opt-in column. Outbound notifications have no free-form route.
+Status callbacks update both `WaMessageLog` and the linked `NotificationEvent`. Provider timestamps are retained. Delivery progression is monotonic: duplicate or lower-rank updates are ignored, and `failed` cannot overwrite an already delivered/read event. A callback that beats the sender’s `wamid` update is checked once again after five seconds.
 
----
+STOP/START replies are the only customer messages that trigger a consent confirmation. That confirmation is free-form only because the customer has just opened the service window; it is not part of business-initiated notification routing.
 
-## 8. Runtime gate (how a send is decided)
+## 7. Operator runbook
 
-For every business notification, the official Cloud route submits a template
-only when all of the following hold. Any expected gate failure records
-`template_not_ready`; an unexpected database/runtime resolution fault records
-`template_gate_error`. Neither outcome sends free-form Cloud or Web text.
+### Deployment
 
-1. The Cloud API is enabled and a recipient phone number is present.
-2. An **enabled** mapping with a current opt-in acknowledgement exists for the
-   notification kind.
-3. The mapped template is owned by the configured Messaging Account, its Meta
-   status is `APPROVED`, and its category is `UTILITY`.
-4. Every placeholder's mapped field resolves for this specific notification. A
-   single unresolved field fails closed rather than sending a blank parameter.
+1. Back up the database and preserve `WA_CLOUD_ENC_KEY`.
+2. Build and test the exact revision being deployed.
+3. Deploy one compatible version at a time; the runtime DDL is additive and idempotent.
+4. Confirm `WA_CLOUD_TEST_RECIPIENTS` is absent from production.
+5. Restart the Node/Nitro service and verify one worker starts.
+6. Run **Sync all**, then inspect the four approved clinic templates and every submitted catalog row.
+7. Run catalog activation from the deployed version.
+8. Verify the webhook field subscriptions listed in §2.
+9. Use only a consented, designated test recipient for an end-to-end booking. Confirm the Graph request is `type: "template"`, then wait for `delivered`/`read` in Logs.
+10. Monitor backlog, `blocked`, `ambiguous`, retry rate, open alerts, and template state during rollout.
 
-Variable resolution reads only the current appointment's context, so one
-tenant's data can never leak into another tenant's message.
+### Common failure reasons
 
----
+| Reason                                           | Operator action                                                                      |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `mapping_missing` / `mapping_disabled`           | Sync, map the exact category route, acknowledge, and enable.                         |
+| `template_not_approved` / `template_not_utility` | Inspect Meta state; never override it locally.                                       |
+| `language_mismatch`                              | Map the exact approved language; do not convert `en` ↔ `en_US`.                      |
+| `category_mismatch`                              | Replace a legacy wildcard with the category-specific catalog route.                  |
+| `variables_unresolved`                           | Fix missing current booking/tenant data or choose a compatible template.             |
+| `cloud_unavailable`                              | Check credentials, enabled state, WABA/phone IDs, token scopes, and account health.  |
+| `consent_withdrawn`                              | Do not retry. Only the customer or authorized tenant workflow may opt in again.      |
+| `ambiguous`                                      | Verify externally before manual action; an automatic retry could duplicate delivery. |
 
-## 9. Recovering appointment-booked delivery after deployment
+## 8. Rollback
 
-The healthcare template `appointment_booked` has already been submitted in
-WhatsApp Manager. **Do not create or submit it again.** Recover the route as
-follows:
+The safest rollback is **revert the application code and leave the additive schema in place**. The earlier build ignores the new notification tables/columns, and removing schema is unnecessary during incident rollback.
 
-1. Open **WhatsApp Cloud → Templates** and run **Sync all**. The sync recognizes
-   the exact `appointment_booked` / `en_US` six-parameter body and attaches the
-   local runtime mappings without changing Meta's status or category.
-2. Confirm Meta reports the template as **APPROVED** (not Submitted/PENDING),
-   category **UTILITY**, language **en_US**, and owned by the configured
-   Messaging Account ID.
-3. Open **Notification mappings**, assign it to **Appointment Booked**, tick the
-   opt-in acknowledgement, and enable the mapping. The app intentionally does
-   not grant approval, record consent, or enable this mapping automatically.
-4. Unset `WA_CLOUD_TEST_RECIPIENTS` in the production service and restart the
-   Node/Nitro process. Keep `WA_CLOUD_ENC_KEY` unchanged.
-5. Check the effective API version shown in Credentials. A saved DB value (for
-   example `v21.0`) overrides the code default (`v26.0`) until it is updated.
-6. Make a test booking with an opted-in non-patient test number. Monitoring
-   should show a non-null template, `appointment_booked`, and Meta status moving
-   from accepted/sent to delivered or read. A Graph acceptance is not proof of
-   delivery; final delivery comes from the signed webhook.
+Before any schema removal:
 
-If Appointment Booked is not ready, the admin UI shows an actionable warning
-and the send log records `template_not_ready`; the appointment itself still
-succeeds. The router never sends this event as free-form Cloud or WhatsApp Web
-text because that would depend on the 24-hour customer-service window.
+1. Pause the notification engine and stop all application workers.
+2. Back up `NotificationEvent`, `NotificationConsent`, `TenantNotificationSettings`, `NotificationPlatformSettings`, `NotificationAudit`, `NotificationAlert`, `WaNotifyMapping`, and `WaMessageLog`.
+3. Confirm no rollback target writes the new schema and decide whether losing audit/consent history is acceptable.
+4. Consolidate category-specific mappings to at most one row per `notifyKind` before restoring the legacy unique index.
+5. Run DDL in a maintenance window. MySQL DDL may auto-commit and is not an atomic rollback.
 
----
-
-## 10. Rollback
-
-Runtime DDL is additive and idempotent, and the legacy `status` column is
-mirrored on every write, so the default rollback is **"revert the code, leave
-the schema."** Reverting to the previous build leaves a working schema: the old
-code reads the mirrored `status` values and ignores the new columns and tables.
-
-To remove the schema additions entirely **after** reverting the code (note:
-this drops authored drafts and is not recoverable except by re-deploying the new
-build, which re-adds everything via runtime DDL):
+Destructive rollback, only after those checks:
 
 ```sql
--- Drop new tables (no FK references into them from legacy tables):
-DROP TABLE IF EXISTS WaTemplateSyncRun;
-DROP TABLE IF EXISTS WaNotifyMapping;
-DROP TABLE IF EXISTS WaTemplateActivity;
-DROP TABLE IF EXISTS WaTemplateRevision;
-DROP TABLE IF EXISTS WaCloudRuntime;
+DROP TABLE IF EXISTS NotificationEvent;
+DROP TABLE IF EXISTS NotificationConsent;
+DROP TABLE IF EXISTS TenantNotificationSettings;
+DROP TABLE IF EXISTS NotificationPlatformSettings;
+DROP TABLE IF EXISTS NotificationAudit;
+DROP TABLE IF EXISTS NotificationAlert;
 
--- Drop new indexes on WaCloudTemplate (ignore "check that column/key exists" errors):
-ALTER TABLE WaCloudTemplate DROP INDEX uq_wct_meta_id;
-ALTER TABLE WaCloudTemplate DROP INDEX idx_wct_source_state;
-ALTER TABLE WaCloudTemplate DROP INDEX idx_wct_op;
+ALTER TABLE WaMessageLog
+  DROP COLUMN eventId,
+  DROP COLUMN sentAtMs,
+  DROP COLUMN deliveredAtMs,
+  DROP COLUMN readAtMs,
+  DROP COLUMN failedAtMs;
 
--- Drop new WaCloudTemplate columns (legacy columns name/language/category/
--- bodyText/components/variables/varCount/headerType/headerImageUrl/status/
--- rejectionReason/metaTemplateId/notifyKind remain):
-ALTER TABLE WaCloudTemplate
-  DROP COLUMN displayTitle, DROP COLUMN description, DROP COLUMN purpose,
-  DROP COLUMN parameterFormat, DROP COLUMN footerText, DROP COLUMN headerText,
-  DROP COLUMN buttons, DROP COLUMN variableMappings, DROP COLUMN sampleValues,
-  DROP COLUMN source, DROP COLUMN localState, DROP COLUMN opState,
-  DROP COLUMN opKind, DROP COLUMN opClaimedAt, DROP COLUMN metaStatus,
-  DROP COLUMN metaCategory, DROP COLUMN qualityScore, DROP COLUMN rejectionDetail,
-  DROP COLUMN messagingAccountId, DROP COLUMN lastSubmittedAt, DROP COLUMN lastSyncedAt,
-  DROP COLUMN metaUpdatedAt, DROP COLUMN archivedAt, DROP COLUMN createdBy, DROP COLUMN updatedBy;
+-- Only after proving there is no more than one row for each notifyKind:
+ALTER TABLE WaNotifyMapping
+  DROP INDEX uq_wnm_kind_category,
+  DROP COLUMN businessCategory,
+  ADD UNIQUE KEY uq_wnm_kind_enabled (notifyKind);
 ```
 
-The rollback never touches `Appointment` or any booking table.
-
----
-
-## 11. Production deployment checklist
-
-- [ ] Set `WA_CLOUD_ENC_KEY` (32-byte hex) so saved credentials remain
-      decryptable. Notification bodies and resolved template values are not
-      stored for fallback delivery.
-- [ ] Configure the Cloud credentials (DB row or env): phone number ID,
-      Messaging Account ID, access token, app secret, verify token.
-- [ ] Confirm the access token scopes in **Account health**
-      (`whatsapp_business_management` + `whatsapp_business_messaging`).
-- [ ] Register the webhook callback URL and verify token, and subscribe the four
-      template webhook fields (§5) in addition to the message/status fields.
-- [ ] Verify the webhook handshake succeeds and a signed test delivery is
-      accepted; confirm an invalid signature is rejected with `401`.
-- [ ] Decide whether to enable scheduled sync
-      (`WA_CLOUD_TEMPLATE_SYNC_MINUTES`); leave unset to rely on webhooks plus
-      manual sync.
-- [ ] Ensure `WA_CLOUD_TEST_RECIPIENTS` is unset in production and restart the
-      service after removing it. This variable is only a local-test safety net.
-- [ ] Preserve the existing `WA_CLOUD_ENC_KEY` across deployments.
-- [ ] For healthcare booking recovery, use **Sync all** to import the existing
-      `appointment_booked` template; do not submit a duplicate. Confirm
-      `APPROVED`, `UTILITY`, `en_US`, assign it to **Appointment Booked**,
-      acknowledge opt-in, and enable it.
-- [ ] Map an approved utility template to every enabled business notification
-      kind (appointment lifecycle, reminders/video links, doctor leave/reinstate,
-      and restaurant booking/table changes), then acknowledge opt-in and enable
-      each mapping. If Meta has not approved a corresponding template, that
-      notification intentionally remains off and logs `template_not_ready`.
-- [ ] Confirm the official-only invariant: with no ready mapping, the message log
-      records `template_not_ready`; with an internal gate fault it records
-      `template_gate_error`; neither free-form Cloud text nor WhatsApp Web is
-      attempted, and the underlying appointment/booking remains created.
+This rollback does not modify `Appointment` or other booking rows. Dropping notification tables permanently removes pending jobs, consent records, operational history, and alert state; restore them from backup if the new engine is reintroduced.

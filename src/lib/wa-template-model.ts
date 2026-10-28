@@ -98,6 +98,7 @@ const LANGUAGE_CODE_SET: ReadonlySet<string> = new Set(TEMPLATE_LANGUAGES.map((l
 export const NOTIFY_KIND_LABELS: Record<AptNotifyKind, string> = {
   booked: "Appointment Booked",
   confirmed: "Appointment Confirmed",
+  rescheduled: "Appointment Rescheduled",
   cancelled: "Appointment Cancelled",
   completed: "Appointment Completed",
   reminderDayBefore: "Reminder — Day Before",
@@ -137,7 +138,9 @@ export type CatalogueField =
   | "bookingCode"
   | "tokenNo"
   | "partySize"
-  | "tableName";
+  | "tableName"
+  | "serviceName"
+  | "joinToken";
 
 export interface CatalogueEntry {
   field: CatalogueField;
@@ -171,6 +174,17 @@ export const VARIABLE_CATALOGUE: readonly CatalogueEntry[] = [
     label: "Table Name",
     description: "The assigned restaurant table or table group.",
   },
+  {
+    field: "serviceName",
+    label: "Service / Session Type",
+    description:
+      "The booked service, session or consultation type (or the category's neutral default).",
+  },
+  {
+    field: "joinToken",
+    label: "Video Join Token",
+    description: "The per-patient video consultation token used as the join-button URL suffix.",
+  },
 ];
 
 const CATALOGUE_FIELD_SET: ReadonlySet<string> = new Set(VARIABLE_CATALOGUE.map((c) => c.field));
@@ -186,17 +200,73 @@ export function isCatalogueField(value: string): value is CatalogueField {
  * Resolvability is enforced at assign, enable, and send time (DP-09).
  */
 export const KIND_RESOLVABLE_FIELDS: Record<AptNotifyKind, readonly CatalogueField[]> = {
-  booked: ["name", "clinicName", "doctorName", "date", "time", "bookingCode", "tokenNo"],
-  confirmed: ["name", "clinicName", "doctorName", "date", "time", "bookingCode", "tokenNo"],
-  cancelled: ["name", "clinicName", "date", "time", "bookingCode"],
-  completed: ["name", "clinicName", "doctorName", "bookingCode"],
-  reminderDayBefore: ["name", "clinicName", "doctorName", "date", "time", "bookingCode", "tokenNo"],
+  booked: [
+    "name",
+    "clinicName",
+    "doctorName",
+    "date",
+    "time",
+    "bookingCode",
+    "tokenNo",
+    "serviceName",
+  ],
+  confirmed: [
+    "name",
+    "clinicName",
+    "doctorName",
+    "date",
+    "time",
+    "bookingCode",
+    "tokenNo",
+    "serviceName",
+  ],
+  rescheduled: [
+    "name",
+    "clinicName",
+    "doctorName",
+    "date",
+    "time",
+    "bookingCode",
+    "tokenNo",
+    "serviceName",
+  ],
+  cancelled: ["name", "clinicName", "date", "time", "bookingCode", "serviceName", "partySize"],
+  completed: ["name", "clinicName", "doctorName", "date", "bookingCode", "serviceName"],
+  reminderDayBefore: [
+    "name",
+    "clinicName",
+    "doctorName",
+    "date",
+    "time",
+    "bookingCode",
+    "tokenNo",
+    "serviceName",
+    "partySize",
+  ],
   reminderDayOf: ["name", "clinicName", "doctorName", "time", "bookingCode", "tokenNo"],
-  reminder2h: ["name", "clinicName", "doctorName", "time", "bookingCode", "tokenNo"],
+  reminder2h: [
+    "name",
+    "clinicName",
+    "doctorName",
+    "date",
+    "time",
+    "bookingCode",
+    "tokenNo",
+    "serviceName",
+    "partySize",
+  ],
   reminder1h: ["name", "clinicName", "doctorName", "time", "bookingCode", "tokenNo"],
   tokenUpdated: ["name", "clinicName", "doctorName", "date", "time", "bookingCode", "tokenNo"],
-  videoLinkIssued: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
-  videoLinkReissued: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
+  videoLinkIssued: ["name", "clinicName", "doctorName", "date", "time", "bookingCode", "joinToken"],
+  videoLinkReissued: [
+    "name",
+    "clinicName",
+    "doctorName",
+    "date",
+    "time",
+    "bookingCode",
+    "joinToken",
+  ],
   rescheduleNeeded: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
   reinstated: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
   restaurantBooked: [

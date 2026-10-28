@@ -31,6 +31,7 @@ import {
   type ParameterFormat,
 } from "./wa-template-model";
 import type { AptNotifyContext, AptNotifyKind } from "./appointment-notify";
+import { findCatalogTemplate, type BusinessCategory } from "./notify-catalog";
 
 export interface TemplatePlan {
   templateId: string;
@@ -52,6 +53,8 @@ export type TemplateNotReadyReason =
   | "template_not_approved"
   | "template_not_utility"
   | "account_mismatch"
+  | "language_mismatch"
+  | "category_mismatch"
   | "variables_unresolved";
 
 export type TemplatePlanResolution =
@@ -92,17 +95,36 @@ async function resolveField(field: CatalogueField, ctx: AptNotifyContext): Promi
  * Resolves the runtime gate with an explicit reason for expected readiness
  * failures. Unexpected repository/runtime errors propagate to the router.
  */
+/**
+ * Picks the mapping for (kind, category). A category-specific row — enabled
+ * or not — always wins over the '*' row, so disabling one category's mapping
+ * never silently falls back to a generic template.
+ */
+export function selectMapping(
+  mappings: readonly NotifyMappingRow[],
+  kind: AptNotifyKind,
+  businessCategory?: string | null,
+): NotifyMappingRow | null {
+  if (businessCategory) {
+    const specific = mappings.find(
+      (m) => m.notifyKind === kind && m.businessCategory === businessCategory,
+    );
+    if (specific) return specific;
+  }
+  return mappings.find((m) => m.notifyKind === kind && m.businessCategory === "*") ?? null;
+}
+
 export async function resolveTemplatePlanResult(
   kind: AptNotifyKind,
   ctx: AptNotifyContext & { recipientPhone?: string | null },
-  options: { cloudAvailable?: boolean } = {},
+  options: { cloudAvailable?: boolean; businessCategory?: BusinessCategory | null } = {},
 ): Promise<TemplatePlanResolution> {
   if (!ctx.recipientPhone) return { status: "not_ready", reason: "recipient_missing" };
   const cloudAvailable = options.cloudAvailable ?? (await isCloudAvailable());
   if (!cloudAvailable) return { status: "not_ready", reason: "cloud_unavailable" };
 
   const mappings = await loadMappings();
-  const mapping = mappings.find((candidate) => candidate.notifyKind === kind);
+  const mapping = selectMapping(mappings, kind, options.businessCategory);
   if (!mapping) return { status: "not_ready", reason: "mapping_missing" };
   if (!mapping.isEnabled) return { status: "not_ready", reason: "mapping_disabled" };
   if (!mapping.optInAckAt) return { status: "not_ready", reason: "opt_in_missing" };
@@ -119,6 +141,19 @@ export async function resolveTemplatePlanResult(
   const cfg = await resolveCloudConfig();
   if (!row.messagingAccountId || !cfg?.wabaId || row.messagingAccountId !== cfg.wabaId) {
     return { status: "not_ready", reason: "account_mismatch" };
+  }
+  // Meta resolves a template by exact name + language: never send under a
+  // language other than the approved one (no en <-> en_US normalization).
+  if (mapping.language && mapping.language !== row.language) {
+    return { status: "not_ready", reason: "language_mismatch" };
+  }
+  // A catalog template worded for one industry (e.g. "at the clinic") must
+  // not reach another category through a generic '*' mapping.
+  if (options.businessCategory) {
+    const catalogEntry = findCatalogTemplate(row.name, row.language);
+    if (catalogEntry && !catalogEntry.appliesTo.includes(options.businessCategory)) {
+      return { status: "not_ready", reason: "category_mismatch" };
+    }
   }
 
   const plan = await buildPlan(row, mapping, ctx);
@@ -192,7 +227,8 @@ async function buildPlan(
   return {
     templateId: row.id,
     templateName: row.name,
-    language: mapping.language || row.language,
+    // The template's own approved language code, verbatim.
+    language: row.language,
     parameterFormat: row.parameterFormat,
     bodyParams,
     headerParams,

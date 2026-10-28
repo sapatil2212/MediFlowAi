@@ -430,10 +430,20 @@ export async function getWaCloudLogs(data?: { limit?: number; offset?: number })
       LIMIT 20`,
   );
 
+  // Administrative logs never need a full customer number: keep the last 4.
+  const mask = (rows: any[]) =>
+    (rows || []).map((r: any) => ({ ...r, recipient: maskRecipient(r.recipient) }));
   return {
-    recent: recent || [],
+    recent: mask(recent),
     breakdown: breakdown || {},
     statusTotals: statusTotals || [],
-    recentFailures: recentFailures || [],
+    recentFailures: mask(recentFailures),
   };
+}
+
+function maskRecipient(value: unknown): string | null {
+  if (value == null) return null;
+  const digits = String(value).replace(/\D/g, "");
+  if (digits.length <= 4) return "••••";
+  return `${"•".repeat(Math.min(8, digits.length - 4))}${digits.slice(-4)}`;
 }

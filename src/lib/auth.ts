@@ -1161,26 +1161,47 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
     );
     let tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
 
-    await execute(
-      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, patientId, tokenNo, consultationMode, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [
-        id,
-        data.tenantId,
-        data.name,
-        data.email || "",
-        data.phone,
-        dateVal,
-        data.reason,
-        docId,
-        tSlot,
-        data.whatsapp || null,
-        data.appointmentType || null,
-        linkedPatientId,
-        tokenNo,
-        consultationMode,
-      ],
-    );
+    // Transactional outbox: the appointment and its booking.created
+    // notification event commit together (the engine never throws).
+    let notifyEventId: string | null = null;
+    await withTransaction(async (conn) => {
+      await conn.query(
+        `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, patientId, tokenNo, consultationMode, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          id,
+          data.tenantId,
+          data.name,
+          data.email || "",
+          data.phone,
+          dateVal,
+          data.reason,
+          docId,
+          tSlot,
+          data.whatsapp || null,
+          data.appointmentType || null,
+          linkedPatientId,
+          tokenNo,
+          consultationMode,
+        ],
+      );
+      if (typeof window === "undefined") {
+        try {
+          const { emitBookingEvent, POST_COMMIT_HOLD_MS } = await import("./notify-engine");
+          const emitted = await emitBookingEvent({
+            tenantId: data.tenantId,
+            appointmentId: id,
+            type: "booking.created",
+            source: "dashboard",
+            conn,
+            delayMs: POST_COMMIT_HOLD_MS,
+          });
+          if (emitted.ok) notifyEventId = emitted.eventId;
+        } catch {
+          console.error("[Notify] booking.created could not be recorded (booking kept).");
+        }
+      }
+    });
 
     // Tokens follow slot time, not booking order: reorder the day then read back
     // this appointment's final token for the confirmation / WhatsApp message.
@@ -1197,27 +1218,11 @@ export const createAppointmentServerFn = createServerFn({ method: "POST" })
       console.error("[Tokens] Daily renumber failed (booking still succeeds):", tokErr?.message);
     }
 
-    // Await the official appointment-booked template after persistence.
-    if (typeof window === "undefined") {
-      try {
-        const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
-          await import("./appointment-notify");
-        const [clinicName, doctorName] = await Promise.all([
-          resolveClinicName(data.tenantId),
-          resolveDoctorName(docId),
-        ]);
-        await sendAppointmentNotification(data.tenantId, data.phone, "booked", {
-          name: data.name,
-          clinicName,
-          doctorName,
-          dateTime: dateVal,
-          timeSlot: tSlot,
-          tokenNo,
-          appointmentId: id,
-        });
-      } catch {
-        console.error("[WhatsApp][booked] Notification failed after appointment was created.");
-      }
+    // Release the held booking-confirmation event now that the final queue
+    // number is set; the durable worker covers a process stop.
+    if (typeof window === "undefined" && notifyEventId) {
+      const { dispatchSoon } = await import("./notify-engine");
+      dispatchSoon(notifyEventId);
     }
 
     // Create the video room + join link when booked as a video consultation (Req 3.3).
@@ -1422,26 +1427,45 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
     let tokenNo = (Number(tokenRow?.maxToken) || 0) + 1;
     const status = data.status || "Pending";
 
-    await execute(
-      `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, locationId, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [
-        id,
-        user.tenantId,
-        data.name,
-        data.email || "",
-        data.phone || "",
-        dateVal,
-        data.reason,
-        status,
-        data.doctorId || null,
-        data.timeSlot || null,
-        data.phone || null,
-        data.appointmentType || null,
-        tokenNo,
-        locationId,
-      ],
-    );
+    let notifyEventId: string | null = null;
+    await withTransaction(async (conn) => {
+      await conn.query(
+        `INSERT INTO Appointment (id, tenantId, name, email, phone, dateTime, reason, status, doctorId, timeSlot, whatsapp, appointmentType, tokenNo, locationId, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          id,
+          user.tenantId,
+          data.name,
+          data.email || "",
+          data.phone || "",
+          dateVal,
+          data.reason,
+          status,
+          data.doctorId || null,
+          data.timeSlot || null,
+          data.phone || null,
+          data.appointmentType || null,
+          tokenNo,
+          locationId,
+        ],
+      );
+      if (typeof window === "undefined" && data.phone) {
+        try {
+          const { emitBookingEvent, POST_COMMIT_HOLD_MS } = await import("./notify-engine");
+          const emitted = await emitBookingEvent({
+            tenantId: user.tenantId as string,
+            appointmentId: id,
+            type: "booking.created",
+            source: "sub_location",
+            conn,
+            delayMs: POST_COMMIT_HOLD_MS,
+          });
+          if (emitted.ok) notifyEventId = emitted.eventId;
+        } catch {
+          console.error("[Notify] booking.created could not be recorded (booking kept).");
+        }
+      }
+    });
 
     // Tokens follow slot time, not booking order: reorder the day then read back
     // this booking's final token for the WhatsApp message and return value.
@@ -1458,29 +1482,9 @@ export const createSubLocationBookingServerFn = createServerFn({ method: "POST" 
       console.error("[Tokens] Daily renumber failed (booking still succeeds):", tokErr?.message);
     }
 
-    // Await the official appointment-booked template after persistence.
-    if (typeof window === "undefined" && data.phone) {
-      try {
-        const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
-          await import("./appointment-notify");
-        const [clinicName, doctorName] = await Promise.all([
-          resolveClinicName(user.tenantId),
-          resolveDoctorName(data.doctorId),
-        ]);
-        await sendAppointmentNotification(user.tenantId, data.phone, "booked", {
-          name: data.name,
-          clinicName,
-          doctorName,
-          dateTime: dateVal,
-          timeSlot: data.timeSlot || null,
-          tokenNo,
-          appointmentId: id,
-        });
-      } catch {
-        console.error(
-          "[WhatsApp][booked] Notification failed after sub-location booking was created.",
-        );
-      }
+    if (typeof window === "undefined" && notifyEventId) {
+      const { dispatchSoon } = await import("./notify-engine");
+      dispatchSoon(notifyEventId);
     }
 
     return { success: true, id, tokenNo };
@@ -1513,7 +1517,8 @@ export const updateSubLocationBookingServerFn = createServerFn({ method: "POST" 
 
     // Ensure the booking belongs to this tenant (and to the location, for location
     // users). Keep its current date so we can renumber the day it leaves.
-    let checkSql = "SELECT id, locationId, dateTime FROM Appointment WHERE id = ? AND tenantId = ?";
+    let checkSql =
+      "SELECT id, locationId, dateTime, status, timeSlot FROM Appointment WHERE id = ? AND tenantId = ?";
     const checkParams: any[] = [data.id, user.tenantId];
     if (user.role === "location" && user.locationId) {
       checkSql += " AND locationId = ?";
@@ -1592,6 +1597,50 @@ export const updateSubLocationBookingServerFn = createServerFn({ method: "POST" 
         }
       } catch (tokErr: any) {
         console.error("[Tokens] Daily renumber failed (update still succeeds):", tokErr?.message);
+      }
+    }
+
+    // Lifecycle notifications (same rules as the main appointment update).
+    if (typeof window === "undefined") {
+      try {
+        const prevStatus = String(existing.status || "");
+        const nextStatus = data.status !== undefined ? data.status : prevStatus;
+        const statusChanged = data.status !== undefined && data.status !== prevStatus;
+        const prevTime = existing.dateTime ? new Date(existing.dateTime).getTime() : NaN;
+        const slotMoved =
+          (data.dateTime !== undefined && new Date(data.dateTime).getTime() !== prevTime) ||
+          (data.timeSlot !== undefined && (data.timeSlot || null) !== (existing.timeSlot || null));
+        const { emitBookingEvent, dispatchSoon } = await import("./notify-engine");
+        const statusType: Record<
+          string,
+          "booking.confirmed" | "booking.cancelled" | "booking.completed" | undefined
+        > = {
+          Confirmed: "booking.confirmed",
+          Cancelled: "booking.cancelled",
+          Completed: "booking.completed",
+        };
+        const type = statusChanged ? statusType[nextStatus] : undefined;
+        if (type) {
+          const r = await emitBookingEvent({
+            tenantId: user.tenantId as string,
+            appointmentId: data.id,
+            type,
+            source: "sub_location",
+          });
+          if (r.ok && r.inserted) dispatchSoon(r.eventId);
+        }
+        const active = !RELEASED_STATUSES.has(nextStatus) && nextStatus !== "Completed";
+        if (slotMoved && active && type !== "booking.confirmed") {
+          const r = await emitBookingEvent({
+            tenantId: user.tenantId as string,
+            appointmentId: data.id,
+            type: "booking.rescheduled",
+            source: "sub_location",
+          });
+          if (r.ok && r.inserted) dispatchSoon(r.eventId);
+        }
+      } catch {
+        console.error("[Notify] Sub-location lifecycle notification could not be recorded.");
       }
     }
     return { success: true };
@@ -1799,7 +1848,9 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
       // for it. A status-less change (e.g. time only) sends nothing, so in that
       // case the row is left eligible for a token correction.
       const sendsOwnStatusMessage =
-        statusChanged && ["Confirmed", "Cancelled", "Completed"].includes(data.status);
+        (statusChanged && ["Confirmed", "Cancelled", "Completed"].includes(data.status)) ||
+        // A reschedule notice carries the new queue number itself.
+        (slotMoved && !RELEASED_STATUSES.has(data.status) && data.status !== "Completed");
       const renumberOpts = sendsOwnStatusMessage ? { skipNotifyId: data.id } : {};
       await renumberDailyTokens(user.tenantId, dateVal, renumberOpts);
       if (oldDateStr !== newDateStr) {
@@ -1813,32 +1864,52 @@ export const updateAppointmentServerFn = createServerFn({ method: "POST" })
       console.error("[Tokens] Daily renumber failed (update still succeeds):", tokErr?.message);
     }
 
-    // Await the mapped official template for the appointment status change.
+    // Lifecycle notifications through the durable engine. Only real changes
+    // produce events (re-saving notes sends nothing), and each event is unique,
+    // so a repeated request cannot notify twice.
     if (typeof window === "undefined") {
-      const kindMap: Record<string, "confirmed" | "cancelled" | "completed" | undefined> = {
-        Confirmed: "confirmed",
-        Cancelled: "cancelled",
-        Completed: "completed",
-      };
-      // Only on an actual status change: re-saving a confirmed booking (edit
-      // notes, drag to a new time) used to re-send "confirmed" every time.
-      const kind = statusChanged ? kindMap[data.status] : undefined;
-      if (kind) {
-        const { sendAppointmentNotification, resolveClinicName, resolveDoctorName } =
-          await import("./appointment-notify");
-        const [clinicName, doctorName] = await Promise.all([
-          resolveClinicName(user.tenantId),
-          resolveDoctorName(docId),
-        ]);
-        await sendAppointmentNotification(user.tenantId, data.phone, kind, {
-          name: data.name,
-          clinicName,
-          doctorName,
-          dateTime: dateVal,
-          timeSlot: tSlot,
-          tokenNo,
-          appointmentId: data.id,
-        });
+      try {
+        const { emitBookingEvent, dispatchSoon, scheduleReminders } =
+          await import("./notify-engine");
+        const statusType: Record<
+          string,
+          "booking.confirmed" | "booking.cancelled" | "booking.completed" | undefined
+        > = {
+          Confirmed: "booking.confirmed",
+          Cancelled: "booking.cancelled",
+          Completed: "booking.completed",
+        };
+        const type = statusChanged ? statusType[data.status] : undefined;
+        const active = !RELEASED_STATUSES.has(data.status) && data.status !== "Completed";
+        if (type) {
+          const r = await emitBookingEvent({
+            tenantId: user.tenantId as string,
+            appointmentId: data.id,
+            type,
+            source: "dashboard",
+          });
+          if (r.ok && r.inserted) dispatchSoon(r.eventId);
+        }
+        // A moved booking that stays active gets one reschedule notice — unless
+        // this same save confirmed it (that message already states the time).
+        if (slotMoved && active && type !== "booking.confirmed") {
+          const r = await emitBookingEvent({
+            tenantId: user.tenantId as string,
+            appointmentId: data.id,
+            type: "booking.rescheduled",
+            source: "dashboard",
+          });
+          if (r.ok && r.inserted) dispatchSoon(r.eventId);
+        } else if (reactivated && !type) {
+          // Un-cancelled without a new time: restore its reminders.
+          await scheduleReminders({
+            tenantId: user.tenantId as string,
+            appointmentId: data.id,
+            mode: "event",
+          });
+        }
+      } catch {
+        console.error("[Notify] Lifecycle notification could not be recorded (update succeeded).");
       }
 
       // Sync the video room to the (effective) consultation mode. Cancelling the
@@ -2801,7 +2872,7 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
       phone: string;
       date: string;
       time: string;
-      status: "sent" | "failed" | "skipped";
+      status: "sent" | "failed" | "skipped" | "queued";
     }> = [];
 
     for (const apt of targetAppts) {
@@ -2819,28 +2890,11 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
           minute: "2-digit",
         });
 
-      let sendStatus: "sent" | "failed" | "skipped" = "skipped";
+      let sendStatus: "sent" | "failed" | "skipped" | "queued" = "skipped";
 
-      if (apt.phone && canSendWA) {
-        const { sendAppointmentNotification } = await import("./appointment-notify");
-        const accepted = await sendAppointmentNotification(
-          user.tenantId,
-          apt.phone,
-          "rescheduleNeeded",
-          {
-            name: apt.name || "Patient",
-            clinicName,
-            doctorName: doc.name,
-            dateTime: aptDate,
-            timeSlot: apt.timeSlot,
-            tokenNo: apt.tokenNo,
-            appointmentId: apt.id,
-          },
-        );
-        sendStatus = accepted ? "sent" : "failed";
-      }
-
-      // Mark appointment as 'Reschedule Needed'
+      // Mark appointment as 'Reschedule Needed' first: the notice is only
+      // valid (and only dispatched) once the booking actually carries it.
+      let marked = false;
       try {
         await execute(
           `UPDATE Appointment 
@@ -2849,8 +2903,20 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
            WHERE id = ? AND tenantId = ?`,
           [data.reason || "Emergency Leave", apt.id, user.tenantId],
         );
+        marked = true;
       } catch (err: any) {
         console.warn(`[Emergency Leave Appt Update] Failed:`, err?.message);
+      }
+
+      if (marked && apt.phone && canSendWA) {
+        const { emitBookingEvent, dispatchAndWait } = await import("./notify-engine");
+        const r = await emitBookingEvent({
+          tenantId: user.tenantId as string,
+          appointmentId: apt.id,
+          type: "booking.reschedule_needed",
+          source: "doctor_leave",
+        });
+        sendStatus = r.ok && r.eventId ? await dispatchAndWait(r.eventId) : "failed";
       }
 
       notifiedPatients.push({
@@ -3068,7 +3134,7 @@ export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn(
       phone: string;
       date: string;
       time: string;
-      status: "sent" | "failed" | "skipped";
+      status: "sent" | "failed" | "skipped" | "queued";
     }> = [];
 
     if (canSendWA && data.sendWhatsAppNotice !== false && targetAppts.length > 0) {
@@ -3087,25 +3153,17 @@ export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn(
             minute: "2-digit",
           });
 
-        let sendStatus: "sent" | "failed" | "skipped" = "skipped";
+        let sendStatus: "sent" | "failed" | "skipped" | "queued" = "skipped";
 
         if (apt.phone) {
-          const { sendAppointmentNotification } = await import("./appointment-notify");
-          const accepted = await sendAppointmentNotification(
-            user.tenantId,
-            apt.phone,
-            "reinstated",
-            {
-              name: apt.name || "Patient",
-              clinicName,
-              doctorName: doc.name,
-              dateTime: aptDate,
-              timeSlot: apt.timeSlot,
-              tokenNo: apt.tokenNo,
-              appointmentId: apt.id,
-            },
-          );
-          sendStatus = accepted ? "sent" : "failed";
+          const { emitBookingEvent, dispatchAndWait } = await import("./notify-engine");
+          const r = await emitBookingEvent({
+            tenantId: user.tenantId as string,
+            appointmentId: apt.id,
+            type: "booking.reinstated",
+            source: "doctor_leave",
+          });
+          sendStatus = r.ok && r.eventId ? await dispatchAndWait(r.eventId) : "failed";
         }
 
         notifiedPatients.push({

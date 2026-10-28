@@ -39,6 +39,16 @@ export interface PublishedTemplateSpec {
   notifyKind: AptNotifyKind;
 }
 
+const AUTOMATED_FOOTER = "This is an automated notification message.";
+
+/**
+ * The four Meta-approved UTILITY templates that already exist on the connected
+ * WABA. Body and footer text are the exact approved strings (verified against
+ * GET /{WABA_ID}/message_templates on 2026-10-27). Language codes are exact and
+ * intentionally mixed: `en_US` for booked/cancelled, `en` for completed and the
+ * day-before reminder. Never normalize one into the other — Meta resolves a
+ * template by exact name + language.
+ */
 export const PUBLISHED_TEMPLATE_SPECS: readonly PublishedTemplateSpec[] = [
   {
     name: "appointment_booked",
@@ -47,7 +57,8 @@ export const PUBLISHED_TEMPLATE_SPECS: readonly PublishedTemplateSpec[] = [
     headerType: "NONE",
     bodyText:
       "Hello {{1}},\n\nYour appointment at {{2}} with {{3}} is booked for {{4}} at {{5}}. Your queue number at the clinic is {{6}}.\n\nThank you for choosing us!",
-    footerText: "This is an automated notification message.",
+    // The approved appointment_booked template has no footer component.
+    footerText: null,
     variableMappings: {
       "body.1": "name",
       "body.2": "clinicName",
@@ -57,14 +68,82 @@ export const PUBLISHED_TEMPLATE_SPECS: readonly PublishedTemplateSpec[] = [
       "body.6": "tokenNo",
     },
     sampleValues: {
-      "body.1": "Priya Sharma",
-      "body.2": "CityCare Clinic",
-      "body.3": "Dr. Rohan Mehta",
-      "body.4": "Tuesday, October 20, 2026",
+      "body.1": "Rahul",
+      "body.2": "City Care Clinic",
+      "body.3": "Dr. Mehta",
+      "body.4": "28 October 2026",
       "body.5": "10:30 AM",
-      "body.6": "7",
+      "body.6": "12",
     },
     notifyKind: "booked",
+  },
+  {
+    name: "appointment_cancelled",
+    language: "en_US",
+    parameterFormat: "POSITIONAL",
+    headerType: "NONE",
+    bodyText:
+      "Hello {{1}},\n\nYour appointment at {{2}} scheduled for {{3}} at {{4}} has been cancelled.\n\nIf this was a mistake or you would like to rebook, please contact the clinic.",
+    footerText: AUTOMATED_FOOTER,
+    variableMappings: {
+      "body.1": "name",
+      "body.2": "clinicName",
+      "body.3": "date",
+      "body.4": "time",
+    },
+    sampleValues: {
+      "body.1": "Rahul",
+      "body.2": "City Care Clinic",
+      "body.3": "28 October 2026",
+      "body.4": "10:30 AM",
+    },
+    notifyKind: "cancelled",
+  },
+  {
+    name: "appointment_completed",
+    language: "en",
+    parameterFormat: "POSITIONAL",
+    headerType: "NONE",
+    bodyText:
+      "Hello {{1}},\n\nThank you for visiting {{2}} with {{3}} today. Your consultation is now complete.\n\nYour prescription and advice, if any, have been recorded. Take care!",
+    footerText: AUTOMATED_FOOTER,
+    variableMappings: {
+      "body.1": "name",
+      "body.2": "clinicName",
+      "body.3": "doctorName",
+    },
+    sampleValues: {
+      "body.1": "Rahul",
+      "body.2": "City Care Clinic",
+      "body.3": "Dr. Mehta",
+    },
+    notifyKind: "completed",
+  },
+  {
+    name: "appointment_reminder_day_before",
+    language: "en",
+    parameterFormat: "POSITIONAL",
+    headerType: "NONE",
+    bodyText:
+      "Hello {{1}},\n\nReminder: You have an appointment at {{2}} with {{3}} tomorrow, {{4}} at {{5}}. Your queue number at the clinic is {{6}}.\n\nPlease arrive 10 minutes early. See you soon!",
+    footerText: AUTOMATED_FOOTER,
+    variableMappings: {
+      "body.1": "name",
+      "body.2": "clinicName",
+      "body.3": "doctorName",
+      "body.4": "date",
+      "body.5": "time",
+      "body.6": "tokenNo",
+    },
+    sampleValues: {
+      "body.1": "Rahul",
+      "body.2": "City Care Clinic",
+      "body.3": "Dr. Mehta",
+      "body.4": "28 October 2026",
+      "body.5": "10:30 AM",
+      "body.6": "12",
+    },
+    notifyKind: "reminderDayBefore",
   },
 ];
 

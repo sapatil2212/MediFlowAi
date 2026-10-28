@@ -22,8 +22,12 @@ import { applyWebhookChange, runFullSync, scheduledSyncMinutes } from "./wa-temp
 
 let repo: InMemoryTemplateRepo;
 
-function appointmentBookedNode(overrides: Record<string, unknown> = {}) {
-  return {
+// Exact component shapes returned by GET /{WABA_ID}/message_templates for the
+// four approved templates on the production WABA (2026-10-27). appointment_booked
+// has no footer; the other three carry the automated-notification footer.
+const FOOTER = "This is an automated notification message.";
+const LIVE_NODES = {
+  appointment_booked: {
     id: "booked-meta-1",
     name: "appointment_booked",
     language: "en_US",
@@ -33,12 +37,59 @@ function appointmentBookedNode(overrides: Record<string, unknown> = {}) {
     components: [
       {
         type: "BODY",
-        text: "Hello {{1}}, appointment at {{2}} with {{3}} on {{4}} at {{5}}, queue {{6}}.",
+        text: "Hello {{1}},\n\nYour appointment at {{2}} with {{3}} is booked for {{4}} at {{5}}. Your queue number at the clinic is {{6}}.\n\nThank you for choosing us!",
       },
-      { type: "FOOTER", text: "This is an automated notification message." },
     ],
-    ...overrides,
-  };
+  },
+  appointment_cancelled: {
+    id: "cancelled-meta-1",
+    name: "appointment_cancelled",
+    language: "en_US",
+    status: "APPROVED",
+    category: "UTILITY",
+    parameter_format: "POSITIONAL",
+    components: [
+      {
+        type: "BODY",
+        text: "Hello {{1}},\n\nYour appointment at {{2}} scheduled for {{3}} at {{4}} has been cancelled.\n\nIf this was a mistake or you would like to rebook, please contact the clinic.",
+      },
+      { type: "FOOTER", text: FOOTER },
+    ],
+  },
+  appointment_completed: {
+    id: "completed-meta-1",
+    name: "appointment_completed",
+    language: "en",
+    status: "APPROVED",
+    category: "UTILITY",
+    parameter_format: "POSITIONAL",
+    components: [
+      {
+        type: "BODY",
+        text: "Hello {{1}},\n\nThank you for visiting {{2}} with {{3}} today. Your consultation is now complete.\n\nYour prescription and advice, if any, have been recorded. Take care!",
+      },
+      { type: "FOOTER", text: FOOTER },
+    ],
+  },
+  appointment_reminder_day_before: {
+    id: "reminder-meta-1",
+    name: "appointment_reminder_day_before",
+    language: "en",
+    status: "APPROVED",
+    category: "UTILITY",
+    parameter_format: "POSITIONAL",
+    components: [
+      {
+        type: "BODY",
+        text: "Hello {{1}},\n\nReminder: You have an appointment at {{2}} with {{3}} tomorrow, {{4}} at {{5}}. Your queue number at the clinic is {{6}}.\n\nPlease arrive 10 minutes early. See you soon!",
+      },
+      { type: "FOOTER", text: FOOTER },
+    ],
+  },
+} as const;
+
+function appointmentBookedNode(overrides: Record<string, unknown> = {}) {
+  return { ...LIVE_NODES.appointment_booked, ...overrides };
 }
 
 beforeEach(() => {
@@ -141,7 +192,92 @@ describe("runFullSync", () => {
     const repaired = await repo.getById(existing.id);
     expect(repaired?.notifyKind).toBe("booked");
     expect(repaired?.variableMappings?.["body.6"]).toBe("tokenNo");
-    expect(repaired?.sampleValues?.["body.6"]).toBe("7");
+    expect(repaired?.sampleValues?.["body.6"]).toBe("12");
+  });
+
+  it("imports all four approved templates with their exact languages and mappings", async () => {
+    listMessageTemplatesMock.mockResolvedValue({
+      ok: true,
+      data: { data: Object.values(LIVE_NODES), paging: {} },
+    });
+
+    const res = await runFullSync("manual");
+    expect(res).toMatchObject({ ok: true, created: 4 });
+
+    const booked = await repo.getByNameLanguage("appointment_booked", "en_US");
+    const cancelled = await repo.getByNameLanguage("appointment_cancelled", "en_US");
+    const completed = await repo.getByNameLanguage("appointment_completed", "en");
+    const reminder = await repo.getByNameLanguage("appointment_reminder_day_before", "en");
+    // No implicit en <-> en_US normalization.
+    expect(await repo.getByNameLanguage("appointment_completed", "en_US")).toBeNull();
+    expect(await repo.getByNameLanguage("appointment_booked", "en")).toBeNull();
+
+    expect(booked).toMatchObject({ notifyKind: "booked", footerText: null });
+    expect(Object.values(booked?.variableMappings ?? {})).toEqual([
+      "name",
+      "clinicName",
+      "doctorName",
+      "date",
+      "time",
+      "tokenNo",
+    ]);
+    expect(cancelled).toMatchObject({ notifyKind: "cancelled", footerText: FOOTER });
+    expect(Object.values(cancelled?.variableMappings ?? {})).toEqual([
+      "name",
+      "clinicName",
+      "date",
+      "time",
+    ]);
+    expect(completed).toMatchObject({ notifyKind: "completed", footerText: FOOTER });
+    expect(Object.values(completed?.variableMappings ?? {})).toEqual([
+      "name",
+      "clinicName",
+      "doctorName",
+    ]);
+    expect(reminder).toMatchObject({ notifyKind: "reminderDayBefore", footerText: FOOTER });
+    expect(Object.values(reminder?.variableMappings ?? {})).toEqual([
+      "name",
+      "clinicName",
+      "doctorName",
+      "date",
+      "time",
+      "tokenNo",
+    ]);
+    for (const row of [booked, cancelled, completed, reminder]) {
+      expect(row).toMatchObject({
+        source: "META",
+        metaStatus: "APPROVED",
+        metaCategory: "UTILITY",
+        messagingAccountId: "222",
+      });
+    }
+  });
+
+  it("does not hydrate a published name whose approved wording was edited on Meta", async () => {
+    listMessageTemplatesMock.mockResolvedValue({
+      ok: true,
+      data: {
+        data: [
+          {
+            ...LIVE_NODES.appointment_cancelled,
+            components: [
+              {
+                type: "BODY",
+                text: "Hello {{1}}, your visit at {{2}} on {{3}} at {{4}} was dropped.",
+              },
+              { type: "FOOTER", text: FOOTER },
+            ],
+          },
+        ],
+        paging: {},
+      },
+    });
+
+    await runFullSync("manual");
+
+    const row = await repo.getByMetaTemplateId("cancelled-meta-1");
+    expect(row?.notifyKind).toBeNull();
+    expect(row?.variableMappings).toEqual({});
   });
 
   it.each([

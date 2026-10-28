@@ -2,11 +2,16 @@ import "./lib/error-capture";
 import { startWhatsAppServer } from "./lib/wa-launcher";
 import { startReminderScheduler } from "./lib/reminder-scheduler";
 import { startMonthlyReportScheduler } from "./lib/monthly-report-scheduler";
+import { startNotificationWorker } from "./lib/notify-dispatcher";
 
 // Start WhatsApp server
 startWhatsAppServer();
 
-// Start the appointment reminder scheduler (WhatsApp reminders: 1 day / day-of / 2h / 1h before)
+// Durable WhatsApp notification worker: dispatches booking confirmations,
+// reminders and lifecycle updates as approved Utility templates.
+startNotificationWorker();
+
+// 5-minute maintenance cycle (reminder jobs, template sync, alerts, sweeps)
 startReminderScheduler();
 
 // Start the automated monthly clinical audit report scheduler (1st of each month with rate-limited email)

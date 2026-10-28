@@ -150,6 +150,8 @@ export interface SyncRunRow {
 export interface NotifyMappingRow {
   id: string;
   notifyKind: string;
+  /** Business category the mapping applies to, or '*' for every category. */
+  businessCategory: string;
   templateId: string;
   language: string;
   isEnabled: boolean;
@@ -242,9 +244,10 @@ export interface TemplateRepo {
   finishSyncRun(id: string, patch: Partial<SyncRunRow>): Promise<void>;
   listSyncRuns(limit?: number): Promise<SyncRunRow[]>;
 
-  // Notify mappings
+  // Notify mappings — one per (notifyKind, businessCategory); '*' = all categories.
   upsertMapping(input: {
     notifyKind: string;
+    businessCategory?: string;
     templateId: string;
     language: string;
     actorId: string | null;
@@ -253,11 +256,15 @@ export interface TemplateRepo {
     notifyKind: string,
     enabled: boolean,
     optIn: { version: string; actorId: string | null } | null,
+    businessCategory?: string,
   ): Promise<NotifyMappingRow | null>;
-  removeMapping(notifyKind: string): Promise<boolean>;
-  getMapping(notifyKind: string): Promise<NotifyMappingRow | null>;
+  removeMapping(notifyKind: string, businessCategory?: string): Promise<boolean>;
+  getMapping(notifyKind: string, businessCategory?: string): Promise<NotifyMappingRow | null>;
   listMappings(): Promise<NotifyMappingRow[]>;
 }
+
+/** Category key used for mappings that apply to every business category. */
+export const ALL_CATEGORIES_KEY = "*";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Column / value helpers.
@@ -327,6 +334,10 @@ function toMappingRow(r: Record<string, unknown>): NotifyMappingRow {
   return {
     id: String(r.id),
     notifyKind: String(r.notifyKind),
+    businessCategory:
+      r.businessCategory != null && String(r.businessCategory) !== ""
+        ? String(r.businessCategory)
+        : "*",
     templateId: String(r.templateId),
     language: String(r.language),
     isEnabled: Number(r.isEnabled) === 1,
@@ -792,24 +803,34 @@ class SqlTemplateRepo implements TemplateRepo {
 
   async upsertMapping(input: {
     notifyKind: string;
+    businessCategory?: string;
     templateId: string;
     language: string;
     actorId: string | null;
   }): Promise<NotifyMappingRow> {
-    const existing = await this.getMapping(input.notifyKind);
+    const category = input.businessCategory || ALL_CATEGORIES_KEY;
+    const existing = await this.getMapping(input.notifyKind, category);
     if (existing) {
       await execute(
-        "UPDATE WaNotifyMapping SET templateId=?, language=?, isEnabled=0, optInAckAt=NULL, optInAckBy=NULL, optInAckVersion=NULL, updatedBy=? WHERE notifyKind=?",
-        [input.templateId, input.language, input.actorId, input.notifyKind],
+        "UPDATE WaNotifyMapping SET templateId=?, language=?, isEnabled=0, optInAckAt=NULL, optInAckBy=NULL, optInAckVersion=NULL, updatedBy=? WHERE notifyKind=? AND businessCategory=?",
+        [input.templateId, input.language, input.actorId, input.notifyKind, category],
       );
     } else {
       const id = newId();
       await execute(
-        "INSERT INTO WaNotifyMapping (id, notifyKind, templateId, language, isEnabled, createdBy, updatedBy) VALUES (?,?,?,?,0,?,?)",
-        [id, input.notifyKind, input.templateId, input.language, input.actorId, input.actorId],
+        "INSERT INTO WaNotifyMapping (id, notifyKind, businessCategory, templateId, language, isEnabled, createdBy, updatedBy) VALUES (?,?,?,?,?,0,?,?)",
+        [
+          id,
+          input.notifyKind,
+          category,
+          input.templateId,
+          input.language,
+          input.actorId,
+          input.actorId,
+        ],
       );
     }
-    const row = await this.getMapping(input.notifyKind);
+    const row = await this.getMapping(input.notifyKind, category);
     if (!row) throw new Error("upsertMapping: mapping not found after write");
     return row;
   }
@@ -818,33 +839,46 @@ class SqlTemplateRepo implements TemplateRepo {
     notifyKind: string,
     enabled: boolean,
     optIn: { version: string; actorId: string | null } | null,
+    businessCategory?: string,
   ): Promise<NotifyMappingRow | null> {
+    const category = businessCategory || ALL_CATEGORIES_KEY;
     if (enabled) {
       if (!optIn) return null; // enabling requires an opt-in acknowledgement (DP-01)
       await execute(
-        "UPDATE WaNotifyMapping SET isEnabled=1, optInAckAt=NOW(), optInAckBy=?, optInAckVersion=?, updatedBy=? WHERE notifyKind=?",
-        [optIn.actorId, optIn.version, optIn.actorId, notifyKind],
+        "UPDATE WaNotifyMapping SET isEnabled=1, optInAckAt=NOW(), optInAckBy=?, optInAckVersion=?, updatedBy=? WHERE notifyKind=? AND businessCategory=?",
+        [optIn.actorId, optIn.version, optIn.actorId, notifyKind, category],
       );
     } else {
-      await execute("UPDATE WaNotifyMapping SET isEnabled=0 WHERE notifyKind=?", [notifyKind]);
+      await execute(
+        "UPDATE WaNotifyMapping SET isEnabled=0 WHERE notifyKind=? AND businessCategory=?",
+        [notifyKind, category],
+      );
     }
-    return this.getMapping(notifyKind);
+    return this.getMapping(notifyKind, category);
   }
 
-  async removeMapping(notifyKind: string): Promise<boolean> {
-    const res = await execute("DELETE FROM WaNotifyMapping WHERE notifyKind=?", [notifyKind]);
+  async removeMapping(notifyKind: string, businessCategory?: string): Promise<boolean> {
+    const res = await execute(
+      "DELETE FROM WaNotifyMapping WHERE notifyKind=? AND businessCategory=?",
+      [notifyKind, businessCategory || ALL_CATEGORIES_KEY],
+    );
     return res.affectedRows > 0;
   }
 
-  async getMapping(notifyKind: string): Promise<NotifyMappingRow | null> {
+  async getMapping(
+    notifyKind: string,
+    businessCategory?: string,
+  ): Promise<NotifyMappingRow | null> {
     const r = await queryOne<Record<string, unknown>>(
-      "SELECT * FROM WaNotifyMapping WHERE notifyKind=? LIMIT 1",
-      [notifyKind],
+      "SELECT * FROM WaNotifyMapping WHERE notifyKind=? AND businessCategory=? LIMIT 1",
+      [notifyKind, businessCategory || ALL_CATEGORIES_KEY],
     );
     return r ? toMappingRow(r) : null;
   }
 
   async listMappings(): Promise<NotifyMappingRow[]> {
+    // SELECT * stays valid before the businessCategory column exists (rows then
+    // read as '*'), so the runtime gate keeps working during a deploy.
     const rows = await query<Record<string, unknown>>(
       "SELECT * FROM WaNotifyMapping ORDER BY notifyKind ASC",
     );
