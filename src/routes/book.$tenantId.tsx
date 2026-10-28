@@ -800,13 +800,8 @@ function PatientBookingPage() {
                   </div>
                 </div>
 
-                <p
-                  className="rounded-2xl border border-zinc-100 bg-zinc-50/60 px-3 py-2 text-[10px] sm:text-[11px] text-zinc-600"
-                  data-testid="whatsapp-notice"
-                >
-                  You will receive booking updates on WhatsApp from{" "}
-                  <strong>{clinicName || "this business"}</strong> (confirmation, reminders and
-                  changes to this booking). Reply STOP at any time to opt out.
+                <p className="pl-1 text-[9px] text-zinc-400" data-testid="whatsapp-notice">
+                  Booking updates will be sent on WhatsApp. Reply STOP to opt out.
                 </p>
 
                 <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
@@ -2304,13 +2299,8 @@ export function RestaurantBookingForm({
             </div>
           </div>
 
-          <p
-            className="rounded-2xl border border-zinc-100 bg-zinc-50/60 px-3 py-2 text-[10px] sm:text-[11px] text-zinc-600"
-            data-testid="whatsapp-notice"
-          >
-            You will receive reservation updates on WhatsApp from{" "}
-            <strong>{restaurantName || "this restaurant"}</strong> (confirmation, reminders and
-            changes to this booking). Reply STOP at any time to opt out.
+          <p className="pl-1 text-[9px] text-zinc-400" data-testid="whatsapp-notice">
+            Reservation updates will be sent on WhatsApp. Reply STOP to opt out.
           </p>
 
           <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
