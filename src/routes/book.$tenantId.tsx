@@ -111,9 +111,9 @@ function PatientBookingPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const whatsapp = phone; // Use same value for both phone and whatsapp
-  // Transactional WhatsApp booking updates (never marketing). The customer can
-  // untick it; booking works either way. Recorded with the notice version.
-  const [whatsappConsent, setWhatsappConsent] = useState(true);
+  // Transactional WhatsApp booking updates (never marketing) are sent to every
+  // customer. The form shows a notice instead of a checkbox; STOP still opts out.
+  const whatsappConsent = true;
   const [appointmentType, setAppointmentType] = useState("");
   const [dateTime, setDateTime] = useState("");
   const [reason, setReason] = useState("");
@@ -800,22 +800,14 @@ function PatientBookingPage() {
                   </div>
                 </div>
 
-                <label className="flex items-start gap-2 rounded-2xl border border-zinc-100 bg-zinc-50/60 px-3 py-2 text-[10px] sm:text-[11px] text-zinc-600 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-3.5 w-3.5 accent-brand"
-                    checked={whatsappConsent}
-                    onChange={(e) => setWhatsappConsent(e.target.checked)}
-                    disabled={loading}
-                    data-testid="whatsapp-consent"
-                  />
-                  <span>
-                    Send me booking updates on WhatsApp from{" "}
-                    <strong>{clinicName || "this business"}</strong> (confirmation, reminders and
-                    changes to this booking). Reply STOP at any time to opt out. Optional — you can
-                    book without it.
-                  </span>
-                </label>
+                <p
+                  className="rounded-2xl border border-zinc-100 bg-zinc-50/60 px-3 py-2 text-[10px] sm:text-[11px] text-zinc-600"
+                  data-testid="whatsapp-notice"
+                >
+                  You will receive booking updates on WhatsApp from{" "}
+                  <strong>{clinicName || "this business"}</strong> (confirmation, reminders and
+                  changes to this booking). Reply STOP at any time to opt out.
+                </p>
 
                 <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
                   {/* Appointment Type Custom Dropdown — hidden for education */}
@@ -2044,7 +2036,8 @@ export function RestaurantBookingForm({
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [specialRequests, setSpecialRequests] = useState("");
-  const [whatsappConsent, setWhatsappConsent] = useState(true);
+  // Reservation updates are always sent; the form shows a notice (STOP opts out).
+  const whatsappConsent = true;
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -2311,22 +2304,14 @@ export function RestaurantBookingForm({
             </div>
           </div>
 
-          <label className="flex items-start gap-2 rounded-2xl border border-zinc-100 bg-zinc-50/60 px-3 py-2 text-[10px] sm:text-[11px] text-zinc-600 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-3.5 w-3.5 accent-brand"
-              checked={whatsappConsent}
-              onChange={(e) => setWhatsappConsent(e.target.checked)}
-              disabled={submitting}
-              data-testid="whatsapp-consent"
-            />
-            <span>
-              Send me reservation updates on WhatsApp from{" "}
-              <strong>{restaurantName || "this restaurant"}</strong> (confirmation, reminders and
-              changes to this booking). Reply STOP at any time to opt out. Optional — you can book
-              without it.
-            </span>
-          </label>
+          <p
+            className="rounded-2xl border border-zinc-100 bg-zinc-50/60 px-3 py-2 text-[10px] sm:text-[11px] text-zinc-600"
+            data-testid="whatsapp-notice"
+          >
+            You will receive reservation updates on WhatsApp from{" "}
+            <strong>{restaurantName || "this restaurant"}</strong> (confirmation, reminders and
+            changes to this booking). Reply STOP at any time to opt out.
+          </p>
 
           <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
             {/* Party size — Req 6.2 */}

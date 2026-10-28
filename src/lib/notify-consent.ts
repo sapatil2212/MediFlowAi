@@ -58,6 +58,16 @@ export async function recordConsent(input: {
   if (!phone || !input.tenantId) return false;
   const nowMs = input.nowMs ?? Date.now();
   const repo = getNotifyRepo();
+  // Booking forms send updates by default. A new booking must never silently
+  // overturn an opt-out the customer (or the business on their behalf) already
+  // recorded; only an explicit choice (tenant admin, START keyword) can.
+  if (
+    input.optedIn &&
+    (input.source === "public_booking_form" || input.source === "public_restaurant_form")
+  ) {
+    const existing = await repo.getConsent(input.tenantId, phone);
+    if (existing?.status === "opted_out") return false;
+  }
   await repo.upsertConsent({
     tenantId: input.tenantId,
     phone,

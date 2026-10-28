@@ -123,6 +123,35 @@ describe("recording consent", () => {
     ).toBe(true);
   });
 
+  it("a new booking-form opt-in never overturns a recorded opt-out", async () => {
+    await recordConsent({
+      tenantId: "t1",
+      phone: "9876543210",
+      optedIn: false,
+      source: "tenant_admin",
+      nowMs: 1,
+    });
+    expect(
+      await recordConsent({
+        tenantId: "t1",
+        phone: "9876543210",
+        optedIn: true,
+        source: "public_booking_form",
+        nowMs: 2,
+      }),
+    ).toBe(false);
+    expect((await repo.getConsent("t1", "919876543210"))?.status).toBe("opted_out");
+    // An explicit owner choice can still re-enable it.
+    await recordConsent({
+      tenantId: "t1",
+      phone: "9876543210",
+      optedIn: true,
+      source: "tenant_admin",
+      nowMs: 3,
+    });
+    expect((await repo.getConsent("t1", "919876543210"))?.status).toBe("opted_in");
+  });
+
   it("refuses an invalid number", async () => {
     expect(
       await recordConsent({ tenantId: "t1", phone: "123", optedIn: true, source: "tenant_admin" }),
