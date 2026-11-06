@@ -835,3 +835,176 @@ describe("multi-industry lifecycle routing", () => {
     expect(graphBodies().every((body) => body.type === "template")).toBe(true);
   });
 });
+
+describe("doctor urgent absence (booking.reschedule_needed / reinstated)", () => {
+  async function setupClinicBooking(id: string) {
+    const t = tenant("clinic");
+    tenants.set(t.tenantId, t);
+    const b = booking(id, t.tenantId, { status: "Reschedule Needed" });
+    bookings.set(id, b);
+    await approveRoute("clinic", "rescheduleNeeded", "clinic_doctor_unavailable");
+    await approveRoute("clinic", "reinstated", "clinic_booking_reinstated");
+    return { t, b };
+  }
+
+  it("sends the approved clinic_doctor_unavailable template with variables in order", async () => {
+    const { t, b } = await setupClinicBooking("appt-absence");
+
+    const emitted = await emitBookingEvent({
+      tenantId: t.tenantId,
+      appointmentId: b.appointmentId,
+      type: "booking.reschedule_needed",
+      source: "doctor_leave",
+    });
+    expect(emitted).toMatchObject({ ok: true, inserted: true, kind: "rescheduleNeeded" });
+
+    expect(await dispatchEventNow((emitted as { eventId: string }).eventId)).toMatchObject({
+      status: "submitted",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [body] = graphBodies();
+    expect(body).toMatchObject({
+      type: "template",
+      to: RECIPIENT,
+      template: { name: "clinic_doctor_unavailable", language: { code: "en_US" } },
+    });
+    expect(graphBodyParams(body)).toEqual([
+      "Rahul",
+      "Dr. Mehta",
+      "City Care Clinic",
+      "28 October 2026",
+      "10:30 AM",
+    ]);
+  });
+
+  it("sends the reason-aware template with the reason staff chose, once approved", async () => {
+    const t = tenant("clinic");
+    tenants.set(t.tenantId, t);
+    const b = booking("appt-absence-reason", t.tenantId, { status: "Reschedule Needed" });
+    bookings.set(b.appointmentId, b);
+    await approveRoute("clinic", "rescheduleNeeded", "clinic_doctor_leave_notice");
+
+    const emitted = await emitBookingEvent({
+      tenantId: t.tenantId,
+      appointmentId: b.appointmentId,
+      type: "booking.reschedule_needed",
+      source: "doctor_leave",
+      payload: { absenceReason: "a family emergency" },
+    });
+    expect(await dispatchEventNow((emitted as { eventId: string }).eventId)).toMatchObject({
+      status: "submitted",
+    });
+    const [body] = graphBodies();
+    expect(body.template).toMatchObject({
+      name: "clinic_doctor_leave_notice",
+      language: { code: "en_US" },
+    });
+    expect(graphBodyParams(body)).toEqual([
+      "Rahul",
+      "Dr. Mehta",
+      "a family emergency",
+      "City Care Clinic",
+      "28 October 2026",
+      "10:30 AM",
+    ]);
+  });
+
+  it("refuses to send the reason-aware template without a reason", async () => {
+    const t = tenant("clinic");
+    tenants.set(t.tenantId, t);
+    const b = booking("appt-absence-noreason", t.tenantId, { status: "Reschedule Needed" });
+    bookings.set(b.appointmentId, b);
+    await approveRoute("clinic", "rescheduleNeeded", "clinic_doctor_leave_notice");
+
+    const emitted = await emitBookingEvent({
+      tenantId: t.tenantId,
+      appointmentId: b.appointmentId,
+      type: "booking.reschedule_needed",
+      source: "doctor_leave",
+    });
+    expect(await dispatchEventNow((emitted as { eventId: string }).eventId)).toMatchObject({
+      status: "blocked",
+      reason: "template_not_ready:variables_unresolved",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not send a second notice when the same absence is submitted twice", async () => {
+    const { t, b } = await setupClinicBooking("appt-absence-twice");
+    const input = {
+      tenantId: t.tenantId,
+      appointmentId: b.appointmentId,
+      type: "booking.reschedule_needed" as const,
+      source: "doctor_leave",
+    };
+    const first = await emitBookingEvent(input);
+    const second = await emitBookingEvent(input);
+    expect(first).toMatchObject({ ok: true, inserted: true });
+    expect(second).toMatchObject({ ok: true, inserted: false });
+
+    expect(await dispatchDue()).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends a fresh notice when a new absence follows a reinstatement", async () => {
+    const { t, b } = await setupClinicBooking("appt-absence-again");
+    const absence = {
+      tenantId: t.tenantId,
+      appointmentId: b.appointmentId,
+      type: "booking.reschedule_needed" as const,
+      source: "doctor_leave",
+    };
+    const first = await emitBookingEvent(absence);
+    expect(first).toMatchObject({ inserted: true });
+
+    b.status = "Confirmed";
+    const reinstated = await emitBookingEvent({
+      tenantId: t.tenantId,
+      appointmentId: b.appointmentId,
+      type: "booking.reinstated",
+      source: "doctor_leave",
+    });
+    expect(reinstated).toMatchObject({ ok: true, inserted: true, kind: "reinstated" });
+
+    b.status = "Reschedule Needed";
+    const again = await emitBookingEvent(absence);
+    expect(again).toMatchObject({ ok: true, inserted: true });
+    expect((again as { eventId: string }).eventId).not.toBe((first as { eventId: string }).eventId);
+  });
+
+  it("skips the absence notice if the booking is no longer waiting for a new time", async () => {
+    const { t, b } = await setupClinicBooking("appt-absence-stale");
+    const emitted = await emitBookingEvent({
+      tenantId: t.tenantId,
+      appointmentId: b.appointmentId,
+      type: "booking.reschedule_needed",
+      source: "doctor_leave",
+    });
+    b.status = "Confirmed"; // reinstated before the worker ran
+
+    expect(await dispatchEventNow((emitted as { eventId: string }).eventId)).toMatchObject({
+      status: "skipped",
+      reason: "no_longer_applicable",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks and records the reason when the route has no approved template", async () => {
+    const t = tenant("clinic");
+    const b = booking("appt-absence-noroute", t.tenantId, { status: "Reschedule Needed" });
+    tenants.set(t.tenantId, t);
+    bookings.set(b.appointmentId, b);
+
+    const emitted = await emitBookingEvent({
+      tenantId: t.tenantId,
+      appointmentId: b.appointmentId,
+      type: "booking.reschedule_needed",
+      source: "doctor_leave",
+    });
+    expect(await dispatchEventNow((emitted as { eventId: string }).eventId)).toMatchObject({
+      status: "blocked",
+      reason: "template_not_ready:mapping_missing",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

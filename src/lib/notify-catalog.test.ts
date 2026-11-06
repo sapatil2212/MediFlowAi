@@ -16,6 +16,7 @@ import {
   TEMPLATE_CATALOG,
 } from "./notify-catalog";
 import { PUBLISHED_TEMPLATE_SPECS } from "./wa-template-presets";
+import { absenceReasonText, MAX_CUSTOM_REASON } from "./doctor-absence";
 import { buildCreatePayload, collectPlaceholderKeys, validateDraft } from "./wa-template-model";
 
 describe("business categories", () => {
@@ -86,6 +87,32 @@ describe("template catalog", () => {
     // One route per (category, kind).
     const keys = catalogRoutes().map((r) => `${r.businessCategory}|${r.kind}`);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("routes the doctor-absence notice to the reason-aware template", () => {
+    expect(catalogRouteFor("clinic", "rescheduleNeeded")?.templateName).toBe(
+      "clinic_doctor_leave_notice",
+    );
+    const notice = TEMPLATE_CATALOG.find((t) => t.name === "clinic_doctor_leave_notice")!;
+    expect(notice.supersedes).toBe("clinic_doctor_unavailable");
+    expect(Object.values(notice.variableMappings)).toContain("absenceReason");
+    // The approved template it replaces stays in the catalog as the fallback.
+    expect(TEMPLATE_CATALOG.some((t) => t.name === "clinic_doctor_unavailable")).toBe(true);
+  });
+
+  it.each([
+    ["Medical Emergency", "", "a medical emergency"],
+    ["Family Emergency", "", "a family emergency"],
+    ["Unknown", "", "an unforeseen emergency"],
+    ["Medical Emergency", "An urgent hospital procedure", "an urgent hospital procedure"],
+    ["Medical Emergency", "ICU duty", "ICU duty"],
+    ["Medical Emergency", "  line\none {{1}} *bold*  ", "line one 1 bold"],
+  ])("absence reason %j / custom %j → %j", (reason, custom, expected) => {
+    expect(absenceReasonText({ reason, customReason: custom })).toBe(expected);
+  });
+
+  it("caps a custom absence reason to the template-safe length", () => {
+    expect(absenceReasonText({ customReason: "x".repeat(200) })).toHaveLength(MAX_CUSTOM_REASON);
   });
 
   it("uses the existing approved templates for the clinic events they cover", () => {

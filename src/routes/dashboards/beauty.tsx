@@ -112,8 +112,6 @@ import {
   getDoctorsServerFn,
   saveDoctorServerFn,
   deleteDoctorServerFn,
-  getDoctorScheduleServerFn,
-  saveDoctorScheduleServerFn,
   getDoctorLeavesServerFn,
   addDoctorLeaveServerFn,
   deleteDoctorLeaveServerFn,
@@ -153,6 +151,9 @@ import MultiLocationSettings from "../../components/settings/MultiLocationSettin
 import { resolveFeatureAccess, type FeatureId } from "../../lib/feature-access";
 import { isWorkspacePaymentLocked } from "../../lib/workspace-access";
 import AccountDangerZone from "../../components/settings/AccountDangerZone";
+import { FloatingMenu } from "@/components/ui/floating-menu";
+import { WeeklyScheduleEditor } from "@/components/schedule/WeeklyScheduleEditor";
+import { SessionSlotGrid } from "@/components/schedule/SessionSlotGrid";
 
 export const Route = createFileRoute("/dashboards/beauty")({
   head: () => ({
@@ -317,258 +318,6 @@ const soapTemplates = {
     plan: "1. Initiate Escitalopram (Lexapro) 10mg PO daily for anxiety/insomnia.\n2. Provide prescription for Hydroxyzine pamoate 25mg PO Q6H PRN for acute panic/severe anxiety episodes (Max 3/day).\n3. Referral to outpatient Cognitive Behavioral Therapy (CBT) weekly.\n4. Follow-up in 2 weeks to monitor compliance, side effects, and therapeutic response.",
   },
 };
-
-// ==========================================
-// DayScheduleCard — Per-day schedule row with multi-break support + copy-to-days
-// ==========================================
-
-type BreakSlot = { start: string; end: string; label: string };
-
-function DayScheduleCard({
-  dayName,
-  idx,
-  sched,
-  breaks,
-  slots,
-  allSchedules,
-  onUpdateField,
-  onAddBreak,
-  onUpdateBreak,
-  onRemoveBreak,
-  onCopyBreaks,
-}: {
-  dayName: string;
-  idx: number;
-  sched: any;
-  breaks: BreakSlot[];
-  slots: number;
-  allSchedules: any[];
-  onUpdateField: (day: number, field: string, value: any) => void;
-  onAddBreak: (day: number, br: BreakSlot) => void;
-  onUpdateBreak: (
-    day: number,
-    bIdx: number,
-    field: "start" | "end" | "label",
-    value: string,
-  ) => void;
-  onRemoveBreak: (day: number, bIdx: number) => void;
-  onCopyBreaks: (fromDay: number, toDays: number[]) => void;
-}) {
-  const [showCopyMenu, setShowCopyMenu] = useState(false);
-  const [copyTargets, setCopyTargets] = useState<number[]>([]);
-  const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-  const totalBreakMins = breaks.reduce((acc, b) => {
-    if (!b.start || !b.end) return acc;
-    const [bsh, bsm] = b.start.split(":").map(Number);
-    const [beh, bem] = b.end.split(":").map(Number);
-    const bm = beh * 60 + bem - (bsh * 60 + bsm);
-    return acc + (bm > 0 ? bm : 0);
-  }, 0);
-
-  return (
-    <div className="rounded-xl border border-brand/15 bg-brand/[0.025] animate-in fade-in duration-200 overflow-hidden">
-      {/* Row 1: Day label + working hours + slot picker */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3">
-        <div className="flex items-center gap-2 min-w-[80px]">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black text-white text-[9px] font-black">
-            {dayName.slice(0, 2)}
-          </span>
-          <span className="text-xs font-bold text-zinc-700">{dayName}</span>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Working hours */}
-          <div className="flex items-center gap-1.5">
-            <Clock className="h-3 w-3 text-zinc-400 shrink-0" />
-            <input
-              type="time"
-              value={sched.startTime}
-              onChange={(e) => onUpdateField(idx, "startTime", e.target.value)}
-              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-            />
-            <span className="text-zinc-400 text-[10px] font-bold">→</span>
-            <input
-              type="time"
-              value={sched.endTime}
-              onChange={(e) => onUpdateField(idx, "endTime", e.target.value)}
-              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-            />
-          </div>
-          {/* Slot duration */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-zinc-400 font-semibold">Slot</span>
-            <select
-              value={sched.slotDuration}
-              onChange={(e) => onUpdateField(idx, "slotDuration", parseInt(e.target.value))}
-              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-            >
-              <option value={8}>8 min</option>
-              <option value={15}>15 min</option>
-              <option value={30}>30 min</option>
-              <option value={45}>45 min</option>
-              <option value={60}>60 min</option>
-            </select>
-          </div>
-          {/* Slot count */}
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2.5 py-1 text-[9px] font-bold text-emerald-600">
-            <CheckCircle2 className="h-3 w-3" /> {slots} slots
-          </span>
-          {/* Total break summary */}
-          {totalBreakMins > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-600">
-              <Coffee className="h-2.5 w-2.5" /> {totalBreakMins}min break
-            </span>
-          )}
-          {/* Add Break button */}
-          <button
-            type="button"
-            onClick={() => onAddBreak(idx, { start: "13:00", end: "14:00", label: "Lunch" })}
-            className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white hover:bg-amber-50 hover:border-amber-200 hover:text-amber-600 px-2.5 py-1 text-[9px] font-bold text-zinc-400 transition-all cursor-pointer"
-          >
-            <Coffee className="h-3 w-3" /> <Plus className="h-2.5 w-2.5" /> Add Break
-          </button>
-        </div>
-      </div>
-
-      {/* Break rows */}
-      {breaks.length > 0 && (
-        <div className="border-t border-amber-100 bg-amber-50/40 divide-y divide-amber-100/70">
-          {breaks.map((br, bIdx) => {
-            const [bsh, bsm] = (br.start || "00:00").split(":").map(Number);
-            const [beh, bem] = (br.end || "00:00").split(":").map(Number);
-            const bMins = beh * 60 + bem - (bsh * 60 + bsm);
-            return (
-              <div
-                key={bIdx}
-                className="flex flex-wrap items-center gap-2 px-3 py-2 animate-in fade-in duration-150"
-              >
-                {/* Break number badge */}
-                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-200 text-[8px] font-black text-amber-800 shrink-0">
-                  {bIdx + 1}
-                </span>
-                {/* Label input */}
-                <input
-                  type="text"
-                  value={br.label}
-                  placeholder="Break name (e.g. Lunch)"
-                  onChange={(e) => onUpdateBreak(idx, bIdx, "label", e.target.value)}
-                  className="w-28 rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] font-semibold focus:outline-none focus:border-amber-400 text-zinc-700"
-                />
-                <Coffee className="h-3 w-3 text-amber-400 shrink-0" />
-                {/* Start time */}
-                <input
-                  type="time"
-                  value={br.start}
-                  onChange={(e) => onUpdateBreak(idx, bIdx, "start", e.target.value)}
-                  className="rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-amber-400"
-                />
-                <span className="text-amber-400 text-[10px] font-bold">→</span>
-                {/* End time */}
-                <input
-                  type="time"
-                  value={br.end}
-                  onChange={(e) => onUpdateBreak(idx, bIdx, "end", e.target.value)}
-                  className="rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-amber-400"
-                />
-                {/* Duration badge */}
-                {bMins > 0 && (
-                  <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5 text-[9px] font-bold text-amber-700">
-                    <MinusCircle className="h-2.5 w-2.5" /> {bMins} min
-                  </span>
-                )}
-                {/* Add same break to other days */}
-                <div className="relative ml-auto">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowCopyMenu((v) => !v);
-                      setCopyTargets([]);
-                    }}
-                    className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white hover:bg-brand/5 hover:border-brand/30 hover:text-brand px-2 py-0.5 text-[9px] font-bold text-zinc-400 transition-all cursor-pointer"
-                  >
-                    <Copy className="h-2.5 w-2.5" /> Copy to days
-                  </button>
-                  {showCopyMenu && (
-                    <div className="absolute right-0 top-6 z-30 bg-white border border-zinc-200 rounded-xl shadow-lg p-3 min-w-[180px] animate-in fade-in duration-150">
-                      <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
-                        Copy this break to:
-                      </p>
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        {DAY_LABELS.map((dl, di) => {
-                          if (di === idx) return null;
-                          const isActive = allSchedules.find((s) => s.dayOfWeek === di)?.enabled;
-                          if (!isActive) return null;
-                          const checked = copyTargets.includes(di);
-                          return (
-                            <button
-                              key={di}
-                              type="button"
-                              onClick={() =>
-                                setCopyTargets((prev) =>
-                                  checked ? prev.filter((d) => d !== di) : [...prev, di],
-                                )
-                              }
-                              className={`rounded-full px-2 py-0.5 text-[9px] font-bold border transition-all cursor-pointer ${
-                                checked
-                                  ? "bg-black text-white border-zinc-800"
-                                  : "bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-800/40"
-                              }`}
-                            >
-                              {dl}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="flex gap-1.5 border-t border-zinc-100 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => setShowCopyMenu(false)}
-                          className="flex-1 rounded-full border border-zinc-200 py-1 text-[9px] font-bold text-zinc-400 cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          disabled={copyTargets.length === 0}
-                          onClick={() => {
-                            onCopyBreaks(idx, copyTargets);
-                            setShowCopyMenu(false);
-                            setCopyTargets([]);
-                          }}
-                          className="flex-1 rounded-full bg-black text-white py-1 text-[9px] font-bold cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1"
-                        >
-                          <Check className="h-2.5 w-2.5" /> Apply
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {/* Remove this break */}
-                <button
-                  type="button"
-                  onClick={() => onRemoveBreak(idx, bIdx)}
-                  className="inline-flex items-center gap-0.5 text-[9px] font-bold text-red-400 hover:text-red-600 cursor-pointer"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            );
-          })}
-          {/* Add another break row */}
-          <div className="px-3 py-1.5">
-            <button
-              type="button"
-              onClick={() => onAddBreak(idx, { start: "", end: "", label: "Break" })}
-              className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-500 hover:text-amber-700 cursor-pointer"
-            >
-              <Plus className="h-3 w-3" /> Add another break
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ==========================================
 // LeavesCalendarPanel — Interactive Month Calendar for Doctor Leaves
@@ -1557,9 +1306,6 @@ function BeautyDashboardPage() {
 
   // Doctor Schedule & Leave States
   const [selectedDocForSchedule, setSelectedDocForSchedule] = useState<any | null>(null);
-  const [docSchedules, setDocSchedules] = useState<any[]>([]);
-  const [savingDocSchedule, setSavingDocSchedule] = useState(false);
-  const [docScheduleSuccess, setDocScheduleSuccess] = useState("");
   const [selectedDocForLeaves, setSelectedDocForLeaves] = useState<any | null>(null);
   const [docLeaves, setDocLeaves] = useState<any[]>([]);
   const [newLeaveDate, setNewLeaveDate] = useState("");
@@ -2340,7 +2086,11 @@ function BeautyDashboardPage() {
   useEffect(() => {
     if (!profileDropdownOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (profileDropdownRef.current && !profileDropdownRef.current.contains(e.target as Node)) {
+      if (
+        profileDropdownRef.current &&
+        !profileDropdownRef.current.contains(e.target as Node) &&
+        !(e.target as HTMLElement).closest?.(".dropdown-container")
+      ) {
         setProfileDropdownOpen(false);
       }
     };
@@ -2719,110 +2469,9 @@ function BeautyDashboardPage() {
     }
   };
 
-  // Doctor availability schedule handlers
-  const handleEditDoctorSchedule = async (doc: any) => {
+  // Doctor availability: WeeklyScheduleEditor loads and saves the week itself.
+  const handleEditDoctorSchedule = (doc: any) => {
     setSelectedDocForSchedule(doc);
-    setDocScheduleSuccess("");
-    try {
-      const res = await getDoctorScheduleServerFn({ data: doc.id });
-      const scheduleMap = Array.from({ length: 7 }, (_, day) => {
-        const existing = res.find((s: any) => s.dayOfWeek === day);
-        return {
-          dayOfWeek: day,
-          startTime: existing ? existing.startTime : "09:00",
-          endTime: existing ? existing.endTime : "17:00",
-          slotDuration: existing ? existing.slotDuration : 30,
-          enabled: !!existing,
-          breaks:
-            ((existing as any)?.breaks as { start: string; end: string; label: string }[]) ?? [],
-        };
-      });
-      setDocSchedules(scheduleMap);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  // ---- Break helpers ----
-  const addBreakToDay = (dayOfWeek: number, br: { start: string; end: string; label: string }) => {
-    setDocSchedules((prev) =>
-      prev.map((s) =>
-        s.dayOfWeek === dayOfWeek ? { ...s, breaks: [...(s.breaks ?? []), br] } : s,
-      ),
-    );
-  };
-  const updateBreak = (
-    dayOfWeek: number,
-    bIdx: number,
-    field: "start" | "end" | "label",
-    value: string,
-  ) => {
-    setDocSchedules((prev) =>
-      prev.map((s) => {
-        if (s.dayOfWeek !== dayOfWeek) return s;
-        const updated = (s.breaks ?? []).map((b: any, i: number) =>
-          i === bIdx ? { ...b, [field]: value } : b,
-        );
-        return { ...s, breaks: updated };
-      }),
-    );
-  };
-  const removeBreak = (dayOfWeek: number, bIdx: number) => {
-    setDocSchedules((prev) =>
-      prev.map((s) =>
-        s.dayOfWeek === dayOfWeek
-          ? { ...s, breaks: (s.breaks ?? []).filter((_: any, i: number) => i !== bIdx) }
-          : s,
-      ),
-    );
-  };
-  const copyBreaksToDay = (fromDay: number, toDays: number[]) => {
-    const srcBreaks = docSchedules.find((s) => s.dayOfWeek === fromDay)?.breaks ?? [];
-    setDocSchedules((prev) =>
-      prev.map((s) =>
-        toDays.includes(s.dayOfWeek) ? { ...s, breaks: srcBreaks.map((b: any) => ({ ...b })) } : s,
-      ),
-    );
-  };
-
-  const handleUpdateScheduleField = (dayOfWeek: number, field: string, value: any) => {
-    setDocSchedules((prev) =>
-      prev.map((s) => (s.dayOfWeek === dayOfWeek ? { ...s, [field]: value } : s)),
-    );
-  };
-
-  const handleSaveDoctorSchedule = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setDocScheduleSuccess("");
-    setSavingDocSchedule(true);
-    try {
-      const activeSchedules = docSchedules
-        .filter((s) => s.enabled)
-        .map((s) => ({
-          dayOfWeek: s.dayOfWeek,
-          startTime: s.startTime,
-          endTime: s.endTime,
-          slotDuration: parseInt(s.slotDuration),
-          breaks: (s.breaks ?? []).filter((b: any) => b.start && b.end),
-        }));
-
-      const res = await saveDoctorScheduleServerFn({
-        data: {
-          doctorId: selectedDocForSchedule.id,
-          schedules: activeSchedules,
-        },
-      });
-      if (res.success) {
-        setDocScheduleSuccess("Doctor weekly availability saved successfully!");
-        setTimeout(() => {
-          setSelectedDocForSchedule(null);
-        }, 1200);
-      }
-    } catch (err: any) {
-      console.error(err);
-    } finally {
-      setSavingDocSchedule(false);
-    }
   };
 
   // Doctor leaves & holidays handlers
@@ -5036,56 +4685,59 @@ function BeautyDashboardPage() {
                     {user?.role === "admin" ? "Salon Admin" : user?.role || "Stylist"}
                   </p>
                 </div>
-                <ChevronDown className={`h-3.5 w-3.5 text-zinc-400 hidden sm:block transition-transform duration-200 ${profileDropdownOpen ? "rotate-180" : ""}`} />
+                <ChevronDown
+                  className={`h-3.5 w-3.5 text-zinc-400 hidden sm:block transition-transform duration-200 ${profileDropdownOpen ? "rotate-180" : ""}`}
+                />
               </button>
 
               {/* Profile Dropdown Menu */}
               <AnimatePresence>
                 {profileDropdownOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
-                    transition={{ duration: 0.15, ease: "easeOut" }}
-                    className="absolute right-0 top-[calc(100%+6px)] z-50 w-52 rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden"
+                  <FloatingMenu
+                    open={profileDropdownOpen}
+                    matchWidth={false}
+                    menuWidth={208}
+                    align="right"
                   >
-                    {/* User info header */}
-                    <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/50">
-                      <p className="text-xs font-bold text-zinc-900 truncate">
-                        {user?.name || "Stylist"}
-                      </p>
-                      <p className="text-[10px] text-zinc-400 truncate mt-0.5">
-                        {user?.email || ""}
-                      </p>
+                    <div className="w-52 rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden">
+                      {/* User info header */}
+                      <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/50">
+                        <p className="text-xs font-bold text-zinc-900 truncate">
+                          {user?.name || "Stylist"}
+                        </p>
+                        <p className="text-[10px] text-zinc-400 truncate mt-0.5">
+                          {user?.email || ""}
+                        </p>
+                      </div>
+                      {/* Menu items */}
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab("settings");
+                            setSettingsSubTab("profile");
+                            setProfileDropdownOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors cursor-pointer"
+                        >
+                          <Settings className="h-3.5 w-3.5 text-zinc-400" />
+                          Settings
+                        </button>
+                        <div className="border-t border-zinc-100 mx-2" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProfileDropdownOpen(false);
+                            handleLogout();
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                        >
+                          <LogOut className="h-3.5 w-3.5" />
+                          Log Out
+                        </button>
+                      </div>
                     </div>
-                    {/* Menu items */}
-                    <div className="py-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab("settings");
-                          setSettingsSubTab("profile");
-                          setProfileDropdownOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors cursor-pointer"
-                      >
-                        <Settings className="h-3.5 w-3.5 text-zinc-400" />
-                        Settings
-                      </button>
-                      <div className="border-t border-zinc-100 mx-2" />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProfileDropdownOpen(false);
-                          handleLogout();
-                        }}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                      >
-                        <LogOut className="h-3.5 w-3.5" />
-                        Log Out
-                      </button>
-                    </div>
-                  </motion.div>
+                  </FloatingMenu>
                 )}
               </AnimatePresence>
             </div>
@@ -7088,40 +6740,49 @@ function BeautyDashboardPage() {
 
                                           {activeStatusDropdownId === apt.id && (
                                             <>
+                                              <FloatingMenu
+                                                open={activeStatusDropdownId === apt.id}
+                                                matchWidth={false}
+                                                menuWidth={128}
+                                                offset={4}
+                                              >
+                                                <div className="w-32 rounded-xl bg-white border border-zinc-150 shadow-lg py-1 animate-in fade-in slide-in-from-top-1 duration-100">
+                                                  {(
+                                                    [
+                                                      "Pending",
+                                                      "Confirmed",
+                                                      "Completed",
+                                                      "Cancelled",
+                                                    ] as const
+                                                  ).map((status) => (
+                                                    <button
+                                                      key={status}
+                                                      type="button"
+                                                      onClick={() =>
+                                                        handleUpdateStatus(apt, status)
+                                                      }
+                                                      className={`w-full text-left px-3 py-1.5 text-[10px] font-bold transition-colors hover:bg-zinc-50 flex items-center justify-between cursor-pointer ${
+                                                        apt.status === status
+                                                          ? "text-brand"
+                                                          : "text-zinc-600"
+                                                      }`}
+                                                    >
+                                                      <span>
+                                                        {status === "Pending"
+                                                          ? "Pending Review"
+                                                          : status}
+                                                      </span>
+                                                      {apt.status === status && (
+                                                        <Check className="h-3 w-3 text-brand" />
+                                                      )}
+                                                    </button>
+                                                  ))}
+                                                </div>
+                                              </FloatingMenu>
                                               <div
                                                 className="fixed inset-0 z-10"
                                                 onClick={() => setActiveStatusDropdownId(null)}
                                               />
-                                              <div className="absolute left-5 mt-1 w-32 rounded-xl bg-white border border-zinc-150 shadow-lg py-1 z-20 animate-in fade-in slide-in-from-top-1 duration-100">
-                                                {(
-                                                  [
-                                                    "Pending",
-                                                    "Confirmed",
-                                                    "Completed",
-                                                    "Cancelled",
-                                                  ] as const
-                                                ).map((status) => (
-                                                  <button
-                                                    key={status}
-                                                    type="button"
-                                                    onClick={() => handleUpdateStatus(apt, status)}
-                                                    className={`w-full text-left px-3 py-1.5 text-[10px] font-bold transition-colors hover:bg-zinc-50 flex items-center justify-between cursor-pointer ${
-                                                      apt.status === status
-                                                        ? "text-brand"
-                                                        : "text-zinc-600"
-                                                    }`}
-                                                  >
-                                                    <span>
-                                                      {status === "Pending"
-                                                        ? "Pending Review"
-                                                        : status}
-                                                    </span>
-                                                    {apt.status === status && (
-                                                      <Check className="h-3 w-3 text-brand" />
-                                                    )}
-                                                  </button>
-                                                ))}
-                                              </div>
                                             </>
                                           )}
                                         </td>
@@ -7420,43 +7081,42 @@ function BeautyDashboardPage() {
                             </button>
                             <AnimatePresence>
                               {settingsDropdownOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  exit={{ opacity: 0, y: -6, scale: 0.97 }}
-                                  transition={{ duration: 0.15, ease: "easeOut" }}
-                                  className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden"
+                                <FloatingMenu
+                                  open={settingsDropdownOpen}
+                                  onClose={() => setSettingsDropdownOpen(false)}
                                 >
-                                  {tabs.map((tab) => {
-                                    const Icon = tab.icon;
-                                    const isActive = settingsSubTab === tab.id;
-                                    return (
-                                      <button
-                                        key={tab.id}
-                                        type="button"
-                                        onClick={() => {
-                                          setSettingsSubTab(tab.id as any);
-                                          setSettingsDropdownOpen(false);
-                                        }}
-                                        className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-bold transition-colors cursor-pointer ${
-                                          isActive
-                                            ? "bg-brand/5 text-brand border-l-2 border-brand"
-                                            : "text-zinc-600 hover:bg-zinc-50 border-l-2 border-transparent"
-                                        }`}
-                                      >
-                                        <Icon
-                                          className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-brand" : "text-zinc-400"}`}
-                                        />
-                                        <span className="uppercase tracking-wider">
-                                          {tab.label}
-                                        </span>
-                                        {isActive && (
-                                          <Check className="h-3 w-3 ml-auto text-brand" />
-                                        )}
-                                      </button>
-                                    );
-                                  })}
-                                </motion.div>
+                                  <div className="rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden">
+                                    {tabs.map((tab) => {
+                                      const Icon = tab.icon;
+                                      const isActive = settingsSubTab === tab.id;
+                                      return (
+                                        <button
+                                          key={tab.id}
+                                          type="button"
+                                          onClick={() => {
+                                            setSettingsSubTab(tab.id as any);
+                                            setSettingsDropdownOpen(false);
+                                          }}
+                                          className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-bold transition-colors cursor-pointer ${
+                                            isActive
+                                              ? "bg-brand/5 text-brand border-l-2 border-brand"
+                                              : "text-zinc-600 hover:bg-zinc-50 border-l-2 border-transparent"
+                                          }`}
+                                        >
+                                          <Icon
+                                            className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-brand" : "text-zinc-400"}`}
+                                          />
+                                          <span className="uppercase tracking-wider">
+                                            {tab.label}
+                                          </span>
+                                          {isActive && (
+                                            <Check className="h-3 w-3 ml-auto text-brand" />
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -8300,339 +7960,13 @@ function BeautyDashboardPage() {
                       <div className="space-y-6 animate-in fade-in duration-300">
                         {/* Render schedule editor if a doctor is selected */}
                         {selectedDocForSchedule ? (
-                          <div className="space-y-5 border border-brand/20 bg-gradient-to-br from-brand/[0.02] to-indigo-50/30 rounded-2xl p-5">
-                            {/* Header */}
-                            <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                              <div>
-                                <h4 className="text-sm font-bold text-zinc-800 flex items-center gap-2">
-                                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand/10">
-                                    <Calendar className="h-3.5 w-3.5 text-brand" />
-                                  </span>
-                                  Weekly Availability Schedule
-                                </h4>
-                                <p className="text-[10px] text-zinc-400 mt-0.5 pl-8">
-                                  Configure working hours for{" "}
-                                  <strong className="text-zinc-600">
-                                    {selectedDocForSchedule.name}
-                                  </strong>
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setSelectedDocForSchedule(null)}
-                                className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-zinc-700 bg-zinc-100 hover:bg-zinc-200 rounded-full px-3 py-1.5 transition-colors cursor-pointer"
-                              >
-                                <ChevronLeft className="h-3 w-3" /> Back
-                              </button>
-                            </div>
-
-                            {/* Quick Preset Buttons */}
-                            <div className="bg-white rounded-xl border border-zinc-150 p-3.5 space-y-2.5">
-                              <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
-                                Quick Presets — Apply to all days at once
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {(
-                                  [
-                                    { label: "Mon – Fri", days: [1, 2, 3, 4, 5], Icon: Briefcase },
-                                    {
-                                      label: "Mon – Sat",
-                                      days: [1, 2, 3, 4, 5, 6],
-                                      Icon: Building2,
-                                    },
-                                    {
-                                      label: "All 7 Days",
-                                      days: [0, 1, 2, 3, 4, 5, 6],
-                                      Icon: CalendarDays,
-                                    },
-                                    { label: "Weekends Only", days: [0, 6], Icon: Sunrise },
-                                    { label: "Clear All", days: [], Icon: RotateCcw },
-                                  ] as { label: string; days: number[]; Icon: React.ElementType }[]
-                                ).map(({ label, days, Icon }) => (
-                                  <button
-                                    key={label}
-                                    type="button"
-                                    onClick={() => {
-                                      setDocSchedules((prev) =>
-                                        prev.map((s) => ({
-                                          ...s,
-                                          enabled: days.includes(s.dayOfWeek),
-                                          startTime: s.startTime || "09:00",
-                                          endTime: s.endTime || "18:00",
-                                          slotDuration: s.slotDuration || 30,
-                                        })),
-                                      );
-                                    }}
-                                    className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-brand/5 hover:border-brand/30 px-3 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand transition-all cursor-pointer"
-                                  >
-                                    <Icon className="h-3 w-3" /> {label}
-                                  </button>
-                                ))}
-                              </div>
-
-                              {/* Global time apply */}
-                              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-zinc-100">
-                                <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
-                                  Apply same hours to all active days:
-                                </p>
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <input
-                                    type="time"
-                                    id="globalStart"
-                                    defaultValue="09:00"
-                                    className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-                                  />
-                                  <span className="text-zinc-400 text-xs">to</span>
-                                  <input
-                                    type="time"
-                                    id="globalEnd"
-                                    defaultValue="18:00"
-                                    className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-                                  />
-                                  <select
-                                    id="globalSlot"
-                                    defaultValue="30"
-                                    className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-                                  >
-                                    <option value={8}>8 min slots</option>
-                                    <option value={15}>15 min slots</option>
-                                    <option value={30}>30 min slots</option>
-                                    <option value={45}>45 min slots</option>
-                                    <option value={60}>60 min slots</option>
-                                  </select>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const startEl = document.getElementById(
-                                        "globalStart",
-                                      ) as HTMLInputElement;
-                                      const endEl = document.getElementById(
-                                        "globalEnd",
-                                      ) as HTMLInputElement;
-                                      const slotEl = document.getElementById(
-                                        "globalSlot",
-                                      ) as HTMLSelectElement;
-                                      const st = startEl?.value || "09:00";
-                                      const en = endEl?.value || "18:00";
-                                      const sl = parseInt(slotEl?.value || "30");
-                                      setDocSchedules((prev) =>
-                                        prev.map((s) =>
-                                          s.enabled
-                                            ? { ...s, startTime: st, endTime: en, slotDuration: sl }
-                                            : s,
-                                        ),
-                                      );
-                                    }}
-                                    className="rounded-full bg-black text-white text-[10px] font-bold px-3 py-1.5 hover:bg-black/90 cursor-pointer flex items-center gap-1"
-                                  >
-                                    <Check className="h-3 w-3" /> Apply
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Visual 7-day Calendar Grid */}
-                            <div className="grid grid-cols-7 gap-1.5">
-                              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
-                                (dayLabel, idx) => {
-                                  const sched = docSchedules.find((s) => s.dayOfWeek === idx) || {
-                                    dayOfWeek: idx,
-                                    startTime: "09:00",
-                                    endTime: "18:00",
-                                    slotDuration: 30,
-                                    enabled: false,
-                                  };
-                                  return (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={() =>
-                                        handleUpdateScheduleField(idx, "enabled", !sched.enabled)
-                                      }
-                                      className={`flex flex-col items-center rounded-xl border-2 px-1 py-2.5 text-center transition-all cursor-pointer ${
-                                        sched.enabled
-                                          ? "border-brand bg-brand/8 shadow-sm"
-                                          : "border-zinc-150 bg-white hover:border-zinc-250"
-                                      }`}
-                                    >
-                                      <span
-                                        className={`text-[9px] font-black uppercase tracking-wider ${sched.enabled ? "text-brand" : "text-zinc-400"}`}
-                                      >
-                                        {dayLabel}
-                                      </span>
-                                      <div
-                                        className={`mt-1.5 h-7 w-7 rounded-full flex items-center justify-center ${
-                                          sched.enabled
-                                            ? "bg-black text-white"
-                                            : "bg-zinc-100 text-zinc-350"
-                                        }`}
-                                      >
-                                        {sched.enabled ? (
-                                          <CheckCircle2 className="h-4 w-4" />
-                                        ) : (
-                                          <X className="h-3.5 w-3.5" />
-                                        )}
-                                      </div>
-                                      {sched.enabled && (
-                                        <span className="mt-1.5 text-[8px] font-bold text-brand/70 leading-tight">
-                                          {sched.startTime}
-                                          <br />—<br />
-                                          {sched.endTime}
-                                          {sched.breakStart && (
-                                            <>
-                                              <br />
-                                              <span className="text-amber-500">
-                                                ☕ {sched.breakStart}
-                                              </span>
-                                            </>
-                                          )}
-                                        </span>
-                                      )}
-                                      {!sched.enabled && (
-                                        <span className="mt-1.5 text-[8px] font-semibold text-zinc-300">
-                                          Off
-                                        </span>
-                                      )}
-                                    </button>
-                                  );
-                                },
-                              )}
-                            </div>
-
-                            {/* Detailed Per-Day Config for enabled days */}
-                            <div className="space-y-2">
-                              <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider pl-1">
-                                Adjust Hours per Active Day
-                              </p>
-                              {[
-                                "Sunday",
-                                "Monday",
-                                "Tuesday",
-                                "Wednesday",
-                                "Thursday",
-                                "Friday",
-                                "Saturday",
-                              ].map((dayName, idx) => {
-                                const sched = docSchedules.find((s) => s.dayOfWeek === idx);
-                                if (!sched?.enabled) return null;
-
-                                const breaks: { start: string; end: string; label: string }[] =
-                                  sched.breaks ?? [];
-
-                                // Compute slot preview: total work mins minus all break durations
-                                const [sh, sm] = (sched.startTime || "09:00")
-                                  .split(":")
-                                  .map(Number);
-                                const [eh, em] = (sched.endTime || "18:00").split(":").map(Number);
-                                let workMins = eh * 60 + em - (sh * 60 + sm);
-                                breaks.forEach((b) => {
-                                  if (b.start && b.end) {
-                                    const [bsh, bsm] = b.start.split(":").map(Number);
-                                    const [beh, bem] = b.end.split(":").map(Number);
-                                    const bm = beh * 60 + bem - (bsh * 60 + bsm);
-                                    if (bm > 0) workMins -= bm;
-                                  }
-                                });
-                                const slots =
-                                  workMins > 0
-                                    ? Math.floor(workMins / (sched.slotDuration || 30))
-                                    : 0;
-
-                                return (
-                                  <DayScheduleCard
-                                    key={idx}
-                                    dayName={dayName}
-                                    idx={idx}
-                                    sched={sched}
-                                    breaks={breaks}
-                                    slots={slots}
-                                    allSchedules={docSchedules}
-                                    onUpdateField={handleUpdateScheduleField}
-                                    onAddBreak={addBreakToDay}
-                                    onUpdateBreak={updateBreak}
-                                    onRemoveBreak={removeBreak}
-                                    onCopyBreaks={copyBreaksToDay}
-                                  />
-                                );
-                              })}
-                              {docSchedules.filter((s) => s.enabled).length === 0 && (
-                                <div className="text-center py-6 text-zinc-350 text-xs font-semibold">
-                                  Click on days above to activate them ↑
-                                </div>
-                              )}
-                            </div>
-
-                            {docScheduleSuccess && (
-                              <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center animate-in fade-in">
-                                <p className="text-xs font-bold text-emerald-600 flex items-center justify-center gap-1.5">
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />{" "}
-                                  {docScheduleSuccess}
-                                </p>
-                              </div>
-                            )}
-
-                            <div className="flex justify-between items-center border-t border-zinc-100 pt-3">
-                              <span className="text-[10px] text-zinc-400">
-                                {docSchedules.filter((s) => s.enabled).length} working day
-                                {docSchedules.filter((s) => s.enabled).length !== 1 ? "s" : ""}{" "}
-                                selected
-                              </span>
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedDocForSchedule(null)}
-                                  className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-500 hover:bg-zinc-50 cursor-pointer"
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={savingDocSchedule}
-                                  onClick={async () => {
-                                    setDocScheduleSuccess("");
-                                    setSavingDocSchedule(true);
-                                    try {
-                                      const activeSchedules = docSchedules
-                                        .filter((s) => s.enabled)
-                                        .map((s) => ({
-                                          dayOfWeek: s.dayOfWeek,
-                                          startTime: s.startTime,
-                                          endTime: s.endTime,
-                                          slotDuration: parseInt(s.slotDuration),
-                                          breaks: (s.breaks ?? []).filter(
-                                            (b: any) => b.start && b.end,
-                                          ),
-                                        }));
-                                      const res = await saveDoctorScheduleServerFn({
-                                        data: {
-                                          doctorId: selectedDocForSchedule.id,
-                                          schedules: activeSchedules,
-                                        },
-                                      });
-                                      if (res.success) {
-                                        setDocScheduleSuccess(
-                                          "Weekly availability saved successfully!",
-                                        );
-                                        setTimeout(() => setSelectedDocForSchedule(null), 1400);
-                                      }
-                                    } catch (err: any) {
-                                      console.error(err);
-                                    } finally {
-                                      setSavingDocSchedule(false);
-                                    }
-                                  }}
-                                  className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-                                >
-                                  {savingDocSchedule ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <Save className="h-3.5 w-3.5" />
-                                  )}
-                                  Save Schedule
-                                </button>
-                              </div>
-                            </div>
-                          </div>
+                          <WeeklyScheduleEditor
+                            key={selectedDocForSchedule.id}
+                            member={selectedDocForSchedule}
+                            backLabel="Back"
+                            onClose={() => setSelectedDocForSchedule(null)}
+                            onNotify={showToast}
+                          />
                         ) : selectedDocForLeaves ? (
                           /* Render leaves manager — interactive month calendar */
                           <LeavesCalendarPanel
@@ -11153,45 +10487,42 @@ function BeautyDashboardPage() {
 
                             <AnimatePresence>
                               {aptBloodGroupOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
-                                >
-                                  {[
-                                    "A+",
-                                    "A-",
-                                    "B+",
-                                    "B-",
-                                    "AB+",
-                                    "AB-",
-                                    "O+",
-                                    "O-",
-                                    "Unknown",
-                                  ].map((bg) => (
-                                    <button
-                                      key={bg}
-                                      type="button"
-                                      onClick={() => {
-                                        setAptBloodGroup(bg);
-                                        setAptBloodGroupOpen(false);
-                                        if (fieldErrors.bloodGroup)
-                                          setFieldErrors((prev) => ({ ...prev, bloodGroup: "" }));
-                                      }}
-                                      className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                        aptBloodGroup === bg
-                                          ? "bg-brand/5 text-brand font-bold"
-                                          : "text-zinc-700"
-                                      }`}
-                                    >
-                                      <span>{bg}</span>
-                                      {aptBloodGroup === bg && (
-                                        <Check className="h-3.5 w-3.5 text-brand" />
-                                      )}
-                                    </button>
-                                  ))}
-                                </motion.div>
+                                <FloatingMenu open={aptBloodGroupOpen} offset={4}>
+                                  <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                    {[
+                                      "A+",
+                                      "A-",
+                                      "B+",
+                                      "B-",
+                                      "AB+",
+                                      "AB-",
+                                      "O+",
+                                      "O-",
+                                      "Unknown",
+                                    ].map((bg) => (
+                                      <button
+                                        key={bg}
+                                        type="button"
+                                        onClick={() => {
+                                          setAptBloodGroup(bg);
+                                          setAptBloodGroupOpen(false);
+                                          if (fieldErrors.bloodGroup)
+                                            setFieldErrors((prev) => ({ ...prev, bloodGroup: "" }));
+                                        }}
+                                        className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                          aptBloodGroup === bg
+                                            ? "bg-brand/5 text-brand font-bold"
+                                            : "text-zinc-700"
+                                        }`}
+                                      >
+                                        <span>{bg}</span>
+                                        {aptBloodGroup === bg && (
+                                          <Check className="h-3.5 w-3.5 text-brand" />
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -11236,35 +10567,32 @@ function BeautyDashboardPage() {
 
                           <AnimatePresence>
                             {aptTypeOpen && (
-                              <motion.div
-                                initial={{ opacity: 0, y: -10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -10 }}
-                                className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl p-1.5 space-y-0.5"
-                              >
-                                {["First Time", "Follow up"].map((type) => (
-                                  <button
-                                    key={type}
-                                    type="button"
-                                    onClick={() => {
-                                      setAptAppointmentType(type);
-                                      setAptTypeOpen(false);
-                                      if (fieldErrors.type)
-                                        setFieldErrors((prev) => ({ ...prev, type: "" }));
-                                    }}
-                                    className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                      aptAppointmentType === type
-                                        ? "bg-brand/5 text-brand font-bold"
-                                        : "text-zinc-700"
-                                    }`}
-                                  >
-                                    <span>{type}</span>
-                                    {aptAppointmentType === type && (
-                                      <Check className="h-3.5 w-3.5 text-brand" />
-                                    )}
-                                  </button>
-                                ))}
-                              </motion.div>
+                              <FloatingMenu open={aptTypeOpen} offset={4}>
+                                <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl p-1.5 space-y-0.5">
+                                  {["First Time", "Follow up"].map((type) => (
+                                    <button
+                                      key={type}
+                                      type="button"
+                                      onClick={() => {
+                                        setAptAppointmentType(type);
+                                        setAptTypeOpen(false);
+                                        if (fieldErrors.type)
+                                          setFieldErrors((prev) => ({ ...prev, type: "" }));
+                                      }}
+                                      className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                        aptAppointmentType === type
+                                          ? "bg-brand/5 text-brand font-bold"
+                                          : "text-zinc-700"
+                                      }`}
+                                    >
+                                      <span>{type}</span>
+                                      {aptAppointmentType === type && (
+                                        <Check className="h-3.5 w-3.5 text-brand" />
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                              </FloatingMenu>
                             )}
                           </AnimatePresence>
                         </div>
@@ -11472,40 +10800,37 @@ function BeautyDashboardPage() {
 
                             <AnimatePresence>
                               {aptDeptOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
-                                >
-                                  {departments.map((dept) => (
-                                    <button
-                                      key={dept.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setAptDeptId(dept.id);
-                                        setAptDoctorId(""); // Reset doctor
-                                        setAptDateTime(""); // Reset date/time slot since doctor changed
-                                        setAptTimeSlot("");
-                                        setAptDeptOpen(false);
-                                        setDateError(null);
-                                        setTimeError(null);
-                                        if (fieldErrors.dept)
-                                          setFieldErrors((prev) => ({ ...prev, dept: "" }));
-                                      }}
-                                      className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                        aptDeptId === dept.id
-                                          ? "bg-brand/5 text-brand font-bold"
-                                          : "text-zinc-700"
-                                      }`}
-                                    >
-                                      <span>{dept.name}</span>
-                                      {aptDeptId === dept.id && (
-                                        <Check className="h-3.5 w-3.5 text-brand" />
-                                      )}
-                                    </button>
-                                  ))}
-                                </motion.div>
+                                <FloatingMenu open={aptDeptOpen} offset={4}>
+                                  <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                    {departments.map((dept) => (
+                                      <button
+                                        key={dept.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setAptDeptId(dept.id);
+                                          setAptDoctorId(""); // Reset doctor
+                                          setAptDateTime(""); // Reset date/time slot since doctor changed
+                                          setAptTimeSlot("");
+                                          setAptDeptOpen(false);
+                                          setDateError(null);
+                                          setTimeError(null);
+                                          if (fieldErrors.dept)
+                                            setFieldErrors((prev) => ({ ...prev, dept: "" }));
+                                        }}
+                                        className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                          aptDeptId === dept.id
+                                            ? "bg-brand/5 text-brand font-bold"
+                                            : "text-zinc-700"
+                                        }`}
+                                      >
+                                        <span>{dept.name}</span>
+                                        {aptDeptId === dept.id && (
+                                          <Check className="h-3.5 w-3.5 text-brand" />
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -11550,56 +10875,53 @@ function BeautyDashboardPage() {
 
                             <AnimatePresence>
                               {aptDocOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
-                                >
-                                  {(aptDeptId
-                                    ? doctors.filter((doc) => doc.departmentId === aptDeptId)
-                                    : doctors
-                                  ).length > 0 ? (
-                                    (aptDeptId
+                                <FloatingMenu open={aptDocOpen} offset={4}>
+                                  <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                    {(aptDeptId
                                       ? doctors.filter((doc) => doc.departmentId === aptDeptId)
                                       : doctors
-                                    ).map((doc) => (
-                                      <button
-                                        key={doc.id}
-                                        type="button"
-                                        onClick={() => {
-                                          setAptDoctorId(doc.id);
-                                          setAptDateTime(""); // Reset date/time slot since doctor changed
-                                          setAptTimeSlot("");
-                                          setAptDocOpen(false);
-                                          setDateError(null);
-                                          setTimeError(null);
-                                          if (fieldErrors.doctor)
-                                            setFieldErrors((prev) => ({ ...prev, doctor: "" }));
-                                        }}
-                                        className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                          aptDoctorId === doc.id
-                                            ? "bg-brand/5 text-brand font-bold"
-                                            : "text-zinc-700"
-                                        }`}
-                                      >
-                                        <div className="flex flex-col">
-                                          <span className="font-semibold">{doc.name}</span>
-                                          <span className="text-[9px] text-zinc-400 font-normal">
-                                            {doc.qualifications}
-                                          </span>
-                                        </div>
-                                        {aptDoctorId === doc.id && (
-                                          <Check className="h-3.5 w-3.5 text-brand" />
-                                        )}
-                                      </button>
-                                    ))
-                                  ) : (
-                                    <div className="px-3.5 py-3 text-xs text-zinc-455 italic text-center">
-                                      Please select a department first
-                                    </div>
-                                  )}
-                                </motion.div>
+                                    ).length > 0 ? (
+                                      (aptDeptId
+                                        ? doctors.filter((doc) => doc.departmentId === aptDeptId)
+                                        : doctors
+                                      ).map((doc) => (
+                                        <button
+                                          key={doc.id}
+                                          type="button"
+                                          onClick={() => {
+                                            setAptDoctorId(doc.id);
+                                            setAptDateTime(""); // Reset date/time slot since doctor changed
+                                            setAptTimeSlot("");
+                                            setAptDocOpen(false);
+                                            setDateError(null);
+                                            setTimeError(null);
+                                            if (fieldErrors.doctor)
+                                              setFieldErrors((prev) => ({ ...prev, doctor: "" }));
+                                          }}
+                                          className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                            aptDoctorId === doc.id
+                                              ? "bg-brand/5 text-brand font-bold"
+                                              : "text-zinc-700"
+                                          }`}
+                                        >
+                                          <div className="flex flex-col">
+                                            <span className="font-semibold">{doc.name}</span>
+                                            <span className="text-[9px] text-zinc-400 font-normal">
+                                              {doc.qualifications}
+                                            </span>
+                                          </div>
+                                          {aptDoctorId === doc.id && (
+                                            <Check className="h-3.5 w-3.5 text-brand" />
+                                          )}
+                                        </button>
+                                      ))
+                                    ) : (
+                                      <div className="px-3.5 py-3 text-xs text-zinc-455 italic text-center">
+                                        Please select a department first
+                                      </div>
+                                    )}
+                                  </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -11664,100 +10986,103 @@ function BeautyDashboardPage() {
 
                             <AnimatePresence>
                               {aptCalendarOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 mt-1 left-0 bg-white border border-zinc-200 rounded-2xl shadow-xl p-4 w-[280px]"
+                                <FloatingMenu
+                                  open={aptCalendarOpen}
+                                  matchWidth={false}
+                                  menuWidth={280}
+                                  offset={4}
+                                  estimatedHeight={360}
                                 >
-                                  {/* Calendar Navigation */}
-                                  <div className="flex justify-between items-center mb-3">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (calMonth === 0) {
-                                          setCalMonth(11);
-                                          setCalYear(calYear - 1);
-                                        } else {
-                                          setCalMonth(calMonth - 1);
-                                        }
-                                      }}
-                                      className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-600"
-                                    >
-                                      <ChevronLeft className="h-4 w-4" />
-                                    </button>
-                                    <span className="text-xs font-bold text-zinc-850">
-                                      {new Date(calYear, calMonth).toLocaleDateString("en-US", {
-                                        month: "long",
-                                        year: "numeric",
+                                  <div className="bg-white border border-zinc-200 rounded-2xl shadow-xl p-4 w-[280px]">
+                                    {/* Calendar Navigation */}
+                                    <div className="flex justify-between items-center mb-3">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (calMonth === 0) {
+                                            setCalMonth(11);
+                                            setCalYear(calYear - 1);
+                                          } else {
+                                            setCalMonth(calMonth - 1);
+                                          }
+                                        }}
+                                        className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-600"
+                                      >
+                                        <ChevronLeft className="h-4 w-4" />
+                                      </button>
+                                      <span className="text-xs font-bold text-zinc-850">
+                                        {new Date(calYear, calMonth).toLocaleDateString("en-US", {
+                                          month: "long",
+                                          year: "numeric",
+                                        })}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (calMonth === 11) {
+                                            setCalMonth(0);
+                                            setCalYear(calYear + 1);
+                                          } else {
+                                            setCalMonth(calMonth + 1);
+                                          }
+                                        }}
+                                        className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-600"
+                                      >
+                                        <ChevronRight className="h-4 w-4" />
+                                      </button>
+                                    </div>
+
+                                    {/* Weekdays Header */}
+                                    <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-bold text-zinc-400 mb-1">
+                                      {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+                                        <div key={d}>{d}</div>
+                                      ))}
+                                    </div>
+
+                                    {/* Monthly Days Grid */}
+                                    <div className="grid grid-cols-7 gap-1 text-center">
+                                      {getDaysInMonth(calMonth, calYear).map((day, idx) => {
+                                        if (!day) return <div key={`empty-${idx}`} />;
+
+                                        const localDateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+                                        const isSelected = aptDateTime
+                                          ? aptDateTime.split("T")[0] === localDateStr
+                                          : false;
+                                        const past = isPastDate(day);
+
+                                        return (
+                                          <button
+                                            key={day.toISOString()}
+                                            type="button"
+                                            onClick={() => {
+                                              if (past) return;
+                                              const datePart = localDateStr;
+                                              const timePart = aptDateTime.includes("T")
+                                                ? aptDateTime.split("T")[1]
+                                                : "09:00";
+                                              setAptDateTime(datePart + "T" + timePart);
+                                              setAptTimeSlot(""); // Reset slot on date change
+                                              setAptCalendarOpen(false);
+                                              setTimeError(null);
+                                              if (fieldErrors.date)
+                                                setFieldErrors((prev) => ({ ...prev, date: "" }));
+                                            }}
+                                            disabled={past}
+                                            className={`h-7 w-7 text-[10px] font-bold rounded-lg flex items-center justify-center transition-all ${
+                                              isSelected
+                                                ? "bg-black text-white font-black"
+                                                : past
+                                                  ? "text-zinc-200 cursor-not-allowed"
+                                                  : "text-zinc-700 hover:bg-zinc-100"
+                                            }`}
+                                          >
+                                            {day.getDate()}
+                                          </button>
+                                        );
                                       })}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (calMonth === 11) {
-                                          setCalMonth(0);
-                                          setCalYear(calYear + 1);
-                                        } else {
-                                          setCalMonth(calMonth + 1);
-                                        }
-                                      }}
-                                      className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-600"
-                                    >
-                                      <ChevronRight className="h-4 w-4" />
-                                    </button>
+                                    </div>
                                   </div>
-
-                                  {/* Weekdays Header */}
-                                  <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-bold text-zinc-400 mb-1">
-                                    {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-                                      <div key={d}>{d}</div>
-                                    ))}
-                                  </div>
-
-                                  {/* Monthly Days Grid */}
-                                  <div className="grid grid-cols-7 gap-1 text-center">
-                                    {getDaysInMonth(calMonth, calYear).map((day, idx) => {
-                                      if (!day) return <div key={`empty-${idx}`} />;
-
-                                      const localDateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
-                                      const isSelected = aptDateTime
-                                        ? aptDateTime.split("T")[0] === localDateStr
-                                        : false;
-                                      const past = isPastDate(day);
-
-                                      return (
-                                        <button
-                                          key={day.toISOString()}
-                                          type="button"
-                                          onClick={() => {
-                                            if (past) return;
-                                            const datePart = localDateStr;
-                                            const timePart = aptDateTime.includes("T")
-                                              ? aptDateTime.split("T")[1]
-                                              : "09:00";
-                                            setAptDateTime(datePart + "T" + timePart);
-                                            setAptTimeSlot(""); // Reset slot on date change
-                                            setAptCalendarOpen(false);
-                                            setTimeError(null);
-                                            if (fieldErrors.date)
-                                              setFieldErrors((prev) => ({ ...prev, date: "" }));
-                                          }}
-                                          disabled={past}
-                                          className={`h-7 w-7 text-[10px] font-bold rounded-lg flex items-center justify-center transition-all ${
-                                            isSelected
-                                              ? "bg-black text-white font-black"
-                                              : past
-                                                ? "text-zinc-200 cursor-not-allowed"
-                                                : "text-zinc-700 hover:bg-zinc-100"
-                                          }`}
-                                        >
-                                          {day.getDate()}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </motion.div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -11816,58 +11141,49 @@ function BeautyDashboardPage() {
 
                             <AnimatePresence>
                               {aptClockOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 mt-1 right-0 bg-white border border-zinc-200 rounded-2xl shadow-xl p-3 w-[280px]"
+                                <FloatingMenu
+                                  open={aptClockOpen}
+                                  matchWidth={false}
+                                  menuWidth={280}
+                                  align="right"
+                                  offset={4}
+                                  estimatedHeight={360}
                                 >
-                                  <div className="text-[9px] font-bold text-zinc-400 uppercase mb-2 px-1 flex items-center gap-1">
-                                    <Clock className="h-3 w-3 text-brand" /> Available slots
-                                  </div>
+                                  <div className="bg-white border border-zinc-200 rounded-2xl shadow-xl p-3 w-[280px]">
+                                    <div className="text-[9px] font-bold text-zinc-400 uppercase mb-2 px-1 flex items-center gap-1">
+                                      <Clock className="h-3 w-3 text-brand" /> Available slots
+                                    </div>
 
-                                  {loadingAptSlots ? (
-                                    <div className="flex justify-center py-4">
-                                      <Loader2 className="h-4 w-4 animate-spin text-brand" />
-                                    </div>
-                                  ) : aptAvailableSlots.length > 0 ? (
-                                    <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-1">
-                                      {aptAvailableSlots.map((slot) => {
-                                        const isSelected = aptTimeSlot === slot;
-                                        return (
-                                          <button
-                                            key={slot}
-                                            type="button"
-                                            onClick={() => {
-                                              setAptTimeSlot(slot);
-                                              const datePart = aptDateTime.split("T")[0];
-                                              const [time, modifier] = slot.split(" ");
-                                              let [hours, minutes] = time.split(":").map(Number);
-                                              if (modifier === "PM" && hours < 12) hours += 12;
-                                              if (modifier === "AM" && hours === 12) hours = 0;
-                                              const timePart = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
-                                              setAptDateTime(`${datePart}T${timePart}`);
-                                              setAptClockOpen(false);
-                                              if (fieldErrors.time)
-                                                setFieldErrors((prev) => ({ ...prev, time: "" }));
-                                            }}
-                                            className={`rounded-xl py-2 px-1 text-[10px] font-bold border transition-all cursor-pointer text-center ${
-                                              isSelected
-                                                ? "bg-black border-zinc-800 text-white font-black scale-[1.02]"
-                                                : "bg-white border-zinc-200 text-zinc-650 hover:border-zinc-800/40"
-                                            }`}
-                                          >
-                                            {slot}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : (
-                                    <div className="text-center py-3 text-[10px] text-red-500 font-bold bg-red-50/50 rounded-xl border border-red-100">
-                                      No slots available on this date.
-                                    </div>
-                                  )}
-                                </motion.div>
+                                    {loadingAptSlots ? (
+                                      <div className="flex justify-center py-4">
+                                        <Loader2 className="h-4 w-4 animate-spin text-brand" />
+                                      </div>
+                                    ) : aptAvailableSlots.length > 0 ? (
+                                      <SessionSlotGrid
+                                        slots={aptAvailableSlots}
+                                        selected={aptTimeSlot}
+                                        onSelect={(slot) => {
+                                          setAptTimeSlot(slot);
+                                          const datePart = aptDateTime.split("T")[0];
+                                          const [time, modifier] = slot.split(" ");
+                                          const [rawHours, minutes] = time.split(":").map(Number);
+                                          let hours = rawHours;
+                                          if (modifier === "PM" && hours < 12) hours += 12;
+                                          if (modifier === "AM" && hours === 12) hours = 0;
+                                          const timePart = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+                                          setAptDateTime(`${datePart}T${timePart}`);
+                                          setAptClockOpen(false);
+                                          if (fieldErrors.time)
+                                            setFieldErrors((prev) => ({ ...prev, time: "" }));
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="text-center py-3 text-[10px] text-red-500 font-bold bg-red-50/50 rounded-xl border border-red-100">
+                                        No slots available on this date.
+                                      </div>
+                                    )}
+                                  </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>

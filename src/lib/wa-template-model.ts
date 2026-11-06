@@ -140,7 +140,8 @@ export type CatalogueField =
   | "partySize"
   | "tableName"
   | "serviceName"
-  | "joinToken";
+  | "joinToken"
+  | "absenceReason";
 
 export interface CatalogueEntry {
   field: CatalogueField;
@@ -184,6 +185,12 @@ export const VARIABLE_CATALOGUE: readonly CatalogueEntry[] = [
     field: "joinToken",
     label: "Video Join Token",
     description: "The per-patient video consultation token used as the join-button URL suffix.",
+  },
+  {
+    field: "absenceReason",
+    label: "Doctor Absence Reason",
+    description:
+      "The reason staff chose when declaring the doctor's urgent absence (e.g. a medical emergency).",
   },
 ];
 
@@ -267,7 +274,15 @@ export const KIND_RESOLVABLE_FIELDS: Record<AptNotifyKind, readonly CatalogueFie
     "bookingCode",
     "joinToken",
   ],
-  rescheduleNeeded: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
+  rescheduleNeeded: [
+    "name",
+    "clinicName",
+    "doctorName",
+    "date",
+    "time",
+    "bookingCode",
+    "absenceReason",
+  ],
   reinstated: ["name", "clinicName", "doctorName", "date", "time", "bookingCode"],
   restaurantBooked: [
     "name",

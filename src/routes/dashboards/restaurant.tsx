@@ -152,6 +152,7 @@ import { RestaurantBranchSettings } from "../../components/restaurant/Restaurant
 import WhatsAppHub from "../../components/WhatsAppHub";
 import { HelpSupportCard } from "../../components/HelpSupportCard";
 import { cn } from "../../lib/utils";
+import { FloatingMenu } from "@/components/ui/floating-menu";
 
 export const Route = createFileRoute("/dashboards/restaurant")({
   head: () => ({
@@ -4212,7 +4213,11 @@ function RestaurantDashboardPage() {
   useEffect(() => {
     if (!profileDropdownOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (profileDropdownRef.current && !profileDropdownRef.current.contains(e.target as Node)) {
+      if (
+        profileDropdownRef.current &&
+        !profileDropdownRef.current.contains(e.target as Node) &&
+        !(e.target as HTMLElement).closest?.(".dropdown-container")
+      ) {
         setProfileDropdownOpen(false);
       }
     };
@@ -4567,49 +4572,50 @@ function RestaurantDashboardPage() {
               {/* Profile Dropdown Menu */}
               <AnimatePresence>
                 {profileDropdownOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
-                    transition={{ duration: 0.15, ease: "easeOut" }}
-                    className="absolute right-0 top-[calc(100%+6px)] z-50 w-52 rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden"
+                  <FloatingMenu
+                    open={profileDropdownOpen}
+                    matchWidth={false}
+                    menuWidth={208}
+                    align="right"
                   >
-                    {/* User info header */}
-                    <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/50">
-                      <p className="text-xs font-bold text-zinc-900 truncate">
-                        {user?.name || "Restaurant"}
-                      </p>
-                      <p className="text-[10px] text-zinc-400 truncate mt-0.5">
-                        {user?.email || ""}
-                      </p>
+                    <div className="w-52 rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden">
+                      {/* User info header */}
+                      <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/50">
+                        <p className="text-xs font-bold text-zinc-900 truncate">
+                          {user?.name || "Restaurant"}
+                        </p>
+                        <p className="text-[10px] text-zinc-400 truncate mt-0.5">
+                          {user?.email || ""}
+                        </p>
+                      </div>
+                      {/* Menu items */}
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab("Settings");
+                            setProfileDropdownOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors cursor-pointer"
+                        >
+                          <SettingsIcon className="h-3.5 w-3.5 text-zinc-400" />
+                          Settings
+                        </button>
+                        <div className="border-t border-zinc-100 mx-2" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProfileDropdownOpen(false);
+                            void handleLogout();
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                        >
+                          <LogOut className="h-3.5 w-3.5" />
+                          Log Out
+                        </button>
+                      </div>
                     </div>
-                    {/* Menu items */}
-                    <div className="py-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab("Settings");
-                          setProfileDropdownOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors cursor-pointer"
-                      >
-                        <SettingsIcon className="h-3.5 w-3.5 text-zinc-400" />
-                        Settings
-                      </button>
-                      <div className="border-t border-zinc-100 mx-2" />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProfileDropdownOpen(false);
-                          void handleLogout();
-                        }}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                      >
-                        <LogOut className="h-3.5 w-3.5" />
-                        Log Out
-                      </button>
-                    </div>
-                  </motion.div>
+                  </FloatingMenu>
                 )}
               </AnimatePresence>
             </div>

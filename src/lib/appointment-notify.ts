@@ -61,6 +61,11 @@ export interface AptNotifyContext {
    */
   dateText?: string | null;
   timeText?: string | null;
+  /**
+   * Patient-facing reason for a doctor's urgent absence, captured when staff
+   * declare the leave (rescheduleNeeded notices only).
+   */
+  absenceReason?: string | null;
 }
 
 const MONTH_NAMES = [
@@ -228,7 +233,8 @@ export function resolveTemplateField(
     | "partySize"
     | "tableName"
     | "serviceName"
-    | "joinToken",
+    | "joinToken"
+    | "absenceReason",
   ctx: AptNotifyContext,
 ): string | null {
   const text = (value: string | null | undefined): string | null => {
@@ -271,6 +277,8 @@ export function resolveTemplateField(
       const m = ctx.joinLink ? /\/consult\/([A-Za-z0-9_-]+)/.exec(ctx.joinLink) : null;
       return m ? m[1] : null;
     }
+    case "absenceReason":
+      return text(ctx.absenceReason);
     default:
       return null;
   }

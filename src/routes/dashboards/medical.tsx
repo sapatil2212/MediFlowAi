@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import bmtLogo from "../../assets/bmt-logo.png";
 
-import React, { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { AnimatedSearch } from "@/components/ui/AnimatedSearch";
@@ -102,8 +102,6 @@ import {
   getDoctorsServerFn,
   saveDoctorServerFn,
   deleteDoctorServerFn,
-  getDoctorScheduleServerFn,
-  saveDoctorScheduleServerFn,
   getDoctorLeavesServerFn,
   addDoctorLeaveServerFn,
   addDoctorLeavesBulkServerFn,
@@ -123,6 +121,7 @@ import {
   createPatientServerFn,
   updatePatientServerFn,
   deletePatientServerFn,
+  deletePatientsBulkServerFn,
   getPatientChartServerFn,
   checkPatientDuplicateServerFn,
   saveSoapNoteServerFn,
@@ -158,12 +157,6 @@ import { OverviewAnalytics } from "../../components/medical/OverviewAnalytics";
 import { resolveFeatureAccess, type FeatureId } from "@/lib/feature-access";
 import { canPerform, roleLabel } from "@/lib/staff-permissions";
 import { isWorkspacePaymentLocked } from "@/lib/workspace-access";
-import {
-  countAvailableSlots,
-  normalizeBreaks,
-  parseTimeToMinutes,
-  totalBreakMinutes,
-} from "@/lib/doctor-schedule-breaks";
 import { isPlausibleEmail, normalizeEmail } from "@/lib/account-email";
 import {
   APPOINTMENT_DATE_FILTER_OPTIONS,
@@ -177,6 +170,22 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 // Aliased: `Calendar` is already the lucide icon used in the sidebar.
 import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
+import { FloatingMenu } from "@/components/ui/floating-menu";
+import { WeeklyScheduleEditor } from "@/components/schedule/WeeklyScheduleEditor";
+import { SessionSlotGrid } from "@/components/schedule/SessionSlotGrid";
+import {
+  DEFAULT_PATIENT_SORT_DIRECTION,
+  DEFAULT_PATIENT_SORT_KEY,
+  initialPatientSortDirection,
+  PATIENT_GENDER_OPTIONS,
+  PATIENT_REGISTERED_OPTIONS,
+  PATIENT_SORT_OPTIONS,
+  PATIENT_VISIT_OPTIONS,
+  type PatientGenderFilter,
+  type PatientRegisteredFilter,
+  type PatientSortKey,
+  type PatientVisitFilter,
+} from "@/lib/patient-query";
 
 /** "YYYY-MM-DD" → local-midnight Date (new Date("YYYY-MM-DD") would be UTC). */
 function parseLocalIsoDate(value: string): Date {
@@ -349,92 +358,7 @@ const soapTemplates = {
 };
 
 // ==========================================
-// FloatingMenu — portal-based dropdown that escapes modal overflow clipping.
-// Renders its children in a fixed-position layer attached to document.body,
-// anchored to a trigger element, and flips above/below based on viewport space.
-// Carries the `dropdown-container` class so existing outside-click logic that
-// checks `.closest('.dropdown-container')` continues to treat it as "inside".
-// ==========================================
-function FloatingMenu({
-  open,
-  anchorRef,
-  children,
-  align = "left",
-  matchWidth = true,
-  menuWidth,
-  estimatedHeight = 240,
-}: {
-  open: boolean;
-  anchorRef: React.RefObject<HTMLElement | null>;
-  children: React.ReactNode;
-  align?: "left" | "right";
-  matchWidth?: boolean;
-  menuWidth?: number;
-  estimatedHeight?: number;
-}) {
-  const [style, setStyle] = useState<React.CSSProperties | null>(null);
-
-  useLayoutEffect(() => {
-    if (!open) {
-      setStyle(null);
-      return;
-    }
-    const el = anchorRef.current;
-    if (!el) return;
-
-    const compute = () => {
-      const r = el.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - r.bottom;
-      const spaceAbove = r.top;
-      const openUp = spaceBelow < estimatedHeight + 16 && spaceAbove > spaceBelow;
-
-      const s: React.CSSProperties = { position: "fixed", zIndex: 9999 };
-      if (matchWidth) s.width = r.width;
-      else if (menuWidth) s.width = menuWidth;
-
-      // Horizontal anchoring (keep menu within the viewport).
-      if (align === "right") {
-        s.right = Math.max(8, window.innerWidth - r.right);
-      } else {
-        s.left = Math.min(r.left, window.innerWidth - (menuWidth || r.width) - 8);
-        s.left = Math.max(8, s.left as number);
-      }
-
-      // Vertical: flip above the trigger when there isn't room below.
-      if (openUp) s.bottom = window.innerHeight - r.top + 6;
-      else s.top = r.bottom + 6;
-
-      setStyle(s);
-    };
-
-    compute();
-    window.addEventListener("resize", compute);
-    window.addEventListener("scroll", compute, true);
-    return () => {
-      window.removeEventListener("resize", compute);
-      window.removeEventListener("scroll", compute, true);
-    };
-  }, [open, anchorRef, align, matchWidth, menuWidth, estimatedHeight]);
-
-  if (!open || !style || typeof document === "undefined") return null;
-
-  return createPortal(
-    <motion.div
-      className="dropdown-container"
-      style={style}
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 6 }}
-      transition={{ duration: 0.12 }}
-    >
-      {children}
-    </motion.div>,
-    document.body,
-  );
-}
-
-// ==========================================
-// DayScheduleCard — Per-day schedule row with multi-break support + copy-to-days
+// SortableAptHeader — sortable table column header
 // ==========================================
 
 /**
@@ -444,23 +368,25 @@ function FloatingMenu({
  * direction. The caret only renders on the active column so the header row
  * stays readable.
  */
-function SortableAptHeader({
+function SortableAptHeader<K extends string = AppointmentSortKey>({
   label,
   sortKey,
   activeKey,
   direction,
   onSort,
+  className = "px-5 py-3",
 }: {
   label: string;
-  sortKey: AppointmentSortKey;
-  activeKey: AppointmentSortKey;
+  sortKey: K;
+  activeKey: K;
   direction: SortDirection;
-  onSort: (key: AppointmentSortKey) => void;
+  onSort: (key: K) => void;
+  className?: string;
 }) {
   const isActive = activeKey === sortKey;
   return (
     <th
-      className="px-5 py-3"
+      className={className}
       aria-sort={isActive ? (direction === "asc" ? "ascending" : "descending") : "none"}
     >
       <button
@@ -483,274 +409,6 @@ function SortableAptHeader({
         )}
       </button>
     </th>
-  );
-}
-
-type BreakSlot = { start: string; end: string; label: string };
-
-function DayScheduleCard({
-  dayName,
-  idx,
-  sched,
-  breaks,
-  slots,
-  allSchedules,
-  onUpdateField,
-  onAddBreak,
-  onUpdateBreak,
-  onRemoveBreak,
-  onCopyBreaks,
-}: {
-  dayName: string;
-  idx: number;
-  sched: any;
-  breaks: BreakSlot[];
-  slots: number;
-  allSchedules: any[];
-  onUpdateField: (day: number, field: string, value: any) => void;
-  onAddBreak: (day: number, br: BreakSlot) => void;
-  onUpdateBreak: (
-    day: number,
-    bIdx: number,
-    field: "start" | "end" | "label",
-    value: string,
-  ) => void;
-  onRemoveBreak: (day: number, bIdx: number) => void;
-  onCopyBreaks: (fromDay: number, bIdx: number, toDays: number[]) => void;
-}) {
-  // Which break row currently has its "Copy to days" popover open.
-  // Must be the break index (not a boolean) — a single boolean opened the
-  // popover on every break row of the day at once.
-  const [copyMenuFor, setCopyMenuFor] = useState<number | null>(null);
-  const [copyTargets, setCopyTargets] = useState<number[]>([]);
-  const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-  // Shared helper: ignores incomplete/inverted breaks and counts overlapping
-  // windows once instead of double-charging the total.
-  const totalBreakMins = totalBreakMinutes(normalizeBreaks(breaks));
-
-  return (
-    // No `overflow-hidden` here: it clipped the "Copy to days" popover. The
-    // break rows carry `rounded-b-xl` instead so the corners still look right.
-    <div className="rounded-xl border border-brand/15 bg-brand/[0.025] animate-in fade-in duration-200">
-      {/* Row 1: Day label + working hours + slot picker */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3">
-        <div className="flex items-center gap-2 min-w-[80px]">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black text-white text-[9px] font-black">
-            {dayName.slice(0, 2)}
-          </span>
-          <span className="text-xs font-bold text-zinc-700">{dayName}</span>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Working hours */}
-          <div className="flex items-center gap-1.5">
-            <Clock className="h-3 w-3 text-zinc-400 shrink-0" />
-            <input
-              type="time"
-              value={sched.startTime}
-              onChange={(e) => onUpdateField(idx, "startTime", e.target.value)}
-              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-            />
-            <span className="text-zinc-400 text-[10px] font-bold">→</span>
-            <input
-              type="time"
-              value={sched.endTime}
-              onChange={(e) => onUpdateField(idx, "endTime", e.target.value)}
-              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-            />
-          </div>
-          {/* Slot duration */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-zinc-400 font-semibold">Slot</span>
-            <select
-              value={sched.slotDuration}
-              onChange={(e) => onUpdateField(idx, "slotDuration", parseInt(e.target.value))}
-              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-            >
-              <option value={8}>8 min</option>
-              <option value={10}>10 min</option>
-              <option value={15}>15 min</option>
-              <option value={30}>30 min</option>
-              <option value={45}>45 min</option>
-              <option value={60}>60 min</option>
-            </select>
-          </div>
-          {/* Slot count */}
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100 px-2.5 py-1 text-[9px] font-bold text-emerald-600">
-            <CheckCircle2 className="h-3 w-3" /> {slots} slots
-          </span>
-          {/* Total break summary */}
-          {totalBreakMins > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-600">
-              <Coffee className="h-2.5 w-2.5" /> {totalBreakMins}min break
-            </span>
-          )}
-          {/* Add Break button */}
-          <button
-            type="button"
-            onClick={() => onAddBreak(idx, { start: "13:00", end: "14:00", label: "Lunch" })}
-            className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white hover:bg-amber-50 hover:border-amber-200 hover:text-amber-600 px-2.5 py-1 text-[9px] font-bold text-zinc-400 transition-all cursor-pointer"
-          >
-            <Coffee className="h-3 w-3" /> <Plus className="h-2.5 w-2.5" /> Add Break
-          </button>
-        </div>
-      </div>
-
-      {/* Break rows */}
-      {breaks.length > 0 && (
-        <div className="border-t border-amber-100 bg-amber-50/40 divide-y divide-amber-100/70 rounded-b-xl">
-          {breaks.map((br, bIdx) => {
-            const [bsh, bsm] = (br.start || "00:00").split(":").map(Number);
-            const [beh, bem] = (br.end || "00:00").split(":").map(Number);
-            const bStartMin = bsh * 60 + bsm;
-            const bEndMin = beh * 60 + bem;
-            const bMins = br.start && br.end ? bEndMin - bStartMin : 0;
-            // A break outside the working window never removes a slot, so flag
-            // it rather than letting the slot count look wrong.
-            const [wsh, wsm] = (sched.startTime || "09:00").split(":").map(Number);
-            const [weh, wem] = (sched.endTime || "18:00").split(":").map(Number);
-            const outsideHours =
-              bMins > 0 && (bStartMin < wsh * 60 + wsm || bEndMin > weh * 60 + wem);
-            return (
-              <div
-                key={bIdx}
-                className="flex flex-wrap items-center gap-2 px-3 py-2 animate-in fade-in duration-150"
-              >
-                {/* Break number badge */}
-                <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-200 text-[8px] font-black text-amber-800 shrink-0">
-                  {bIdx + 1}
-                </span>
-                {/* Label input */}
-                <input
-                  type="text"
-                  value={br.label}
-                  placeholder="Break name (e.g. Lunch)"
-                  onChange={(e) => onUpdateBreak(idx, bIdx, "label", e.target.value)}
-                  className="w-28 rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] font-semibold focus:outline-none focus:border-amber-400 text-zinc-700"
-                />
-                <Coffee className="h-3 w-3 text-amber-400 shrink-0" />
-                {/* Start time */}
-                <input
-                  type="time"
-                  value={br.start}
-                  onChange={(e) => onUpdateBreak(idx, bIdx, "start", e.target.value)}
-                  className="rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-amber-400"
-                />
-                <span className="text-amber-400 text-[10px] font-bold">→</span>
-                {/* End time */}
-                <input
-                  type="time"
-                  value={br.end}
-                  onChange={(e) => onUpdateBreak(idx, bIdx, "end", e.target.value)}
-                  className="rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-semibold focus:outline-none focus:border-amber-400"
-                />
-                {/* Duration badge, or why this break will be ignored. An
-                    invalid break used to render nothing at all and was then
-                    dropped by the save filter with no feedback. */}
-                {bMins > 0 ? (
-                  <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5 text-[9px] font-bold text-amber-700">
-                    <MinusCircle className="h-2.5 w-2.5" /> {bMins} min
-                    {outsideHours && " · outside hours"}
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-0.5 rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[9px] font-bold text-red-500">
-                    <X className="h-2.5 w-2.5" />
-                    {!br.start || !br.end ? "Set both times" : "End must be after start"}
-                  </span>
-                )}
-                {/* Add same break to other days */}
-                <div className="relative ml-auto">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCopyMenuFor((cur) => (cur === bIdx ? null : bIdx));
-                      setCopyTargets([]);
-                    }}
-                    className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white hover:bg-brand/5 hover:border-brand/30 hover:text-brand px-2 py-0.5 text-[9px] font-bold text-zinc-400 transition-all cursor-pointer"
-                  >
-                    <Copy className="h-2.5 w-2.5" /> Copy to days
-                  </button>
-                  {copyMenuFor === bIdx && (
-                    <div className="absolute right-0 bottom-full mb-1.5 z-50 bg-white border border-zinc-200 rounded-xl shadow-xl p-3 min-w-[180px] animate-in fade-in duration-150">
-                      <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
-                        Copy this break to:
-                      </p>
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        {DAY_LABELS.map((dl, di) => {
-                          if (di === idx) return null;
-                          const isActive = allSchedules.find((s) => s.dayOfWeek === di)?.enabled;
-                          if (!isActive) return null;
-                          const checked = copyTargets.includes(di);
-                          return (
-                            <button
-                              key={di}
-                              type="button"
-                              onClick={() =>
-                                setCopyTargets((prev) =>
-                                  checked ? prev.filter((d) => d !== di) : [...prev, di],
-                                )
-                              }
-                              className={`rounded-full px-2 py-0.5 text-[9px] font-bold border transition-all cursor-pointer ${
-                                checked
-                                  ? "bg-black text-white border-zinc-800"
-                                  : "bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-800/40"
-                              }`}
-                            >
-                              {dl}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="flex gap-1.5 border-t border-zinc-100 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => setCopyMenuFor(null)}
-                          className="flex-1 rounded-full border border-zinc-200 py-1 text-[9px] font-bold text-zinc-400 cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          disabled={copyTargets.length === 0}
-                          onClick={() => {
-                            onCopyBreaks(idx, bIdx, copyTargets);
-                            setCopyMenuFor(null);
-                            setCopyTargets([]);
-                          }}
-                          className="flex-1 rounded-full bg-black text-white py-1 text-[9px] font-bold cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1"
-                        >
-                          <Check className="h-2.5 w-2.5" /> Apply
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {/* Remove this break */}
-                <button
-                  type="button"
-                  onClick={() => onRemoveBreak(idx, bIdx)}
-                  className="inline-flex items-center gap-0.5 text-[9px] font-bold text-red-400 hover:text-red-600 cursor-pointer"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            );
-          })}
-          {/* Add another break row */}
-          <div className="px-3 py-1.5">
-            <button
-              type="button"
-              // Must default to a real window: empty times are stripped by the
-              // save filter, so a blank row vanished without explanation.
-              onClick={() => onAddBreak(idx, { start: "16:00", end: "16:30", label: "Break" })}
-              className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-500 hover:text-amber-700 cursor-pointer"
-            >
-              <Plus className="h-3 w-3" /> Add another break
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -1801,11 +1459,53 @@ function MedicalDashboardPage() {
   );
   const [patientChartData, setPatientChartData] = useState<any | null>(null);
   const patientDetails = patientChartData?.patient || selectedPatient;
+  // `searchQuery` is what the box shows; `patientSearch` is the debounced value
+  // sent to the server, so responses can't arrive out of order per keystroke.
   const [searchQuery, setSearchQuery] = useState("");
+  const [patientSearch, setPatientSearch] = useState("");
   const [patientsList, setPatientsList] = useState<any[]>([]);
   const [patientsTotal, setPatientsTotal] = useState(0);
   const [patientsPage, setPatientsPage] = useState(1);
   const [loadingPatients, setLoadingPatients] = useState(true);
+  // Patient Records list controls (same model as the Appointments List).
+  const [patientGender, setPatientGender] = useState<PatientGenderFilter>("all");
+  const [patientRegistered, setPatientRegistered] = useState<PatientRegisteredFilter>("all");
+  const [patientVisit, setPatientVisit] = useState<PatientVisitFilter>("all");
+  const [patientSortBy, setPatientSortBy] = useState<PatientSortKey>(DEFAULT_PATIENT_SORT_KEY);
+  const [patientSortDir, setPatientSortDir] = useState<SortDirection>(
+    DEFAULT_PATIENT_SORT_DIRECTION,
+  );
+  const [patientSummary, setPatientSummary] = useState({
+    total: 0,
+    newLast30: 0,
+    seenLast30: 0,
+    upcoming: 0,
+  });
+  const [bulkPatientIds, setBulkPatientIds] = useState<string[]>([]);
+  const [confirmBulkPatientDelete, setConfirmBulkPatientDelete] = useState(false);
+  const [bulkDeletingPatients, setBulkDeletingPatients] = useState(false);
+  const patientsRequestRef = useRef(0);
+  const handleSortPatients = useCallback((key: PatientSortKey) => {
+    setPatientSortBy((current) => {
+      if (current === key) setPatientSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      else setPatientSortDir(initialPatientSortDirection(key));
+      return key;
+    });
+  }, []);
+  const patientFiltersActive =
+    Boolean(patientSearch) ||
+    patientGender !== "all" ||
+    patientRegistered !== "all" ||
+    patientVisit !== "all";
+  const resetPatientFilters = () => {
+    setSearchQuery("");
+    setPatientSearch("");
+    setPatientGender("all");
+    setPatientRegistered("all");
+    setPatientVisit("all");
+    setPatientSortBy(DEFAULT_PATIENT_SORT_KEY);
+    setPatientSortDir(DEFAULT_PATIENT_SORT_DIRECTION);
+  };
 
   // Dashboard overview stats (live)
   const [dashboardStats, setDashboardStats] = useState<any | null>(null);
@@ -2392,9 +2092,6 @@ function MedicalDashboardPage() {
 
   // Doctor Schedule & Leave States
   const [selectedDocForSchedule, setSelectedDocForSchedule] = useState<any | null>(null);
-  const [docSchedules, setDocSchedules] = useState<any[]>([]);
-  const [savingDocSchedule, setSavingDocSchedule] = useState(false);
-  const [docScheduleSuccess, setDocScheduleSuccess] = useState("");
   const [selectedDocForLeaves, setSelectedDocForLeaves] = useState<any | null>(null);
   const [docLeaves, setDocLeaves] = useState<any[]>([]);
   const [newLeaveDate, setNewLeaveDate] = useState("");
@@ -3154,21 +2851,63 @@ function MedicalDashboardPage() {
   };
 
   const fetchPatients = async () => {
+    const requestId = ++patientsRequestRef.current;
+    // Filters, sorting and the stat cards belong to the Patient Records list.
+    // Other callers (AI scribe, refresh after a consultation) keep the plain list.
+    const registry = activeTab === "patients";
     setLoadingPatients(true);
     try {
       const res = await getPatientsServerFn({
-        data: {
-          search: searchQuery,
-          page: patientsPage,
-        },
+        data: registry
+          ? {
+              search: patientSearch,
+              page: patientsPage,
+              gender: patientGender,
+              registered: patientRegistered,
+              visit: patientVisit,
+              sortBy: patientSortBy,
+              sortDir: patientSortDir,
+              withSummary: true,
+            }
+          : { search: patientSearch, page: patientsPage },
       });
+      if (requestId !== patientsRequestRef.current) return;
       setPatientsList(res.patients || []);
       setPatientsTotal(res.total || 0);
+      if (res.summary) setPatientSummary(res.summary);
     } catch (err) {
+      if (requestId !== patientsRequestRef.current) return;
       console.error("Failed to fetch patients:", err);
       showToast("error", "Failed to fetch patients");
     } finally {
-      setLoadingPatients(false);
+      if (requestId === patientsRequestRef.current) setLoadingPatients(false);
+    }
+  };
+
+  const handleBulkDeletePatients = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBulkDeletingPatients(true);
+    try {
+      const res = await deletePatientsBulkServerFn({ data: { ids } });
+      if (res.success) {
+        setBulkPatientIds([]);
+        setConfirmBulkPatientDelete(false);
+        const deleted = Number(res.deleted) || 0;
+        if (patientsPage > 1 && patientsList.length - deleted <= 0) {
+          setPatientsPage((p) => Math.max(1, p - 1));
+        } else {
+          await fetchPatients();
+        }
+        showToast(
+          "success",
+          `Deleted ${deleted} patient file${deleted === 1 ? "" : "s"} successfully`,
+        );
+      }
+    } catch (err: any) {
+      console.error("Failed to delete patients:", err);
+      showToast("error", err?.message || "Failed to delete the selected patient files");
+    } finally {
+      setBulkDeletingPatients(false);
     }
   };
 
@@ -3409,7 +3148,11 @@ function MedicalDashboardPage() {
   useEffect(() => {
     if (!profileDropdownOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (profileDropdownRef.current && !profileDropdownRef.current.contains(e.target as Node)) {
+      if (
+        profileDropdownRef.current &&
+        !profileDropdownRef.current.contains(e.target as Node) &&
+        !(e.target as HTMLElement).closest?.(".dropdown-container")
+      ) {
         setProfileDropdownOpen(false);
       }
     };
@@ -3509,13 +3252,36 @@ function MedicalDashboardPage() {
         fetchAnalytics();
       }
     }
-  }, [user, activeTab, searchQuery, patientsPage]);
+  }, [
+    user,
+    activeTab,
+    patientSearch,
+    patientsPage,
+    patientGender,
+    patientRegistered,
+    patientVisit,
+    patientSortBy,
+    patientSortDir,
+  ]);
 
-  // A new search starts from page 1. Searching while on page 3 used to ask for
-  // page 3 of a much smaller result set and show "no patients match".
+  // Debounce the patient search box into the value sent to the server.
+  useEffect(() => {
+    const timer = setTimeout(() => setPatientSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // A new search, filter or sort starts from page 1. Searching while on page 3
+  // used to ask for page 3 of a much smaller result set and show "no patients".
   useEffect(() => {
     setPatientsPage(1);
-  }, [searchQuery]);
+  }, [
+    patientSearch,
+    patientGender,
+    patientRegistered,
+    patientVisit,
+    patientSortBy,
+    patientSortDir,
+  ]);
 
   // Load patient chart (SOAP notes + appointments)
   useEffect(() => {
@@ -3896,133 +3662,9 @@ function MedicalDashboardPage() {
     }
   };
 
-  // Doctor availability schedule handlers
-  const handleEditDoctorSchedule = async (doc: any) => {
+  // Doctor availability: WeeklyScheduleEditor loads and saves the week itself.
+  const handleEditDoctorSchedule = (doc: any) => {
     setSelectedDocForSchedule(doc);
-    setDocScheduleSuccess("");
-    // Clear first: on a failed load the previous doctor's hours stayed in the
-    // editor, and saving would have written them onto this doctor.
-    setDocSchedules([]);
-    try {
-      const res = await getDoctorScheduleServerFn({ data: doc.id });
-      const scheduleMap = Array.from({ length: 7 }, (_, day) => {
-        const existing = res.find((s: any) => s.dayOfWeek === day);
-        return {
-          dayOfWeek: day,
-          startTime: existing ? existing.startTime : "09:00",
-          endTime: existing ? existing.endTime : "17:00",
-          slotDuration: existing ? existing.slotDuration : 30,
-          enabled: !!existing,
-          breaks:
-            ((existing as any)?.breaks as { start: string; end: string; label: string }[]) ?? [],
-        };
-      });
-      setDocSchedules(scheduleMap);
-    } catch (e: any) {
-      console.error(e);
-      setSelectedDocForSchedule(null);
-      showToast("error", e?.message || "Couldn't load this doctor's schedule");
-    }
-  };
-
-  // ---- Break helpers ----
-  const addBreakToDay = (dayOfWeek: number, br: { start: string; end: string; label: string }) => {
-    setDocSchedules((prev) =>
-      prev.map((s) =>
-        s.dayOfWeek === dayOfWeek ? { ...s, breaks: [...(s.breaks ?? []), br] } : s,
-      ),
-    );
-  };
-  const updateBreak = (
-    dayOfWeek: number,
-    bIdx: number,
-    field: "start" | "end" | "label",
-    value: string,
-  ) => {
-    setDocSchedules((prev) =>
-      prev.map((s) => {
-        if (s.dayOfWeek !== dayOfWeek) return s;
-        const updated = (s.breaks ?? []).map((b: any, i: number) =>
-          i === bIdx ? { ...b, [field]: value } : b,
-        );
-        return { ...s, breaks: updated };
-      }),
-    );
-  };
-  const removeBreak = (dayOfWeek: number, bIdx: number) => {
-    setDocSchedules((prev) =>
-      prev.map((s) =>
-        s.dayOfWeek === dayOfWeek
-          ? { ...s, breaks: (s.breaks ?? []).filter((_: any, i: number) => i !== bIdx) }
-          : s,
-      ),
-    );
-  };
-  /**
-   * Copy ONE break ("Copy this break to:") onto the chosen days.
-   *
-   * Appends rather than replaces: the previous version copied every break from
-   * the source day and overwrote the target days' break lists outright, so
-   * copying a lunch break to Tuesday silently destroyed Tuesday's own breaks.
-   * Exact duplicates are skipped so repeated Apply clicks stay idempotent.
-   */
-  const copyBreaksToDay = (fromDay: number, bIdx: number, toDays: number[]) => {
-    setDocSchedules((prev) => {
-      const source = prev.find((s) => s.dayOfWeek === fromDay);
-      const br = (source?.breaks ?? [])[bIdx];
-      if (!br) return prev;
-
-      return prev.map((s) => {
-        if (!toDays.includes(s.dayOfWeek)) return s;
-        const existing = (s.breaks ?? []) as BreakSlot[];
-        const duplicate = existing.some(
-          (b) => b.start === br.start && b.end === br.end && b.label === br.label,
-        );
-        if (duplicate) return s;
-        return { ...s, breaks: [...existing, { ...br }] };
-      });
-    });
-  };
-
-  const handleUpdateScheduleField = (dayOfWeek: number, field: string, value: any) => {
-    setDocSchedules((prev) =>
-      prev.map((s) => (s.dayOfWeek === dayOfWeek ? { ...s, [field]: value } : s)),
-    );
-  };
-
-  const handleSaveDoctorSchedule = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setDocScheduleSuccess("");
-    setSavingDocSchedule(true);
-    try {
-      const activeSchedules = docSchedules
-        .filter((s) => s.enabled)
-        .map((s) => ({
-          dayOfWeek: s.dayOfWeek,
-          startTime: s.startTime,
-          endTime: s.endTime,
-          slotDuration: parseInt(s.slotDuration),
-          breaks: (s.breaks ?? []).filter((b: any) => b.start && b.end),
-        }));
-
-      const res = await saveDoctorScheduleServerFn({
-        data: {
-          doctorId: selectedDocForSchedule.id,
-          schedules: activeSchedules,
-        },
-      });
-      if (res.success) {
-        setDocScheduleSuccess("Doctor weekly availability saved successfully!");
-        setTimeout(() => {
-          setSelectedDocForSchedule(null);
-        }, 1200);
-      }
-    } catch (err: any) {
-      console.error(err);
-      showToast("error", err?.message || "Failed to save schedule");
-    } finally {
-      setSavingDocSchedule(false);
-    }
   };
 
   // Doctor leaves & holidays handlers
@@ -6166,6 +5808,13 @@ function MedicalDashboardPage() {
   // matches the server had found.
   const filteredPatients = patientsList;
 
+  // As with appointments: only rows the user can currently see selected count,
+  // so the bulk delete can never remove something off-screen.
+  const visibleSelectedPatientIds = useMemo(() => {
+    const visible = new Set(filteredPatients.map((p) => p.id));
+    return bulkPatientIds.filter((id) => visible.has(id));
+  }, [bulkPatientIds, filteredPatients]);
+
   // ──────────────────────────────────────────────
   // Render Loading / Authenticating state
   // ──────────────────────────────────────────────
@@ -6431,50 +6080,51 @@ function MedicalDashboardPage() {
               {/* Profile Dropdown Menu */}
               <AnimatePresence>
                 {profileDropdownOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.97 }}
-                    transition={{ duration: 0.15, ease: "easeOut" }}
-                    className="absolute right-0 top-[calc(100%+6px)] z-50 w-52 rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden"
+                  <FloatingMenu
+                    open={profileDropdownOpen}
+                    matchWidth={false}
+                    menuWidth={208}
+                    align="right"
                   >
-                    {/* User info header */}
-                    <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/50">
-                      <p className="text-xs font-bold text-zinc-900 truncate">
-                        {user?.name || "Dr. Clinician"}
-                      </p>
-                      <p className="text-[10px] text-zinc-400 truncate mt-0.5">
-                        {user?.email || ""}
-                      </p>
+                    <div className="w-52 rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden">
+                      {/* User info header */}
+                      <div className="px-4 py-3 border-b border-zinc-100 bg-zinc-50/50">
+                        <p className="text-xs font-bold text-zinc-900 truncate">
+                          {user?.name || "Dr. Clinician"}
+                        </p>
+                        <p className="text-[10px] text-zinc-400 truncate mt-0.5">
+                          {user?.email || ""}
+                        </p>
+                      </div>
+                      {/* Menu items */}
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab("settings");
+                            setSettingsSubTab("profile");
+                            setProfileDropdownOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors cursor-pointer"
+                        >
+                          <Settings className="h-3.5 w-3.5 text-zinc-400" />
+                          Settings
+                        </button>
+                        <div className="border-t border-zinc-100 mx-2" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProfileDropdownOpen(false);
+                            handleLogout();
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                        >
+                          <LogOut className="h-3.5 w-3.5" />
+                          Log Out
+                        </button>
+                      </div>
                     </div>
-                    {/* Menu items */}
-                    <div className="py-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab("settings");
-                          setSettingsSubTab("profile");
-                          setProfileDropdownOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors cursor-pointer"
-                      >
-                        <Settings className="h-3.5 w-3.5 text-zinc-400" />
-                        Settings
-                      </button>
-                      <div className="border-t border-zinc-100 mx-2" />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProfileDropdownOpen(false);
-                          handleLogout();
-                        }}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                      >
-                        <LogOut className="h-3.5 w-3.5" />
-                        Log Out
-                      </button>
-                    </div>
-                  </motion.div>
+                  </FloatingMenu>
                 )}
               </AnimatePresence>
             </div>
@@ -8482,45 +8132,52 @@ function MedicalDashboardPage() {
                                 </button>
                                 {showExportDropdown && (
                                   <>
+                                    <FloatingMenu
+                                      open={showExportDropdown}
+                                      matchWidth={false}
+                                      menuWidth={160}
+                                      align="right"
+                                    >
+                                      <div className="w-40 rounded-xl bg-white border border-zinc-150 shadow-lg py-1.5 animate-in fade-in slide-in-from-top-1 duration-100">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            handleExportConsultations("pdf");
+                                            setShowExportDropdown(false);
+                                          }}
+                                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2.5 cursor-pointer transition-colors"
+                                        >
+                                          <FileText className="h-4 w-4 text-red-500 shrink-0" />
+                                          <span>Export to PDF</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            handleExportConsultations("word");
+                                            setShowExportDropdown(false);
+                                          }}
+                                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2.5 cursor-pointer transition-colors"
+                                        >
+                                          <FileText className="h-4 w-4 text-blue-500 shrink-0" />
+                                          <span>Export to Word</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            handleExportConsultations("excel");
+                                            setShowExportDropdown(false);
+                                          }}
+                                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2.5 cursor-pointer transition-colors"
+                                        >
+                                          <FileSpreadsheet className="h-4 w-4 text-green-600 shrink-0" />
+                                          <span>Export to Excel</span>
+                                        </button>
+                                      </div>
+                                    </FloatingMenu>
                                     <div
                                       className="fixed inset-0 z-10"
                                       onClick={() => setShowExportDropdown(false)}
                                     />
-                                    <div className="absolute right-0 mt-1.5 w-40 rounded-xl bg-white border border-zinc-150 shadow-lg py-1.5 z-20 animate-in fade-in slide-in-from-top-1 duration-100">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          handleExportConsultations("pdf");
-                                          setShowExportDropdown(false);
-                                        }}
-                                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2.5 cursor-pointer transition-colors"
-                                      >
-                                        <FileText className="h-4 w-4 text-red-500 shrink-0" />
-                                        <span>Export to PDF</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          handleExportConsultations("word");
-                                          setShowExportDropdown(false);
-                                        }}
-                                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2.5 cursor-pointer transition-colors"
-                                      >
-                                        <FileText className="h-4 w-4 text-blue-500 shrink-0" />
-                                        <span>Export to Word</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          handleExportConsultations("excel");
-                                          setShowExportDropdown(false);
-                                        }}
-                                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2.5 cursor-pointer transition-colors"
-                                      >
-                                        <FileSpreadsheet className="h-4 w-4 text-green-600 shrink-0" />
-                                        <span>Export to Excel</span>
-                                      </button>
-                                    </div>
                                   </>
                                 )}
                               </div>
@@ -8717,38 +8374,45 @@ function MedicalDashboardPage() {
 
                                               {activeStatusDropdownId === apt.id && (
                                                 <>
+                                                  <FloatingMenu
+                                                    open={activeStatusDropdownId === apt.id}
+                                                    matchWidth={false}
+                                                    menuWidth={128}
+                                                    offset={4}
+                                                  >
+                                                    <div className="w-32 rounded-xl bg-white border border-zinc-150 shadow-lg py-1 animate-in fade-in slide-in-from-top-1 duration-100">
+                                                      {(
+                                                        [
+                                                          "Pending",
+                                                          "Confirmed",
+                                                          "Completed",
+                                                          "Cancelled",
+                                                        ] as const
+                                                      ).map((status) => (
+                                                        <button
+                                                          key={status}
+                                                          type="button"
+                                                          onClick={() =>
+                                                            handleUpdateStatus(apt, status)
+                                                          }
+                                                          className={`w-full text-left px-3 py-1.5 text-[10px] font-bold transition-colors hover:bg-zinc-50 flex items-center justify-between cursor-pointer ${
+                                                            apt.status === status
+                                                              ? "text-brand"
+                                                              : "text-zinc-600"
+                                                          }`}
+                                                        >
+                                                          <span>{status}</span>
+                                                          {apt.status === status && (
+                                                            <Check className="h-3 w-3 text-brand" />
+                                                          )}
+                                                        </button>
+                                                      ))}
+                                                    </div>
+                                                  </FloatingMenu>
                                                   <div
                                                     className="fixed inset-0 z-10"
                                                     onClick={() => setActiveStatusDropdownId(null)}
                                                   />
-                                                  <div className="absolute left-5 mt-1 w-32 rounded-xl bg-white border border-zinc-150 shadow-lg py-1 z-20 animate-in fade-in slide-in-from-top-1 duration-100">
-                                                    {(
-                                                      [
-                                                        "Pending",
-                                                        "Confirmed",
-                                                        "Completed",
-                                                        "Cancelled",
-                                                      ] as const
-                                                    ).map((status) => (
-                                                      <button
-                                                        key={status}
-                                                        type="button"
-                                                        onClick={() =>
-                                                          handleUpdateStatus(apt, status)
-                                                        }
-                                                        className={`w-full text-left px-3 py-1.5 text-[10px] font-bold transition-colors hover:bg-zinc-50 flex items-center justify-between cursor-pointer ${
-                                                          apt.status === status
-                                                            ? "text-brand"
-                                                            : "text-zinc-600"
-                                                        }`}
-                                                      >
-                                                        <span>{status}</span>
-                                                        {apt.status === status && (
-                                                          <Check className="h-3 w-3 text-brand" />
-                                                        )}
-                                                      </button>
-                                                    ))}
-                                                  </div>
                                                 </>
                                               )}
                                             </td>
@@ -8878,18 +8542,146 @@ function MedicalDashboardPage() {
                     exit={{ opacity: 0, y: -8 }}
                     className="space-y-6"
                   >
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                      {/* Search Bar */}
-                      <AnimatedSearch
-                        value={searchQuery}
-                        onChange={setSearchQuery}
-                        placeholder="Search patient registry by name, ID, or symptoms..."
-                        roundedFull
-                        expandedWidth={280}
-                      />
+                    {/* 1. Statistics Bar (tenant-wide; not narrowed by filters) */}
+                    <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
+                      {[
+                        {
+                          label: "Total Patients",
+                          value: patientSummary.total,
+                          tone: "text-zinc-900",
+                        },
+                        {
+                          label: "New (last 30 days)",
+                          value: patientSummary.newLast30,
+                          tone: "text-brand",
+                        },
+                        {
+                          label: "Seen (last 30 days)",
+                          value: patientSummary.seenLast30,
+                          tone: "text-emerald-600",
+                        },
+                        {
+                          label: "Upcoming Appointments",
+                          value: patientSummary.upcoming,
+                          tone: "text-amber-600",
+                        },
+                      ].map((card) => (
+                        <div
+                          key={card.label}
+                          className="rounded-2xl border border-zinc-200/80 bg-white p-4"
+                        >
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase">
+                            {card.label}
+                          </span>
+                          <h3 className={`text-xl font-extrabold mt-1 ${card.tone}`}>
+                            {card.value}
+                          </h3>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 2. Control & Filters Bar */}
+                    <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                      <div className="flex flex-1 flex-wrap gap-3 items-stretch sm:items-center">
+                        <AnimatedSearch
+                          value={searchQuery}
+                          onChange={setSearchQuery}
+                          placeholder="Search by name, patient ID, phone, email or complaint..."
+                          roundedFull
+                          expandedWidth={300}
+                        />
+                        <select
+                          value={patientGender}
+                          onChange={(e) => setPatientGender(e.target.value as PatientGenderFilter)}
+                          aria-label="Filter patients by gender"
+                          className="px-4 py-2 text-xs rounded-full border border-zinc-200 bg-white font-bold text-zinc-700 focus:outline-none cursor-pointer"
+                        >
+                          {PATIENT_GENDER_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={patientVisit}
+                          onChange={(e) => setPatientVisit(e.target.value as PatientVisitFilter)}
+                          aria-label="Filter patients by visit activity"
+                          className="px-4 py-2 text-xs rounded-full border border-zinc-200 bg-white font-bold text-zinc-700 focus:outline-none cursor-pointer"
+                        >
+                          {PATIENT_VISIT_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={patientRegistered}
+                          onChange={(e) =>
+                            setPatientRegistered(e.target.value as PatientRegisteredFilter)
+                          }
+                          aria-label="Filter patients by registration date"
+                          className="px-4 py-2 text-xs rounded-full border border-zinc-200 bg-white font-bold text-zinc-700 focus:outline-none cursor-pointer"
+                        >
+                          {PATIENT_REGISTERED_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        {/* Sort field + direction */}
+                        <div className="inline-flex items-center rounded-full border border-zinc-200 bg-white overflow-hidden">
+                          <ArrowUpDown className="h-3.5 w-3.5 text-zinc-400 ml-3 shrink-0" />
+                          <select
+                            value={patientSortBy}
+                            onChange={(e) => {
+                              const key = e.target.value as PatientSortKey;
+                              setPatientSortBy(key);
+                              setPatientSortDir(initialPatientSortDirection(key));
+                            }}
+                            aria-label="Sort patients by"
+                            className="px-2 py-2 text-xs bg-white font-bold text-zinc-700 focus:outline-none cursor-pointer"
+                          >
+                            {PATIENT_SORT_OPTIONS.map((opt) => (
+                              <option key={opt.key} value={opt.key}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => setPatientSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                            title={
+                              patientSortDir === "asc"
+                                ? "Ascending — click for descending"
+                                : "Descending — click for ascending"
+                            }
+                            aria-label={`Sort direction: ${patientSortDir === "asc" ? "ascending" : "descending"}`}
+                            className="px-3 py-2 border-l border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-brand transition-all cursor-pointer"
+                          >
+                            {patientSortDir === "asc" ? (
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            ) : (
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        </div>
+                        {(searchQuery ||
+                          patientFiltersActive ||
+                          patientSortBy !== DEFAULT_PATIENT_SORT_KEY ||
+                          patientSortDir !== DEFAULT_PATIENT_SORT_DIRECTION) && (
+                          <button
+                            type="button"
+                            onClick={resetPatientFilters}
+                            className="inline-flex items-center gap-1 px-3 py-2 text-xs rounded-full border border-zinc-200 bg-white font-bold text-zinc-400 hover:text-zinc-700 hover:bg-zinc-50 transition-all cursor-pointer"
+                          >
+                            <X className="h-3 w-3" /> Reset
+                          </button>
+                        )}
+                      </div>
 
                       {/* Add Patient trigger */}
                       <button
+                        type="button"
                         onClick={() => {
                           // Always a fresh, blank form. Toggling used to keep
                           // `editingPatient`, so "Add" silently updated the last
@@ -8901,11 +8693,38 @@ function MedicalDashboardPage() {
                           clearPatientForm();
                           setIsAddingPatient(true);
                         }}
-                        className="rounded-full bg-zinc-950 hover:bg-zinc-850 text-white text-xs font-semibold px-4 py-2 flex items-center gap-1.5 cursor-pointer transition-transform active:scale-[0.98]"
+                        className="inline-flex items-center justify-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-zinc-900 hover:bg-zinc-800 transition-all rounded-full shadow-sm cursor-pointer whitespace-nowrap active:scale-[0.98]"
                       >
-                        <Plus className="h-4 w-4" /> Add Patient File
+                        <Plus className="h-3.5 w-3.5" /> Add Patient File
                       </button>
                     </div>
+
+                    {/* 2b. Bulk selection action bar — only while rows are ticked */}
+                    {visibleSelectedPatientIds.length > 0 && (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-brand/20 bg-brand/[0.04] px-4 py-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                        <p className="text-xs font-bold text-zinc-700">
+                          {visibleSelectedPatientIds.length} patient file
+                          {visibleSelectedPatientIds.length === 1 ? "" : "s"} selected
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setBulkPatientIds([])}
+                            className="inline-flex items-center justify-center gap-1.5 px-4 py-1.5 text-xs font-bold border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-600 rounded-full cursor-pointer transition-all"
+                          >
+                            Clear selection
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmBulkPatientDelete(true)}
+                            className="inline-flex items-center justify-center gap-1.5 px-4 py-1.5 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 rounded-full cursor-pointer transition-all active:scale-[0.98]"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete selected
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Add Patient Card Form */}
                     <AnimatePresence>
@@ -9064,38 +8883,159 @@ function MedicalDashboardPage() {
                         <div className="p-8 text-center">
                           <Users className="mx-auto h-8 w-8 text-zinc-300 mb-2" />
                           <p className="text-xs text-zinc-400 font-bold">
-                            No patient profiles match your query.
+                            {patientFiltersActive
+                              ? "No patient files match your search or filters."
+                              : "No patient files yet."}
                           </p>
+                          {patientFiltersActive && (
+                            <button
+                              type="button"
+                              onClick={resetPatientFilters}
+                              className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-brand hover:underline cursor-pointer"
+                            >
+                              <X className="h-3 w-3" /> Clear search and filters
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <>
                           {/* Desktop Table View */}
-                          <div className="hidden md:block">
+                          <div className="hidden md:block overflow-x-auto">
                             <table className="min-w-full divide-y divide-zinc-200 text-left">
                               <thead className="bg-zinc-50 text-[10px] font-bold text-zinc-400 uppercase">
                                 <tr>
-                                  <th className="px-6 h-10">Patient ID</th>
-                                  <th className="px-6 h-10">Name</th>
-                                  <th className="px-6 h-10">Demographics</th>
+                                  <th className="pl-6 pr-2 h-10 w-10">
+                                    <input
+                                      type="checkbox"
+                                      checked={
+                                        filteredPatients.length > 0 &&
+                                        filteredPatients.every((p) => bulkPatientIds.includes(p.id))
+                                      }
+                                      onChange={() => {
+                                        const ids = filteredPatients.map((p) => p.id);
+                                        const all = ids.every((id) => bulkPatientIds.includes(id));
+                                        setBulkPatientIds((prev) =>
+                                          all
+                                            ? prev.filter((id) => !ids.includes(id))
+                                            : Array.from(new Set([...prev, ...ids])),
+                                        );
+                                      }}
+                                      aria-label="Select all patients on this page"
+                                      className="rounded border-zinc-300 text-brand focus:ring-brand cursor-pointer align-middle"
+                                    />
+                                  </th>
+                                  <SortableAptHeader<PatientSortKey>
+                                    label="Patient ID"
+                                    sortKey="patientNo"
+                                    activeKey={patientSortBy}
+                                    direction={patientSortDir}
+                                    onSort={handleSortPatients}
+                                    className="px-6 h-10"
+                                  />
+                                  <SortableAptHeader<PatientSortKey>
+                                    label="Name"
+                                    sortKey="name"
+                                    activeKey={patientSortBy}
+                                    direction={patientSortDir}
+                                    onSort={handleSortPatients}
+                                    className="px-6 h-10"
+                                  />
+                                  <SortableAptHeader<PatientSortKey>
+                                    label="Demographics"
+                                    sortKey="age"
+                                    activeKey={patientSortBy}
+                                    direction={patientSortDir}
+                                    onSort={handleSortPatients}
+                                    className="px-6 h-10"
+                                  />
                                   <th className="px-6 h-10">Chief Complaint</th>
-                                  <th className="px-6 h-10">Registry Date</th>
+                                  <SortableAptHeader<PatientSortKey>
+                                    label="Last Visit"
+                                    sortKey="lastVisit"
+                                    activeKey={patientSortBy}
+                                    direction={patientSortDir}
+                                    onSort={handleSortPatients}
+                                    className="px-6 h-10"
+                                  />
+                                  <SortableAptHeader<PatientSortKey>
+                                    label="Registry Date"
+                                    sortKey="createdAt"
+                                    activeKey={patientSortBy}
+                                    direction={patientSortDir}
+                                    onSort={handleSortPatients}
+                                    className="px-6 h-10"
+                                  />
                                   <th className="px-6 h-10 text-right">Actions</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-zinc-150 text-xs">
                                 {filteredPatients.map((p) => (
-                                  <tr key={p.id} className="hover:bg-zinc-50/50">
+                                  <tr
+                                    key={p.id}
+                                    className={`transition-colors ${
+                                      bulkPatientIds.includes(p.id)
+                                        ? "bg-brand/[0.04]"
+                                        : "hover:bg-zinc-50/50"
+                                    }`}
+                                  >
+                                    <td className="pl-6 pr-2 py-4">
+                                      <input
+                                        type="checkbox"
+                                        checked={bulkPatientIds.includes(p.id)}
+                                        onChange={() =>
+                                          setBulkPatientIds((prev) =>
+                                            prev.includes(p.id)
+                                              ? prev.filter((id) => id !== p.id)
+                                              : [...prev, p.id],
+                                          )
+                                        }
+                                        aria-label={`Select patient ${p.name}`}
+                                        className="rounded border-zinc-300 text-brand focus:ring-brand cursor-pointer align-middle"
+                                      />
+                                    </td>
                                     <td className="px-6 py-4 font-mono font-bold text-zinc-400">
                                       {p.patientNo}
                                     </td>
-                                    <td className="px-6 py-4 font-bold text-zinc-800">{p.name}</td>
-                                    <td className="px-6 py-4 text-zinc-500">
-                                      {p.age} y/o {p.gender}
+                                    <td className="px-6 py-4">
+                                      <div className="font-bold text-zinc-800">{p.name}</div>
+                                      {(p.phone || p.email) && (
+                                        <div className="text-[10px] text-zinc-400 font-semibold mt-0.5 truncate max-w-[200px]">
+                                          {[p.phone, p.email].filter(Boolean).join(" • ")}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-6 py-4 text-zinc-500 whitespace-nowrap">
+                                      {[p.age != null && `${p.age} y/o`, p.gender]
+                                        .filter(Boolean)
+                                        .join(" ") || "—"}
                                     </td>
                                     <td className="px-6 py-4 text-zinc-500 max-w-[240px] truncate">
                                       {p.chiefComplaint || p.reason}
                                     </td>
-                                    <td className="px-6 py-4 text-zinc-400">
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                      {p.lastVisit ? (
+                                        <span className="text-zinc-600 font-semibold">
+                                          {new Date(p.lastVisit).toLocaleDateString("en-IN", {
+                                            day: "numeric",
+                                            month: "short",
+                                            year: "numeric",
+                                          })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-zinc-300">Never</span>
+                                      )}
+                                      <div className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                                        {p.visitCount
+                                          ? `${p.visitCount} appointment${p.visitCount === 1 ? "" : "s"}`
+                                          : "No appointments"}
+                                        {p.nextVisit &&
+                                          ` • next ${new Date(p.nextVisit).toLocaleDateString(
+                                            "en-IN",
+                                            { day: "numeric", month: "short" },
+                                          )}`}
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-zinc-400 whitespace-nowrap">
                                       {new Date(p.createdAt).toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4 text-right">
@@ -9173,15 +9113,33 @@ function MedicalDashboardPage() {
                           {/* Mobile Card View */}
                           <div className="md:hidden divide-y divide-zinc-150">
                             {filteredPatients.map((p) => (
-                              <div key={p.id} className="p-4 space-y-3">
+                              <div
+                                key={p.id}
+                                className={`p-4 space-y-3 ${bulkPatientIds.includes(p.id) ? "bg-brand/[0.04]" : ""}`}
+                              >
                                 <div className="flex justify-between items-start">
-                                  <div>
-                                    <span className="font-mono text-[9px] font-bold text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">
-                                      {p.patientNo}
-                                    </span>
-                                    <h4 className="text-sm font-bold text-zinc-800 mt-1.5">
-                                      {p.name}
-                                    </h4>
+                                  <div className="flex items-start gap-2.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={bulkPatientIds.includes(p.id)}
+                                      onChange={() =>
+                                        setBulkPatientIds((prev) =>
+                                          prev.includes(p.id)
+                                            ? prev.filter((id) => id !== p.id)
+                                            : [...prev, p.id],
+                                        )
+                                      }
+                                      aria-label={`Select patient ${p.name}`}
+                                      className="mt-0.5 rounded border-zinc-300 text-brand focus:ring-brand cursor-pointer"
+                                    />
+                                    <div>
+                                      <span className="font-mono text-[9px] font-bold text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">
+                                        {p.patientNo}
+                                      </span>
+                                      <h4 className="text-sm font-bold text-zinc-800 mt-1.5">
+                                        {p.name}
+                                      </h4>
+                                    </div>
                                   </div>
                                   <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-50 border border-zinc-100 px-2 py-0.5 rounded-full">
                                     {p.age}y/o • {p.gender}
@@ -9195,6 +9153,18 @@ function MedicalDashboardPage() {
                                     </span>
                                     <span className="text-zinc-700 truncate">
                                       {p.chiefComplaint || p.reason}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-zinc-400 font-semibold uppercase text-[9px] tracking-wide block w-24 shrink-0">
+                                      Last visit:
+                                    </span>
+                                    <span className="text-zinc-500">
+                                      {p.lastVisit
+                                        ? new Date(p.lastVisit).toLocaleDateString()
+                                        : "Never"}
+                                      {p.nextVisit &&
+                                        ` • next ${new Date(p.nextVisit).toLocaleDateString()}`}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-1.5">
@@ -10829,36 +10799,45 @@ function MedicalDashboardPage() {
 
                                           {activeStatusDropdownId === apt.id && (
                                             <>
+                                              <FloatingMenu
+                                                open={activeStatusDropdownId === apt.id}
+                                                matchWidth={false}
+                                                menuWidth={128}
+                                                offset={4}
+                                              >
+                                                <div className="w-32 rounded-xl bg-white border border-zinc-150 shadow-lg py-1 animate-in fade-in slide-in-from-top-1 duration-100">
+                                                  {(
+                                                    [
+                                                      "Pending",
+                                                      "Confirmed",
+                                                      "Completed",
+                                                      "Cancelled",
+                                                    ] as const
+                                                  ).map((status) => (
+                                                    <button
+                                                      key={status}
+                                                      type="button"
+                                                      onClick={() =>
+                                                        handleUpdateStatus(apt, status)
+                                                      }
+                                                      className={`w-full text-left px-3 py-1.5 text-[10px] font-bold transition-colors hover:bg-zinc-50 flex items-center justify-between cursor-pointer ${
+                                                        apt.status === status
+                                                          ? "text-brand"
+                                                          : "text-zinc-600"
+                                                      }`}
+                                                    >
+                                                      <span>{status}</span>
+                                                      {apt.status === status && (
+                                                        <Check className="h-3 w-3 text-brand" />
+                                                      )}
+                                                    </button>
+                                                  ))}
+                                                </div>
+                                              </FloatingMenu>
                                               <div
                                                 className="fixed inset-0 z-10"
                                                 onClick={() => setActiveStatusDropdownId(null)}
                                               />
-                                              <div className="absolute left-5 mt-1 w-32 rounded-xl bg-white border border-zinc-150 shadow-lg py-1 z-20 animate-in fade-in slide-in-from-top-1 duration-100">
-                                                {(
-                                                  [
-                                                    "Pending",
-                                                    "Confirmed",
-                                                    "Completed",
-                                                    "Cancelled",
-                                                  ] as const
-                                                ).map((status) => (
-                                                  <button
-                                                    key={status}
-                                                    type="button"
-                                                    onClick={() => handleUpdateStatus(apt, status)}
-                                                    className={`w-full text-left px-3 py-1.5 text-[10px] font-bold transition-colors hover:bg-zinc-50 flex items-center justify-between cursor-pointer ${
-                                                      apt.status === status
-                                                        ? "text-brand"
-                                                        : "text-zinc-600"
-                                                    }`}
-                                                  >
-                                                    <span>{status}</span>
-                                                    {apt.status === status && (
-                                                      <Check className="h-3 w-3 text-brand" />
-                                                    )}
-                                                  </button>
-                                                ))}
-                                              </div>
                                             </>
                                           )}
                                         </td>
@@ -11214,242 +11193,13 @@ function MedicalDashboardPage() {
                   >
                     {selectedDocForSchedule ? (
                       /* Render schedule editor if a doctor is selected */
-                      <div className="space-y-5 border border-brand/20 bg-gradient-to-br from-brand/[0.02] to-indigo-50/30 rounded-2xl p-5">
-                        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                          <div>
-                            <h4 className="text-sm font-bold text-zinc-800 flex items-center gap-2">
-                              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand/10">
-                                <Calendar className="h-3.5 w-3.5 text-brand" />
-                              </span>
-                              Weekly Availability Schedule
-                            </h4>
-                            <p className="text-[10px] text-zinc-400 mt-0.5 pl-8">
-                              Configure working hours for{" "}
-                              <strong className="text-zinc-600">
-                                {selectedDocForSchedule.name}
-                              </strong>
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDocForSchedule(null)}
-                            className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-zinc-700 bg-zinc-100 hover:bg-zinc-200 rounded-full px-3 py-1.5 transition-colors cursor-pointer"
-                          >
-                            <ChevronLeft className="h-3 w-3" /> Back to Directory
-                          </button>
-                        </div>
-
-                        {/* Quick Presets */}
-                        <div className="bg-white rounded-xl border border-zinc-150 p-3.5 space-y-2.5">
-                          <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
-                            Quick Presets — Apply to all days at once
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {(
-                              [
-                                { label: "Mon – Fri", days: [1, 2, 3, 4, 5], Icon: Briefcase },
-                                { label: "Mon – Sat", days: [1, 2, 3, 4, 5, 6], Icon: Building2 },
-                                {
-                                  label: "All 7 Days",
-                                  days: [0, 1, 2, 3, 4, 5, 6],
-                                  Icon: CalendarDays,
-                                },
-                                { label: "Weekends Only", days: [0, 6], Icon: Sunrise },
-                                { label: "Clear All", days: [], Icon: RotateCcw },
-                              ] as { label: string; days: number[]; Icon: React.ElementType }[]
-                            ).map(({ label, days, Icon }) => (
-                              <button
-                                key={label}
-                                type="button"
-                                onClick={() => {
-                                  setDocSchedules((prev) =>
-                                    prev.map((s) => ({
-                                      ...s,
-                                      enabled: days.includes(s.dayOfWeek),
-                                      startTime: s.startTime || "09:00",
-                                      endTime: s.endTime || "18:00",
-                                      slotDuration: s.slotDuration || 30,
-                                    })),
-                                  );
-                                }}
-                                className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-brand/5 hover:border-brand/30 px-3 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand transition-all cursor-pointer"
-                              >
-                                <Icon className="h-3 w-3" /> {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Visual 7-day Calendar Grid */}
-                        <div className="grid grid-cols-7 gap-1.5">
-                          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
-                            (dayLabel, idx) => {
-                              const sched = docSchedules.find((s) => s.dayOfWeek === idx) || {
-                                dayOfWeek: idx,
-                                startTime: "09:00",
-                                endTime: "18:00",
-                                slotDuration: 30,
-                                enabled: false,
-                              };
-                              return (
-                                <button
-                                  key={idx}
-                                  type="button"
-                                  onClick={() =>
-                                    handleUpdateScheduleField(idx, "enabled", !sched.enabled)
-                                  }
-                                  className={`flex flex-col items-center rounded-xl border-2 px-1 py-2.5 text-center transition-all cursor-pointer ${
-                                    sched.enabled
-                                      ? "border-brand bg-brand/8 shadow-sm"
-                                      : "border-zinc-150 bg-white hover:border-zinc-250"
-                                  }`}
-                                >
-                                  <span
-                                    className={`text-[9px] font-black uppercase tracking-wider ${sched.enabled ? "text-brand" : "text-zinc-400"}`}
-                                  >
-                                    {dayLabel}
-                                  </span>
-                                  <div
-                                    className={`mt-1.5 h-7 w-7 rounded-full flex items-center justify-center ${
-                                      sched.enabled
-                                        ? "bg-black text-white"
-                                        : "bg-zinc-100 text-zinc-350"
-                                    }`}
-                                  >
-                                    {sched.enabled ? (
-                                      <CheckCircle2 className="h-4 w-4" />
-                                    ) : (
-                                      <X className="h-3.5 w-3.5" />
-                                    )}
-                                  </div>
-                                  {sched.enabled ? (
-                                    <span className="mt-1.5 text-[8px] font-bold text-brand/70 leading-tight">
-                                      {sched.startTime}
-                                      <br />—<br />
-                                      {sched.endTime}
-                                    </span>
-                                  ) : (
-                                    <span className="mt-1.5 text-[8px] font-semibold text-zinc-300">
-                                      Off
-                                    </span>
-                                  )}
-                                </button>
-                              );
-                            },
-                          )}
-                        </div>
-
-                        {/* Detailed Per-Day Config for enabled days */}
-                        <div className="space-y-2">
-                          <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider pl-1">
-                            Adjust Hours per Active Day
-                          </p>
-                          {[
-                            "Sunday",
-                            "Monday",
-                            "Tuesday",
-                            "Wednesday",
-                            "Thursday",
-                            "Friday",
-                            "Saturday",
-                          ].map((dayName, idx) => {
-                            const sched = docSchedules.find((s) => s.dayOfWeek === idx);
-                            if (!sched?.enabled) return null;
-
-                            const breaks: { start: string; end: string; label: string }[] =
-                              sched.breaks ?? [];
-
-                            // Count slots the same way the server generates
-                            // them, so breaks are reflected accurately.
-                            const startMin = parseTimeToMinutes(sched.startTime) ?? 9 * 60;
-                            const endMin = parseTimeToMinutes(sched.endTime) ?? 18 * 60;
-                            const slots = countAvailableSlots(
-                              startMin,
-                              endMin,
-                              sched.slotDuration || 30,
-                              normalizeBreaks(breaks),
-                            );
-
-                            return (
-                              <DayScheduleCard
-                                key={idx}
-                                dayName={dayName}
-                                idx={idx}
-                                sched={sched}
-                                breaks={breaks}
-                                slots={slots}
-                                allSchedules={docSchedules}
-                                onUpdateField={handleUpdateScheduleField}
-                                onAddBreak={addBreakToDay}
-                                onUpdateBreak={updateBreak}
-                                onRemoveBreak={removeBreak}
-                                onCopyBreaks={copyBreaksToDay}
-                              />
-                            );
-                          })}
-                        </div>
-
-                        {docScheduleSuccess && (
-                          <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center animate-in fade-in">
-                            <p className="text-xs font-bold text-emerald-600 flex items-center justify-center gap-1.5">
-                              <CheckCircle2 className="h-4 w-4 text-emerald-500" />{" "}
-                              {docScheduleSuccess}
-                            </p>
-                          </div>
-                        )}
-
-                        <div className="flex justify-between items-center border-t border-zinc-100 pt-3">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDocForSchedule(null)}
-                            className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-500 hover:bg-zinc-50 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            disabled={savingDocSchedule}
-                            onClick={async () => {
-                              setDocScheduleSuccess("");
-                              setSavingDocSchedule(true);
-                              try {
-                                const activeSchedules = docSchedules
-                                  .filter((s) => s.enabled)
-                                  .map((s) => ({
-                                    dayOfWeek: s.dayOfWeek,
-                                    startTime: s.startTime,
-                                    endTime: s.endTime,
-                                    slotDuration: parseInt(s.slotDuration),
-                                    breaks: (s.breaks ?? []).filter((b: any) => b.start && b.end),
-                                  }));
-                                const res = await saveDoctorScheduleServerFn({
-                                  data: {
-                                    doctorId: selectedDocForSchedule.id,
-                                    schedules: activeSchedules,
-                                  },
-                                });
-                                if (res.success) {
-                                  setDocScheduleSuccess("Weekly availability saved successfully!");
-                                  setTimeout(() => setSelectedDocForSchedule(null), 1400);
-                                }
-                              } catch (err: any) {
-                                console.error(err);
-                                showToast("error", err?.message || "Failed to save schedule");
-                              } finally {
-                                setSavingDocSchedule(false);
-                              }
-                            }}
-                            className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-                          >
-                            {savingDocSchedule ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Save className="h-3.5 w-3.5" />
-                            )}
-                            Save Schedule
-                          </button>
-                        </div>
-                      </div>
+                      <WeeklyScheduleEditor
+                        key={selectedDocForSchedule.id}
+                        member={selectedDocForSchedule}
+                        backLabel="Back to Directory"
+                        onClose={() => setSelectedDocForSchedule(null)}
+                        onNotify={showToast}
+                      />
                     ) : selectedDocForLeaves ? (
                       /* Render leaves manager — interactive month calendar */
                       <LeavesCalendarPanel
@@ -11691,43 +11441,42 @@ function MedicalDashboardPage() {
                             </button>
                             <AnimatePresence>
                               {settingsDropdownOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -6, scale: 0.97 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  exit={{ opacity: 0, y: -6, scale: 0.97 }}
-                                  transition={{ duration: 0.15, ease: "easeOut" }}
-                                  className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden"
+                                <FloatingMenu
+                                  open={settingsDropdownOpen}
+                                  onClose={() => setSettingsDropdownOpen(false)}
                                 >
-                                  {tabs.map((tab) => {
-                                    const Icon = tab.icon;
-                                    const isActive = settingsSubTab === tab.id;
-                                    return (
-                                      <button
-                                        key={tab.id}
-                                        type="button"
-                                        onClick={() => {
-                                          setSettingsSubTab(tab.id as any);
-                                          setSettingsDropdownOpen(false);
-                                        }}
-                                        className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-bold transition-colors cursor-pointer ${
-                                          isActive
-                                            ? "bg-brand/5 text-brand border-l-2 border-brand"
-                                            : "text-zinc-600 hover:bg-zinc-50 border-l-2 border-transparent"
-                                        }`}
-                                      >
-                                        <Icon
-                                          className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-brand" : "text-zinc-400"}`}
-                                        />
-                                        <span className="uppercase tracking-wider">
-                                          {tab.label}
-                                        </span>
-                                        {isActive && (
-                                          <Check className="h-3 w-3 ml-auto text-brand" />
-                                        )}
-                                      </button>
-                                    );
-                                  })}
-                                </motion.div>
+                                  <div className="rounded-xl border border-zinc-200 bg-white shadow-lg overflow-hidden">
+                                    {tabs.map((tab) => {
+                                      const Icon = tab.icon;
+                                      const isActive = settingsSubTab === tab.id;
+                                      return (
+                                        <button
+                                          key={tab.id}
+                                          type="button"
+                                          onClick={() => {
+                                            setSettingsSubTab(tab.id as any);
+                                            setSettingsDropdownOpen(false);
+                                          }}
+                                          className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-bold transition-colors cursor-pointer ${
+                                            isActive
+                                              ? "bg-brand/5 text-brand border-l-2 border-brand"
+                                              : "text-zinc-600 hover:bg-zinc-50 border-l-2 border-transparent"
+                                          }`}
+                                        >
+                                          <Icon
+                                            className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-brand" : "text-zinc-400"}`}
+                                          />
+                                          <span className="uppercase tracking-wider">
+                                            {tab.label}
+                                          </span>
+                                          {isActive && (
+                                            <Check className="h-3 w-3 ml-auto text-brand" />
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -12666,332 +12415,13 @@ function MedicalDashboardPage() {
 
                         {/* Render schedule editor if a doctor is selected */}
                         {selectedDocForSchedule ? (
-                          <div className="space-y-5 border border-brand/20 bg-gradient-to-br from-brand/[0.02] to-indigo-50/30 rounded-2xl p-5">
-                            {/* Header */}
-                            <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-                              <div>
-                                <h4 className="text-sm font-bold text-zinc-800 flex items-center gap-2">
-                                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-brand/10">
-                                    <Calendar className="h-3.5 w-3.5 text-brand" />
-                                  </span>
-                                  Weekly Availability Schedule
-                                </h4>
-                                <p className="text-[10px] text-zinc-400 mt-0.5 pl-8">
-                                  Configure working hours for{" "}
-                                  <strong className="text-zinc-600">
-                                    {selectedDocForSchedule.name}
-                                  </strong>
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setSelectedDocForSchedule(null)}
-                                className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 hover:text-zinc-700 bg-zinc-100 hover:bg-zinc-200 rounded-full px-3 py-1.5 transition-colors cursor-pointer"
-                              >
-                                <ChevronLeft className="h-3 w-3" /> Back
-                              </button>
-                            </div>
-
-                            {/* Quick Preset Buttons */}
-                            <div className="bg-white rounded-xl border border-zinc-150 p-3.5 space-y-2.5">
-                              <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
-                                Quick Presets — Apply to all days at once
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {(
-                                  [
-                                    { label: "Mon – Fri", days: [1, 2, 3, 4, 5], Icon: Briefcase },
-                                    {
-                                      label: "Mon – Sat",
-                                      days: [1, 2, 3, 4, 5, 6],
-                                      Icon: Building2,
-                                    },
-                                    {
-                                      label: "All 7 Days",
-                                      days: [0, 1, 2, 3, 4, 5, 6],
-                                      Icon: CalendarDays,
-                                    },
-                                    { label: "Weekends Only", days: [0, 6], Icon: Sunrise },
-                                    { label: "Clear All", days: [], Icon: RotateCcw },
-                                  ] as { label: string; days: number[]; Icon: React.ElementType }[]
-                                ).map(({ label, days, Icon }) => (
-                                  <button
-                                    key={label}
-                                    type="button"
-                                    onClick={() => {
-                                      setDocSchedules((prev) =>
-                                        prev.map((s) => ({
-                                          ...s,
-                                          enabled: days.includes(s.dayOfWeek),
-                                          startTime: s.startTime || "09:00",
-                                          endTime: s.endTime || "18:00",
-                                          slotDuration: s.slotDuration || 30,
-                                        })),
-                                      );
-                                    }}
-                                    className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 hover:bg-brand/5 hover:border-brand/30 px-3 py-1.5 text-[10px] font-bold text-zinc-600 hover:text-brand transition-all cursor-pointer"
-                                  >
-                                    <Icon className="h-3 w-3" /> {label}
-                                  </button>
-                                ))}
-                              </div>
-
-                              {/* Global time apply */}
-                              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-zinc-100">
-                                <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
-                                  Apply same hours to all active days:
-                                </p>
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <input
-                                    type="time"
-                                    id="globalStart"
-                                    defaultValue="09:00"
-                                    className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-                                  />
-                                  <span className="text-zinc-400 text-xs">to</span>
-                                  <input
-                                    type="time"
-                                    id="globalEnd"
-                                    defaultValue="18:00"
-                                    className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-                                  />
-                                  <select
-                                    id="globalSlot"
-                                    defaultValue="30"
-                                    className="rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold focus:outline-none focus:border-brand"
-                                  >
-                                    <option value={8}>8 min slots</option>
-                                    <option value={10}>10 min slots</option>
-                                    <option value={15}>15 min slots</option>
-                                    <option value={30}>30 min slots</option>
-                                    <option value={45}>45 min slots</option>
-                                    <option value={60}>60 min slots</option>
-                                  </select>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const startEl = document.getElementById(
-                                        "globalStart",
-                                      ) as HTMLInputElement;
-                                      const endEl = document.getElementById(
-                                        "globalEnd",
-                                      ) as HTMLInputElement;
-                                      const slotEl = document.getElementById(
-                                        "globalSlot",
-                                      ) as HTMLSelectElement;
-                                      const st = startEl?.value || "09:00";
-                                      const en = endEl?.value || "18:00";
-                                      const sl = parseInt(slotEl?.value || "30");
-                                      setDocSchedules((prev) =>
-                                        prev.map((s) =>
-                                          s.enabled
-                                            ? { ...s, startTime: st, endTime: en, slotDuration: sl }
-                                            : s,
-                                        ),
-                                      );
-                                    }}
-                                    className="rounded-full bg-black text-white text-[10px] font-bold px-3 py-1.5 hover:bg-black/90 cursor-pointer flex items-center gap-1"
-                                  >
-                                    <Check className="h-3 w-3" /> Apply
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Visual 7-day Calendar Grid */}
-                            <div className="grid grid-cols-7 gap-1.5">
-                              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
-                                (dayLabel, idx) => {
-                                  const sched = docSchedules.find((s) => s.dayOfWeek === idx) || {
-                                    dayOfWeek: idx,
-                                    startTime: "09:00",
-                                    endTime: "18:00",
-                                    slotDuration: 30,
-                                    enabled: false,
-                                  };
-                                  return (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={() =>
-                                        handleUpdateScheduleField(idx, "enabled", !sched.enabled)
-                                      }
-                                      className={`flex flex-col items-center rounded-xl border-2 px-1 py-2.5 text-center transition-all cursor-pointer ${
-                                        sched.enabled
-                                          ? "border-brand bg-brand/8 shadow-sm"
-                                          : "border-zinc-150 bg-white hover:border-zinc-250"
-                                      }`}
-                                    >
-                                      <span
-                                        className={`text-[9px] font-black uppercase tracking-wider ${sched.enabled ? "text-brand" : "text-zinc-400"}`}
-                                      >
-                                        {dayLabel}
-                                      </span>
-                                      <div
-                                        className={`mt-1.5 h-7 w-7 rounded-full flex items-center justify-center ${
-                                          sched.enabled
-                                            ? "bg-black text-white"
-                                            : "bg-zinc-100 text-zinc-350"
-                                        }`}
-                                      >
-                                        {sched.enabled ? (
-                                          <CheckCircle2 className="h-4 w-4" />
-                                        ) : (
-                                          <X className="h-3.5 w-3.5" />
-                                        )}
-                                      </div>
-                                      {sched.enabled && (
-                                        <span className="mt-1.5 text-[8px] font-bold text-brand/70 leading-tight">
-                                          {sched.startTime}
-                                          <br />—<br />
-                                          {sched.endTime}
-                                          {sched.breakStart && (
-                                            <>
-                                              <br />
-                                              <span className="text-amber-500">
-                                                ☕ {sched.breakStart}
-                                              </span>
-                                            </>
-                                          )}
-                                        </span>
-                                      )}
-                                      {!sched.enabled && (
-                                        <span className="mt-1.5 text-[8px] font-semibold text-zinc-300">
-                                          Off
-                                        </span>
-                                      )}
-                                    </button>
-                                  );
-                                },
-                              )}
-                            </div>
-
-                            {/* Detailed Per-Day Config for enabled days */}
-                            <div className="space-y-2">
-                              <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider pl-1">
-                                Adjust Hours per Active Day
-                              </p>
-                              {[
-                                "Sunday",
-                                "Monday",
-                                "Tuesday",
-                                "Wednesday",
-                                "Thursday",
-                                "Friday",
-                                "Saturday",
-                              ].map((dayName, idx) => {
-                                const sched = docSchedules.find((s) => s.dayOfWeek === idx);
-                                if (!sched?.enabled) return null;
-
-                                const breaks: { start: string; end: string; label: string }[] =
-                                  sched.breaks ?? [];
-
-                                // Count slots the same way the server generates
-                                // them, so breaks are reflected accurately.
-                                const startMin = parseTimeToMinutes(sched.startTime) ?? 9 * 60;
-                                const endMin = parseTimeToMinutes(sched.endTime) ?? 18 * 60;
-                                const slots = countAvailableSlots(
-                                  startMin,
-                                  endMin,
-                                  sched.slotDuration || 30,
-                                  normalizeBreaks(breaks),
-                                );
-
-                                return (
-                                  <DayScheduleCard
-                                    key={idx}
-                                    dayName={dayName}
-                                    idx={idx}
-                                    sched={sched}
-                                    breaks={breaks}
-                                    slots={slots}
-                                    allSchedules={docSchedules}
-                                    onUpdateField={handleUpdateScheduleField}
-                                    onAddBreak={addBreakToDay}
-                                    onUpdateBreak={updateBreak}
-                                    onRemoveBreak={removeBreak}
-                                    onCopyBreaks={copyBreaksToDay}
-                                  />
-                                );
-                              })}
-                              {docSchedules.filter((s) => s.enabled).length === 0 && (
-                                <div className="text-center py-6 text-zinc-350 text-xs font-semibold">
-                                  Click on days above to activate them ↑
-                                </div>
-                              )}
-                            </div>
-
-                            {docScheduleSuccess && (
-                              <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center animate-in fade-in">
-                                <p className="text-xs font-bold text-emerald-600 flex items-center justify-center gap-1.5">
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />{" "}
-                                  {docScheduleSuccess}
-                                </p>
-                              </div>
-                            )}
-
-                            <div className="flex justify-between items-center border-t border-zinc-100 pt-3">
-                              <span className="text-[10px] text-zinc-400">
-                                {docSchedules.filter((s) => s.enabled).length} working day
-                                {docSchedules.filter((s) => s.enabled).length !== 1 ? "s" : ""}{" "}
-                                selected
-                              </span>
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedDocForSchedule(null)}
-                                  className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-500 hover:bg-zinc-50 cursor-pointer"
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={savingDocSchedule}
-                                  onClick={async () => {
-                                    setDocScheduleSuccess("");
-                                    setSavingDocSchedule(true);
-                                    try {
-                                      const activeSchedules = docSchedules
-                                        .filter((s) => s.enabled)
-                                        .map((s) => ({
-                                          dayOfWeek: s.dayOfWeek,
-                                          startTime: s.startTime,
-                                          endTime: s.endTime,
-                                          slotDuration: parseInt(s.slotDuration),
-                                          breaks: (s.breaks ?? []).filter(
-                                            (b: any) => b.start && b.end,
-                                          ),
-                                        }));
-                                      const res = await saveDoctorScheduleServerFn({
-                                        data: {
-                                          doctorId: selectedDocForSchedule.id,
-                                          schedules: activeSchedules,
-                                        },
-                                      });
-                                      if (res.success) {
-                                        setDocScheduleSuccess(
-                                          "Weekly availability saved successfully!",
-                                        );
-                                        setTimeout(() => setSelectedDocForSchedule(null), 1400);
-                                      }
-                                    } catch (err: any) {
-                                      console.error(err);
-                                    } finally {
-                                      setSavingDocSchedule(false);
-                                    }
-                                  }}
-                                  className="rounded-full bg-black text-white px-5 py-2 text-xs font-bold hover:bg-black/90 shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-                                >
-                                  {savingDocSchedule ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <Save className="h-3.5 w-3.5" />
-                                  )}
-                                  Save Schedule
-                                </button>
-                              </div>
-                            </div>
-                          </div>
+                          <WeeklyScheduleEditor
+                            key={selectedDocForSchedule.id}
+                            member={selectedDocForSchedule}
+                            backLabel="Back"
+                            onClose={() => setSelectedDocForSchedule(null)}
+                            onNotify={showToast}
+                          />
                         ) : selectedDocForLeaves ? (
                           /* Render leaves manager — interactive month calendar */
                           <LeavesCalendarPanel
@@ -16389,37 +15819,24 @@ function MedicalDashboardPage() {
                                         <Loader2 className="h-4 w-4 animate-spin text-brand" />
                                       </div>
                                     ) : aptAvailableSlots.length > 0 ? (
-                                      <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-1">
-                                        {aptAvailableSlots.map((slot) => {
-                                          const isSelected = aptTimeSlot === slot;
-                                          return (
-                                            <button
-                                              key={slot}
-                                              type="button"
-                                              onClick={() => {
-                                                setAptTimeSlot(slot);
-                                                const datePart = aptDateTime.split("T")[0];
-                                                const [time, modifier] = slot.split(" ");
-                                                let [hours, minutes] = time.split(":").map(Number);
-                                                if (modifier === "PM" && hours < 12) hours += 12;
-                                                if (modifier === "AM" && hours === 12) hours = 0;
-                                                const timePart = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
-                                                setAptDateTime(`${datePart}T${timePart}`);
-                                                setAptClockOpen(false);
-                                                if (fieldErrors.time)
-                                                  setFieldErrors((prev) => ({ ...prev, time: "" }));
-                                              }}
-                                              className={`rounded-xl py-2 px-1 text-[10px] font-bold border transition-all cursor-pointer text-center ${
-                                                isSelected
-                                                  ? "bg-black border-zinc-800 text-white font-black scale-[1.02]"
-                                                  : "bg-white border-zinc-200 text-zinc-650 hover:border-zinc-800/40"
-                                              }`}
-                                            >
-                                              {slot}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
+                                      <SessionSlotGrid
+                                        slots={aptAvailableSlots}
+                                        selected={aptTimeSlot}
+                                        onSelect={(slot) => {
+                                          setAptTimeSlot(slot);
+                                          const datePart = aptDateTime.split("T")[0];
+                                          const [time, modifier] = slot.split(" ");
+                                          const [rawHours, minutes] = time.split(":").map(Number);
+                                          let hours = rawHours;
+                                          if (modifier === "PM" && hours < 12) hours += 12;
+                                          if (modifier === "AM" && hours === 12) hours = 0;
+                                          const timePart = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+                                          setAptDateTime(`${datePart}T${timePart}`);
+                                          setAptClockOpen(false);
+                                          if (fieldErrors.time)
+                                            setFieldErrors((prev) => ({ ...prev, time: "" }));
+                                        }}
+                                      />
                                     ) : (
                                       <div className="text-center py-3 text-[10px] text-red-500 font-bold bg-red-50/50 rounded-xl border border-red-100">
                                         No slots available on this date.
@@ -17314,6 +16731,76 @@ function MedicalDashboardPage() {
                   className="w-full rounded-full bg-red-600 hover:bg-red-700 py-2.5 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none"
                 >
                   Confirm Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Bulk delete confirmation for the multi-selected patient files */}
+      <AnimatePresence>
+        {confirmBulkPatientDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-white rounded-[1.75rem] border border-zinc-150 p-6 max-w-sm w-full mx-4 shadow-none text-center space-y-4"
+            >
+              <button
+                type="button"
+                onClick={() => setConfirmBulkPatientDelete(false)}
+                disabled={bulkDeletingPatients}
+                aria-label="Close"
+                className="absolute top-4 right-4 rounded-full p-1 text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 border border-red-100 mx-auto">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-sm font-bold text-zinc-900 leading-none">
+                  Delete {visibleSelectedPatientIds.length} Patient File
+                  {visibleSelectedPatientIds.length === 1 ? "" : "s"}
+                </h3>
+                <p className="text-[11px] text-zinc-400 leading-relaxed font-medium">
+                  This permanently deletes the{" "}
+                  <span className="font-semibold text-zinc-650">
+                    {visibleSelectedPatientIds.length} selected patient file
+                    {visibleSelectedPatientIds.length === 1 ? "" : "s"}
+                  </span>{" "}
+                  and their SOAP notes and prescriptions. Appointments are kept. This cannot be
+                  undone.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmBulkPatientDelete(false)}
+                  disabled={bulkDeletingPatients}
+                  className="w-full rounded-full border border-zinc-200 py-2.5 text-xs font-bold text-zinc-600 hover:bg-zinc-50 transition-all active:scale-95 cursor-pointer shadow-none disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkDeletePatients(visibleSelectedPatientIds)}
+                  disabled={bulkDeletingPatients}
+                  className="w-full rounded-full bg-red-600 hover:bg-red-700 py-2.5 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-none disabled:bg-zinc-300"
+                >
+                  {bulkDeletingPatients ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    "Confirm Delete"
+                  )}
                 </button>
               </div>
             </motion.div>

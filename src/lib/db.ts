@@ -467,6 +467,7 @@ if (typeof window === "undefined") {
               endTime VARCHAR(10) NOT NULL,
               slotDuration INT DEFAULT 30,
               breaks JSON DEFAULT NULL,
+              sessions JSON DEFAULT NULL,
               createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
               UNIQUE KEY doc_day (doctorId, dayOfWeek)
             )
@@ -478,6 +479,15 @@ if (typeof window === "undefined") {
         // Migrate: add breaks column if it doesn't exist
         try {
           await conn.query(`ALTER TABLE DoctorSchedule ADD COLUMN breaks JSON DEFAULT NULL`);
+        } catch (_) {
+          /* column already exists */
+        }
+
+        // Migrate: Morning / Afternoon / Evening session windows (day-sessions.ts).
+        // Additive and nullable: rows without it keep the legacy single
+        // startTime → endTime window, so existing schedules are unchanged.
+        try {
+          await conn.query(`ALTER TABLE DoctorSchedule ADD COLUMN sessions JSON DEFAULT NULL`);
         } catch (_) {
           /* column already exists */
         }

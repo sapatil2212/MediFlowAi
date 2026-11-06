@@ -3,7 +3,6 @@ import { motion } from "motion/react";
 import {
   Calendar,
   Clock,
-  Sparkles,
   MessageCircle,
   Users,
   CheckCircle2,
@@ -20,9 +19,14 @@ import {
 } from "lucide-react";
 import {
   getDoctorAffectedAppointmentsServerFn,
-  generateDoctorLeaveWaMessageServerFn,
   processDoctorEmergencyLeaveServerFn,
 } from "@/lib/auth";
+import { findCatalogTemplate } from "@/lib/notify-catalog";
+import { formatTemplateDate, normalizeSlotLabel, parseWallClock } from "@/lib/notify-time";
+import { ABSENCE_REASONS, MAX_CUSTOM_REASON, absenceReasonText } from "@/lib/doctor-absence";
+
+/** Reason-aware Meta utility template sent to patients when a doctor is absent. */
+const DOCTOR_LEAVE_TEMPLATE = findCatalogTemplate("clinic_doctor_leave_notice", "en_US");
 
 export interface DoctorEmergencyLeaveModalProps {
   isOpen: boolean;
@@ -41,20 +45,17 @@ export interface DoctorEmergencyLeaveModalProps {
   onSuccess: (result: {
     leavesCreated: number;
     notifiedPatientsCount: number;
+    /** Notices that could not be sent or are still being retried. */
+    unsentPatientsCount?: number;
     /** True when the server skipped WhatsApp because the caller may not send. */
     whatsappSkippedForRole?: boolean;
     dates: string[];
   }) => void;
 }
 
-const PRESET_REASONS = [
-  { label: "Medical Emergency", value: "Medical Emergency" },
-  { label: "Severe Health Illness", value: "Severe Health Illness & Doctor Bed Rest" },
-  { label: "Family Emergency", value: "Urgent Family Emergency" },
-  { label: "Critical On-Call Duty", value: "Emergency Hospital Surgery / Critical On-Call Duty" },
-  { label: "Emergency Travel", value: "Unavoidable Emergency Travel" },
-  { label: "Personal Emergency", value: "Unforeseen Personal Emergency" },
-];
+// One list shared with the server, so the button staff pick always matches the
+// wording patients receive in the WhatsApp notice.
+const PRESET_REASONS = ABSENCE_REASONS.map((r) => ({ label: r.value, value: r.value }));
 
 /**
  * Returns all dates between start and end (inclusive) formatted as YYYY-MM-DD
@@ -105,8 +106,6 @@ export function DoctorEmergencyLeaveModal({
   onClose,
   doctor,
   clinicName = "HealthSync Clinic",
-  waStatus = "DISCONNECTED",
-  waConnectedNumber = "",
   onSuccess,
 }: DoctorEmergencyLeaveModalProps) {
   // Calendar & Date state
@@ -133,12 +132,6 @@ export function DoctorEmergencyLeaveModal({
   const [loadingAppts, setLoadingAppts] = useState<boolean>(false);
   const [affectedAppts, setAffectedAppts] = useState<any[]>([]);
   const [selectedApptIds, setSelectedApptIds] = useState<string[]>([]);
-
-  // AI WhatsApp Message state
-  const [messageTemplate, setMessageTemplate] = useState<string>("");
-  const [isGeneratingAi, setIsGeneratingAi] = useState<boolean>(false);
-  const [aiTone, setAiTone] = useState<"empathetic" | "urgent" | "reassuring">("empathetic");
-  const [aiSource, setAiSource] = useState<"ai" | "template" | "custom">("template");
 
   // Submission & Results
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -176,7 +169,6 @@ export function DoctorEmergencyLeaveModal({
       setCustomReasonNote("");
       setSubmissionResult(null);
       setErrorMsg("");
-      setAiTone("empathetic");
     }
   }, [isOpen, doctor, todayStr]);
 
@@ -223,42 +215,6 @@ export function DoctorEmergencyLeaveModal({
   const effectiveReason = useMemo(() => {
     return customReasonNote.trim() ? `${reason}: ${customReasonNote.trim()}` : reason;
   }, [reason, customReasonNote]);
-
-  // AI message generation
-  const handleGenerateAiMessage = async (tone = aiTone) => {
-    if (!doctor) return;
-    setIsGeneratingAi(true);
-    setErrorMsg("");
-    try {
-      const res = await generateDoctorLeaveWaMessageServerFn({
-        data: {
-          doctorName: doctor.name,
-          leaveDates: selectedDates,
-          reason: effectiveReason,
-          clinicName,
-          tone,
-        },
-      });
-      if (res.success && res.message) {
-        setMessageTemplate(res.message);
-        setAiSource(res.source === "ai" ? "ai" : "template");
-      }
-    } catch (err: any) {
-      console.warn("AI generation fallback to standard template:", err?.message);
-      const fallback = `Dear {{patient_name}},\n\nWe regret to inform you that your upcoming appointment with *Dr. ${doctor.name}* at *${clinicName}* on *{{appointment_date}}* at {{appointment_time}} needs to be rescheduled. Dr. ${doctor.name} is unexpectedly unavailable due to a ${effectiveReason}.\n\nWe sincerely apologize for any inconvenience. Our clinic care desk will contact you shortly to reschedule your consultation to the earliest available slot.\n\nPlease feel free to reply directly to this message if you have any urgent queries.\n\nThank you for your understanding.`;
-      setMessageTemplate(fallback);
-      setAiSource("template");
-    } finally {
-      setIsGeneratingAi(false);
-    }
-  };
-
-  // Initial generation on open or doctor change or reason change
-  useEffect(() => {
-    if (isOpen && doctor && selectedDates.length > 0) {
-      handleGenerateAiMessage(aiTone);
-    }
-  }, [isOpen, doctor?.id, reason]);
 
   // Toggle individual date selection
   const toggleDate = (dateStr: string) => {
@@ -480,43 +436,41 @@ export function DoctorEmergencyLeaveModal({
     }
   };
 
-  // Placeholder insertion helper
-  const insertPlaceholder = (tag: string) => {
-    setMessageTemplate((prev) => `${prev} {{${tag}}}`);
-    setAiSource("custom");
-  };
+  // Exactly what patients read after "unavailable due to".
+  const patientReason = useMemo(
+    () => absenceReasonText({ reason, customReason: customReasonNote }),
+    [reason, customReasonNote],
+  );
 
-  // Live WhatsApp preview
+  // Preview of the template with the first recipient's real values.
   const previewSample = useMemo(() => {
+    if (!DOCTOR_LEAVE_TEMPLATE) return "";
     const firstApt = affectedAppts[0];
-    const sampleDate = selectedDates[0]
-      ? new Date(selectedDates[0]).toLocaleDateString("en-IN", {
-          weekday: "short",
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        })
-      : "Upcoming Date";
-    const sampleTime = firstApt?.timeSlot || "10:30 AM";
-    const samplePatient = firstApt?.name || "Patient";
-
-    return (messageTemplate || "")
-      .replace(/{{patient_name}}/g, samplePatient)
-      .replace(/{{doctor_name}}/g, doctor?.name || "Doctor")
-      .replace(/{{appointment_date}}/g, sampleDate)
-      .replace(/{{appointment_time}}/g, sampleTime)
-      .replace(/{{reason}}/g, effectiveReason)
-      .replace(/{{clinic_name}}/g, clinicName);
-  }, [messageTemplate, affectedAppts, selectedDates, doctor?.name, effectiveReason, clinicName]);
+    const dt = firstApt?.dateTime ? new Date(firstApt.dateTime) : null;
+    const day =
+      dt && !Number.isNaN(dt.getTime())
+        ? { year: dt.getFullYear(), month: dt.getMonth() + 1, day: dt.getDate() }
+        : parseWallClock(selectedDates[0]);
+    const values: Record<string, string> = {
+      name: firstApt?.name || "Patient",
+      doctorName: doctor?.name || "Doctor",
+      clinicName: clinicName || "the clinic",
+      absenceReason: patientReason,
+      date: day ? formatTemplateDate(day) : "the selected date",
+      time: normalizeSlotLabel(firstApt?.timeSlot) || "your booked time",
+    };
+    let text = DOCTOR_LEAVE_TEMPLATE.bodyText;
+    for (const [key, field] of Object.entries(DOCTOR_LEAVE_TEMPLATE.variableMappings)) {
+      const n = key.split(".")[1];
+      text = text.replace(`{{${n}}}`, values[field] ?? "");
+    }
+    return text;
+  }, [affectedAppts, selectedDates, doctor?.name, clinicName, patientReason]);
 
   // Submit emergency leave & dispatch
   const handleConfirmEmergencyLeave = async () => {
     if (!doctor || selectedDates.length === 0) {
       setErrorMsg("Please select at least one leave date.");
-      return;
-    }
-    if (!messageTemplate.trim()) {
-      setErrorMsg("WhatsApp message content cannot be empty.");
       return;
     }
 
@@ -529,7 +483,7 @@ export function DoctorEmergencyLeaveModal({
           doctorId: doctor.id,
           leaveDates: selectedDates,
           reason: effectiveReason,
-          customMessage: messageTemplate,
+          customReason: customReasonNote.trim() || undefined,
           selectedAppointmentIds: selectedApptIds,
         },
       });
@@ -539,6 +493,7 @@ export function DoctorEmergencyLeaveModal({
         onSuccess({
           leavesCreated: res.leavesCreated,
           notifiedPatientsCount: res.notifiedPatientsCount,
+          unsentPatientsCount: res.failedPatientsCount + res.queuedPatientsCount,
           whatsappSkippedForRole: res.whatsappSkippedForRole,
           dates: selectedDates,
         });
@@ -575,7 +530,7 @@ export function DoctorEmergencyLeaveModal({
                 Clinical Emergency Protocol
               </h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Block multiple dates &amp; notify booked patients automatically via AI WhatsApp
+                Block multiple dates &amp; notify booked patients on WhatsApp
               </p>
             </div>
           </div>
@@ -612,17 +567,11 @@ export function DoctorEmergencyLeaveModal({
           </div>
 
           <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-            <span>WhatsApp Service:</span>
-            {waStatus === "CONNECTED" ? (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                Active ({waConnectedNumber || "Connected"})
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-700">
-                Offline (Messages will queue)
-              </span>
-            )}
+            <span>WhatsApp:</span>
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Official API (approved template)
+            </span>
           </div>
         </div>
 
@@ -636,10 +585,12 @@ export function DoctorEmergencyLeaveModal({
               </div>
               <div>
                 <h4 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-                  Emergency Leave Declared &amp; Broadcast Queued
+                  Emergency Leave Declared
                 </h4>
                 <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-                  Doctor availability has been blocked and patient notices have been enqueued.
+                  {submissionResult.whatsappSkippedForRole
+                    ? "Doctor availability has been blocked. WhatsApp notices were not sent for your role."
+                    : "Doctor availability has been blocked. Delivery and read receipts appear in the notification log."}
                 </p>
               </div>
 
@@ -666,9 +617,22 @@ export function DoctorEmergencyLeaveModal({
                     {submissionResult.notifiedPatientsCount}
                   </p>
                   <p className="text-[11px] text-zinc-500 mt-0.5">
-                    {submissionResult.notifiedPatientsCount === 0
+                    {(submissionResult.patients?.length ?? 0) === 0
                       ? "No bookings affected"
-                      : "Recipients enqueued"}
+                      : [
+                          "accepted by WhatsApp",
+                          submissionResult.queuedPatientsCount
+                            ? `${submissionResult.queuedPatientsCount} retrying`
+                            : null,
+                          submissionResult.failedPatientsCount
+                            ? `${submissionResult.failedPatientsCount} not sent`
+                            : null,
+                          submissionResult.skippedPatientsCount
+                            ? `${submissionResult.skippedPatientsCount} skipped`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                   </p>
                 </div>
               </div>
@@ -687,8 +651,22 @@ export function DoctorEmergencyLeaveModal({
                             {p.date} • {p.time} • {p.phone}
                           </p>
                         </div>
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-medium">
-                          Enqueued
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded font-medium ${
+                            p.status === "sent"
+                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                              : p.status === "failed"
+                                ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                                : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                          }`}
+                        >
+                          {p.status === "sent"
+                            ? "Sent"
+                            : p.status === "queued"
+                              ? "Retrying"
+                              : p.status === "failed"
+                                ? "Not sent"
+                                : "Skipped"}
                         </span>
                       </div>
                     ))}
@@ -1078,17 +1056,26 @@ export function DoctorEmergencyLeaveModal({
                     })}
                   </div>
 
-                  <input
-                    type="text"
-                    value={customReasonNote}
-                    onChange={(e) => setCustomReasonNote(e.target.value)}
-                    placeholder="Add specific reason details (e.g. High fever with doctor rest advised until Monday)..."
-                    className="w-full rounded-lg border border-zinc-200 dark:border-zinc-750 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200 focus:border-zinc-800 dark:focus:border-zinc-400 focus:outline-none transition-colors"
-                  />
+                  <div className="space-y-1">
+                    <input
+                      type="text"
+                      value={customReasonNote}
+                      maxLength={MAX_CUSTOM_REASON}
+                      onChange={(e) => setCustomReasonNote(e.target.value)}
+                      placeholder="Custom reason for patients (optional), e.g. an urgent hospital procedure"
+                      className="w-full rounded-lg border border-zinc-200 dark:border-zinc-750 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200 focus:border-zinc-800 dark:focus:border-zinc-400 focus:outline-none transition-colors"
+                    />
+                    <p className="text-[10.5px] text-zinc-500 leading-relaxed">
+                      Patients read: &quot;{doctor.name} is unavailable due to{" "}
+                      <strong>{patientReason}</strong>&quot;. A custom reason replaces the selected
+                      one. Avoid medical or personal details. {customReasonNote.length}/
+                      {MAX_CUSTOM_REASON}
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {/* RIGHT COLUMN: Step 3 (Booked Patients) & Step 4 (AI WhatsApp Broadcast) */}
+              {/* RIGHT COLUMN: Step 3 (Booked Patients) & Step 4 (Approved WhatsApp notice) */}
               <div className="lg:col-span-6 space-y-6">
                 {/* Step 3: Booked Patients on Selected Dates */}
                 <div className="space-y-3">
@@ -1188,114 +1175,35 @@ export function DoctorEmergencyLeaveModal({
                   )}
                 </div>
 
-                {/* Step 4: AI-Crafted WhatsApp Broadcast Message */}
+                {/* Step 4: Approved WhatsApp utility notice (read-only) */}
                 <div className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <label className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                      <span className="h-5 w-5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-semibold flex items-center justify-center border border-zinc-200 dark:border-zinc-700">
-                        4
-                      </span>
-                      <span>AI-Crafted WhatsApp Broadcast Message</span>
-                    </label>
+                  <label className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                    <span className="h-5 w-5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[11px] font-semibold flex items-center justify-center border border-zinc-200 dark:border-zinc-700">
+                      4
+                    </span>
+                    <span>WhatsApp Notice (Meta-approved utility template)</span>
+                  </label>
 
-                    <div className="flex items-center gap-2">
-                      {/* Tone Pills */}
-                      <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 rounded-md p-0.5 border border-zinc-200 dark:border-zinc-700 text-xs">
-                        {(
-                          [
-                            { id: "empathetic", label: "Empathetic" },
-                            { id: "urgent", label: "Urgent" },
-                            { id: "reassuring", label: "Reassuring" },
-                          ] as const
-                        ).map((t) => (
-                          <button
-                            type="button"
-                            key={t.id}
-                            onClick={() => {
-                              setAiTone(t.id);
-                              handleGenerateAiMessage(t.id);
-                            }}
-                            className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
-                              aiTone === t.id
-                                ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs"
-                                : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
-                            }`}
-                          >
-                            {t.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* AI Regenerate Button */}
-                      <button
-                        type="button"
-                        disabled={isGeneratingAi}
-                        onClick={() => handleGenerateAiMessage(aiTone)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-[11px] font-medium hover:bg-zinc-50 dark:hover:bg-zinc-750 transition-colors cursor-pointer disabled:opacity-50"
-                      >
-                        {isGeneratingAi ? (
-                          <Loader2 className="h-3 w-3 animate-spin text-zinc-600" />
-                        ) : (
-                          <Sparkles className="h-3 w-3 text-zinc-600 dark:text-zinc-400" />
-                        )}
-                        <span>Regenerate with AI</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Clean WhatsApp Preview Card */}
                   <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/30 p-3.5 space-y-2">
                     <div className="flex items-center justify-between text-[11px] text-zinc-500 pb-1 border-b border-zinc-200/80 dark:border-zinc-800">
                       <span className="font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
                         <MessageCircle className="h-3.5 w-3.5 text-zinc-500" />
-                        WhatsApp Message Preview (for first recipient)
+                        Preview (for first recipient)
                       </span>
                       <span className="text-[10px] text-zinc-400 font-mono">
-                        {aiSource === "ai" ? "AI Generated" : "Template"}
+                        {DOCTOR_LEAVE_TEMPLATE?.name ?? "clinic_doctor_leave_notice"}
                       </span>
                     </div>
 
-                    {/* Preview Bubble */}
-                    <div className="bg-white dark:bg-zinc-800 rounded-lg p-3 text-xs text-zinc-800 dark:text-zinc-200 leading-relaxed space-y-1.5 whitespace-pre-wrap border border-zinc-200 dark:border-zinc-700/80">
-                      <div>{previewSample}</div>
-                      <div className="flex justify-end items-center gap-1 text-[10px] text-zinc-400 pt-1">
-                        <span>
-                          {new Date().toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                        <span className="text-zinc-500">✓✓</span>
-                      </div>
+                    <div className="bg-white dark:bg-zinc-800 rounded-lg p-3 text-xs text-zinc-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap border border-zinc-200 dark:border-zinc-700/80">
+                      {previewSample}
                     </div>
-                  </div>
 
-                  {/* Editable Message Textarea */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] text-zinc-500">
-                      <span className="font-medium">Edit Template Text (Variables Supported):</span>
-                      <div className="flex flex-wrap gap-1">
-                        {["patient_name", "appointment_date", "appointment_time"].map((ph) => (
-                          <button
-                            key={ph}
-                            type="button"
-                            onClick={() => insertPlaceholder(ph)}
-                            className="text-[10px] bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 font-mono px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-700 cursor-pointer transition-colors"
-                          >
-                            + {ph}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <textarea
-                      rows={4}
-                      value={messageTemplate}
-                      onChange={(e) => {
-                        setMessageTemplate(e.target.value);
-                        setAiSource("custom");
-                      }}
-                      className="w-full rounded-lg border border-zinc-200 dark:border-zinc-750 bg-white dark:bg-zinc-900 p-2.5 text-xs text-zinc-800 dark:text-zinc-200 font-mono leading-relaxed focus:border-zinc-800 dark:focus:border-zinc-400 focus:outline-none transition-colors"
-                    />
+                    <p className="text-[10.5px] text-zinc-500 leading-relaxed">
+                      Sent through the official WhatsApp API using a Meta-approved utility template,
+                      so it reaches patients who have never messaged the clinic. The wording is
+                      fixed by Meta and cannot be edited. Patients who replied STOP are skipped.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1338,12 +1246,12 @@ export function DoctorEmergencyLeaveModal({
                 {isSubmitting ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Processing &amp; Broadcasting...</span>
+                    <span>Sending WhatsApp notices...</span>
                   </>
                 ) : (
                   <>
                     <Send className="h-3.5 w-3.5" />
-                    <span>Confirm Emergency Leave &amp; Send AI WhatsApp</span>
+                    <span>Confirm Emergency Leave &amp; Notify Patients</span>
                   </>
                 )}
               </button>

@@ -219,7 +219,7 @@ export function bookingWallClock(b: Pick<BookingSnapshot, "wallClock">): WallClo
 export function buildNotifyContext(
   booking: BookingSnapshot,
   tenant: TenantSnapshot,
-  extra: { joinLink?: string | null } = {},
+  extra: { joinLink?: string | null; absenceReason?: string | null } = {},
 ): AptNotifyContext {
   const w = parseWallClock(booking.wallClock);
   const dateTime = w
@@ -243,5 +243,6 @@ export function buildNotifyContext(
     serviceName: booking.appointmentType || DEFAULT_SERVICE[tenant.category],
     dateText: w ? formatTemplateDate(w) : null,
     timeText,
+    absenceReason: extra.absenceReason ?? null,
   };
 }

@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import crypto from "crypto";
 import { query, queryOne, withTransaction } from "./db";
-import { overlapsBreak, resolveBreaks, type NormalizedBreak } from "./doctor-schedule-breaks";
+import { freeSlotLabels, resolveDoctorDaySlots, resolveScheduleDaySlots } from "./day-sessions";
 
 // ──────────────────────────────────────────────
 // Public: Get Clinic Info + Dynamic Available Slots
@@ -90,16 +90,11 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
         if (isEducation || isGym) {
           // ── Education: generate slots from ClinicHours (working hours) ──
           if (clinicHours && clinicHours.openTime && clinicHours.closeTime) {
-            const duration = clinicHours.slotDuration || 30;
-
-            const [startHour, startMin] = clinicHours.openTime.split(":").map(Number);
-            const [endHour, endMin] = clinicHours.closeTime.split(":").map(Number);
-
-            const startObj = new Date(selectedDate);
-            startObj.setHours(startHour, startMin, 0, 0);
-
-            const endObj = new Date(selectedDate);
-            endObj.setHours(endHour, endMin, 0, 0);
+            const candidates = resolveScheduleDaySlots({
+              startTime: clinicHours.openTime,
+              endTime: clinicHours.closeTime,
+              slotDuration: clinicHours.slotDuration,
+            });
 
             // Get existing bookings for this tenant on this day
             const existingBookings = await query<any>(
@@ -108,19 +103,7 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
               [data.tenantId, dateStr],
             );
             const bookedSlots = existingBookings.map((b: any) => b.timeSlot || "");
-
-            const temp = new Date(startObj);
-            while (temp < endObj) {
-              const slotTimeStr = temp.toLocaleTimeString("en-US", {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: true,
-              });
-              if (!bookedSlots.includes(slotTimeStr)) {
-                slots.push(slotTimeStr);
-              }
-              temp.setMinutes(temp.getMinutes() + duration);
-            }
+            slots.push(...freeSlotLabels(candidates, bookedSlots));
           }
         } else {
           // ── Standard: generate slots from DoctorSchedule ──
@@ -137,43 +120,25 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
               [data.doctorId, dayOfWeek],
             );
 
-            // Resolve working hours: prefer DoctorSchedule, then fall back to
-            // ClinicHours so doctors added without explicit weekly hours still
-            // show available slots on the booking portal.
-            let startTimeStr: string | null = null;
-            let endTimeStr: string | null = null;
-            let duration = 30;
-            // Breaks (lunch etc.) configured for this weekday. Slots that
-            // overlap one must not be offered.
-            let breaks: NormalizedBreak[] = [];
+            // Only consulted when there is no row for this weekday: a doctor
+            // who has a weekly schedule but not this day is off, rather than
+            // falling through to the clinic's opening hours.
+            const anySchedule = docSchedule
+              ? docSchedule
+              : await queryOne<any>("SELECT id FROM DoctorSchedule WHERE doctorId = ? LIMIT 1", [
+                  data.doctorId,
+                ]);
 
-            if (docSchedule) {
-              startTimeStr = docSchedule.startTime;
-              endTimeStr = docSchedule.endTime;
-              duration = docSchedule.slotDuration || 30;
-              breaks = resolveBreaks(docSchedule.breaks);
-            } else if (clinicHours && clinicHours.openTime && clinicHours.closeTime) {
-              // Fallback: use ClinicHours for this tenant & day
-              startTimeStr = clinicHours.openTime;
-              endTimeStr = clinicHours.closeTime;
-              duration = clinicHours.slotDuration || 30;
-            } else {
-              // Last resort: sensible defaults (Mon–Sat 09:00–17:00)
-              startTimeStr = "09:00";
-              endTimeStr = "17:00";
-              duration = 30;
-            }
+            // Sessions (Morning / Afternoon / Evening) when saved, otherwise
+            // the legacy single window; ClinicHours / 09:00–17:00 only for
+            // doctors with no weekly schedule at all. Breaks are skipped.
+            const candidates = resolveDoctorDaySlots({
+              daySchedule: docSchedule ?? null,
+              hasAnySchedule: !!anySchedule,
+              clinicHours: clinicHours ?? null,
+            });
 
-            if (startTimeStr && endTimeStr) {
-              const [startHour, startMin] = startTimeStr.split(":").map(Number);
-              const [endHour, endMin] = endTimeStr.split(":").map(Number);
-
-              const startObj = new Date(selectedDate);
-              startObj.setHours(startHour, startMin, 0, 0);
-
-              const endObj = new Date(selectedDate);
-              endObj.setHours(endHour, endMin, 0, 0);
-
+            if (candidates.length > 0) {
               // Get existing bookings for this doctor on this day
               const existingBookings = await query<any>(
                 `SELECT dateTime, timeSlot FROM Appointment
@@ -181,24 +146,7 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
                 [data.doctorId, dateStr],
               );
               const bookedSlots = existingBookings.map((b: any) => b.timeSlot || "");
-
-              // Generate slots
-              const temp = new Date(startObj);
-              while (temp < endObj) {
-                const slotTimeStr = temp.toLocaleTimeString("en-US", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: true,
-                });
-                const slotStartMin = temp.getHours() * 60 + temp.getMinutes();
-                if (
-                  !bookedSlots.includes(slotTimeStr) &&
-                  !overlapsBreak(slotStartMin, duration, breaks)
-                ) {
-                  slots.push(slotTimeStr);
-                }
-                temp.setMinutes(temp.getMinutes() + duration);
-              }
+              slots.push(...freeSlotLabels(candidates, bookedSlots));
             }
           }
         }

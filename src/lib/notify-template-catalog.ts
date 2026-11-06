@@ -480,9 +480,17 @@ export async function activateCatalogRoutes(input: {
     if (ok) await waRemoveMapping({ notifyKind: m.notifyKind, businessCategory: "*" }, actor);
   }
 
-  // 2. Map approved catalog templates to their routes.
+  // 2. Map approved catalog templates to their routes. Superseded templates are
+  // processed first, so a route has a working template right away and is then
+  // upgraded in the same pass once its replacement is approved.
   mappings = await repo.listMappings();
-  for (const entry of catalog) {
+  const replaced = new Set(catalog.map((e) => e.supersedes).filter(Boolean));
+  const ordered = [
+    ...catalog.filter((e) => replaced.has(e.name)),
+    ...catalog.filter((e) => !replaced.has(e.name)),
+  ];
+  for (const entry of ordered) {
+    mappings = await repo.listMappings();
     const row = await repo.getByNameLanguage(entry.name, entry.language);
     if (!row || !sendable(row) || !contentMatches(entry, row)) continue;
     for (const category of entry.appliesTo) {
@@ -493,7 +501,12 @@ export async function activateCatalogRoutes(input: {
         if (existing) {
           if (existing.templateId === row.id) continue;
           const current = await repo.getById(existing.templateId);
-          if (sendable(current)) continue; // an admin chose another working template
+          // Upgrade a route still served by the template this entry replaces,
+          // as long as an admin has not disabled it. Any other working
+          // template is an admin's choice and is left alone.
+          const upgrading =
+            !!entry.supersedes && current?.name === entry.supersedes && existing.isEnabled;
+          if (sendable(current) && !upgrading) continue;
           const reassigned = await waAssignMapping(
             { notifyKind: kind, templateId: row.id, businessCategory: category },
             actor,

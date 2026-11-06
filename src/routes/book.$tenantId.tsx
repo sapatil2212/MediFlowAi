@@ -52,6 +52,9 @@ import {
   type LayoutTable,
   type TableSelectionState,
 } from "../components/restaurant/TableLayoutView";
+import { FloatingMenu } from "@/components/ui/floating-menu";
+import { SessionSlotGrid } from "@/components/schedule/SessionSlotGrid";
+import { dropElapsedSlots } from "@/lib/day-sessions";
 
 export const Route = createFileRoute("/book/$tenantId")({
   head: () => ({
@@ -239,7 +242,8 @@ function PatientBookingPage() {
       },
     })
       .then((res) => {
-        setAvailableSlots(res.slots || []);
+        // Today: never offer a slot that has already started.
+        setAvailableSlots(dropElapsedSlots(res.slots || [], selectedDate, new Date()));
         setSelectedSlot("");
       })
       .catch((err) => {
@@ -855,42 +859,43 @@ function PatientBookingPage() {
 
                         <AnimatePresence>
                           {typeOpen && (
-                            <motion.div
-                              initial={{ opacity: 0, y: -10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -10 }}
-                              className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl p-1.5 space-y-0.5"
+                            <FloatingMenu
+                              open={typeOpen}
+                              offset={4}
+                              onClose={() => setTypeOpen(false)}
                             >
-                              {(isGym
-                                ? ["Trial Session", "Regular Training"]
-                                : isBeauty
-                                  ? ["Standard Service", "Premium Treatment"]
-                                  : isProfessional
-                                    ? ["Initial Consultation", "Follow-up Advisory"]
-                                    : ["First Time", "Follow up"]
-                              ).map((type) => (
-                                <button
-                                  key={type}
-                                  type="button"
-                                  onClick={() => {
-                                    setAppointmentType(type);
-                                    setTypeOpen(false);
-                                    if (errors.appointmentType)
-                                      setErrors((prev) => ({ ...prev, appointmentType: "" }));
-                                  }}
-                                  className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                    appointmentType === type
-                                      ? "bg-brand/5 text-brand font-bold"
-                                      : "text-zinc-700"
-                                  }`}
-                                >
-                                  <span>{type}</span>
-                                  {appointmentType === type && (
-                                    <Check className="h-3.5 w-3.5 text-brand" />
-                                  )}
-                                </button>
-                              ))}
-                            </motion.div>
+                              <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl p-1.5 space-y-0.5">
+                                {(isGym
+                                  ? ["Trial Session", "Regular Training"]
+                                  : isBeauty
+                                    ? ["Standard Service", "Premium Treatment"]
+                                    : isProfessional
+                                      ? ["Initial Consultation", "Follow-up Advisory"]
+                                      : ["First Time", "Follow up"]
+                                ).map((type) => (
+                                  <button
+                                    key={type}
+                                    type="button"
+                                    onClick={() => {
+                                      setAppointmentType(type);
+                                      setTypeOpen(false);
+                                      if (errors.appointmentType)
+                                        setErrors((prev) => ({ ...prev, appointmentType: "" }));
+                                    }}
+                                    className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                      appointmentType === type
+                                        ? "bg-brand/5 text-brand font-bold"
+                                        : "text-zinc-700"
+                                    }`}
+                                  >
+                                    <span>{type}</span>
+                                    {appointmentType === type && (
+                                      <Check className="h-3.5 w-3.5 text-brand" />
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            </FloatingMenu>
                           )}
                         </AnimatePresence>
                       </div>
@@ -955,42 +960,43 @@ function PatientBookingPage() {
 
                             <AnimatePresence>
                               {locationOpen && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
+                                <FloatingMenu
+                                  open={locationOpen}
+                                  offset={4}
+                                  onClose={() => setLocationOpen(false)}
                                 >
-                                  {locationOptions.map((loc) => (
-                                    <button
-                                      key={loc.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedLocationId(loc.id);
-                                        setLocationOpen(false);
-                                        if (errors.location)
-                                          setErrors((prev) => ({ ...prev, location: "" }));
-                                      }}
-                                      className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                        selectedLocationId === loc.id
-                                          ? "bg-brand/5 text-brand font-bold"
-                                          : "text-zinc-700"
-                                      }`}
-                                    >
-                                      <div className="flex flex-col min-w-0 pr-2">
-                                        <span className="font-semibold truncate">{loc.name}</span>
-                                        {(loc.city || loc.address) && (
-                                          <span className="text-[9px] text-zinc-400 font-normal truncate">
-                                            {[loc.city, loc.address].filter(Boolean).join(" • ")}
-                                          </span>
+                                  <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                    {locationOptions.map((loc) => (
+                                      <button
+                                        key={loc.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedLocationId(loc.id);
+                                          setLocationOpen(false);
+                                          if (errors.location)
+                                            setErrors((prev) => ({ ...prev, location: "" }));
+                                        }}
+                                        className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                          selectedLocationId === loc.id
+                                            ? "bg-brand/5 text-brand font-bold"
+                                            : "text-zinc-700"
+                                        }`}
+                                      >
+                                        <div className="flex flex-col min-w-0 pr-2">
+                                          <span className="font-semibold truncate">{loc.name}</span>
+                                          {(loc.city || loc.address) && (
+                                            <span className="text-[9px] text-zinc-400 font-normal truncate">
+                                              {[loc.city, loc.address].filter(Boolean).join(" • ")}
+                                            </span>
+                                          )}
+                                        </div>
+                                        {selectedLocationId === loc.id && (
+                                          <Check className="h-3.5 w-3.5 text-brand shrink-0" />
                                         )}
-                                      </div>
-                                      {selectedLocationId === loc.id && (
-                                        <Check className="h-3.5 w-3.5 text-brand shrink-0" />
-                                      )}
-                                    </button>
-                                  ))}
-                                </motion.div>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </FloatingMenu>
                               )}
                             </AnimatePresence>
                           </div>
@@ -1045,35 +1051,36 @@ function PatientBookingPage() {
 
                         <AnimatePresence>
                           {deptOpen && (
-                            <motion.div
-                              initial={{ opacity: 0, y: -10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -10 }}
-                              className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
+                            <FloatingMenu
+                              open={deptOpen}
+                              offset={4}
+                              onClose={() => setDeptOpen(false)}
                             >
-                              {departments.map((dept) => (
-                                <button
-                                  key={dept.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedDeptId(dept.id);
-                                    setDeptOpen(false);
-                                    if (errors.department)
-                                      setErrors((prev) => ({ ...prev, department: "" }));
-                                  }}
-                                  className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                    selectedDeptId === dept.id
-                                      ? "bg-brand/5 text-brand font-bold"
-                                      : "text-zinc-700"
-                                  }`}
-                                >
-                                  <span>{dept.name}</span>
-                                  {selectedDeptId === dept.id && (
-                                    <Check className="h-3.5 w-3.5 text-brand" />
-                                  )}
-                                </button>
-                              ))}
-                            </motion.div>
+                              <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                {departments.map((dept) => (
+                                  <button
+                                    key={dept.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedDeptId(dept.id);
+                                      setDeptOpen(false);
+                                      if (errors.department)
+                                        setErrors((prev) => ({ ...prev, department: "" }));
+                                    }}
+                                    className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                      selectedDeptId === dept.id
+                                        ? "bg-brand/5 text-brand font-bold"
+                                        : "text-zinc-700"
+                                    }`}
+                                  >
+                                    <span>{dept.name}</span>
+                                    {selectedDeptId === dept.id && (
+                                      <Check className="h-3.5 w-3.5 text-brand" />
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            </FloatingMenu>
                           )}
                         </AnimatePresence>
                       </div>
@@ -1136,38 +1143,39 @@ function PatientBookingPage() {
 
                           <AnimatePresence>
                             {deptOpen && (
-                              <motion.div
-                                initial={{ opacity: 0, y: -10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -10 }}
-                                className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
+                              <FloatingMenu
+                                open={deptOpen}
+                                offset={4}
+                                onClose={() => setDeptOpen(false)}
                               >
-                                {departments.map((dept) => (
-                                  <button
-                                    key={dept.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedDeptId(dept.id);
-                                      setSelectedDoctorId(""); // Reset doctor
-                                      setSelectedDate(""); // Reset date/time slot since doctor changed
-                                      setSelectedSlot("");
-                                      setDeptOpen(false);
-                                      if (errors.department)
-                                        setErrors((prev) => ({ ...prev, department: "" }));
-                                    }}
-                                    className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                      selectedDeptId === dept.id
-                                        ? "bg-brand/5 text-brand font-bold"
-                                        : "text-zinc-700"
-                                    }`}
-                                  >
-                                    <span>{dept.name}</span>
-                                    {selectedDeptId === dept.id && (
-                                      <Check className="h-3.5 w-3.5 text-brand" />
-                                    )}
-                                  </button>
-                                ))}
-                              </motion.div>
+                                <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                  {departments.map((dept) => (
+                                    <button
+                                      key={dept.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedDeptId(dept.id);
+                                        setSelectedDoctorId(""); // Reset doctor
+                                        setSelectedDate(""); // Reset date/time slot since doctor changed
+                                        setSelectedSlot("");
+                                        setDeptOpen(false);
+                                        if (errors.department)
+                                          setErrors((prev) => ({ ...prev, department: "" }));
+                                      }}
+                                      className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                        selectedDeptId === dept.id
+                                          ? "bg-brand/5 text-brand font-bold"
+                                          : "text-zinc-700"
+                                      }`}
+                                    >
+                                      <span>{dept.name}</span>
+                                      {selectedDeptId === dept.id && (
+                                        <Check className="h-3.5 w-3.5 text-brand" />
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                              </FloatingMenu>
                             )}
                           </AnimatePresence>
                         </div>
@@ -1223,48 +1231,49 @@ function PatientBookingPage() {
 
                           <AnimatePresence>
                             {docOpen && (
-                              <motion.div
-                                initial={{ opacity: 0, y: -10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -10 }}
-                                className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5"
+                              <FloatingMenu
+                                open={docOpen}
+                                offset={4}
+                                onClose={() => setDocOpen(false)}
                               >
-                                {filteredDoctors.length > 0 ? (
-                                  filteredDoctors.map((doc) => (
-                                    <button
-                                      key={doc.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedDoctorId(doc.id);
-                                        setSelectedDate(""); // Reset date/time slot since doctor changed
-                                        setSelectedSlot("");
-                                        setDocOpen(false);
-                                        if (errors.doctor)
-                                          setErrors((prev) => ({ ...prev, doctor: "" }));
-                                      }}
-                                      className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
-                                        selectedDoctorId === doc.id
-                                          ? "bg-brand/5 text-brand font-bold"
-                                          : "text-zinc-700"
-                                      }`}
-                                    >
-                                      <div className="flex flex-col">
-                                        <span className="font-semibold">{doc.name}</span>
-                                        <span className="text-[9px] text-zinc-400 font-normal">
-                                          {doc.qualifications}
-                                        </span>
-                                      </div>
-                                      {selectedDoctorId === doc.id && (
-                                        <Check className="h-3.5 w-3.5 text-brand" />
-                                      )}
-                                    </button>
-                                  ))
-                                ) : (
-                                  <div className="px-3.5 py-3 text-xs text-zinc-455 italic text-center">
-                                    Please select a department first
-                                  </div>
-                                )}
-                              </motion.div>
+                                <div className="w-full bg-white border border-zinc-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+                                  {filteredDoctors.length > 0 ? (
+                                    filteredDoctors.map((doc) => (
+                                      <button
+                                        key={doc.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedDoctorId(doc.id);
+                                          setSelectedDate(""); // Reset date/time slot since doctor changed
+                                          setSelectedSlot("");
+                                          setDocOpen(false);
+                                          if (errors.doctor)
+                                            setErrors((prev) => ({ ...prev, doctor: "" }));
+                                        }}
+                                        className={`w-full text-left px-3.5 py-2 text-xs rounded-xl transition-all flex items-center justify-between hover:bg-zinc-50 ${
+                                          selectedDoctorId === doc.id
+                                            ? "bg-brand/5 text-brand font-bold"
+                                            : "text-zinc-700"
+                                        }`}
+                                      >
+                                        <div className="flex flex-col">
+                                          <span className="font-semibold">{doc.name}</span>
+                                          <span className="text-[9px] text-zinc-400 font-normal">
+                                            {doc.qualifications}
+                                          </span>
+                                        </div>
+                                        {selectedDoctorId === doc.id && (
+                                          <Check className="h-3.5 w-3.5 text-brand" />
+                                        )}
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <div className="px-3.5 py-3 text-xs text-zinc-455 italic text-center">
+                                      Please select a department first
+                                    </div>
+                                  )}
+                                </div>
+                              </FloatingMenu>
                             )}
                           </AnimatePresence>
                         </div>
@@ -1336,91 +1345,96 @@ function PatientBookingPage() {
 
                     <AnimatePresence>
                       {calendarOpen && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="absolute z-50 mt-1 left-0 sm:left-auto right-0 bg-white border border-zinc-200 rounded-2xl shadow-xl p-4 w-[280px]"
+                        <FloatingMenu
+                          open={calendarOpen}
+                          matchWidth={false}
+                          menuWidth={280}
+                          align="right"
+                          offset={4}
+                          estimatedHeight={360}
+                          onClose={() => setCalendarOpen(false)}
                         >
-                          {/* Calendar Navigation */}
-                          <div className="flex justify-between items-center mb-3">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (calMonth === 0) {
-                                  setCalMonth(11);
-                                  setCalYear(calYear - 1);
-                                } else {
-                                  setCalMonth(calMonth - 1);
-                                }
-                              }}
-                              className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-600"
-                            >
-                              <ChevronLeft className="h-4 w-4" />
-                            </button>
-                            <span className="text-xs font-bold text-zinc-800">
-                              {new Date(calYear, calMonth).toLocaleDateString("en-US", {
-                                month: "long",
-                                year: "numeric",
+                          <div className="bg-white border border-zinc-200 rounded-2xl shadow-xl p-4 w-[280px]">
+                            {/* Calendar Navigation */}
+                            <div className="flex justify-between items-center mb-3">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (calMonth === 0) {
+                                    setCalMonth(11);
+                                    setCalYear(calYear - 1);
+                                  } else {
+                                    setCalMonth(calMonth - 1);
+                                  }
+                                }}
+                                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-600"
+                              >
+                                <ChevronLeft className="h-4 w-4" />
+                              </button>
+                              <span className="text-xs font-bold text-zinc-800">
+                                {new Date(calYear, calMonth).toLocaleDateString("en-US", {
+                                  month: "long",
+                                  year: "numeric",
+                                })}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (calMonth === 11) {
+                                    setCalMonth(0);
+                                    setCalYear(calYear + 1);
+                                  } else {
+                                    setCalMonth(calMonth + 1);
+                                  }
+                                }}
+                                className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-600"
+                              >
+                                <ChevronRight className="h-4 w-4" />
+                              </button>
+                            </div>
+
+                            {/* Weekdays Header */}
+                            <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-bold text-zinc-400 mb-1">
+                              {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+                                <div key={d}>{d}</div>
+                              ))}
+                            </div>
+
+                            {/* Monthly Days Grid */}
+                            <div className="grid grid-cols-7 gap-1 text-center">
+                              {getDaysInMonth(calMonth, calYear).map((day, idx) => {
+                                if (!day) return <div key={`empty-${idx}`} />;
+
+                                const localDateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+                                const isSelected = selectedDate === localDateStr;
+                                const past = isPastDate(day);
+
+                                return (
+                                  <button
+                                    key={day.toISOString()}
+                                    type="button"
+                                    onClick={() => {
+                                      if (past) return;
+                                      setSelectedDate(localDateStr);
+                                      setCalendarOpen(false);
+                                      if (errors.date) setErrors((prev) => ({ ...prev, date: "" }));
+                                    }}
+                                    disabled={past}
+                                    className={`h-7 w-7 text-[10px] font-bold rounded-lg flex items-center justify-center transition-all ${
+                                      isSelected
+                                        ? "bg-black text-white font-black"
+                                        : past
+                                          ? "text-zinc-200 cursor-not-allowed"
+                                          : "text-zinc-700 hover:bg-zinc-100"
+                                    }`}
+                                  >
+                                    {day.getDate()}
+                                  </button>
+                                );
                               })}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (calMonth === 11) {
-                                  setCalMonth(0);
-                                  setCalYear(calYear + 1);
-                                } else {
-                                  setCalMonth(calMonth + 1);
-                                }
-                              }}
-                              className="p-1 hover:bg-zinc-100 rounded-lg text-zinc-600"
-                            >
-                              <ChevronRight className="h-4 w-4" />
-                            </button>
+                            </div>
                           </div>
-
-                          {/* Weekdays Header */}
-                          <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-bold text-zinc-400 mb-1">
-                            {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-                              <div key={d}>{d}</div>
-                            ))}
-                          </div>
-
-                          {/* Monthly Days Grid */}
-                          <div className="grid grid-cols-7 gap-1 text-center">
-                            {getDaysInMonth(calMonth, calYear).map((day, idx) => {
-                              if (!day) return <div key={`empty-${idx}`} />;
-
-                              const localDateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
-                              const isSelected = selectedDate === localDateStr;
-                              const past = isPastDate(day);
-
-                              return (
-                                <button
-                                  key={day.toISOString()}
-                                  type="button"
-                                  onClick={() => {
-                                    if (past) return;
-                                    setSelectedDate(localDateStr);
-                                    setCalendarOpen(false);
-                                    if (errors.date) setErrors((prev) => ({ ...prev, date: "" }));
-                                  }}
-                                  disabled={past}
-                                  className={`h-7 w-7 text-[10px] font-bold rounded-lg flex items-center justify-center transition-all ${
-                                    isSelected
-                                      ? "bg-black text-white font-black"
-                                      : past
-                                        ? "text-zinc-200 cursor-not-allowed"
-                                        : "text-zinc-700 hover:bg-zinc-100"
-                                  }`}
-                                >
-                                  {day.getDate()}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </motion.div>
+                        </FloatingMenu>
                       )}
                     </AnimatePresence>
                   </div>
@@ -1468,51 +1482,42 @@ function PatientBookingPage() {
 
                       <AnimatePresence>
                         {clockOpen && (
-                          <motion.div
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="absolute z-50 mt-1 left-0 sm:left-auto right-0 bg-white border border-zinc-200 rounded-2xl shadow-xl p-3 w-[280px]"
+                          <FloatingMenu
+                            open={clockOpen}
+                            matchWidth={false}
+                            menuWidth={280}
+                            align="right"
+                            offset={4}
+                            estimatedHeight={360}
+                            onClose={() => setClockOpen(false)}
                           >
-                            <div className="text-[9px] font-bold text-zinc-400 uppercase mb-2 px-1 flex items-center gap-1">
-                              <Clock className="h-3 w-3 text-brand" /> Available slots
-                            </div>
+                            <div className="bg-white border border-zinc-200 rounded-2xl shadow-xl p-3 w-[280px]">
+                              <div className="text-[9px] font-bold text-zinc-400 uppercase mb-2 px-1 flex items-center gap-1">
+                                <Clock className="h-3 w-3 text-brand" /> Available slots
+                              </div>
 
-                            {loadingSlots ? (
-                              <div className="flex justify-center py-4">
-                                <Loader2 className="h-4 w-4 animate-spin text-brand" />
-                              </div>
-                            ) : availableSlots.length > 0 ? (
-                              <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-1">
-                                {availableSlots.map((slot) => {
-                                  const isSelected = selectedSlot === slot;
-                                  return (
-                                    <button
-                                      key={slot}
-                                      type="button"
-                                      onClick={() => {
-                                        handleSelectSlot(slot);
-                                        setClockOpen(false);
-                                        if (errors.timeSlot)
-                                          setErrors((prev) => ({ ...prev, timeSlot: "" }));
-                                      }}
-                                      className={`rounded-xl py-2 px-1 text-[10px] font-bold border transition-all cursor-pointer text-center ${
-                                        isSelected
-                                          ? "bg-black border-zinc-800 text-white font-black scale-[1.02]"
-                                          : "bg-white border-zinc-200 text-zinc-650 hover:border-zinc-800/40"
-                                      }`}
-                                    >
-                                      {slot}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="text-center py-3 text-[10px] text-red-500 font-bold bg-red-50/50 rounded-xl border border-red-100">
-                                No slots available on this date.
-                              </div>
-                            )}
-                          </motion.div>
+                              {loadingSlots ? (
+                                <div className="flex justify-center py-4">
+                                  <Loader2 className="h-4 w-4 animate-spin text-brand" />
+                                </div>
+                              ) : availableSlots.length > 0 ? (
+                                <SessionSlotGrid
+                                  slots={availableSlots}
+                                  selected={selectedSlot}
+                                  onSelect={(slot) => {
+                                    handleSelectSlot(slot);
+                                    setClockOpen(false);
+                                    if (errors.timeSlot)
+                                      setErrors((prev) => ({ ...prev, timeSlot: "" }));
+                                  }}
+                                />
+                              ) : (
+                                <div className="text-center py-3 text-[10px] text-red-500 font-bold bg-red-50/50 rounded-xl border border-red-100">
+                                  No slots available on this date.
+                                </div>
+                              )}
+                            </div>
+                          </FloatingMenu>
                         )}
                       </AnimatePresence>
                     </div>

@@ -181,8 +181,15 @@ async function eventKeyFor(
     case "booking.completed":
       return base;
     case "booking.rescheduled":
-    case "booking.reschedule_needed":
       return `${base}:${booking.wallClock}`;
+    case "booking.reschedule_needed": {
+      // One notice per absence. A repeat click dedupes, but declaring a new
+      // absence after the earlier one was reinstated is a new real event.
+      const reinstated = (
+        await d.repo.listEventsForAppointment(input.tenantId, input.appointmentId)
+      ).filter((e) => e.eventType === "booking.reinstated" && e.status !== "superseded").length;
+      return `${base}:${booking.wallClock}:${reinstated}`;
+    }
     case "booking.table_changed":
       return `${base}:${booking.tableName ?? "?"}`;
     case "queue.updated":

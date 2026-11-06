@@ -5,14 +5,19 @@ import crypto from "crypto";
 import { query, queryOne, execute, withTransaction } from "./db";
 import { PROFESSION_RESTAURANT, DEFAULT_SETTINGS } from "./restaurant-availability";
 import { DEFAULT_PROFESSION, generateTenantId } from "./tenant-provisioning";
+import { normalizeBreaks, parseBreaksColumn, parseTimeToMinutes } from "./doctor-schedule-breaks";
 import {
-  normalizeBreaks,
-  overlapsBreak,
-  parseBreaksColumn,
-  parseTimeToMinutes,
-  resolveBreaks,
-  type NormalizedBreak,
-} from "./doctor-schedule-breaks";
+  MAX_SLOT_MINUTES,
+  MIN_SLOT_MINUTES,
+  deriveSessionsFromRange,
+  freeSlotLabels,
+  generateSessionSlots,
+  parseSessionsColumn,
+  resolveDoctorDaySlots,
+  sessionsEnvelope,
+  validateDaySessions,
+  type DaySessions,
+} from "./day-sessions";
 import {
   buildAppointmentDateFilter,
   buildAppointmentOrderBy,
@@ -2304,12 +2309,15 @@ export const saveDoctorServerFn = createServerFn({ method: "POST" })
 
           const startTime = ch?.openTime || "09:00";
           const endTime = ch?.closeTime || "17:00";
+          // New doctors start on the session model: the opening hours split
+          // into Morning / Afternoon / Evening.
+          const sessions = deriveSessionsFromRange(startTime, endTime);
 
           await execute(
-            `INSERT INTO DoctorSchedule (id, doctorId, dayOfWeek, startTime, endTime, slotDuration, breaks)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE startTime = VALUES(startTime), endTime = VALUES(endTime)`,
-            [crypto.randomUUID(), id, day, startTime, endTime, 30, "[]"],
+            `INSERT INTO DoctorSchedule (id, doctorId, dayOfWeek, startTime, endTime, slotDuration, breaks, sessions)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE startTime = VALUES(startTime), endTime = VALUES(endTime), sessions = VALUES(sessions)`,
+            [crypto.randomUUID(), id, day, startTime, endTime, 30, "[]", JSON.stringify(sessions)],
           );
         }
       } catch (schedErr: any) {
@@ -2363,15 +2371,22 @@ export const getDoctorScheduleServerFn = createServerFn({ method: "GET" })
       "SELECT * FROM DoctorSchedule WHERE doctorId = ? ORDER BY dayOfWeek ASC",
       [doctorId],
     );
-    return schedules.map((s) => ({
-      id: s.id,
-      doctorId: s.doctorId,
-      dayOfWeek: s.dayOfWeek,
-      startTime: s.startTime,
-      endTime: s.endTime,
-      slotDuration: s.slotDuration,
-      breaks: parseBreaksColumn(s.breaks),
-    }));
+    return schedules.map((s) => {
+      const stored = parseSessionsColumn(s.sessions);
+      return {
+        id: s.id,
+        doctorId: s.doctorId,
+        dayOfWeek: s.dayOfWeek,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        slotDuration: s.slotDuration,
+        breaks: parseBreaksColumn(s.breaks),
+        // Rows saved before sessions existed are split into sessions here so
+        // every editor works with one shape.
+        sessions: stored ?? deriveSessionsFromRange(s.startTime, s.endTime),
+        sessionsSaved: stored !== null,
+      };
+    });
   });
 
 export const saveDoctorScheduleServerFn = createServerFn({ method: "POST" })
@@ -2380,10 +2395,12 @@ export const saveDoctorScheduleServerFn = createServerFn({ method: "POST" })
       doctorId: string;
       schedules: Array<{
         dayOfWeek: number;
-        startTime: string;
-        endTime: string;
+        startTime?: string;
+        endTime?: string;
         slotDuration: number;
         breaks?: Array<{ start: string; end: string; label: string }>;
+        /** Morning / Afternoon / Evening windows. Omitted by pre-sessions clients. */
+        sessions?: DaySessions | null;
       }>;
     }) => {
       if (!data.doctorId || !data.schedules) throw new Error("Required parameters missing");
@@ -2406,24 +2423,53 @@ export const saveDoctorScheduleServerFn = createServerFn({ method: "POST" })
         throw new Error("Invalid or duplicate day in schedule");
       }
       seen.add(day);
-      const start = parseTimeToMinutes(s.startTime);
-      const end = parseTimeToMinutes(s.endTime);
-      if (start === null || end === null) throw new Error(`Enter valid times for ${DAY[day]}`);
-      if (end <= start) throw new Error(`${DAY[day]}: end time must be after start time`);
       const slot = Math.round(Number(s.slotDuration) || 30);
-      if (slot < 5 || slot > 240) throw new Error(`${DAY[day]}: slot length must be 5–240 minutes`);
+      if (slot < MIN_SLOT_MINUTES || slot > MAX_SLOT_MINUTES) {
+        throw new Error(
+          `${DAY[day]}: slot length must be ${MIN_SLOT_MINUTES}–${MAX_SLOT_MINUTES} minutes`,
+        );
+      }
       // Drop malformed / inverted breaks. A well-formed break outside the
       // working window is kept: it is harmless (removes no slot) and the
       // editor already flags it as "outside hours".
       const validBreaks = (Array.isArray(s.breaks) ? s.breaks : []).filter(
         (b) => normalizeBreaks([b]).length === 1,
       );
+
+      if (s.sessions != null) {
+        // Session schedule: the windows are the source of truth and the
+        // legacy columns get their envelope (earliest start → latest end).
+        const checked = validateDaySessions(s.sessions);
+        if (!checked.ok) throw new Error(`${DAY[day]}: ${checked.error}`);
+        const slots = generateSessionSlots(checked.sessions, slot, normalizeBreaks(validBreaks));
+        if (slots.length === 0) {
+          throw new Error(
+            `${DAY[day]}: no ${slot}-minute slot fits in the selected sessions. Lengthen a session, shorten the slot or remove a break.`,
+          );
+        }
+        const envelope = sessionsEnvelope(checked.sessions)!;
+        return {
+          day,
+          startTime: envelope.startTime,
+          endTime: envelope.endTime,
+          slot,
+          breaksJson: JSON.stringify(validBreaks),
+          sessionsJson: JSON.stringify(checked.sessions) as string | null,
+        };
+      }
+
+      // Pre-sessions client: one start → end window, exactly as before.
+      const start = parseTimeToMinutes(s.startTime);
+      const end = parseTimeToMinutes(s.endTime);
+      if (start === null || end === null) throw new Error(`Enter valid times for ${DAY[day]}`);
+      if (end <= start) throw new Error(`${DAY[day]}: end time must be after start time`);
       return {
         day,
-        startTime: s.startTime,
-        endTime: s.endTime,
+        startTime: s.startTime as string,
+        endTime: s.endTime as string,
         slot,
         breaksJson: JSON.stringify(validBreaks),
+        sessionsJson: null as string | null,
       };
     });
 
@@ -2432,9 +2478,18 @@ export const saveDoctorScheduleServerFn = createServerFn({ method: "POST" })
       await conn.query("DELETE FROM DoctorSchedule WHERE doctorId = ?", [data.doctorId]);
       for (const r of rows) {
         await conn.query(
-          `INSERT INTO DoctorSchedule (id, doctorId, dayOfWeek, startTime, endTime, slotDuration, breaks)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [crypto.randomUUID(), data.doctorId, r.day, r.startTime, r.endTime, r.slot, r.breaksJson],
+          `INSERT INTO DoctorSchedule (id, doctorId, dayOfWeek, startTime, endTime, slotDuration, breaks, sessions)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            crypto.randomUUID(),
+            data.doctorId,
+            r.day,
+            r.startTime,
+            r.endTime,
+            r.slot,
+            r.breaksJson,
+            r.sessionsJson,
+          ],
         );
       }
     });
@@ -2791,11 +2846,16 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
       doctorId: string;
       leaveDates: string[];
       reason: string;
+      /** Optional patient-facing reason that replaces the preset wording. */
+      customReason?: string;
       customMessage?: string;
       selectedAppointmentIds?: string[];
     }) => {
       if (!data.doctorId || !data.leaveDates || data.leaveDates.length === 0) {
         throw new Error("Doctor ID and leave dates are required");
+      }
+      if (data.customReason !== undefined && typeof data.customReason !== "string") {
+        throw new Error("Invalid custom reason");
       }
       return data;
     },
@@ -2845,10 +2905,17 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
       leavesCreated++;
     }
 
+    // Patient-facing reason for the approved WhatsApp utility template.
+    const { absenceReasonText } = await import("./doctor-absence");
+    const absenceReason = absenceReasonText({
+      reason: data.reason,
+      customReason: data.customReason,
+    });
+
     // 4. Query all affected appointments
     const placeholders = data.leaveDates.map(() => "?").join(",");
     const appts = await query<any>(
-      `SELECT id, name, phone, dateTime, timeSlot, reason, status, tokenNo
+      `SELECT id, name, phone, whatsapp, dateTime, timeSlot, reason, status, tokenNo
        FROM Appointment
        WHERE tenantId = ?
          AND doctorId = ?
@@ -2908,13 +2975,14 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
         console.warn(`[Emergency Leave Appt Update] Failed:`, err?.message);
       }
 
-      if (marked && apt.phone && canSendWA) {
+      if (marked && (apt.whatsapp || apt.phone) && canSendWA) {
         const { emitBookingEvent, dispatchAndWait } = await import("./notify-engine");
         const r = await emitBookingEvent({
           tenantId: user.tenantId as string,
           appointmentId: apt.id,
           type: "booking.reschedule_needed",
           source: "doctor_leave",
+          payload: { absenceReason },
         });
         sendStatus = r.ok && r.eventId ? await dispatchAndWait(r.eventId) : "failed";
       }
@@ -2933,7 +3001,12 @@ export const processDoctorEmergencyLeaveServerFn = createServerFn({ method: "POS
       success: true,
       leavesCreated,
       affectedAppointmentsCount: appts.length,
+      // "sent" = accepted by Meta as an approved utility template. Delivery and
+      // read receipts arrive later by webhook and show in the notification log.
       notifiedPatientsCount: notifiedPatients.filter((p) => p.status === "sent").length,
+      queuedPatientsCount: notifiedPatients.filter((p) => p.status === "queued").length,
+      failedPatientsCount: notifiedPatients.filter((p) => p.status === "failed").length,
+      skippedPatientsCount: notifiedPatients.filter((p) => p.status === "skipped").length,
       whatsappSkippedForRole: !canSendWA,
       patients: notifiedPatients,
     };
@@ -3097,7 +3170,7 @@ export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn(
 
     // 4. Query affected appointments that were previously marked 'Reschedule Needed' or booked on those dates
     const appts = await query<any>(
-      `SELECT id, name, phone, dateTime, timeSlot, reason, status, tokenNo
+      `SELECT id, name, phone, whatsapp, dateTime, timeSlot, reason, status, tokenNo
        FROM Appointment
        WHERE tenantId = ?
          AND doctorId = ?
@@ -3155,7 +3228,7 @@ export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn(
 
         let sendStatus: "sent" | "failed" | "skipped" | "queued" = "skipped";
 
-        if (apt.phone) {
+        if (apt.whatsapp || apt.phone) {
           const { emitBookingEvent, dispatchAndWait } = await import("./notify-engine");
           const r = await emitBookingEvent({
             tenantId: user.tenantId as string,
@@ -3182,6 +3255,9 @@ export const cancelDoctorLeaveAndReinstateAppointmentsServerFn = createServerFn(
       leavesCancelledCount: data.leaveDates.length,
       reinstatedAppointmentsCount: targetAppts.length,
       notifiedPatientsCount: notifiedPatients.filter((p) => p.status === "sent").length,
+      queuedPatientsCount: notifiedPatients.filter((p) => p.status === "queued").length,
+      failedPatientsCount: notifiedPatients.filter((p) => p.status === "failed").length,
+      skippedPatientsCount: notifiedPatients.filter((p) => p.status === "skipped").length,
       whatsappSkippedForRole: !canSendWA,
       patients: notifiedPatients,
     };
@@ -3406,70 +3482,33 @@ export const getClinicInfoAndSlotsServerFn = createServerFn({ method: "GET" })
             [data.doctorId, dayOfWeek],
           );
 
-          // Resolve working hours: prefer DoctorSchedule, then fall back to
-          // ClinicHours so doctors without explicit weekly hours still show slots.
-          let startTimeStr: string | null = null;
-          let endTimeStr: string | null = null;
-          let duration = 30;
-          // Breaks (lunch etc.) configured for this weekday. Slots that overlap
-          // one must not be offered.
-          let breaks: NormalizedBreak[] = [];
+          // Only consulted when there is no row for this weekday: a doctor who
+          // has a weekly schedule but not this day is off, rather than falling
+          // through to the clinic's opening hours.
+          const anySchedule = docSchedule
+            ? docSchedule
+            : await queryOne<any>("SELECT id FROM DoctorSchedule WHERE doctorId = ? LIMIT 1", [
+                data.doctorId,
+              ]);
 
-          if (docSchedule) {
-            startTimeStr = docSchedule.startTime;
-            endTimeStr = docSchedule.endTime;
-            duration = docSchedule.slotDuration || 30;
-            breaks = resolveBreaks(docSchedule.breaks);
-          } else if (clinicHours && clinicHours.openTime && clinicHours.closeTime) {
-            startTimeStr = clinicHours.openTime;
-            endTimeStr = clinicHours.closeTime;
-            duration = clinicHours.slotDuration || 30;
-          } else {
-            startTimeStr = "09:00";
-            endTimeStr = "17:00";
-            duration = 30;
-          }
+          // Sessions (Morning / Afternoon / Evening) when saved, otherwise the
+          // legacy single window; ClinicHours / 09:00–17:00 only for doctors
+          // with no weekly schedule at all. Breaks are skipped either way.
+          const candidates = resolveDoctorDaySlots({
+            daySchedule: docSchedule ?? null,
+            hasAnySchedule: !!anySchedule,
+            clinicHours: clinicHours ?? null,
+          });
 
-          if (startTimeStr && endTimeStr) {
-            // Parse start and end times
-            const [startHour, startMin] = startTimeStr.split(":").map(Number);
-            const [endHour, endMin] = endTimeStr.split(":").map(Number);
-
-            const startObj = new Date(selectedDate);
-            startObj.setHours(startHour, startMin, 0, 0);
-
-            const endObj = new Date(selectedDate);
-            endObj.setHours(endHour, endMin, 0, 0);
-
+          if (candidates.length > 0) {
             // Get existing bookings for this doctor on this day
             const existingBookings = await query<any>(
               `SELECT dateTime, timeSlot FROM Appointment
                WHERE doctorId = ? AND DATE(dateTime) = ? AND status != 'Cancelled'`,
               [data.doctorId, dateStr],
             );
-
             const bookedSlots = existingBookings.map((b) => b.timeSlot || "");
-
-            // Generate time slots
-            const temp = new Date(startObj);
-            while (temp < endObj) {
-              const slotTimeStr = temp.toLocaleTimeString("en-US", {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: true,
-              });
-
-              // Only include if not already booked and not inside a break
-              const slotStartMin = temp.getHours() * 60 + temp.getMinutes();
-              if (
-                !bookedSlots.includes(slotTimeStr) &&
-                !overlapsBreak(slotStartMin, duration, breaks)
-              ) {
-                slots.push(slotTimeStr);
-              }
-
-              temp.setMinutes(temp.getMinutes() + duration);
-            }
+            slots.push(...freeSlotLabels(candidates, bookedSlots));
           }
         }
       }
@@ -3723,23 +3762,64 @@ export const getAnalyticsServerFn = createServerFn({ method: "GET" }).handler(as
 // ══════════════════════════════════════════════════════════════
 
 export const getPatientsServerFn = createServerFn({ method: "GET" })
-  .validator((data: { search?: string; page?: number }) => data)
+  .validator(
+    (data: {
+      search?: string;
+      page?: number;
+      /** "all" | "Female" | "Male" | "Other" */
+      gender?: string;
+      /** "all" | "today" | "week" | "month" | "year" */
+      registered?: string;
+      /** "all" | "upcoming" | "recent" | "inactive" | "never" */
+      visit?: string;
+      sortBy?: string;
+      sortDir?: string;
+      /** Also return the tenant-wide stat-card counts. */
+      withSummary?: boolean;
+    }) => data ?? {},
+  )
   .handler(async ({ data }) => {
     const user = await verifySession();
-    if (!user) throw new Error("Unauthorized");
-    const page = data.page || 1;
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const { buildPatientListQuery, PATIENT_SUMMARY_SQL } = await import("./patient-query");
+    const page = Math.max(1, Math.floor(Number(data.page) || 1));
     const pageSize = 20;
     const offset = (page - 1) * pageSize;
-    const search = data.search ? `%${data.search}%` : "%";
-    const patients = await query<any>(
-      `SELECT p.*, (SELECT MAX(a.dateTime) FROM Appointment a WHERE a.patientId = p.id OR (a.name = p.name AND a.tenantId = p.tenantId)) as lastVisit FROM Patient p WHERE p.tenantId = ? AND (p.name LIKE ? OR p.patientNo LIKE ? OR p.phone LIKE ? OR p.email LIKE ?) ORDER BY p.createdAt DESC LIMIT ? OFFSET ?`,
-      [user.tenantId, search, search, search, search, pageSize, offset],
-    );
-    const [countRow] = await query<any>(
-      `SELECT COUNT(*) as total FROM Patient WHERE tenantId = ? AND (name LIKE ? OR patientNo LIKE ? OR phone LIKE ? OR email LIKE ?)`,
-      [user.tenantId, search, search, search, search],
-    );
-    return { patients, total: Number(countRow?.total || 0), page, pageSize };
+    // Search, filters and sort are whitelisted and bound in patient-query.ts.
+    // Without filter arguments this returns the same rows and order as before.
+    const q = buildPatientListQuery({
+      tenantId: user.tenantId,
+      search: data.search,
+      gender: data.gender,
+      registered: data.registered,
+      visit: data.visit,
+      sortBy: data.sortBy,
+      sortDir: data.sortDir,
+    });
+    const patients = await query<any>(`${q.listSql} LIMIT ? OFFSET ?`, [
+      ...q.params,
+      pageSize,
+      offset,
+    ]);
+    const [countRow] = await query<any>(q.countSql, q.params);
+    let summary: { total: number; newLast30: number; seenLast30: number; upcoming: number } | null =
+      null;
+    if (data.withSummary) {
+      const [s] = await query<any>(PATIENT_SUMMARY_SQL, [user.tenantId]);
+      summary = {
+        total: Number(s?.total || 0),
+        newLast30: Number(s?.newLast30 || 0),
+        seenLast30: Number(s?.seenLast30 || 0),
+        upcoming: Number(s?.upcoming || 0),
+      };
+    }
+    return {
+      patients: patients.map((p: any) => ({ ...p, visitCount: Number(p.visitCount || 0) })),
+      total: Number(countRow?.total || 0),
+      page,
+      pageSize,
+      summary,
+    };
   });
 
 export const checkPatientDuplicateServerFn = createServerFn({ method: "POST" })
@@ -3935,6 +4015,46 @@ export const deletePatientServerFn = createServerFn({ method: "POST" })
       ]);
     });
     return { success: true };
+  });
+
+/**
+ * Deletes several patient files at once, with the same rules as
+ * deletePatientServerFn: only patients of the caller's tenant are touched, and
+ * each one's SOAP notes and prescriptions go with it, in one transaction.
+ */
+export const deletePatientsBulkServerFn = createServerFn({ method: "POST" })
+  .validator((data: { ids: string[] }) => {
+    if (!data || !Array.isArray(data.ids) || data.ids.length === 0) {
+      throw new Error("At least one patient must be selected");
+    }
+    if (data.ids.length > 500) throw new Error("Select at most 500 patients at a time");
+    return { ids: data.ids.map((id) => String(id)) };
+  })
+  .handler(async ({ data }) => {
+    const user = await verifySession();
+    if (!user || !user.tenantId) throw new Error("Unauthorized");
+    const requested = Array.from(new Set(data.ids));
+    const placeholders = requested.map(() => "?").join(", ");
+    const owned = await query<any>(
+      `SELECT id FROM Patient WHERE tenantId = ? AND id IN (${placeholders})`,
+      [user.tenantId, ...requested],
+    );
+    if (owned.length === 0) return { success: true, deleted: 0 };
+    const ids = owned.map((row: any) => String(row.id));
+    const ownedPlaceholders = ids.map(() => "?").join(", ");
+    await withTransaction(async (conn) => {
+      for (const table of ["SoapNote", "Prescription"]) {
+        await conn.query(
+          `DELETE FROM ${table} WHERE tenantId = ? AND patientId IN (${ownedPlaceholders})`,
+          [user.tenantId, ...ids],
+        );
+      }
+      await conn.query(`DELETE FROM Patient WHERE tenantId = ? AND id IN (${ownedPlaceholders})`, [
+        user.tenantId,
+        ...ids,
+      ]);
+    });
+    return { success: true, deleted: ids.length };
   });
 
 export const getPatientChartServerFn = createServerFn({ method: "GET" })

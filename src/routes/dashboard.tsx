@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { getCurrentUserServerFn } from "../lib/auth";
-import { Loader2 } from "lucide-react";
 import { PROFESSION_RESTAURANT } from "../lib/restaurant-availability";
 import { isWorkspacePaymentLocked } from "../lib/workspace-access";
 
@@ -71,22 +70,15 @@ function DashboardRouterGateway() {
     checkUserAndRedirect();
   }, [navigate]);
 
+  // While redirecting this page shows nothing (no spinner or "syncing" text);
+  // the destination dashboard renders its own content once it loads.
   return (
     <div className="flex h-screen w-screen flex-col items-center justify-center bg-zinc-50 font-sans">
-      <div className="text-center space-y-4">
-        {error ? (
-          <p className="text-xs font-bold text-red-500 uppercase tracking-widest animate-in fade-in duration-200">
-            {error}
-          </p>
-        ) : (
-          <>
-            <Loader2 className="h-8 w-8 animate-spin text-zinc-950 mx-auto stroke-[2.5]" />
-            <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest">
-              Sync'ing your workspace dashboard...
-            </p>
-          </>
-        )}
-      </div>
+      {error && (
+        <p className="text-xs font-bold text-red-500 uppercase tracking-widest animate-in fade-in duration-200">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

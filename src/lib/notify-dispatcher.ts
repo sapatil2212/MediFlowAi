@@ -456,7 +456,9 @@ export async function processEvent(
     const enc = ev.payload?.joinLinkEnc;
     if (typeof enc === "string" && enc) joinLink = await d.decryptSecret(enc);
 
-    const ctx = buildNotifyContext(booking, tenant, { joinLink });
+    const absenceReason =
+      typeof ev.payload?.absenceReason === "string" ? ev.payload.absenceReason : null;
+    const ctx = buildNotifyContext(booking, tenant, { joinLink, absenceReason });
     const cloudAvailable = await d.isCloudAvailable();
     const resolution = await d.resolvePlan(
       ev.notifyKind,

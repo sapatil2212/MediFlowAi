@@ -163,6 +163,12 @@ export interface CatalogTemplate {
   variableMappings: Record<string, CatalogueField>;
   sampleValues: Record<string, string>;
   purpose: string;
+  /**
+   * An older catalog template for the same routes. While this one is not yet
+   * approved, the older one keeps serving; once this one is approved,
+   * activation moves the routes onto it.
+   */
+  supersedes?: string;
 }
 
 /** Footer for new templates: states the message is automated and how to opt out. */
@@ -342,6 +348,23 @@ export function buildTemplateCatalog(
       fields: ["name", "doctorName", "clinicName", "date", "time"],
       samples: [S.name, S.doctor, S.clinic, S.date, S.time],
       purpose: "Sent when the doctor's leave makes an appointment need rescheduling.",
+    }),
+    entry({
+      name: "clinic_doctor_leave_notice",
+      language: "en_US",
+      appliesTo: ["clinic"],
+      kinds: ["rescheduleNeeded"],
+      origin: "catalog_new",
+      // Route preferred over clinic_doctor_unavailable once approved: it tells
+      // the patient why the doctor is away. {{3}} is the reason staff chose
+      // (e.g. "a medical emergency") or the short custom reason they typed.
+      supersedes: "clinic_doctor_unavailable",
+      bodyText:
+        "Hello {{1}},\n\n{{2}} is unavailable due to {{3}}, so your appointment at {{4}} on {{5}} at {{6}} needs a new time.\n\nPlease contact the clinic to choose another slot. We apologise for the inconvenience and thank you for your understanding.",
+      fields: ["name", "doctorName", "absenceReason", "clinicName", "date", "time"],
+      samples: [S.name, S.doctor, "a medical emergency", S.clinic, S.date, S.time],
+      purpose:
+        "Sent when a doctor's urgent absence makes an appointment need rescheduling, including the reason staff chose.",
     }),
     entry({
       name: "clinic_booking_reinstated",
@@ -735,11 +758,24 @@ export interface CatalogRoute {
   origin: CatalogOrigin;
 }
 
+/** Names of catalog templates that a newer catalog template replaces. */
+export function supersededNames(
+  catalog: readonly CatalogTemplate[] = TEMPLATE_CATALOG,
+): Set<string> {
+  return new Set(catalog.map((t) => t.supersedes).filter((n): n is string => !!n));
+}
+
+/**
+ * The preferred (category, kind) routes: one template per route. A superseded
+ * template is left out; it only keeps serving until its replacement is approved.
+ */
 export function catalogRoutes(
   catalog: readonly CatalogTemplate[] = TEMPLATE_CATALOG,
 ): CatalogRoute[] {
   const routes: CatalogRoute[] = [];
+  const superseded = supersededNames(catalog);
   for (const t of catalog) {
+    if (superseded.has(t.name)) continue;
     for (const businessCategory of t.appliesTo) {
       for (const kind of t.kinds) {
         routes.push({

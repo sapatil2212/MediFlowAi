@@ -243,6 +243,55 @@ describe("catalog submission", () => {
   });
 });
 
+describe("superseding templates", () => {
+  it("keeps the old approved template while the reason-aware one is pending, then upgrades", async () => {
+    const oldEntry = entry("clinic_doctor_unavailable");
+    const newEntry = entry("clinic_doctor_leave_notice");
+    const oldRow = (await seed(oldEntry, { status: "APPROVED" }))!;
+    const newRow = (await seed(newEntry, { status: "PENDING" }))!;
+
+    // Pending replacement: the old approved template serves the route.
+    await activateCatalogRoutes({ actorId: "catalog-test" });
+    expect(await repo.getMapping("rescheduleNeeded", "clinic")).toMatchObject({
+      templateId: oldRow.id,
+      isEnabled: true,
+    });
+
+    // Meta approves the replacement: the next activation moves the route.
+    await repo.applyMetaState(newRow.id, { metaStatus: "APPROVED" });
+    const result = await activateCatalogRoutes({ actorId: "catalog-test" });
+    expect(await repo.getMapping("rescheduleNeeded", "clinic")).toMatchObject({
+      templateId: newRow.id,
+      isEnabled: true,
+    });
+    expect(result.changes).toContainEqual(
+      expect.objectContaining({
+        kind: "rescheduleNeeded",
+        templateName: "clinic_doctor_leave_notice",
+        action: "remapped",
+      }),
+    );
+  });
+
+  it("never re-enables a route an admin turned off", async () => {
+    const oldRow = (await seed(entry("clinic_doctor_unavailable"), { status: "APPROVED" }))!;
+    await seed(entry("clinic_doctor_leave_notice"), { status: "APPROVED" });
+    await repo.upsertMapping({
+      notifyKind: "rescheduleNeeded",
+      businessCategory: "clinic",
+      templateId: oldRow.id,
+      language: "en_US",
+      actorId: "admin",
+    }); // upsert leaves it disabled
+
+    await activateCatalogRoutes({ actorId: "catalog-test" });
+    expect(await repo.getMapping("rescheduleNeeded", "clinic")).toMatchObject({
+      templateId: oldRow.id,
+      isEnabled: false,
+    });
+  });
+});
+
 describe("catalog activation", () => {
   it("narrows legacy wildcard mappings and activates only exact APPROVED UTILITY templates", async () => {
     const clinic = entry("appointment_booked");

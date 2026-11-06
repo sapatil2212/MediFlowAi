@@ -665,7 +665,10 @@ export function DoctorDirectoryPanel({
             showToast(
               res.whatsappSkippedForRole || !canSendWhatsApp
                 ? `Emergency leave declared for ${res.leavesCreated} date(s). WhatsApp notices were not sent — ask the owner or a doctor to notify patients.`
-                : `Emergency leave declared for ${res.leavesCreated} date(s). ${res.notifiedPatientsCount} WhatsApp alert(s) dispatched!`,
+                : `Emergency leave declared for ${res.leavesCreated} date(s). ${res.notifiedPatientsCount} WhatsApp notice(s) sent.` +
+                    (res.unsentPatientsCount
+                      ? ` ${res.unsentPatientsCount} could not be sent yet. Check the notification log.`
+                      : ""),
             );
             onRefreshDoctors();
           }}
